@@ -1080,7 +1080,14 @@ export class Game {
     // slow-mo moment
     this.vfx.hitstop = 0.6;
     if (this.floorIndex >= BIOMES.length - 1) {
-      this.spells.after(2.5, () => this.victory());
+      this.ui?.banner('THE HOLLOW KING HAS FALLEN', 'Dawn returns to the Ashen Keep', '#ffd860', 5);
+      this.screenTint([1.35, 1.25, 1.0], 3);
+      // the eclipse lifts: torches return to warm light
+      for (const t of this.lights.torches) { t.intensity *= 2; t.color.set(0xffb060); }
+      this.hemi.intensity = this.baseHemi * 1.6;
+      const c = new THREE.Vector3(room.cx, this.groundY(room.cx, room.cz) + 3, room.cz);
+      for (let i = 0; i < 6; i++) this.spells.after(i * 0.35, () => this.vfx.explosion(c.clone().add(new THREE.Vector3(rand(-6, 6), rand(0, 4), rand(-6, 6))), 'holy', 4));
+      this.spells.after(4.5, () => this.victory());
       return;
     }
     this.ui?.banner('VANQUISHED', `${this.biome.name} is conquered`, '#ffd060');
