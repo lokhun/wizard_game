@@ -356,9 +356,16 @@ export class ActorManager {
   _statusFx(a, dt) {
     const g = this.g;
     const m = a.mask;
-    if (!m) return;
     const x = a.pos.x, y = a.pos.y, z = a.pos.z, h = a.height, r = a.radius;
     const P = g.vfx.P;
+    // champion affix auras
+    if (a.affix && Math.random() < dt * 14) {
+      const ang = Math.random() * Math.PI * 2;
+      const col = { hasted: [0.6, 1.6, 2.6], vampiric: [2.4, 0.15, 0.25], volatile: [3, 1.2, 0.2], shielded: [2.6, 2.2, 0.8] }[a.affix] ?? [2, 2, 2];
+      P.glow({ x: x + Math.cos(ang) * r * 1.2, y: y + 0.1, z: z + Math.sin(ang) * r * 1.2, vx: -Math.sin(ang) * 1.2, vy: rand(0.8, 1.8), vz: Math.cos(ang) * 1.2, r: col[0], g: col[1], b: col[2], life: 0.9, size: 0.09, sprite: SPR.SPARK, drag: 1 });
+    }
+    if (a.elite && !a.def.elite) g.lights.request(_v.set(x, y + h * 0.5, z), 0xffa040, 2.5, 4);
+    if (!m) return;
     if (m & ST.burn && Math.random() < dt * 30) P.glow({ x: x + rand(-r, r), y: y + rand(0.2, h), z: z + rand(-r, r), vy: rand(1, 2.2), r: 4, g: 1.5, b: 0.3, r2: 1, g2: 0.15, b2: 0.02, life: rand(0.3, 0.6), size: 0.3, size2: 0.05, sprite: SPR.FLAME, drag: 1 });
     if (m & ST.burn) g.lights.request(_v.set(x, y + h * 0.6, z), 0xff6020, 3, 4);
     if (m & ST.poison && Math.random() < dt * 8) P.glow({ x: x + rand(-r, r), y: y + rand(0.2, h), z: z + rand(-r, r), vy: rand(0.3, 0.8), r: 1.2, g: 2.4, b: 0.4, life: 0.8, size: 0.12, sprite: SPR.BUBBLE, gravity: -0.5 });
@@ -634,6 +641,16 @@ export class ActorManager {
     let wantDist = follow ? 3 : (tRad + a.radius + 0.6);
     const pref = def.range;
     if (pref && !follow) wantDist = pref[0] + (pref[1] - pref[0]) * 0.4;
+    // melee "attack slots": only a few melee foes press one target at once; the rest circle and wait
+    let waiting = false;
+    if (!pref && !follow && a.faction === 'enemy' && !a.elite && !def.flank && dist < 7) {
+      let engaged = 0;
+      for (const b of this._hostiles) {
+        if (b === a || b.target !== tgt || b.def.range) continue;
+        if (b.state === 'windup' || b.state === 'attack' || b.pos.distanceTo(tp) < tRad + b.radius + 1.2) engaged++;
+      }
+      if (engaged >= 3) { waiting = true; wantDist = 4.5 + (a.id % 3); }
+    }
     let moveDir = null;
     if (dist > wantDist) {
       const los = dist < 25 && g.collision.los(a.pos.x, a.pos.y + 0.8, a.pos.z, tp.x, tp.y + 0.8, tp.z);
@@ -649,6 +666,9 @@ export class ActorManager {
         moveDir.x += -dz / dist * 0.6 * side; moveDir.z += dx / dist * 0.6 * side;
         const l = Math.hypot(moveDir.x, moveDir.z); moveDir.x /= l; moveDir.z /= l;
       }
+    } else if (waiting) {
+      const side = (a.id % 2 ? 1 : -1);
+      moveDir = { x: -dz / dist * side * 0.6 - dx / dist * 0.2, z: dx / dist * side * 0.6 - dz / dist * 0.2 };
     } else if (pref && dist < pref[0]) {
       // kite away
       moveDir = { x: -dx / dist, z: -dz / dist };
