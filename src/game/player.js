@@ -353,6 +353,7 @@ export class LocalPlayer {
       }
     }
     this.castAnim = { slot, hand: sp.hand ?? 'right', t: 0, style: sp.style ?? 'flick' };
+    this.game.castFlourish?.(this, slot);
     if (sp.mode === 'channel') {
       const S = {};
       this.channel = { slot, S, ctx, t: 0, max: sp.channel.max ?? 3 };

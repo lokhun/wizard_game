@@ -70,6 +70,7 @@ export class RemotePlayer {
     const dir = msg.d ? new THREE.Vector3(...msg.d) : this.forward();
     const aim = msg.ap ? new THREE.Vector3(...msg.ap) : null;
     this.castT = 0.5;
+    this.game.castFlourish?.(this, msg.slot);
     if (sp.mode === 'channel') {
       if (msg.chan === 1) {
         if (this.channel) { this.channel.sp.channel.end(this.channel.ctx, this.channel.S); this.channel = null; }

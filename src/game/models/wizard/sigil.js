@@ -1,5 +1,9 @@
 import * as THREE from 'three';
-import { mulberry } from './shapes.js';
+
+// self-contained so the game can draw sigils without loading the wizard models
+function mulberry(a) {
+  return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
 
 // Cast sigils: a rune circle that blooms where a spell leaves the focus or
 // hand, spins and fades. Each class gets its own circle (star order, glyphs,
@@ -7,7 +11,7 @@ import { mulberry } from './shapes.js';
 
 const _tex = new Map();
 
-function sigilTexture(classId) {
+export function sigilTexture(classId) {
   if (_tex.has(classId)) return _tex.get(classId);
   let seed = 7;
   for (const ch of classId) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;

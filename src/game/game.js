@@ -18,6 +18,7 @@ import { Critters } from '../world/critters.js';
 import { rollTomes, rollRelics, RARITY, TOMES } from './upgrades.js';
 import { makeChest, makePedestal, makePortal } from './interactables.js';
 import { CLASS_META } from './classMeta.js';
+import { sigilTexture } from './models/wizard/sigil.js';
 import { ENEMY_DEFS, BOSS_DEFS } from './enemyDefs.js';
 import { rand } from '../core/rng.js';
 import { clamp } from '../core/math.js';
@@ -1187,6 +1188,13 @@ export class Game {
     this.ui?.bossIntro(a);
     this.audio?.play('boss_intro');
     this.audio?.setMusic('boss');
+  }
+
+  // a cast everyone should notice: an ultimate flares the caster's rune circle on the ground
+  castFlourish(caster, slot) {
+    if (slot !== 'ultimate' || !caster?.pos) return;
+    const meta = CLASS_META[caster.classId];
+    this.vfx.groundSigil(caster.pos, sigilTexture(caster.classId), meta?.color ?? 0xffffff, 2.8, 1.9);
   }
 
   onBossKilled(a) {

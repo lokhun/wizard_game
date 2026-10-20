@@ -671,6 +671,32 @@ export class VFX {
     this._track(m, life, (k) => { m.material.uniforms.uProg.value = k; m.material.uniforms.uTime.value = this.time; });
   }
 
+  // A big rune circle flaring open on the ground (ultimates). map: the caster's
+  // sigil texture, white on black; color: class colour.
+  groundSigil(pos, map, color, radius = 2.6, life = 1.8) {
+    this.sigilPool ??= this._pool(4, () => {
+      const m = new THREE.Mesh(this.planeGeo, new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+      m.renderOrder = 2;
+      return m;
+    });
+    const m = this.sigilPool.get();
+    const mat = m.material;
+    if (mat.map !== map) { mat.map = map; mat.needsUpdate = true; }
+    const col = new THREE.Color(color).multiplyScalar(1.6);
+    m.position.set(pos.x, (pos.y ?? 0) + 0.05, pos.z);
+    const spin = Math.random() < 0.5 ? -1 : 1, rot0 = Math.random() * Math.PI * 2;
+    this._track(m, life, (k) => {
+      // snaps open, then drifts wider and fades
+      const open = 1 - Math.pow(1 - Math.min(k / 0.14, 1), 3);
+      m.scale.setScalar(radius * 0.5 * (0.3 + 0.7 * open + 0.12 * k));
+      m.rotation.y = rot0 + spin * (k * 2.2 + open * 0.6);
+      const a = k < 0.06 ? k / 0.06 : k < 0.55 ? 1 : 1 - (k - 0.55) / 0.45;
+      mat.color.copy(col).multiplyScalar(a * (1 + 0.6 * Math.max(0, 1 - k / 0.12)));
+    });
+    this.ring(pos, radius * 1.05, color, 0.6, 0.12);
+    this.flash(new THREE.Vector3(pos.x, (pos.y ?? 0) + 0.6, pos.z), color, 22, radius * 3.5, 0.5);
+  }
+
   // returns a handle so callers can cancel; fills over `dur`, then fades.
   telegraph(pos, opts) {
     const m = this.telePool.get();
