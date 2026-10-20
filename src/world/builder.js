@@ -431,7 +431,8 @@ export function buildLevel(level, factory, lightPool) {
       lightPool.addTorch(new THREE.Vector3(t.x, t.y, t.z), { color: t.color, intensity: t.intensity, range: t.range, flicker: 0.2 });
       flames.push({ x: t.x, y: t.y - 0.4, z: t.z, size: 0.5, kind: 'spores' });
     } else if (t.type === 'chandelier') {
-      lightPool.addTorch(new THREE.Vector3(t.x, t.y, t.z), { color: 0xffb060, intensity: t.intensity * 3, range: t.range, flicker: 0.4 });
+      // chandeliers are a hall's key light: a mild priority over wall sconces, hung low enough to light the floor
+      lightPool.addTorch(new THREE.Vector3(t.x, t.y - 0.6, t.z), { color: 0xffb060, intensity: t.intensity * 3, range: t.range + 4, flicker: 0.4, priority: 0.45 });
     }
   }
 

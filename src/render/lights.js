@@ -40,7 +40,7 @@ export class LightPool {
       seed: Math.random() * 100,
       flicker: opts.flicker ?? 1,
       // arena centrepieces (throne, boss braziers) win a light slot from further away
-      priority: opts.priority ? 0.15 : 1,
+      priority: typeof opts.priority === 'number' ? opts.priority : opts.priority ? 0.15 : 1,
       enabled: true,
       d2: 0,
     };
