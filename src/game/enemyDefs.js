@@ -192,6 +192,25 @@ export const ENEMY_DEFS = {
     armor: 0.3, frontShield: 0.4,
   },
 
+  gildedSentinel: {
+    name: 'Gilded Sentinel', hp: 420, speed: 3.0, dmg: 24, cost: 8, ai: 'melee', poise: 260, gold: 10, sound: 'armor_clank', deathSound: 'skeleton_death', hitSound: 'enemy_hit_armor', undead: true,
+    attacks: [
+      { id: 'bash', kind: 'lunge', range: 2.6, arc: 1.3, windup: 0.75, recover: 0.9, anim: 'bash', leap: 8, kb: 14, st: { stun: 0.4 } },
+      { id: 'slam', kind: 'melee', range: 2.9, arc: 1.0, windup: 0.9, recover: 0.8, anim: 'slam', dmgMult: 1.3, cd: 4 },
+    ],
+    // a tower shield turns most frontal damage: flank it, stun it, or go over it with area spells
+    armor: 0.15, frontShield: 0.8,
+  },
+  hollowBannerman: {
+    name: 'Hollow Bannerman', hp: 160, speed: 3.4, dmg: 10, cost: 6, ai: 'support', range: [5, 11], poise: 60, gold: 9, sound: 'skeleton_rattle', deathSound: 'skeleton_death', hitSound: 'enemy_hit_bone', undead: true,
+    attacks: [
+      { id: 'jab', kind: 'melee', range: 2.4, arc: 1.2, windup: 0.45, recover: 0.6, anim: 'jab' },
+      { id: 'rally', kind: 'heal', rally: true, radius: 9, amount: 36, shield: true, windup: 1.0, recover: 0.8, anim: 'rally', cd: 9 },
+    ],
+    // its war-banner empowers every foe within 9 m (+30% damage, +15% speed): kill it first
+    aura: { radius: 9, dmg: 1.3, speed: 1.15 },
+  },
+
   // ----------------------------------------------------------- ALLIES (summons)
   skeletonMinion: {
     name: 'Risen Servant', hp: 80, speed: 5.0, dmg: 14, cost: 0, ai: 'melee', poise: 30, model: 'skeleton', ally: true, tint: 0x40ff60,

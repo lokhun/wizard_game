@@ -456,6 +456,15 @@ export class ActorManager {
       P.glow({ x: x + Math.cos(ang) * r * 1.2, y: y + 0.1, z: z + Math.sin(ang) * r * 1.2, vx: -Math.sin(ang) * 1.2, vy: rand(0.8, 1.8), vz: Math.cos(ang) * 1.2, r: col[0], g: col[1], b: col[2], life: 0.9, size: 0.09, sprite: SPR.SPARK, drag: 1 });
     }
     if (a.elite && !a.def.elite) g.lights.request(_v.set(x, y + h * 0.5, z), 0xffa040, 2.5, 4);
+    if ((m & ST.empower) && Math.random() < dt * 10) {
+      const ang = Math.random() * Math.PI * 2;
+      P.glow({ x: x + Math.cos(ang) * r, y: y + 0.05, z: z + Math.sin(ang) * r, vy: rand(1.2, 2.2), r: 1.6, g: 0.5, b: 2.4, life: 0.8, size: 0.07, sprite: SPR.SPARK, drag: 0.5 });
+    }
+    if (a.def.aura && Math.random() < dt * 6) {
+      // the banner's reach, traced on the ground
+      const ang = Math.random() * Math.PI * 2, R = a.def.aura.radius;
+      P.glow({ x: x + Math.cos(ang) * R, y: y + 0.08, z: z + Math.sin(ang) * R, vy: 0.5, r: 1.2, g: 0.4, b: 1.9, life: 1.2, size: 0.12, sprite: SPR.GLOW });
+    }
     if (!m) return;
     if (m & ST.burn && Math.random() < dt * 30) P.glow({ x: x + rand(-r, r), y: y + rand(0.2, h), z: z + rand(-r, r), vy: rand(1, 2.2), r: 4, g: 1.5, b: 0.3, r2: 1, g2: 0.15, b2: 0.02, life: rand(0.3, 0.6), size: 0.3, size2: 0.05, sprite: SPR.FLAME, drag: 1 });
     if (m & ST.burn) g.lights.request(_v.set(x, y + h * 0.6, z), 0xff6020, 3, 4);
@@ -552,6 +561,11 @@ export class ActorManager {
     a.dotAcc = dotAcc;
     // wet when standing in water
     if (!a.flying && a.pos.y < -0.2) S.wet = { t: 1.5 };
+    // war-banner aura: empowers other foes nearby while the bearer lives
+    if (a.def.aura && a.faction === 'enemy') {
+      const R2 = a.def.aura.radius * a.def.aura.radius;
+      for (const b of this._hostiles) if (b !== a && (b.pos.x - a.pos.x) ** 2 + (b.pos.z - a.pos.z) ** 2 < R2) b.st.empower = { t: 0.5 };
+    }
     a.mask = statusMask(S);
     a.stacks.poison = S.poison?.t > 0 ? S.poison.n : 0;
     a.stacks.chill = S.chill?.t > 0 ? S.chill.n : 0;
@@ -689,7 +703,7 @@ export class ActorManager {
     const dist = Math.hypot(dx, dz);
     const tRad = tgt.radius ?? 0.4;
     const faceYaw = Math.atan2(dx, dz);
-    const speed = def.speed * mm * (a.affix === 'hasted' ? 1.4 : 1) * a.speedMult;
+    const speed = def.speed * mm * (a.affix === 'hasted' ? 1.4 : 1) * a.speedMult * (a.mask & ST.empower ? 1.15 : 1);
 
     if (a.state === 'windup') {
       a.yaw = angleDamp(a.yaw, faceYaw, a.attack.kind === 'charge' ? 2 : 8, dt);
@@ -799,7 +813,9 @@ export class ActorManager {
       case 'nova': return reach < at.radius * 0.7;
       case 'circle': return los && dist < 22 && (at.ahead ? reach < at.ahead + at.radius * 0.5 : true);
       case 'shoot': case 'lob': return los && dist < 26 && dist > 2.5;
-      case 'heal': return this._hostiles.some((b) => b !== a && b.hp < b.maxHp * 0.75 && b.pos.distanceTo(a.pos) < at.radius);
+      case 'heal':
+        if (at.rally) return this._hostiles.filter((b) => b !== a && b.pos.distanceTo(a.pos) < at.radius).length >= 2;
+        return this._hostiles.some((b) => b !== a && b.hp < b.maxHp * 0.75 && b.pos.distanceTo(a.pos) < at.radius);
       case 'summon': return this._hostiles.length < 14;
       case 'blink': return (dist < 4 || dist > 18) && Math.random() < 0.5;
       default: return false;
@@ -811,7 +827,7 @@ export class ActorManager {
     this._setState(a, 'windup', at.anim === 'cast' || at.kind === 'heal' || at.kind === 'summon' ? 'cast' : 'windup', at);
     a.attackType = at.anim ?? 'swing';
     a.atkTarget = { x: tgt.pos.x, y: tgt.pos.y, z: tgt.pos.z };
-    const dmg = a.dmg * (at.dmgMult ?? 1);
+    const dmg = a.dmg * (at.dmgMult ?? 1) * (a.mask & ST.empower ? 1.3 : 1);
     const yaw = Math.atan2(tgt.pos.x - a.pos.x, tgt.pos.z - a.pos.z);
     a.yaw = yaw;
     // telegraphs are broadcast now so they resolve at the strike moment

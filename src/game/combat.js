@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 
 export const ST = {
-  burn: 1, chill: 2, frozen: 4, shock: 8, poison: 16, hex: 32, bleed: 64, slow: 128, stun: 256, wet: 512, root: 1024, mark: 2048,
+  burn: 1, chill: 2, frozen: 4, shock: 8, poison: 16, hex: 32, bleed: 64, slow: 128, stun: 256, wet: 512, root: 1024, mark: 2048, empower: 4096,
 };
 export const ST_NAMES = Object.keys(ST);
 
@@ -23,6 +23,7 @@ export const STATUS_INFO = {
   wet: { color: '#4080ff', label: 'Wet' },
   root: { color: '#a0d040', label: 'Rooted' },
   mark: { color: '#ffd860', label: 'Judged' },
+  empower: { color: '#b060ff', label: 'Empowered' },
 };
 
 export const REACTIONS = {
