@@ -62,7 +62,7 @@ void main(){
   if (uMode == 0) { // circle
     float d = length(p);
     inside = step(d, 1.0);
-    edge = smoothstep(0.88, 0.97, d) * inside;
+    edge = smoothstep(0.93, 0.985, d) * inside;
     fill = step(d, uProg) * inside;
     float ringF = smoothstep(uProg - 0.04, uProg, d) * step(d, uProg) * inside;
     // faint interior that strengthens toward the edge; the edge and sweep carry the read
@@ -78,7 +78,7 @@ void main(){
     float d = length(p);
     float a = abs(atan(p.x, p.y));
     inside = step(d, 1.0) * step(a, uAngle);
-    edge = (smoothstep(0.9, 0.98, d) + smoothstep(uAngle - 0.06, uAngle, a)) * inside;
+    edge = (smoothstep(0.94, 0.985, d) + smoothstep(uAngle - 0.04, uAngle, a)) * inside;
     fill = step(d, uProg) * inside * (0.05 + 0.13 * d * d) + smoothstep(uProg - 0.04, uProg, d) * step(d, uProg) * inside * 0.8;
   }
   float pulse = 0.55 + 0.2 * sin(uTime * 14.0);
