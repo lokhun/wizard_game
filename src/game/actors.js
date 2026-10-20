@@ -172,6 +172,22 @@ export class ActorManager {
     a.jv[3] -= (dirX * rx + dirZ * rz) * amp;
   }
 
+  // Melee wind-ups have no ground telegraph, so they get a tell: a glint at the head,
+  // the creature's own voice, and an edge-of-screen marker when it's behind you.
+  _windupTell(a) {
+    if (a.faction !== 'enemy' || a.boss || a.def.range) return;
+    const g = this.g;
+    const y = a.pos.y + a.height * 0.86;
+    g.vfx.P.glow({ x: a.pos.x, y, z: a.pos.z, r: 2.6, g: 1.9, b: 1.2, life: 0.22, size: 0.32, size2: 0.04, sprite: SPR.STAR, spin: 4 });
+    const p = g.player;
+    if (!p || p.dead) return;
+    const dx = a.pos.x - p.pos.x, dz = a.pos.z - p.pos.z, d = Math.hypot(dx, dz);
+    if (d > 12) return;
+    if ((a._tellT ?? 0) < g.time) { a._tellT = g.time + 1.2; g.audio?.play(a.def.sound ?? 'swing', { pos: a.pos, volume: 0.55 }); }
+    const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
+    if (d < 7 && (fx * dx + fz * dz) / Math.max(d, 0.01) < 0.35) g.ui?.damageDirection(a.pos);
+  }
+
   remove(a) {
     this._disposeModel(a);
     const i = this.list.indexOf(a);
@@ -405,6 +421,8 @@ export class ActorManager {
           m.root.rotation.x = j[0]; m.root.rotation.z = j[1];
           if (Math.abs(j[0]) + Math.abs(j[1]) + Math.abs(j[2]) + Math.abs(j[3]) < 1e-3) { a.jv = null; m.root.rotation.x = 0; m.root.rotation.z = 0; }
         }
+        if (a.anim === 'windup' && a._prevAnim !== 'windup') this._windupTell(a);
+        a._prevAnim = a.anim;
         const frozen = (a.mask & ST.frozen) !== 0;
         const animDt = frozen ? 0 : dt * (a.mask & ST.slow ? 0.5 : 1);
         a.animT += animDt;
