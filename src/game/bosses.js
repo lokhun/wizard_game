@@ -257,7 +257,11 @@ SCRIPTS.motherOfFilth = {
           const tgts = B.players();
           const t = tgts[Math.floor(Math.random() * tgts.length)];
           if (!t) return 1;
-          const tx = t.pos.x, tz = t.pos.z;
+          // surface beside the target (toward the arena centre), never exactly on top of it
+          const room = B.data.room;
+          let ox = room ? room.cx - t.pos.x : 1, oz = room ? room.cz - t.pos.z : 0;
+          const ol = Math.hypot(ox, oz) || 1;
+          const tx = t.pos.x + (ox / ol) * 2.5, tz = t.pos.z + (oz / ol) * 2.5;
           B.circle(tx, tz, 5, 2.0, 1.4, 'enemyGreen');
           B.at(1.9, () => { B.a.pos.x = tx; B.a.pos.z = tz; B.a.net.x = tx; B.a.net.z = tz; B.anim('attack', 'slam', 0.6); B.shake(0.5); B.sound('boss_slam'); B.fx('emerge'); B.wave(2, 9, 12, 0.6, 'enemyGreen', 0.05); });
           return 3.0;

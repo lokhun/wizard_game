@@ -149,7 +149,7 @@ export class ActorManager {
     a.state = a.dormant ? 'chase' : 'spawn';
     a.anim = a.dormant ? 'idle' : 'spawn';
     a.stateT = 0;
-    if (g.isHost && !opts.silent) g.net?.broadcast({ t: 'spawn', id, ty: type, x, z, yaw: a.yaw, e: a.elite ? 1 : 0, hp: a.maxHp, f: a.faction === 'ally' ? 1 : 0, af: a.affix, life: a.life, nf: spawnFx ? 0 : 1, dm: a.dormant ? 1 : 0 });
+    if (g.isHost && !opts.silent) g.net?.broadcast({ t: 'spawn', id, ty: type, x, z, yaw: a.yaw, e: a.elite ? 1 : 0, hp: a.maxHp, f: a.faction === 'ally' ? 1 : 0, af: a.affix, life: a.life, nf: spawnFx ? 0 : 1, dm: a.dormant ? 1 : 0, hr: a.homeRoom ? a.homeRoom.id : -1 });
     if (a.boss) a.brain = new BossBrain(g, a);
     this._rebuildLists();
     return a;
@@ -182,6 +182,7 @@ export class ActorManager {
     a.wakeAt = 0;
     a.retargetT = 0;
     const g = this.g;
+    if (g.isHost) g.net?.broadcast({ t: 'wake', id: a.id });
     g.audio?.play(a.def.sound ?? 'beast_growl', { pos: a.pos, volume: 0.7 });
     g.ui?.floatText(new THREE.Vector3(a.pos.x, a.pos.y + a.height + 0.3, a.pos.z), '!', '#ff6040', true);
     if (!alert) return;
@@ -223,7 +224,12 @@ export class ActorManager {
     if (a.state === 'spawn' && a.stateT < 0.3 && !a.boss) return 0;
     let dmg = H.dmg ?? 0;
     const def = a.def;
-    if (a.dormant) this.wake(a);
+    if (a.dormant) {
+      // the opener: hitting an unaware sentry lands hard
+      dmg *= 1.5;
+      this.g.ui?.floatText(new THREE.Vector3(a.pos.x, a.pos.y + a.height + 0.6, a.pos.z), 'UNAWARE ×1.5', '#ffd070');
+      this.wake(a);
+    }
     if (def.armor) dmg *= 1 - def.armor;
     if (def.frontShield && H.kbDir) {
       // blocked from the front
@@ -316,7 +322,10 @@ export class ActorManager {
   deathFx(a, el) {
     const g = this.g;
     const c = new THREE.Vector3(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z);
-    g.cancelHazardsFrom?.(a.id, new THREE.Vector3(a.pos.x, a.pos.y + a.height + 0.4, a.pos.z));
+    const tagPos = new THREE.Vector3(a.pos.x, a.pos.y + a.height + 0.4, a.pos.z);
+    const cut = g.cancelHazardsFrom?.(a.id, tagPos) ?? 0;
+    // melee swings have no hazard to cancel, but cutting one short still deserves the callout
+    if (!cut && a.state === 'windup' && !a.boss) g.ui?.floatText(tagPos, 'INTERRUPTED', '#e8c070');
     g.audio?.play(a.def.deathSound ?? 'enemy_death', { pos: c });
     g.audio?.play('kill', { volume: 0.4 });
     const s = Math.max(0.6, a.height / 1.8);
@@ -399,6 +408,7 @@ export class ActorManager {
     for (let i = this.list.length - 1; i >= 0; i--) {
       const a = this.list[i];
       if (a.dead) {
+        if (a._laserBeam) { a._laserBeam.release(0.05); a._laserBeam = null; }
         a.deadT += dt;
         a.animT += dt;
         a.progress = Math.min(1, a.deadT / 1.1);
@@ -441,6 +451,7 @@ export class ActorManager {
           m.root.rotation.x = j[0]; m.root.rotation.z = j[1];
           if (Math.abs(j[0]) + Math.abs(j[1]) + Math.abs(j[2]) + Math.abs(j[3]) < 1e-3) { a.jv = null; m.root.rotation.x = 0; m.root.rotation.z = 0; }
         }
+        if (a._laserBeam && (g.time > a._laserEnd || a.anim !== 'windup')) { a._laserBeam.release(0.05); a._laserBeam = null; }
         if (a.anim === 'windup' && a._prevAnim !== 'windup') this._windupTell(a);
         a._prevAnim = a.anim;
         const frozen = (a.mask & ST.frozen) !== 0;
@@ -478,12 +489,12 @@ export class ActorManager {
     if (a.elite && !a.def.elite) g.lights.request(_v.set(x, y + h * 0.5, z), 0xffa040, 2.5, 4);
     if ((m & ST.empower) && Math.random() < dt * 10) {
       const ang = Math.random() * Math.PI * 2;
-      P.glow({ x: x + Math.cos(ang) * r, y: y + 0.05, z: z + Math.sin(ang) * r, vy: rand(1.2, 2.2), r: 1.6, g: 0.5, b: 2.4, life: 0.8, size: 0.07, sprite: SPR.SPARK, drag: 0.5 });
+      P.glow({ x: x + Math.cos(ang) * r, y: y + 0.05, z: z + Math.sin(ang) * r, vy: rand(1.2, 2.2), r: 2.2, g: 1.4, b: 0.35, life: 0.8, size: 0.07, sprite: SPR.SPARK, drag: 0.5 });
     }
-    if (a.def.aura && Math.random() < dt * 6) {
-      // the banner's reach, traced on the ground
+    if (a.def.aura && Math.random() < dt * 14) {
+      // the banner's reach, traced on the ground in gold (it must read against purple halls)
       const ang = Math.random() * Math.PI * 2, R = a.def.aura.radius;
-      P.glow({ x: x + Math.cos(ang) * R, y: y + 0.08, z: z + Math.sin(ang) * R, vy: 0.5, r: 1.2, g: 0.4, b: 1.9, life: 1.2, size: 0.12, sprite: SPR.GLOW });
+      P.glow({ x: x + Math.cos(ang) * R, y: y + 0.08, z: z + Math.sin(ang) * R, vy: 0.4, r: 1.8, g: 1.2, b: 0.3, life: 1.4, size: 0.14, sprite: SPR.GLOW });
     }
     if (!m) return;
     if (m & ST.burn && Math.random() < dt * 30) P.glow({ x: x + rand(-r, r), y: y + rand(0.2, h), z: z + rand(-r, r), vy: rand(1, 2.2), r: 4, g: 1.5, b: 0.3, r2: 1, g2: 0.15, b2: 0.02, life: rand(0.3, 0.6), size: 0.3, size2: 0.05, sprite: SPR.FLAME, drag: 1 });
@@ -633,9 +644,14 @@ export class ActorManager {
     for (const p of g.allPlayers()) {
       if (!p.alive || p.dead) continue;
       const dx = a.pos.x - p.pos.x, dz = a.pos.z - p.pos.z;
-      const rr = a.radius + 0.4;
+      // shields and big weapons stick out past the body radius: keep those further from the camera
+      const rr = a.radius + (a.def.frontShield || a.boss || (a.def.cost ?? 0) >= 8 ? 0.85 : 0.4);
       const d2 = dx * dx + dz * dz;
-      if (d2 < rr * rr && d2 > 1e-6) { const d = Math.sqrt(d2); mx += dx / d * (rr - d) * 0.5; mz += dz / d * (rr - d) * 0.5; }
+      if (d2 < rr * rr) {
+        const d = Math.sqrt(d2);
+        const nx = d > 1e-3 ? dx / d : -Math.sin(a.yaw), nz = d > 1e-3 ? dz / d : -Math.cos(a.yaw);
+        mx += nx * (rr - d) * 0.5; mz += nz * (rr - d) * 0.5;
+      }
     }
     if (mx || mz) {
       let r = g.collision.move(a.pos.x, a.pos.z, a.pos.y, mx, mz, Math.min(a.radius, 0.9));
@@ -695,13 +711,13 @@ export class ActorManager {
     if (a.dormant) {
       a.anim = 'idle';
       // sentries glance about; they notice a player who comes close or into plain view
-      a.yaw += Math.sin(g.time * 0.4 + a.id) * dt * 0.35;
+      a.yaw += Math.sin(g.time * 0.4 + a.id) * dt * 0.15;
       a.dormantT = (a.dormantT ?? 0) - dt;
       if (a.wakeAt && g.time >= a.wakeAt) this.wake(a);
       else if (a.dormantT <= 0) {
         a.dormantT = 0.25;
         const A = g.director.active;
-        if (A && a.homeRoom && A.room === a.homeRoom && A.t > 5) this.wake(a);
+        if (A && a.homeRoom && A.room === a.homeRoom && A.t > 8) this.wake(a);
         for (const p of g.allPlayers()) {
           if (!p.alive || p.dead) continue;
           const d = Math.hypot(p.pos.x - a.pos.x, p.pos.z - a.pos.z);
@@ -1012,9 +1028,15 @@ export class ActorManager {
     if (!t) return;
     const m = this.muzzlePos(a);
     const end = new THREE.Vector3(t.x, (t.y ?? 0) + 1.1, t.z);
+    // aimed at us: stop short of the camera so the sight line never floods the view
+    const cam = g.renderer.camera.position;
+    if (end.distanceTo(cam) < 1.5) {
+      const d = m.distanceTo(end);
+      if (d > 2.5) end.lerp(m, 2 / d);
+    }
     if (!a._laserBeam) {
-      a._laserBeam = g.vfx.beam({ color: [2.5, 0.1, 0.05], core: [3, 0.4, 0.2], width: 0.012, noise: 0 });
-      setTimeout(() => { a._laserBeam?.release(0.05); a._laserBeam = null; }, ((a.attackDef ?? a.attack)?.windup ?? 0.8) * 1000);
+      a._laserBeam = g.vfx.beam({ color: [1.2, 0.06, 0.03], core: [1.3, 0.25, 0.12], width: 0.012, noise: 0 });
+      a._laserEnd = g.time + ((a.attackDef ?? a.attack)?.windup ?? 0.8);
     }
     a._laserBeam.alpha = 0.5 + 0.5 * Math.sin(g.time * 30);
     a._laserBeam.update(m, end, 0.012);

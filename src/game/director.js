@@ -34,6 +34,12 @@ const SQUADS = {
   vanguard:   { slots: [['heavy', 1, 1], ['ranged', 1, 2]], fill: 'fodder' },
   crossfire:  { slots: [['ranged', 2, 3], ['skirmisher', 1, 2]], fill: 'line' },
 };
+// Does this actor take part in the fight in `room`? (shared by the encounter and the HUD)
+export function fightsHere(a, room) {
+  if (a.faction !== 'enemy' || (a.dead && !a.collapsed) || a.dormant) return false;
+  return !a.homeRoom || !room || a.homeRoom === room;
+}
+
 // roles that hang back: they spawn far from the party and away from the action
 const BACKLINE = new Set(['ranged', 'caster']);
 
@@ -48,9 +54,7 @@ export class Director {
     this.level = level;
     this.active = null;
     this.rng = new RNG(level.seed * 13 + level.floorIndex);
-    // about half the fight rooms have their first squad already on guard, so the party
-    // can scout through the doorway and choose its opening
-    for (const r of level.rooms) if (r.type === ROOM.COMBAT && this.rng.chance(0.5)) r.sentries = true;
+    // sentry rooms (room.sentries / room.camp) are chosen by the level generator
   }
 
   // place a room's first squad, idle, when the party draws near
@@ -58,10 +62,23 @@ export class Director {
     room.sentriesPlaced = true;
     room.plannedWaves = this._planWaves(room);
     room.sentryIds = [];
+    const camp = room.camp;
+    let k = 0;
     for (const s of room.plannedWaves[0] ?? []) {
-      const p = this._spawnPoint(room, s.role);
-      const a = this.spawnEnemy(s.type, p.x, p.z, { elite: s.elite, affix: s.affix, dormant: true, homeRoom: room, spawnFx: false });
+      // gathered round the camp brazier, facing the fire (archers and casters a step further out)
+      let p = null;
+      if (camp) {
+        for (let t = 0; t < 12 && !p; t++) {
+          const ang = (k * 2.399) + t * 0.6, r = (BACKLINE.has(s.role) ? 4.2 : 2.4) + this.rng.next() * 1.4;
+          const x = camp.x + Math.cos(ang) * r, z = camp.z + Math.sin(ang) * r;
+          if (this.level.roomAt(x, z) === room && !this.g.collision.pushOut(x, z, 0.6) && !this.g.collision.cellBlocked(Math.floor(x / T), Math.floor(z / T), 0.5)) p = { x, z };
+        }
+      }
+      p ??= this._spawnPoint(room, s.role);
+      const yaw = camp ? Math.atan2(camp.x - p.x, camp.z - p.z) : undefined;
+      const a = this.spawnEnemy(s.type, p.x, p.z, { elite: s.elite, affix: s.affix, dormant: true, homeRoom: room, spawnFx: false, yaw });
       room.sentryIds.push(a.id);
+      k++;
     }
   }
 
@@ -88,8 +105,8 @@ export class Director {
     const g = this.g;
     const L = this.level;
     if (!L) return;
-    // sentry squads appear (idle) as the party approaches their room
-    for (const room of L.rooms) {
+    // sentry squads appear (idle) as the party approaches their room (never mid-fight)
+    if (!this.active) for (const room of L.rooms) {
       if (!room.sentries || room.sentriesPlaced || room.cleared) continue;
       const R = Math.max(room.w, room.h) * T * 0.5 + 14;
       if (g.allPlayers().some((p) => p.alive && Math.hypot(p.pos.x - room.cx, p.pos.z - room.cz) < R)) this._placeSentries(room);
@@ -283,8 +300,9 @@ export class Director {
       const a = g.actors.byId.get(id);
       if (a && (!a.dead || a.collapsed)) alive++;
     }
-    // also count any hostile actor inside the room (summons etc.)
-    for (const a of g.actors.list) if (a.faction === 'enemy' && (!a.dead || a.collapsed) && !A.spawned.has(a.id)) alive++;
+    // also count other hostiles that belong to this fight (summons etc.), but never the
+    // sleeping or leashed sentries of other rooms: they would hold these doors shut forever
+    for (const a of g.actors.list) if (fightsHere(a, A.room) && !A.spawned.has(a.id)) alive++;
     const wave = A.waves[A.waveIdx];
     if (!A.boss && wave && A.waveIdx < A.waves.length - 1) {
       // next wave when the current one is mostly dead, or after a long time

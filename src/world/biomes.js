@@ -3,7 +3,7 @@
 
 export const BIOMES = [
   {
-    id: 'sewers', rim: 0x5a8a66,
+    id: 'sewers', rim: 0x9ab890, rimK: 0.8,
     name: 'The Drowned Sewers',
     subtitle: 'Beneath the Ashen Keep',
     wall: 'sewerWall',
@@ -15,7 +15,7 @@ export const BIOMES = [
     ceilCorr: 4.5,
     outdoor: false,
     water: true,
-    fog: { color: 0x0a120c, density: 0.045 },
+    fog: { color: 0x0a120c, density: 0.034 },
     ambient: { sky: 0x2a3a30, ground: 0x0a0806, intensity: 0.5 },
     torchColor: 0xff8a35,
     grade: { lift: [0.004, 0.012, 0.008], gain: [0.96, 1.02, 0.9], saturation: 0.8, exposure: 1.0, bloom: 0.7 },

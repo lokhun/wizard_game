@@ -108,7 +108,7 @@ export class Game {
     if (this.viewmodel) { this.renderer.viewScene.remove(this.viewmodel.root); this.viewmodel.dispose?.(); }
     this.viewmodel = getViewModel(classId, this);
     this.renderer.viewScene.add(this.viewmodel.root);
-    this.selfLight.color.set(CLASS_META[classId].color);
+    this.selfLight.color.set(0xffe2c4).lerp(new THREE.Color(CLASS_META[classId].color), 0.3);
   }
 
   addRemote(p) {
@@ -220,7 +220,7 @@ export class Game {
     for (const r of this.remotes.values()) { r.pos.set(s.x, 0, s.z); r.net.x = s.x; r.net.z = s.z; }
     level.startRoom.visited = true;
     this._buildDoorSigns();
-    setEnemyRim(b.rim ?? 0x806a60, 0.45);
+    setEnemyRim(b.rim ?? 0x806a60, b.rimK ?? 0.45);
     this.audio?.setAmbience(b.id);
     this.audio?.setMusic(index === 0 ? 'explore' : 'explore');
     this.audio?.play('floor_enter');
@@ -489,15 +489,18 @@ export class Game {
     // mirror the two strongest nearby world lights into the view scene so the
     // hands are lit by real torches and spells
     const cam = this.renderer.camera;
-    const all = [...this.lights.torchLights, ...this.lights.fxLights];
-    const scored = all.filter((l) => l.intensity > 0.01).map((l) => ({ l, s: l.intensity / (1 + l.position.distanceToSquared(cam.position)) })).sort((a, b) => b.s - a.s);
+    // pick the strongest few scene lights for the hands without allocating each frame
+    const all = (this._vlAll ??= [...this.lights.torchLights, ...this.lights.fxLights]);
+    const scored = (this._vlScored ??= all.map((l) => ({ l, s: 0 })));
+    for (const e of scored) e.s = e.l.intensity > 0.01 ? e.l.intensity / (1 + e.l.position.distanceToSquared(cam.position)) : -1;
+    scored.sort((a, b) => b.s - a.s);
     const inv = cam.matrixWorldInverse;
     for (let i = 0; i < this.viewLights.length; i++) {
       const vl = this.viewLights[i];
-      const src = scored[i]?.l;
+      const src = scored[i]?.s > 0 ? scored[i].l : null;
       if (!src) { vl.intensity = 0; continue; }
       const d = src.position.distanceTo(cam.position);
-      const local = src.position.clone().applyMatrix4(inv);
+      const local = _v.copy(src.position).applyMatrix4(inv);
       local.setLength(Math.min(2.5, Math.max(0.8, d * 0.3)));
       vl.position.copy(local);
       vl.color.copy(src.color);
@@ -1127,7 +1130,11 @@ export class Game {
     this.interactables.push(it);
   }
 
-  onWave(n, of) { this.ui?.wave(n, of); }
+  onWave(n, of) {
+    // a new wave replaces the room banner (SENTRIES / AMBUSH) rather than sitting under it
+    if (n > 1 && this.ui?.h?.banner) { this.ui.h.banner.classList.remove('show'); this.ui.bannerT = 0; }
+    this.ui?.wave(n, of);
+  }
 
   addPing(msg) {
     const pl = this.playerById(msg.pid);
@@ -1147,6 +1154,11 @@ export class Game {
 
   onBossKilled(a) {
     if (this.isHost) {
+      // the boss's court crumbles with it: no adds left standing during the victory beat
+      for (const b of [...this.actors.list]) {
+        if (b === a || b.faction !== 'enemy' || b.dead) continue;
+        this.spells.after(0.15 + Math.random() * 0.5, () => { if (!b.dead) { b.hp = 0; this.actors.kill(b, 0, 'holy'); } }); // holy: skeletons don't reassemble
+      }
       this.net?.broadcast({ t: 'bossdead', id: a.id });
       this.bossDefeated(a.id);
     }

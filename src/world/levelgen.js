@@ -321,7 +321,7 @@ function decorateRoom(level, room, rng) {
     const prop = { type, x: wx, z: wz, rot: extra.rot ?? rng.range(0, Math.PI * 2), ...extra };
     if (type === 'barrel' || type === 'crate') {
       // some barrels are powder kegs: break one near a pack and it goes up in flames
-      if (type === 'barrel' && !isBoss && rng.chance(0.22)) type = 'keg';
+      if (type === 'barrel' && !isBoss && (extra.keg || rng.chance(0.22))) type = 'keg';
       // destructible clutter: gets a collider and a stable index for co-op sync
       prop.breakable = level.breakables.length;
       const c = { x: wx, z: wz, r: type === 'crate' ? 0.45 : 0.42, h: 1.05, breakable: prop.breakable };
@@ -584,6 +584,14 @@ function decorateRoom(level, room, rng) {
       addPillar(level, (x + 2) * T, (y + i + 0.5) * T, 0.8, 'pillarGrand');
       addPillar(level, (x + w - 2) * T, (y + i + 0.5) * T, 0.8, 'pillarGrand');
     }
+    // colonnade gallery: two inner rows of pillars split the hall into three aisles
+    if (!isBoss && w >= 12 && h >= 10 && rng.chance(0.5)) {
+      room.layout = 'colonnade';
+      for (let i = 3; i < h - 3; i += 3) {
+        addPillar(level, (x + Math.round(w * 0.3) + 0.5) * T, (y + i + 0.5) * T, 0.7, 'pillarGrand');
+        addPillar(level, (x + Math.round(w * 0.7) - 0.5) * T, (y + i + 0.5) * T, 0.7, 'pillarGrand');
+      }
+    }
     if (isBoss) {
       // raised dais with the throne at the north end
       setRect(level, Math.floor(cx) - 4, y + 1, 8, 4, (i) => { level.kind[i] = K_DAIS; level.hgt[i] = 0.6; });
@@ -660,6 +668,40 @@ function decorateRoom(level, room, rng) {
       if (level.colliders.some((c) => c.r && Math.hypot(c.x - wx, c.z - wz) < c.r + rad + 1.6)) continue;
       addPillar(level, wx, wz, rad, kind, { rot: rng.range(0, Math.PI * 2), cover: true });
       if (b.id === 'sewers') P('rubble', wx + rng.range(-1, 1), wz + rng.range(-1, 1));
+      placed++;
+    }
+  }
+
+  // ---------------- sentry camps: about half the fight rooms have their first squad
+  // gathered around a lit brazier, visible from the doorway, so the party can scout
+  if (room.type === ROOM.COMBAT && w >= 9 && h >= 9 && rng.chance(0.5)) {
+    for (let t = 0; t < 20; t++) {
+      const sp = randFloorSpot(3);
+      if (!sp) continue;
+      const i = level.idx(Math.floor(sp[0] / T), Math.floor(sp[1] / T));
+      if (level.kind[i] === K_ALT || level.kind[i] === K_WATER) continue;
+      if (level.colliders.some((c) => Math.hypot((c.x ?? 1e9) - sp[0], (c.z ?? 1e9) - sp[1]) < (c.r || 0.5) + 2.6)) continue;
+      addPillar(level, sp[0], sp[1], 0.5, 'brazierFloor');
+      level.torches.push({ x: sp[0], y: level.hgt[i] + 1.1, z: sp[1], type: 'brazier', intensity: 26, range: 13, priority: 0.6 });
+      room.sentries = true;
+      room.camp = { x: sp[0], z: sp[1] };
+      break;
+    }
+  }
+
+  // ---------------- powder kegs out on the fighting floor (not just against the walls),
+  // so every fight offers a chance to lure a pack and set one off
+  if ((room.type === ROOM.COMBAT || room.type === ROOM.ELITE) && w >= 9 && h >= 9) {
+    const want = rng.int(1, 2);
+    let placed = 0;
+    for (let t = 0; t < 20 && placed < want; t++) {
+      const sp = randFloorSpot(2);
+      if (!sp) continue;
+      const i = level.idx(Math.floor(sp[0] / T), Math.floor(sp[1] / T));
+      if (level.kind[i] === K_ALT || level.kind[i] === K_WATER) continue;
+      if (Math.hypot(sp[0] - cx * T, sp[1] - cy * T) < 3) continue;
+      if (level.colliders.some((c) => Math.hypot((c.x ?? 1e9) - sp[0], (c.z ?? 1e9) - sp[1]) < (c.r || 0.5) + 1.6)) continue;
+      P('barrel', sp[0], sp[1], { keg: true });
       placed++;
     }
   }

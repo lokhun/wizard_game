@@ -308,7 +308,8 @@ export function createViewModel(classId, ctx) {
   // light near the focus
   // class light: hovers in front of the focus head, toward the camera, so it
   // lights the focus and both hands without blowing out the shaft
-  const light = new THREE.PointLight(F.light?.color ?? meta.color, 0.8, 2, 2);
+  // mostly warm white with a hint of the class colour: a pure tint this close reads as dyed skin
+  const light = new THREE.PointLight(new THREE.Color(0xffe2c4).lerp(new THREE.Color(F.light?.color ?? meta.color), 0.3), 0.8, 2, 2);
   root.add(light);
   const lightAnchor = F.lightAnchor ?? muzzle;
   const lightOffset = V(-0.14, -0.18, 0.26);

@@ -5,6 +5,7 @@ import { CLASS_META, ELEMENT_COLORS } from '../game/classMeta.js';
 import { RARITY } from '../game/upgrades.js';
 import { ROOM, T } from '../world/levelgen.js';
 import { BIOMES } from '../world/biomes.js';
+import { fightsHere } from '../game/director.js';
 
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 const KEYS = { primary: 'LMB', secondary: 'RMB', ability1: 'Q', ability2: 'E', ultimate: 'R' };
@@ -13,6 +14,10 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 // ---------------------------------------------------------------------------
 // DOM UI + a 2D canvas overlay for damage numbers and health bars.
 // ---------------------------------------------------------------------------
+// cached DOM writes: skip when the value hasn't changed
+function setText(el, v) { if (el && el._t !== v) { el._t = v; el.textContent = v; } }
+function setStyle(el, k, v) { if (!el) return; const c = (el._s ??= {}); if (c[k] !== v) { c[k] = v; el.style[k] = v; } }
+
 export class UI {
   constructor(root, renderer, input, audio) {
     this.root = root;
@@ -331,24 +336,25 @@ export class UI {
     if (!this.h || !game.player) return;
     const p = game.player;
     const h = this.h;
-    // health
+    // health (DOM writes only when a value changes: the HUD updates every frame)
     const hpPct = Math.max(0, p.hp / p.maxHp) * 100;
-    h.hp.style.width = hpPct + '%';
-    h.hpLag.style.width = hpPct + '%';
-    h.hpShield.style.left = '0';
-    h.hpShield.style.width = Math.min(100, (p.shield / p.maxHp) * 100) + '%';
-    h.hpTxt.textContent = p.downed ? `DOWNED ${Math.ceil(p.downT)}s` : p.dead ? 'SLAIN' : `${Math.ceil(p.hp)} / ${p.maxHp}${p.shield > 0 ? ` (+${Math.ceil(p.shield)})` : ''}`;
+    setStyle(h.hp, 'width', hpPct.toFixed(1) + '%');
+    setStyle(h.hpLag, 'width', hpPct.toFixed(1) + '%');
+    setStyle(h.hpShield, 'width', Math.min(100, (p.shield / p.maxHp) * 100).toFixed(1) + '%');
+    setText(h.hpTxt, p.downed ? `DOWNED ${Math.ceil(p.downT)}s` : p.dead ? 'SLAIN' : `${Math.ceil(p.hp)} / ${p.maxHp}${p.shield > 0 ? ` (+${Math.ceil(p.shield)})` : ''}`);
     // dash
     const pips = p.stats.dashCharges;
     if (h.dash.children.length !== pips) h.dash.innerHTML = '<i></i>'.repeat(pips);
-    [...h.dash.children].forEach((el, i) => el.classList.toggle('on', i < p.dashCharges));
+    if (this._dashOn !== p.dashCharges + pips * 10) {
+      this._dashOn = p.dashCharges + pips * 10;
+      [...h.dash.children].forEach((el, i) => el.classList.toggle('on', i < p.dashCharges));
+    }
     // class resource
     let res = '';
     if (p.classId === 'spellblade') res = `EDGE ${'◆'.repeat(p.edge)}${'◇'.repeat(5 - p.edge)}`;
     else if (p.classId === 'stormcaller') res = p.staticReady ? 'STATIC CHARGED ⚡' : '';
     else if (p.classId === 'bloodmage' && p.hp / p.maxHp < 0.4) res = 'FRENZY';
-    else if (p.selfRevives > 0 && game.isSolo) res = '';
-    h.res.textContent = res;
+    setText(h.res, res);
     // buffs
     const bk = p.buffs.map((b) => b.id + Math.ceil(b.t)).join() + (p.hasteT > 0 ? 'h' + Math.ceil(p.hasteT) : '');
     if (bk !== this._buffKey) {
@@ -357,33 +363,32 @@ export class UI {
       h.buffs.innerHTML = p.buffs.map((b) => `<div class="buff">${iconSVG(b.id === 'stoneskin' ? 'stoneskin' : b.id === 'bloodpact' ? 'pact' : b.id === 'timestop' ? 'hourglass' : 'power', col, 20)}<span class="t">${Math.ceil(b.t)}</span></div>`).join('')
         + (p.hasteT > 0 ? `<div class="buff">${iconSVG('speed', '#40e0c8', 20)}<span class="t">${Math.ceil(p.hasteT)}</span></div>` : '');
     }
-    // ability slots
+    // ability slots (child elements looked up once)
     for (const s of SLOTS) {
       const el = h.slots[s];
+      const q = (el._q ??= { cd: el.querySelector('.cd'), cdtxt: el.querySelector('.cdtxt'), charges: el.querySelector('.charges'), ult: el.querySelector('.ult-fill') });
       const sp = p.cls.spells[s];
       let pctCd = 0, txt = '';
       if (s === 'ultimate') {
-        el.querySelector('.ult-fill').style.height = `${p.ult}%`;
-        el.classList.toggle('ready-ult', p.ult >= 100);
+        setStyle(q.ult, 'height', `${Math.floor(p.ult)}%`);
+        if (el._ready !== (p.ult >= 100)) { el._ready = p.ult >= 100; el.classList.toggle('ready-ult', el._ready); }
         txt = p.ult >= 100 ? '' : `${Math.floor(p.ult)}%`;
-        el.querySelector('.cdtxt').style.fontSize = '13px';
-      } else if (s === 'primary') {
-        pctCd = 0;
-      } else {
+        setStyle(q.cdtxt, 'fontSize', '13px');
+      } else if (s !== 'primary') {
         const maxCh = sp.charges ?? 1;
         if (p.chargesLeft[s] <= 0) {
           const full = p._cdOf(s) || 1;
           pctCd = (p.cds[s] / full) * 100;
           txt = p.cds[s] > 0 ? (p.cds[s] < 1 ? p.cds[s].toFixed(1) : Math.ceil(p.cds[s])) : '';
         }
-        el.querySelector('.charges').textContent = maxCh > 1 ? p.chargesLeft[s] : '';
+        if (q.charges) setText(q.charges, maxCh > 1 ? String(p.chargesLeft[s]) : '');
       }
-      el.querySelector('.cd').style.setProperty('--p', pctCd + '%');
-      el.querySelector('.cdtxt').textContent = txt;
-      el.style.opacity = p.channel && p.channel.slot === s ? 1 : 1;
+      const pv = pctCd.toFixed(1) + '%';
+      if (q.cd && q.cd._p !== pv) { q.cd._p = pv; q.cd.style.setProperty('--p', pv); }
+      setText(q.cdtxt, String(txt));
     }
     // gold
-    h.gold.textContent = Math.floor(p.gold);
+    setText(h.gold, String(Math.floor(p.gold)));
     // team
     const team = [...game.remotes.values()];
     const tk = team.map((r) => `${r.id}${Math.ceil(r.hp)}${r.downed}${r.dead}${r.maxHp}`).join();
@@ -404,7 +409,8 @@ export class UI {
     // objective
     const room = game.level.roomAt(p.pos.x, p.pos.z);
     let obj = '';
-    const foes = game.actors.list.reduce((n, a) => n + (a.faction === 'enemy' && (!a.dead || a.collapsed) ? 1 : 0), 0);
+    const fightRoom = game.director.active?.room ?? room;
+    const foes = game.actors.list.reduce((n, a) => n + (fightsHere(a, fightRoom) ? 1 : 0), 0);
     const locked = game.director.active || (room && !room.cleared && foes > 0);
     if (locked) obj = game.actors.list.some((a) => a.boss && !a.dead) ? 'Defeat the guardian' : `Survive the ambush — ${foes} foe${foes === 1 ? '' : 's'} remain`;
     else if (room?.type === ROOM.BOSS && room.cleared) obj = 'Step through the portal to ascend';
@@ -545,7 +551,7 @@ export class UI {
       }
       // status pips
       let px = s.x - w / 2;
-      for (const [k, col] of [[1, '#ff7a30'], [2, '#7fd8ff'], [4, '#c8f4ff'], [8, '#9fb4ff'], [16, '#9adf3a'], [32, '#c050ff'], [64, '#ff3048'], [128, '#40e0c8']]) {
+      for (const [k, col] of [[1, '#ff7a30'], [2, '#7fd8ff'], [4, '#c8f4ff'], [8, '#9fb4ff'], [16, '#9adf3a'], [32, '#c050ff'], [64, '#ff3048'], [128, '#40e0c8'], [4096, '#ffc040']]) {
         if (a.mask & k) { g.fillStyle = col; g.fillRect(px, s.y + hgt + 2, 6, 3); px += 8; }
       }
       g.globalAlpha = 1;
