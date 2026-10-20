@@ -3,7 +3,7 @@ import { TextureFactory } from '../render/textures.js';
 import { LightPool } from '../render/lights.js';
 import { Particles, SPR } from '../render/particles.js';
 import { VFX, fxOf } from '../render/vfx.js';
-import { generateLevel, ROOM, T, K_ALT, K_WATER } from '../world/levelgen.js';
+import { generateLevel, ROOM, T, K_ALT, K_WATER, WATER_Y } from '../world/levelgen.js';
 import { buildLevel } from '../world/builder.js';
 import { Collision } from '../world/collision.js';
 import { BIOMES } from '../world/biomes.js';
@@ -22,6 +22,8 @@ import { sigilTexture } from './models/wizard/sigil.js';
 import { ENEMY_DEFS, BOSS_DEFS } from './enemyDefs.js';
 import { rand } from '../core/rng.js';
 import { clamp } from '../core/math.js';
+
+const WADE_C = [0.16, 0.22, 0.22]; // ripple rings on channel water
 
 // ---------------------------------------------------------------------------
 // Game: owns the world for one run and wires every system together.
@@ -541,6 +543,21 @@ export class Game {
       vl.color.copy(src.color);
       vl.intensity = src.intensity * 0.25 / (1 + d * 0.15);
     }
+  }
+
+  // anything wading through channel water trails rings and the odd splash
+  wadeFx(e, speed, dt, r) {
+    const L = this.level;
+    const ci = L.idx(Math.floor(e.pos.x / T), Math.floor(e.pos.z / T));
+    if (L.kind[ci] !== K_WATER) return;
+    e._wadeT = (e._wadeT ?? Math.random() * 0.4) - dt * Math.min(speed, 6) / 3;
+    if (e._wadeT > 0) return;
+    e._wadeT = 0.5 + Math.random() * 0.2;
+    // skip what nobody is near enough to notice
+    const cam = this.renderer.camera.position;
+    if ((cam.x - e.pos.x) ** 2 + (cam.z - e.pos.z) ** 2 > 600) return;
+    this.vfx.ring({ x: e.pos.x, y: WATER_Y - 0.05, z: e.pos.z }, r + 0.45, WADE_C, 1.1, 0.07);
+    if (Math.random() < 0.5) this.vfx.burst(new THREE.Vector3(e.pos.x, WATER_Y, e.pos.z), { count: 4, speed: 1.6, upward: 1, gravity: 9, life: 0.35, size: 0.045, sprite: SPR.DROP, color: [0.5, 0.6, 0.6], solid: true });
   }
 
   _dashCol() {

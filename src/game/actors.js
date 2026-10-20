@@ -459,6 +459,7 @@ export class ActorManager {
         const animDt = frozen ? 0 : dt * (a.mask & ST.slow ? 0.5 : 1);
         a.animT += animDt;
         m.update(animDt, { anim: a.anim, t: a.animT, speed: a.moveSpeed ?? 0, progress: a.progress, attackType: a.attackType });
+        if ((a.moveSpeed ?? 0) > 0.5 && a.pos.y < 0) g.wadeFx(a, a.moveSpeed, dt, a.radius ?? 0.5);
         if (a.hitFlash > 0) { m.flash?.(a.hitFlash); a.hitFlash = 0; }
         // status tint
         const tint = frozen ? 0xa8e8ff : (a.mask & ST.burn) ? 0xff7a30 : (a.mask & ST.poison) ? 0x90e030 : (a.mask & ST.chill) ? 0x80c8ff : (a.mask & ST.hex) ? 0xa040ff : null;

@@ -13,6 +13,8 @@ export const T = 2; // cell size in metres
 export const SOLID = 0, FLOOR = 1, BLOCK = 2;
 // floor "kinds" pick materials and footstep sounds
 export const K_MAIN = 0, K_ALT = 1, K_WATER = 2, K_DAIS = 3;
+// channel water surface height (the bed sits below it)
+export const WATER_Y = -0.25;
 
 const BLOCKSZ = 20; // macro block size in cells
 

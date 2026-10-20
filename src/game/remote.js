@@ -101,6 +101,7 @@ export class RemotePlayer {
     this.pitch += (n.pitch - this.pitch) * k;
     this.alive = !this.dead;
     const speed = Math.hypot(this.vel.x, this.vel.z);
+    if (speed > 0.5 && this.pos.y < 0) this.game.wadeFx(this, speed, dt, 0.5);
     this.castT = Math.max(0, this.castT - dt);
     const av = this.avatar;
     av.root.position.copy(this.pos);
