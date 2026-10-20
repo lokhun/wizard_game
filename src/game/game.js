@@ -543,12 +543,29 @@ export class Game {
     }
   }
 
+  _dashCol() {
+    if (!this._dashColC || this._dashColFor !== this.player.classId) {
+      const c = new THREE.Color(CLASS_META[this.player.classId]?.color ?? 0xffffff).lerp(new THREE.Color(0xffffff), 0.35);
+      this._dashColC = [c.r * 0.6, c.g * 0.6, c.b * 0.6];
+      this._dashColFor = this.player.classId;
+    }
+    return this._dashColC;
+  }
+
   _postFx(dt) {
     const g = this.renderer.grade.uniforms;
     const p = this.player;
     const lowHp = p.alive && !p.downed ? clamp(1 - p.hp / p.maxHp, 0, 1) : 1;
-    g.uDamage.value = clamp(p.hurtPulse * 0.8 + Math.max(0, lowHp - 0.6) * 1.2 * (0.7 + 0.3 * Math.sin(this.time * 6)), 0, 1);
+    if (p.downed) {
+      // bleeding out: a slow heartbeat at the edges of a drained, grey view
+      const beat = Math.pow(Math.max(0, Math.sin(this.time * 4.2)), 8);
+      g.uDamage.value = clamp(0.16 + beat * 0.22 + p.hurtPulse * 0.3, 0, 1);
+    } else g.uDamage.value = clamp(p.hurtPulse * 0.8 + Math.max(0, lowHp - 0.6) * 1.2 * (0.7 + 0.3 * Math.sin(this.time * 6)), 0, 1);
     g.uHeal.value = Math.max(0, (this.healPulse ?? 0));
+    // dash / blink speed smear: held while dashing, then eases off
+    this.dashFx = p.dashT > 0 ? Math.max(this.dashFx ?? 0, 1) : Math.max(0, (this.dashFx ?? 0) - dt * 4.5);
+    g.uDash.value = this.dashFx * 0.85;
+    if (this.dashFx > 0) g.uDashCol.value.set(...this._dashCol());
     this.healPulse = Math.max(0, (this.healPulse ?? 0) - dt * 1.5);
     g.uDesat.value = p.downed || p.dead ? 0.85 : 0;
     if (this.tint.t > 0) {

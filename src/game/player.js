@@ -81,6 +81,8 @@ export class LocalPlayer {
     this.lookDelta = { x: 0, y: 0 };
     this.bob = 0;
     this.landDip = 0;
+    this.downK = 0; this.downV = 0; // eased slump when downed (spring, so it lands with a thud)
+    this.leanK = 0;
     this.kills = 0;
     this.damageDealt = 0;
     this.hasteT = 0;
@@ -89,7 +91,7 @@ export class LocalPlayer {
     this.lastDamageT = 0;
   }
 
-  get eye() { return new THREE.Vector3(this.pos.x, this.pos.y + EYE - this.landDip * 0.15 + (this.downed ? -1.0 : 0), this.pos.z); }
+  get eye() { return new THREE.Vector3(this.pos.x, this.pos.y + EYE - this.landDip * 0.15 - this.downK * 1.0, this.pos.z); }
 
   spawnAt(x, z, yaw = 0) {
     this.history.length = 0;
@@ -257,6 +259,7 @@ export class LocalPlayer {
     this.dashVel.copy(dir).setY(0).normalize().multiplyScalar(dist / dur);
     this.invuln = Math.max(this.invuln, opts.invuln ?? 0.2);
     this.game.vfx.addFovKick(6);
+    if (this.game.player === this) this.game.dashFx = 1;
   }
 
   blink(dir, dist) {
@@ -274,6 +277,7 @@ export class LocalPlayer {
     this.pos.y = Math.max(this.pos.y, g.groundY(x, z));
     this.invuln = Math.max(this.invuln, 0.25);
     g.vfx.addFovKick(10);
+    if (g.player === this) g.dashFx = 1.3;
     return this.pos.clone();
   }
 
@@ -403,6 +407,13 @@ export class LocalPlayer {
     this.parryT = Math.max(0, this.parryT - dt);
     this.hurtPulse = Math.max(0, this.hurtPulse - dt * 1.5);
     this.landDip = Math.max(0, this.landDip - dt * 4);
+    // collapse to the floor (slightly underdamped: it bottoms out, then settles); rise smoothly
+    {
+      const target = this.downed ? 1 : 0;
+      const k = this.downed ? 90 : 40, c = this.downed ? 11 : 13;
+      this.downV += (k * (target - this.downK) - c * this.downV) * dt;
+      this.downK = clamp(this.downK + this.downV * dt, -0.1, 1.08);
+    }
     if (this.shieldT > 0) { this.shieldT -= dt; if (this.shieldT <= 0) this.shield = 0; }
     if (this.hasteT > 0) { this.hasteT -= dt; if (this.hasteT <= 0) this.recomputeStats(); }
     let buffsChanged = false;
@@ -663,8 +674,11 @@ export class LocalPlayer {
     const sr = Math.sin(time * 29.3 + 2) * tr * 0.03;
     const r = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
     cam.position.set(eye.x + r.x * bx, eye.y + by - 0.03, eye.z + r.z * bx);
-    const downRoll = this.downed ? 0.35 : 0;
-    cam.rotation.set(this.pitch + sy, this.yaw + sx, sr + downRoll, 'YXZ');
+    const downRoll = this.downK * 0.35;
+    // lean a touch into strafes
+    const side = this.vel.x * r.x + this.vel.z * r.z;
+    this.leanK = damp(this.leanK, this.grounded ? clamp(side / 7, -1, 1) : 0, 8, dt);
+    cam.rotation.set(this.pitch + sy, this.yaw + sx, sr + downRoll - this.leanK * 0.018, 'YXZ');
     const targetFov = this.game.renderer.baseFov + vfx.fovKick + (this.dashT > 0 ? 6 : 0) + (this.speedNorm ?? 0) * 2;
     cam.fov = damp(cam.fov, targetFov, 12, dt);
     cam.updateProjectionMatrix();

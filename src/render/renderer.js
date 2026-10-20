@@ -24,6 +24,8 @@ const GradeShader = {
     uDesat: { value: 0 },
     uTint: { value: new THREE.Vector3(1, 1, 1) },
     uFlash: { value: new THREE.Vector3(0, 0, 0) },
+    uDash: { value: 0 },
+    uDashCol: { value: new THREE.Vector3(1, 1, 1) },
     uRes: { value: new THREE.Vector2(1, 1) },
   },
   vertexShader: /* glsl */ `
@@ -32,8 +34,8 @@ const GradeShader = {
   `,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
-    uniform float uTime, uVignette, uGrain, uDamage, uHeal, uAberration, uSaturation, uDesat;
-    uniform vec3 uLift, uGain, uTint, uFlash;
+    uniform float uTime, uVignette, uGrain, uDamage, uHeal, uAberration, uSaturation, uDesat, uDash;
+    uniform vec3 uLift, uGain, uTint, uFlash, uDashCol;
     uniform vec2 uRes;
     varying vec2 vUv;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
@@ -46,6 +48,15 @@ const GradeShader = {
       col.r = texture2D(tDiffuse, uv - dc * ab * (1.0 + r2 * 4.0)).r;
       col.g = texture2D(tDiffuse, uv).g;
       col.b = texture2D(tDiffuse, uv + dc * ab * (1.0 + r2 * 4.0)).b;
+      // dash: the edges of the view smear toward the centre and class-tinted
+      // speed streaks race outward; the centre stays sharp so aim is kept
+      float dashEdge = 0.0;
+      if (uDash > 0.002) {
+        dashEdge = smoothstep(0.12, 0.62, length(dc)) * uDash;
+        vec3 acc = col;
+        for (int i = 1; i <= 4; i++) acc += texture2D(tDiffuse, uv - dc * (float(i) * 0.035 * dashEdge)).rgb;
+        col = mix(col, acc * 0.2, min(1.0, dashEdge * 1.4));
+      }
       // lift / gain grade (warm highlights, cool shadows)
       col = col * uGain + uLift * (1.0 - clamp(col, 0.0, 1.0));
       float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
@@ -59,6 +70,13 @@ const GradeShader = {
       float edge = smoothstep(0.25, 0.75, length(dc) * 1.4);
       col = mix(col, vec3(0.55, 0.0, 0.0) + col * 0.4, uDamage * edge * 0.85);
       col += vec3(0.1, 0.4, 0.15) * uHeal * edge;
+      if (dashEdge > 0.0) {
+        float ang = atan(dc.y, dc.x);
+        float lane = floor(ang * 64.0);
+        float run = fract(length(dc) * 1.6 - uTime * 4.0 + hash(vec2(lane, 3.1)));
+        float streak = step(0.9, hash(vec2(lane, 7.7))) * smoothstep(0.0, 0.5, run) * (1.0 - run) * smoothstep(0.3, 0.6, length(dc));
+        col += uDashCol * streak * dashEdge * 0.28;
+      }
       // film grain
       float g = hash(uv * uRes + fract(uTime * 13.37) * 100.0) - 0.5;
       col += g * uGrain * (0.35 + l);

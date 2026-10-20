@@ -12,6 +12,32 @@ import { segPointDist2 } from '../core/math.js';
 
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
+const _ta = new THREE.Vector3(), _ts = new THREE.Vector3(), _tn = new THREE.Vector3();
+
+// tracer streak: hot head at x = 1, fading tail toward x = 0, soft across y
+function streakTexture() {
+  const W = 128, H = 32, c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const img = g.createImageData(W, H);
+  for (let y = 0; y < H; y++) {
+    const v = (y + 0.5) / H * 2 - 1;
+    for (let x = 0; x < W; x++) {
+      const u = x / (W - 1);
+      // narrows toward the tail; the head end is rounded off
+      const w = 0.25 + 0.75 * u;
+      const across = Math.exp(-(v * v) / (w * w * 0.18));
+      const along = Math.pow(u, 1.6) * Math.min(1, (1 - u) * 14 + 0.2);
+      const k = Math.min(1, across * along * 1.3);
+      const o = (y * W + x) * 4;
+      img.data[o] = img.data[o + 1] = img.data[o + 2] = k * 255; img.data[o + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  return t;
+}
 
 function glowTexture() {
   const c = document.createElement('canvas');
@@ -57,6 +83,19 @@ export class SpellRuntime {
     this.spriteMats = new Map();
     this.meshCache = {};
     this._buildMeshes();
+    // fast projectiles draw a streak along their path so they read in flight
+    this.tracerGeo = new THREE.PlaneGeometry(1, 1).translate(-0.5, 0, 0);
+    this.tracerTex = streakTexture();
+    this.tracerMats = new Map();
+  }
+
+  _tracerMat(el) {
+    if (this.tracerMats.has(el)) return this.tracerMats.get(el);
+    const fx = fxOf(el);
+    const c = clampHDR([fx.mid[0] * 0.5 + fx.core[0] * 0.4, fx.mid[1] * 0.5 + fx.core[1] * 0.4, fx.mid[2] * 0.5 + fx.core[2] * 0.4], 1.3);
+    const m = nearFade(new THREE.MeshBasicMaterial({ map: this.tracerTex, color: new THREE.Color(c[0], c[1], c[2]), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, side: THREE.DoubleSide, fog: false }));
+    this.tracerMats.set(el, m);
+    return m;
   }
 
   _buildMeshes() {
@@ -186,6 +225,15 @@ export class SpellRuntime {
       group.add(mesh);
       proj.mesh = mesh;
       proj.spin = p.spin ?? (p.mesh === 'rock' || p.mesh === 'meteor' || p.mesh === 'boulder' ? 6 : 0);
+    }
+    if (p.tracer !== false && proj.vel.length() >= 18) {
+      const t = new THREE.Mesh(this.tracerGeo, this._tracerMat(proj.el));
+      t.matrixAutoUpdate = false;
+      t.frustumCulled = false;
+      t.visible = false;
+      group.add(t);
+      proj.tracer = t;
+      proj.tracerW = Math.max(0.09, coreSize * 0.34) * (p.tracerW ?? 1);
     }
     this.g.scene.add(group);
     proj.group = group;
@@ -425,7 +473,31 @@ export class SpellRuntime {
       else if (p.vel.lengthSq() > 0.01) p.mesh.lookAt(_v.copy(p.pos).add(p.vel));
     }
     if (p.sprite) p.sprite.material.rotation += dt;
+    if (p.tracer) this._tracer(p);
     if (p.lightI > 0) g.lights.request(p.pos, p.lightColor, p.lightI, 7);
+  }
+
+  // stretch the streak back along the velocity (never past where the shot
+  // started) and turn its face toward the camera around that axis
+  _tracer(p) {
+    const t = p.tracer;
+    const speed = p.vel.length();
+    const len = Math.min(speed * 0.045, 2.2, p.age * speed);
+    if (speed < 4 || len < 0.05) { t.visible = false; return; }
+    t.visible = true;
+    _ta.copy(p.vel).divideScalar(speed);
+    _tn.copy(this.g.renderer.camera.position).sub(p.pos);
+    _ts.crossVectors(_ta, _tn);
+    if (_ts.lengthSq() < 1e-8) { t.visible = false; return; }
+    _ts.normalize();
+    _tn.crossVectors(_ts, _ta);
+    const w = p.tracerW;
+    t.matrix.set(
+      _ta.x * len, _ts.x * w, _tn.x, 0,
+      _ta.y * len, _ts.y * w, _tn.y, 0,
+      _ta.z * len, _ts.z * w, _tn.z, 0,
+      0, 0, 0, 1);
+    t.matrixWorldNeedsUpdate = true;
   }
 
   _remove(i) {
