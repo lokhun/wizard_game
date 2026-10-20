@@ -186,6 +186,7 @@ export class Game {
     this.hemi.groundColor.set(b.ambient.ground);
     this.hemi.intensity = b.ambient.intensity * 3;
     this.baseHemi = this.hemi.intensity;
+    this._victoryLight = false;
     this.moon.intensity = b.moon ? b.moon.intensity * 1.6 : 0;
     const shadows = !!b.moon && this.renderer.renderer.shadowMap.enabled;
     this.moon.castShadow = shadows;
@@ -460,6 +461,13 @@ export class Game {
     this._updateDoorSigns(realDt);
     this._ambient(realDt);
     this.critters?.update(dt, this.time, this.renderer.camera.position, this.allPlayers());
+    // big boss arenas outgrow the light pool: lift the ambient a little while you stand in one
+    if (this.baseHemi && !this.ended && !this._victoryLight) {
+      const br = this.level.bossRoom, pp = this.player.pos;
+      const inArena = br && this.level.roomAt(pp.x, pp.z) === br && !this.biome.outdoor;
+      const want = this.baseHemi * (inArena ? 1.9 : 1);
+      this.hemi.intensity += (want - this.hemi.intensity) * Math.min(1, realDt * 1.5);
+    }
 
     // camera & lighting
     const cam = this.renderer.camera;
@@ -1200,7 +1208,8 @@ export class Game {
       this.screenTint([1.35, 1.25, 1.0], 3);
       // the eclipse lifts: torches return to warm light
       for (const t of this.lights.torches) { t.intensity *= 2; t.color.set(0xffb060); }
-      this.hemi.intensity = this.baseHemi * 1.6;
+      this.hemi.intensity = this.baseHemi * 2.4;
+      this._victoryLight = true;
       const c = new THREE.Vector3(room.cx, this.groundY(room.cx, room.cz) + 3, room.cz);
       for (let i = 0; i < 6; i++) this.spells.after(i * 0.35, () => this.vfx.explosion(c.clone().add(new THREE.Vector3(rand(-6, 6), rand(0, 4), rand(-6, 6))), 'holy', 4));
       this.spells.after(4.5, () => this.victory());

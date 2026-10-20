@@ -338,8 +338,8 @@ export function materialLib(factory) {
       if (d.cracks) m.userData.cracks = { lo: d.crackLo ?? 0.045, hi: d.crackHi ?? 0.012 };
     } else if (key === 'slime') {
       const t = factory.get('dirt', 512, 13);
-      m = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.16, metalness: 0.0, normalMap: t.normalMap, normalScale: new THREE.Vector2(0.3, 0.3), transparent: true, opacity: 0.5, depthWrite: false, emissive: 0x0b2a06, emissiveIntensity: 1 });
-      m.envMap = env; m.envMapIntensity = 1.4;
+      m = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.16, metalness: 0.0, normalMap: t.normalMap, normalScale: new THREE.Vector2(0.3, 0.3), transparent: true, opacity: 0.5, depthWrite: false, emissive: 0x071a04, emissiveIntensity: 1 });
+      m.envMap = env; m.envMapIntensity = 1.0;
     } else if (key === 'ghost') {
       const t = factory.get('cloth', 512, 14);
       m = new THREE.MeshStandardMaterial({ map: t.map, color: 0xffffff, vertexColors: true, roughness: 0.9, metalness: 0, transparent: true, opacity: 0.62, depthWrite: false, side: THREE.DoubleSide, emissive: 0x123a40, emissiveIntensity: 1 });

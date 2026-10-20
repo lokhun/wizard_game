@@ -648,7 +648,7 @@ export class ActorManager {
       if (!p.alive || p.dead) continue;
       const dx = a.pos.x - p.pos.x, dz = a.pos.z - p.pos.z;
       // shields and big weapons stick out past the body radius: keep those further from the camera
-      const rr = a.radius + (a.def.frontShield || a.boss || (a.def.cost ?? 0) >= 8 ? 0.85 : 0.4);
+      const rr = a.radius + (a.def.frontShield || a.boss || (a.def.cost ?? 0) >= 8 || a.def.splitInto || a.def.model === 'slime' ? 0.85 : 0.4);
       const d2 = dx * dx + dz * dz;
       if (d2 < rr * rr) {
         const d = Math.sqrt(d2);
