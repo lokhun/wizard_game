@@ -599,6 +599,11 @@ export class Game {
     // local feedback
     if (dmg > 0) {
       a.hitFlash = res.crit ? 1 : 0.7;
+      // a flinch away from the caster, bigger for crits and chunky hits (not for damage over time)
+      if (H.tag !== 'dot') {
+        const pp = this.player.pos, dx = a.pos.x - pp.x, dz = a.pos.z - pp.z, dl = Math.hypot(dx, dz) || 1;
+        this.actors.jolt(a, dx / dl, dz / dl, (res.crit ? 1 : 0.55) * Math.min(1, 0.35 + (dmg / a.maxHp) * 5));
+      }
       if (!H.noNumber) this.ui?.damageNumber(pos, dmg, elShow, res.crit, H.tag === 'dot');
       if (H.tag !== 'dot') {
         this.ui?.hitmarker(res.crit, a.hp - dmg <= 0);

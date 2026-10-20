@@ -160,6 +160,18 @@ export class ActorManager {
     }
   }
 
+  // Hit flinch: an angular impulse on a damped spring, applied as a lean of the whole
+  // model in the push direction (cheap, works for every rig, and stacks with poses).
+  jolt(a, dirX, dirZ, k = 1) {
+    if (!a.model || a.dead) return;
+    const amp = (a.boss ? 1.5 : 8.5) * k / (1 + (a.def.poise ?? 20) / 80);
+    const fx = Math.sin(a.yaw), fz = Math.cos(a.yaw);
+    const rx = Math.cos(a.yaw), rz = -Math.sin(a.yaw);
+    a.jv = a.jv ?? [0, 0, 0, 0]; // pitch, roll, pitchVel, rollVel
+    a.jv[2] += (dirX * fx + dirZ * fz) * amp;
+    a.jv[3] -= (dirX * rx + dirZ * rz) * amp;
+  }
+
   remove(a) {
     this._disposeModel(a);
     const i = this.list.indexOf(a);
@@ -381,6 +393,16 @@ export class ActorManager {
         const m = a.model;
         m.root.position.copy(a.pos);
         m.root.rotation.y = a.yaw;
+        if (a.jv) {
+          // damped spring back to upright
+          const j = a.jv, h = Math.min(dt, 1 / 30);
+          j[2] += (-170 * j[0] - 16 * j[2]) * h; j[3] += (-170 * j[1] - 16 * j[3]) * h;
+          j[0] += j[2] * h; j[1] += j[3] * h;
+          j[0] = Math.max(-0.35, Math.min(0.35, j[0])); j[1] = Math.max(-0.3, Math.min(0.3, j[1]));
+          m.root.rotation.order = 'YXZ';
+          m.root.rotation.x = j[0]; m.root.rotation.z = j[1];
+          if (Math.abs(j[0]) + Math.abs(j[1]) + Math.abs(j[2]) + Math.abs(j[3]) < 1e-3) { a.jv = null; m.root.rotation.x = 0; m.root.rotation.z = 0; }
+        }
         const frozen = (a.mask & ST.frozen) !== 0;
         const animDt = frozen ? 0 : dt * (a.mask & ST.slow ? 0.5 : 1);
         a.animT += animDt;
