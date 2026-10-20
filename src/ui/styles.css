@@ -36,7 +36,10 @@ canvas#game { position: fixed; inset: 0; width: 100vw; height: 100vh; display: b
 }
 .panel::before { top: -2px; left: -2px; border-width: 2px 0 0 2px; }
 .panel::after { bottom: -2px; right: -2px; border-width: 0 2px 2px 0; }
-.title { font-family: 'Cinzel Decorative', var(--serif); letter-spacing: 0.08em; color: var(--bronze-hi); text-shadow: 0 0 18px rgba(255, 170, 70, 0.35), 0 2px 0 #000; }
+.title { font-family: 'Cinzel', var(--serif); font-weight: 600; letter-spacing: 0.08em; color: var(--bronze-hi); text-shadow: 0 0 18px rgba(255, 170, 70, 0.35), 0 2px 0 #000; }
+/* the decorative face is kept for the logo and the end screen only: its quirky
+   joined capitals read as glitches at HUD sizes */
+.title.logo { font-family: 'Cinzel Decorative', var(--serif); font-weight: 400; }
 .subtitle { font-family: var(--serif); color: var(--text-dim); letter-spacing: 0.3em; text-transform: uppercase; font-size: 13px; }
 .btn {
   font-family: var(--serif); font-size: 17px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text);
@@ -84,7 +87,7 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .card .crole { font-size: 11px; color: var(--text-dim); }
 .card .taken { position: absolute; top: 4px; right: 6px; font-size: 10px; color: var(--gold); font-family: var(--serif); }
 #classSelect .detail { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; padding: 20px 24px; max-width: min(480px, 36vw); margin-left: auto; align-self: flex-end; }
-#classSelect .detail h2 { font-family: 'Cinzel Decorative', var(--serif); font-size: 40px; margin: 0; letter-spacing: 0.06em; }
+#classSelect .detail h2 { font-family: 'Cinzel', var(--serif); font-weight: 600; font-size: 40px; margin: 0; letter-spacing: 0.06em; }
 #classSelect .detail .ctitle { font-family: var(--serif); color: var(--text-dim); letter-spacing: 0.2em; font-size: 13px; text-transform: uppercase; margin-bottom: 10px; }
 #classSelect .detail .blurb { font-size: 17px; line-height: 1.45; margin-bottom: 12px; }
 .ability-list { display: flex; flex-direction: column; gap: 7px; }
@@ -100,7 +103,7 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 
 /* ---------- lobby */
 #lobby .lobby-box { width: min(720px, 92vw); padding: 28px 34px; display: flex; flex-direction: column; gap: 16px; }
-#lobby .code { font-family: 'Cinzel Decorative', var(--serif); font-size: 46px; letter-spacing: 0.25em; color: var(--gold); text-shadow: 0 0 22px rgba(240,192,80,0.4); text-align: center; }
+#lobby .code { font-family: 'Cinzel', var(--serif); font-weight: 600; font-size: 46px; letter-spacing: 0.25em; color: var(--gold); text-shadow: 0 0 22px rgba(240,192,80,0.4); text-align: center; }
 #lobby .players { display: flex; flex-direction: column; gap: 8px; }
 #lobby .prow { display: flex; align-items: center; gap: 14px; padding: 8px 12px; background: rgba(0,0,0,0.35); border: 1px solid #2a221b; }
 #lobby .prow .pname { font-family: var(--serif); font-size: 17px; flex: 1; }
@@ -163,7 +166,7 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .team .tm.down .row { color: #ff5050; }
 
 .floor-info { position: absolute; left: 28px; top: 24px; }
-.floor-info .fname { font-family: 'Cinzel Decorative', var(--serif); font-size: 20px; color: var(--bronze-hi); text-shadow: 0 2px 4px #000; letter-spacing: 0.06em; }
+.floor-info .fname { font-family: 'Cinzel', var(--serif); font-weight: 600; font-size: 20px; color: var(--bronze-hi); text-shadow: 0 2px 4px #000; letter-spacing: 0.06em; }
 .floor-info .fsub { font-family: var(--serif); font-size: 11.5px; letter-spacing: 0.25em; color: var(--text-dim); text-transform: uppercase; }
 .floor-info .objective { margin-top: 8px; font-size: 14px; color: var(--text); text-shadow: 0 1px 2px #000; }
 
@@ -171,7 +174,7 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .minimap.big { right: 50%; top: 50%; width: min(80vh, 80vw); height: min(80vh, 80vw); transform: translate(50%, -50%); background: rgba(8,7,6,0.9); }
 
 .boss-bar { position: absolute; left: 50%; top: 34px; transform: translateX(-50%); width: min(820px, 70vw); text-align: center; }
-.boss-bar .bname { font-family: 'Cinzel Decorative', var(--serif); font-size: 26px; color: #f0dcc0; letter-spacing: 0.1em; text-shadow: 0 0 16px rgba(255,80,40,0.5), 0 2px 3px #000; }
+.boss-bar .bname { font-family: 'Cinzel', var(--serif); font-weight: 600; font-size: 26px; color: #f0dcc0; letter-spacing: 0.1em; text-shadow: 0 0 16px rgba(255,80,40,0.5), 0 2px 3px #000; }
 .boss-bar .btitle { font-family: var(--serif); font-size: 11px; color: var(--text-dim); letter-spacing: 0.35em; text-transform: uppercase; margin-bottom: 6px; }
 .boss-bar .bar { height: 16px; border-color: #5a3a28; }
 .boss-bar .bar .fill { background: linear-gradient(180deg, #e04020, #6a0a08); }
@@ -182,7 +185,7 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .prompt .progress i { display: block; height: 100%; background: var(--gold); }
 
 .banner { position: absolute; left: 0; right: 0; top: 15.5%; text-align: center; pointer-events: none; }
-.banner .b1 { font-family: 'Cinzel Decorative', var(--serif); font-size: clamp(26px, 3.6vw, 50px); letter-spacing: 0.12em; text-shadow: 0 0 30px currentColor, 0 3px 4px #000; }
+.banner .b1 { font-family: 'Cinzel', var(--serif); font-weight: 600; font-size: clamp(26px, 3.6vw, 50px); letter-spacing: 0.12em; text-shadow: 0 0 30px currentColor, 0 3px 4px #000; }
 .banner .b2 { font-family: var(--serif); font-size: 14px; color: var(--text); letter-spacing: 0.3em; text-transform: uppercase; margin-top: 6px; text-shadow: 0 2px 3px #000; }
 .banner .line { width: 0; height: 1px; margin: 10px auto; background: linear-gradient(90deg, transparent, currentColor, transparent); transition: width 0.8s ease; }
 .banner.show .line { width: 520px; }
@@ -200,7 +203,7 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 
 /* ---------- modals */
 .modal { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; background: radial-gradient(ellipse at center, rgba(0,0,0,0.55), rgba(0,0,0,0.88)); pointer-events: auto; z-index: 20; }
-.modal h2 { font-family: 'Cinzel Decorative', var(--serif); color: var(--bronze-hi); letter-spacing: 0.1em; margin: 0 0 6px; font-size: 34px; text-shadow: 0 0 20px rgba(226,196,138,0.3); }
+.modal h2 { font-family: 'Cinzel', var(--serif); font-weight: 600; color: var(--bronze-hi); letter-spacing: 0.1em; margin: 0 0 6px; font-size: 34px; text-shadow: 0 0 20px rgba(226,196,138,0.3); }
 .modal .msub { color: var(--text-dim); font-family: var(--serif); letter-spacing: 0.25em; text-transform: uppercase; font-size: 12px; margin-bottom: 28px; }
 .choices { display: flex; gap: 22px; flex-wrap: wrap; justify-content: center; }
 .tome { width: 250px; min-height: 330px; padding: 22px 18px; display: flex; flex-direction: column; align-items: center; text-align: center; cursor: pointer; transition: all 0.18s; border: 1px solid #3a2e22; background: linear-gradient(180deg, #1d1814, #0b0908); position: relative; animation: tomeIn 0.4s ease backwards; }

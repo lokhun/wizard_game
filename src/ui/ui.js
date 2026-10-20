@@ -62,7 +62,7 @@ export class UI {
       el = document.createElement('div');
       el.id = 'loading';
       el.className = 'loading';
-      el.innerHTML = `<div class="title">Arcane Ascent</div><div class="lbar"><i></i></div><div class="ltxt"></div>`;
+      el.innerHTML = `<div class="title logo">Arcane Ascent</div><div class="lbar"><i></i></div><div class="ltxt"></div>`;
       this.root.appendChild(el);
     }
     el.querySelector('.lbar i').style.width = `${Math.round(pct * 100)}%`;
@@ -86,7 +86,7 @@ export class UI {
     el.id = 'menu';
     el.innerHTML = `
       <div class="menu-col">
-        <h1 class="title">Arcane Ascent</h1>
+        <h1 class="title logo">Arcane Ascent</h1>
         <div class="tagline">From the drowned sewers to the hollow throne</div>
         <div class="name-row"><label>WIZARD NAME</label><input class="field interactive" id="nameIn" maxlength="16" value="${esc(name)}"/></div>
         <button class="btn primary" id="bSolo">Begin the Ascent</button>
