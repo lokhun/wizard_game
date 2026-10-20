@@ -520,6 +520,9 @@ export class UI {
       if (a.hp >= a.maxHp && !a.elite && a.faction === 'enemy') continue;
       const d = a.pos.distanceTo(cam.position);
       if (d > 30) continue;
+      // no health bars through walls (line of sight re-checked a few times a second)
+      if (!(a._losT > game.time)) { a._losT = game.time + 0.2 + Math.random() * 0.1; a._los = game.collision.los(cam.position.x, cam.position.y, cam.position.z, a.pos.x, a.pos.y + a.height * 0.8, a.pos.z); }
+      if (!a._los) continue;
       const s = this._project({ x: a.pos.x, y: a.pos.y + a.height + 0.35, z: a.pos.z });
       if (!s) continue;
       const w = a.elite ? 70 : 46, hgt = a.elite ? 6 : 4;
@@ -534,7 +537,9 @@ export class UI {
         g.font = '600 11px Cinzel, serif';
         g.textAlign = 'center';
         g.fillStyle = '#ffb050';
-        g.fillText((a.affix ? a.affix.toUpperCase() + ' ' : '') + a.def.name, s.x, s.y - 5);
+        const label = (a.affix ? a.affix[0].toUpperCase() + a.affix.slice(1) + ' ' : '') + a.def.name;
+        const lw = g.measureText(label).width / 2 + 6;
+        g.fillText(label, Math.max(lw, Math.min(innerWidth - lw, s.x)), s.y - 5);
       }
       // status pips
       let px = s.x - w / 2;
@@ -570,7 +575,8 @@ export class UI {
       const k = n.t / n.life;
       const pop = n.t < 0.12 ? 1 + (1 - n.t / 0.12) * (n.crit ? 0.9 : 0.4) : 1;
       g.globalAlpha = k > 0.6 ? 1 - (k - 0.6) / 0.4 : 1;
-      const size = (n.dot ? 13 : n.crit ? 24 : 17) * pop;
+      // bigger hits read bigger
+      const size = (n.dot ? 13 : (n.crit ? 22 : 15) + Math.min(10, Math.log2(1 + n.amount / 12) * 2.5)) * pop;
       g.font = `${n.crit ? 700 : 600} ${size}px Cinzel, serif`;
       g.textAlign = 'center';
       g.lineWidth = 3;
@@ -612,10 +618,26 @@ export class UI {
   }
 
   // ---------------------------------------------------------------- feedback API
-  damageNumber(pos, amount, el, crit, dot) {
-    if (this.numbers.length > 80) this.numbers.shift();
+  // Hits on the same target within a short window merge into one rising number
+  // (damage over time accumulates for a second), so a fight isn't a cloud of 3s and 7s.
+  damageNumber(pos, amount, el, crit, dot, key) {
+    if (key != null) {
+      for (const n of this.numbers) {
+        if (n.key !== key || n.dot !== !!dot || n.t > (dot ? 1.0 : 0.3)) continue;
+        n.amount += amount;
+        n.text = String(Math.round(n.amount));
+        if (crit && !n.crit) { n.crit = true; n.color = '#ffd040'; n.life = 1.0; }
+        n.pos.copy(pos);
+        if (!dot) n.t = Math.min(n.t, 0.05);
+        return;
+      }
+    }
+    if (this.numbers.length > 60) this.numbers.shift();
     const col = crit ? '#ffd040' : dot ? 'rgba(220,210,190,0.75)' : hex(ELEMENT_COLORS[el] ?? 0xffffff);
-    this.numbers.push({ pos: pos.clone(), text: String(amount), color: col, crit, dot, t: 0, life: crit ? 1.0 : 0.8, ox: (Math.random() - 0.5) * 30 });
+    const cam = this.renderer.camera.position;
+    const seen = !this.game?.collision || this.game.collision.los(cam.x, cam.y, cam.z, pos.x, pos.y, pos.z);
+    if (!seen) return;
+    this.numbers.push({ pos: pos.clone(), amount, key, text: String(Math.round(amount)), color: col, crit, dot: !!dot, t: 0, life: dot ? 1.3 : crit ? 1.0 : 0.8, ox: (Math.random() - 0.5) * 30 });
   }
   floatText(pos, text, color = '#fff', big = false) { this.floats.push({ pos: pos.clone(), text, color, big, t: 0 }); }
   hitmarker(crit, kill) {
@@ -697,6 +719,8 @@ export class UI {
 
   // ---------------------------------------------------------------- modals
   _modal(html) {
+    // a banner fading behind a modal reads as overlapping text
+    if (this.h?.banner) { this.h.banner.classList.remove('show'); this.bannerT = 0; }
     const m = document.createElement('div');
     m.className = 'modal';
     m.innerHTML = html;

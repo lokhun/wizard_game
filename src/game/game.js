@@ -270,17 +270,34 @@ export class Game {
     if (seen >= 2) return;
     try { localStorage.setItem('arcane-ascent-tips', String(seen + 1)); } catch { /* ignore */ }
     const sp = this.player.cls.spells;
-    const tips = [
+    // shown one at a time, and never over a boss fight, a cinematic or a menu
+    this._tipQ = [
       'WASD to move · Mouse to aim · Space to jump',
       `Hold Left Click — ${sp.primary.name}`,
       `Right Click — ${sp.secondary.name}`,
       `Q — ${sp.ability1.name} · E — ${sp.ability2.name}`,
-      `R — ${sp.ultimate.name} (charges as you deal damage)`,
       'Shift to dash — you are briefly invulnerable',
-      'Sigils above doorways reveal what lies beyond',
+      'Kill an enemy mid-windup to interrupt its attack',
       'F to interact · Tab for the map · G to ping',
     ];
-    tips.forEach((t, i) => setTimeout(() => { if (!this.ended && this.floorIndex === 0) this.ui?.toast(t, '#e2c48a'); }, 2500 + i * 3800));
+    this._tipT = 2.5;
+    // contextual tips fire when they become relevant
+    this._ctxTips = { sigil: 'Sigils above doorways reveal what lies beyond', ult: `R — ${sp.ultimate.name} is ready`, keg: 'Red powder kegs explode — lure foes close, then strike' };
+  }
+
+  _updateTips(dt) {
+    if (this.ended || !this._tipQ) return;
+    const busy = this.cinematic || this.ui?.modalOpen || this.actors.list.some((a) => a.boss && !a.dead);
+    if (this._ctxTips) {
+      const p = this.player;
+      if (this._ctxTips.ult && p.ult >= 100 && !busy) { this.ui?.toast(this._ctxTips.ult, '#e2c48a'); this._ctxTips.ult = null; }
+      if (this._ctxTips.keg && this.director?.active && !busy && this.level.breakables.some((b) => b.alive && b.type === 'keg' && Math.hypot(b.x - p.pos.x, b.z - p.pos.z) < 9)) { this.ui?.toast(this._ctxTips.keg, '#e2c48a'); this._ctxTips.keg = null; }
+    }
+    if (!this._tipQ.length) return;
+    this._tipT -= dt;
+    if (this._tipT > 0 || busy) return;
+    this.ui?.toast(this._tipQ.shift(), '#e2c48a');
+    this._tipT = 4;
   }
 
   // floating sigils above doorways show what lies beyond (boss, shop, treasure...)
@@ -419,6 +436,7 @@ export class Game {
       this._updateDrops(dt);
     }
     for (const it of this.interactables) it.update?.(dt, this.time);
+    this._updateTips(realDt);
     this._updateDoorSigns(realDt);
     this._ambient(realDt);
 
@@ -598,13 +616,13 @@ export class Game {
     if (stPayload && stPayload.poison && st.poisonBonus && H.tag !== 'dot') stPayload = { ...stPayload, poison: [stPayload.poison[0], stPayload.poison[1]] };
     // local feedback
     if (dmg > 0) {
-      a.hitFlash = res.crit ? 1 : 0.7;
+      if (H.tag !== 'dot') a.hitFlash = res.crit ? 0.6 : 0.4;
       // a flinch away from the caster, bigger for crits and chunky hits (not for damage over time)
       if (H.tag !== 'dot') {
         const pp = this.player.pos, dx = a.pos.x - pp.x, dz = a.pos.z - pp.z, dl = Math.hypot(dx, dz) || 1;
         this.actors.jolt(a, dx / dl, dz / dl, (res.crit ? 1 : 0.55) * Math.min(1, 0.35 + (dmg / a.maxHp) * 5));
       }
-      if (!H.noNumber) this.ui?.damageNumber(pos, dmg, elShow, res.crit, H.tag === 'dot');
+      if (!H.noNumber) this.ui?.damageNumber(pos, dmg, elShow, res.crit, H.tag === 'dot', a.id);
       if (H.tag !== 'dot') {
         this.ui?.hitmarker(res.crit, a.hp - dmg <= 0);
         if (this.time - this.hitSoundT > 0.05) {
@@ -663,7 +681,7 @@ export class Game {
   onDotTick(a, dot) {
     const src = a.lastHitBy;
     const pos = new THREE.Vector3(a.pos.x, a.pos.y + a.height * 0.8, a.pos.z);
-    if (src === this.player.id) this.ui?.damageNumber(pos, Math.round(dot), a.st.burn?.t > 0 ? 'fire' : a.st.poison?.t > 0 ? 'poison' : 'blood', false, true);
+    if (src === this.player.id) this.ui?.damageNumber(pos, Math.round(dot), a.st.burn?.t > 0 ? 'fire' : a.st.poison?.t > 0 ? 'poison' : 'blood', false, true, a.id);
     else if (src) this.net?.sendTo(src, { t: 'dn', id: a.id, d: Math.round(dot) });
     if (src === this.player.id) { this.player.onDealtDamage(dot, false); this.stats.damage += dot; }
   }
@@ -1087,6 +1105,7 @@ export class Game {
     if (this.player.downed) this.player.revive(0.3);
     else if (this.player.alive && this.player.hp < this.player.maxHp) this.player.heal(this.player.maxHp * 0.15); // a breath of respite between fights
     this.spawnPedestal(room, room.type === ROOM.ELITE ? 1 : 0);
+    if (this._ctxTips?.sigil) { this._tipQ?.unshift(this._ctxTips.sigil); this._ctxTips.sigil = null; }
     if (this.isHost) {
       const gold = Math.round((10 + this.floorIndex * 6) * (room.type === ROOM.ELITE ? 2.5 : 1));
       this.spawnDrop('gold', new THREE.Vector3(room.cx, this.groundY(room.cx, room.cz), room.cz), gold);

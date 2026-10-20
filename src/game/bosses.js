@@ -188,7 +188,7 @@ export class BossBrain {
     if (this.data.seated) { if (a.anim !== 'idle') this.anim('idle', this.idleType(), 1); this.face(tgt, 2, dt); return out; }
     // walk toward the target
     const speed = (a.def.speed ?? 3) * mm * (phases[this.phase].speed ?? 1);
-    const want = S.keepDist ?? 3.5;
+    const want = (typeof S.keepDist === 'function' ? S.keepDist(this) : S.keepDist) ?? 3.5;
     if (dist > want) {
       this.face(tgt, 5, dt);
       out.x = Math.sin(a.yaw) * speed * dt; out.z = Math.cos(a.yaw) * speed * dt;
@@ -364,7 +364,8 @@ SCRIPTS.executioner = {
 
 // ---------------- STONE WYVERN (Gravemaw) ---------------------------------
 SCRIPTS.stoneWyvern = {
-  keepDist: 7,
+  // airborne it hangs back so it stays in the player's view instead of hovering overhead
+  keepDist: (B) => (B.data.fly ? 12 : 6),
   init(B) { B.data.fly = true; B.fx('fly', { on: 1 }); },
   modifyDamage(B, dmg) { return B.data.fly ? dmg * 0.85 : dmg; },
   phases: [

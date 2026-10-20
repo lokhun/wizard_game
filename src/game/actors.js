@@ -213,14 +213,16 @@ export class ActorManager {
       const d = Math.hypot(dx, dz);
       if (d > 0.8) { a.kb.x += dx / d * H.pull[2] * mass * 0.5; a.kb.z += dz / d * H.pull[2] * mass * 0.5; }
     }
-    // poise / stagger
-    a.poiseDmg += dmg;
-    a.poiseT = 2;
-    if (a.poiseDmg > (def.poise ?? 20) && !a.boss && a.state !== 'spawn') {
-      a.poiseDmg = 0;
-      this._setState(a, 'stagger', 'stagger');
+    // poise / stagger (damage over time wears health, not footing)
+    if (H.tag !== 'dot') {
+      a.poiseDmg += dmg;
+      a.poiseT = 2;
+      if (a.poiseDmg > (def.poise ?? 20) && !a.boss && a.state !== 'spawn') {
+        a.poiseDmg = 0;
+        this._setState(a, 'stagger', 'stagger');
+      }
+      a.hitFlash = Math.max(a.hitFlash, 0.45);
     }
-    a.hitFlash = 1;
     if (a.hp <= 0) this.kill(a, H.src, H.el);
     return dmg;
   }
@@ -524,7 +526,7 @@ export class ActorManager {
       if (S.bleed?.t > 0) dot += S.bleed.dps * 0.5;
       if (S.poison?.t > 0) dot += S.poison.dps * S.poison.n * 0.5;
       if (dot > 0) {
-        this.damage(a, { dmg: dot, el: S.burn?.t > 0 ? 'fire' : S.poison?.t > 0 ? 'poison' : 'blood', src: a.lastHitBy });
+        this.damage(a, { dmg: dot, el: S.burn?.t > 0 ? 'fire' : S.poison?.t > 0 ? 'poison' : 'blood', src: a.lastHitBy, tag: 'dot' });
         g.onDotTick?.(a, dot);
         if (a.dead) return;
       }

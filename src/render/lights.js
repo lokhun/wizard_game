@@ -39,6 +39,8 @@ export class LightPool {
       range: opts.range ?? 13,
       seed: Math.random() * 100,
       flicker: opts.flicker ?? 1,
+      // arena centrepieces (throne, boss braziers) win a light slot from further away
+      priority: opts.priority ? 0.15 : 1,
       enabled: true,
       d2: 0,
     };
@@ -62,7 +64,7 @@ export class LightPool {
     const ts = this.torches;
     for (const t of ts) {
       const dx = t.pos.x - cx, dy = t.pos.y - cy, dz = t.pos.z - cz;
-      t.d2 = t.enabled ? dx * dx + dy * dy + dz * dz : 1e12;
+      t.d2 = t.enabled ? (dx * dx + dy * dy + dz * dz) * t.priority : 1e12;
     }
     // partial selection: sort is fine for a few hundred torches
     const sorted = ts.slice().sort((a, b) => a.d2 - b.d2);

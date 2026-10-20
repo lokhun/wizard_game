@@ -18,7 +18,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: var(--text); font-family: var(--body); user-select: none; -webkit-user-select: none; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: var(--text); font-family: var(--body); user-select: none; -webkit-user-select: none; font-variant-ligatures: none; font-feature-settings: "liga" 0, "dlig" 0, "clig" 0; }
 canvas#game { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
 #ui { position: fixed; inset: 0; pointer-events: none; z-index: 2; }
 #ui .interactive, #ui button, #ui input, #ui select, #ui .card, #ui .clickable { pointer-events: auto; }
@@ -127,7 +127,8 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .bar { height: 20px; background: #0a0807; border: 1px solid #3a2e22; position: relative; overflow: hidden; box-shadow: inset 0 0 8px #000; }
 .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(180deg, #d22a2e, #7a0c12); transition: width 0.12s; }
 .bar .lag { position: absolute; left: 0; top: 0; bottom: 0; background: #e8d0a0; opacity: 0.55; transition: width 0.6s 0.25s; }
-.bar .shield { position: absolute; top: 0; bottom: 0; background: linear-gradient(180deg, rgba(255,240,180,0.9), rgba(200,170,90,0.7)); }
+/* shield is a gold strip riding on top of the bar, so full HP never looks partial */
+.bar .shield { position: absolute; left: 0; top: -6px; height: 4px; background: linear-gradient(90deg, rgba(255,240,180,0.95), rgba(220,180,90,0.85)); box-shadow: 0 0 6px rgba(255,220,140,0.6); }
 .bar .txt { position: absolute; inset: 0; text-align: center; font-family: var(--serif); font-size: 12.5px; line-height: 19px; color: #fff; text-shadow: 0 1px 2px #000; letter-spacing: 0.05em; }
 .bar.small { height: 9px; }
 .dash-pips { display: flex; gap: 5px; margin-top: 6px; }

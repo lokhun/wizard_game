@@ -405,7 +405,7 @@ function decorateRoom(level, room, rng) {
     for (let i = 0; i < rng.int(2, 5); i++) {
       const s = randFloorSpot(1); if (s) P(rng.pick(['grate', 'puddle', 'mushrooms', 'rubble']), s[0], s[1]);
     }
-    wallTorches(level, room, rng, 5);
+    wallTorches(level, room, rng, isBoss ? 3 : 4);
     // glowing fungus lights
     for (let i = 0; i < rng.int(1, 3); i++) {
       const s = edgeSpot(); if (!s) continue;
@@ -597,6 +597,12 @@ function decorateRoom(level, room, rng) {
         level.torches.push({ x: wx, y: 2.4, z: wz, type: 'brazier', color: 0x9a5cff, intensity: 14, range: 14 });
       }
       P('stainedGlass', cx * T, (y) * T + 0.1, { rot: 0, y: 7 });
+      // warm fire either side of the throne so the King stands out against the purple hall
+      for (const sx of [-5.5, 5.5]) {
+        const wx = cx * T + sx, wz = (y + 2.5) * T;
+        addPillar(level, wx, wz, 0.45, 'brazierTall');
+        level.torches.push({ x: wx, y: 2.4, z: wz, type: 'brazier', color: 0xffa050, intensity: 34, range: 16, priority: true });
+      }
     }
     for (let i = 0; i < rng.int(3, 6); i++) {
       const s = edgeSpot(); if (!s) continue;
@@ -606,14 +612,21 @@ function decorateRoom(level, room, rng) {
   }
 
   // ---------------- boss arenas get braziers so the fight is well lit
+  // boss arenas are big: ring the edges with braziers and add wall torches so the
+  // fight's footing and walls are always readable
   if (isBoss && !b.outdoor && b.id !== 'throne') {
-    for (const [px, py] of [[x + 2, y + 2], [x + w - 3, y + 2], [x + 2, y + h - 3], [x + w - 3, y + h - 3], [x + Math.floor(w / 2), y + 1]]) {
+    const mx = x + Math.floor(w / 2), my = y + Math.floor(h / 2);
+    const spots = [[x + 2, y + 2], [x + w - 3, y + 2], [x + 2, y + h - 3], [x + w - 3, y + h - 3], [mx, y + 1], [x + 1, my], [x + w - 2, my], [mx, y + h - 2]];
+    spots.forEach(([px, py], k) => {
       const i = level.idx(px, py);
-      if (level.cells[i] !== FLOOR || level.kind[i] === K_WATER) continue;
+      if (level.cells[i] !== FLOOR || level.kind[i] === K_WATER) return;
+      if (level.corrId[level.idx(px, py + 1)] >= 0 || level.corrId[level.idx(px, py - 1)] >= 0 || level.corrId[level.idx(px + 1, py)] >= 0 || level.corrId[level.idx(px - 1, py)] >= 0) return;
       const [wx, wz] = level.center(px, py);
       addPillar(level, wx, wz, 0.45, 'brazierTall');
-      level.torches.push({ x: wx, y: level.hgt[i] + 2.4, z: wz, type: 'brazier', intensity: 30, range: 18, color: b.id === 'sewers' ? 0x9adf60 : undefined });
-    }
+      // sewer braziers burn mostly warm, with a couple of sickly green ones
+      const color = b.id === 'sewers' && k % 3 === 1 ? 0x9adf60 : undefined;
+      level.torches.push({ x: wx, y: level.hgt[i] + 2.4, z: wz, type: 'brazier', intensity: 34, range: 20, color, priority: k < 4 });
+    });
   }
 
   // ---------------- raised daises for verticality (indoor combat rooms)
