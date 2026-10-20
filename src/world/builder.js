@@ -595,6 +595,46 @@ export function buildLevel(level, factory, lightPool) {
     }
   }
 
+  // ---------------- arrival: moonlight through a ceiling grate in the start room
+  if (level.startShaft) {
+    const { x, z } = level.startShaft;
+    const ci = level.idx(Math.floor(x / T), Math.floor(z / T));
+    const top = level.ceil[ci], gy = level.hgt[ci];
+    // the grate: an iron frame with bars, set into the ceiling
+    const parts = [];
+    const S = 1.5;
+    for (const sgn of [-1, 1]) {
+      parts.push(['iron', worldBox(S * 2 + 0.16, 0.12, 0.12).translate(0, -0.06, sgn * S)]);
+      parts.push(['iron', worldBox(0.12, 0.12, S * 2).translate(sgn * S, -0.06, 0)]);
+    }
+    for (let i = -2; i <= 2; i++) parts.push(['iron', worldBox(0.05, 0.06, S * 2).translate(i * S * 0.4, -0.04, 0)]);
+    for (let i = -2; i <= 2; i++) parts.push(['iron', worldBox(S * 2, 0.04, 0.05).translate(0, -0.03, i * S * 0.4)]);
+    addParts(parts, x, top, z, 0);
+    // a dark hole above the grate, so it reads as an opening rather than a decal
+    const hole = new THREE.Mesh(new THREE.PlaneGeometry(S * 2, S * 2), new THREE.MeshBasicMaterial({ color: 0x8aa0c0 }));
+    hole.rotation.x = Math.PI / 2; hole.position.set(x, top + 0.02, z);
+    group.add(hole);
+    // the beam: two crossed soft quads, cool and faint
+    const c = document.createElement('canvas');
+    c.width = 64; c.height = 128;
+    const gx = c.getContext('2d');
+    const grd = gx.createLinearGradient(0, 0, 0, 128);
+    grd.addColorStop(0, 'rgba(255,255,255,0.85)'); grd.addColorStop(0.7, 'rgba(255,255,255,0.3)'); grd.addColorStop(1, 'rgba(255,255,255,0.08)');
+    gx.fillStyle = grd; gx.fillRect(0, 0, 64, 128);
+    const side = gx.createLinearGradient(0, 0, 64, 0);
+    side.addColorStop(0, 'rgba(0,0,0,1)'); side.addColorStop(0.25, 'rgba(0,0,0,0)'); side.addColorStop(0.75, 'rgba(0,0,0,0)'); side.addColorStop(1, 'rgba(0,0,0,1)');
+    gx.globalCompositeOperation = 'destination-out'; gx.fillStyle = side; gx.fillRect(0, 0, 64, 128);
+    const bg = new GeoBuilder();
+    const w = S * 1.9, w2 = S * 2.3, lean = 0.35;
+    bg.quad([x - w / 2, top, z], [x + w / 2, top, z], [x + w2 / 2 + lean, gy + 0.02, z + lean], [x - w2 / 2 + lean, gy + 0.02, z + lean], [0, 0, 1], [[0, 1], [1, 1], [1, 0], [0, 0]]);
+    bg.quad([x, top, z - w / 2], [x, top, z + w / 2], [x + lean, gy + 0.02, z + w2 / 2 + lean], [x + lean, gy + 0.02, z - w2 / 2 + lean], [1, 0, 0], [[0, 1], [1, 1], [1, 0], [0, 0]]);
+    const bm = new THREE.Mesh(bg.build(), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), color: new THREE.Color(0.1, 0.12, 0.16), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: true }));
+    bm.renderOrder = 6;
+    group.add(bm);
+    // a pool of cold light on the floor beneath it
+    lightPool.addTorch(new THREE.Vector3(x + lean * 0.5, top - 0.8, z + lean * 0.5), { color: 0x9ab4e0, intensity: 22, range: 9, flicker: 0.05, priority: 0.5 });
+  }
+
   // ---------------- outdoor sky & distant keep
   let sky = null;
   if (biome.outdoor) {

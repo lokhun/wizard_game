@@ -715,6 +715,8 @@ function decorateRoom(level, room, rng) {
   if (room.type === ROOM.SHRINE) { addPillar(level, mid[0], mid[1], 0.9, 'shrine', { interact: 'shrine' }); }
   if (room.type === ROOM.SHOP) P('merchant', mid[0], mid[1] - 2, { rot: 0, interact: 'shop' });
   if (room.type === ROOM.START) {
+    // a shaft of pale light falls through a grate above where the party arrives
+    if (!b.outdoor) level.startShaft = { x: mid[0], z: mid[1] - 3, ceil: room.ceil }; // a few metres ahead of where you stand
     if (level.floorIndex === 0) P('ladder', mid[0], (y + h - 0.5) * T - 0.3, { rot: Math.PI });
     else P('stairsDown', mid[0], (y + h - 0.5) * T - 0.4, { rot: Math.PI });
   }
