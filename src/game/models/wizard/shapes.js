@@ -79,25 +79,43 @@ export function lathe(profile, seg = 16, phiStart = 0, phiLen = Math.PI * 2) {
 
 // Tapered segment with rounded ends along -Z from 0 to -L (finger bone)
 const segCache = new Map();
-export function fingerSeg(L, r0, r1, rad = 8, flat = 0.85) {
-  const key = `${L.toFixed(4)}:${r0.toFixed(4)}:${r1.toFixed(4)}:${rad}:${flat}`;
+export function fingerSeg(L, r0, r1, rad = 8, flat = 0.85, tip = false) {
+  const key = `${L.toFixed(4)}:${r0.toFixed(4)}:${r1.toFixed(4)}:${rad}:${flat}:${tip}`;
   if (segCache.has(key)) return segCache.get(key);
+  // anatomical profile along the bone: rounded joint, knuckle swell, waist,
+  // a slight swell before the next joint, then a rounded end (a fuller pad on the last segment)
   const prof = [];
-  const n = rad >= 8 ? 4 : 2;
+  const n = rad >= 8 ? 5 : 3;
+  const rj = r0 * 1.0;
   for (let i = 0; i <= n; i++) {
     const a = -Math.PI / 2 + (i / n) * Math.PI / 2;
-    prof.push([r0 * Math.cos(a), r0 * Math.sin(a)]);
+    prof.push([rj * Math.cos(a), rj * 0.9 * Math.sin(a)]);
   }
-  // knuckle bulge near base and a slight waist
-  prof.push([r0 * 0.97 + r1 * 0.03, L * 0.35]);
-  prof.push([r1 * 0.98, L * 0.75]);
-  for (let i = 0; i <= n; i++) {
-    const a = (i / n) * Math.PI / 2;
-    prof.push([r1 * Math.cos(a), L + r1 * Math.sin(a)]);
+  prof.push([r0 * 1.04, L * 0.12]);
+  prof.push([r0 * 0.97, L * 0.28]);
+  prof.push([(r0 + r1) * 0.455, L * 0.55]);
+  if (tip) {
+    prof.push([r1 * 1.02, L * 0.8]);
+    prof.push([r1 * 0.98, L * 0.92]);
+    for (let i = 1; i <= n; i++) { const a = (i / n) * Math.PI / 2; prof.push([r1 * 0.98 * Math.cos(a), L * 0.92 + r1 * 1.05 * Math.sin(a)]); }
+  } else {
+    prof.push([r1 * 0.98, L * 0.82]);
+    prof.push([r1 * 1.0, L * 0.95]);
+    for (let i = 1; i <= n; i++) { const a = (i / n) * Math.PI / 2; prof.push([r1 * 1.0 * Math.cos(a), L * 0.95 + r1 * 0.85 * Math.sin(a)]); }
   }
-  const g = lathe(prof, rad);
+  const g = lathe(prof, Math.max(rad, 10));
   g.rotateX(-Math.PI / 2); // +Y -> -Z
-  g.scale(1, flat, 1);
+  // cross-section: flatter back (+Y), fuller fleshy pad underneath (-Y), wider than deep
+  const p = g.getAttribute('position');
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const u = Math.min(1, Math.max(0, -z / L));
+    let ny = y * flat;
+    if (y > 0) ny *= 0.86;
+    else ny *= 1 + 0.16 * Math.sin(Math.PI * Math.min(1, u * 1.15)) + (tip ? 0.12 * Math.max(0, (u - 0.55) / 0.45) : 0);
+    p.setXYZ(i, x * 1.04, ny, z);
+  }
+  g.computeVertexNormals();
   g.userData.shared = true;
   segCache.set(key, g);
   return g;

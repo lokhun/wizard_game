@@ -94,10 +94,13 @@ const SURFS = {
     float pores = smoothstep(0.7, 0.85, fbm(uv, 90., 3)) * 0.5;
     float crease = smoothstep(0.75, 0.9, fbm2(uv + 2., vec2(4., 30.), 4));
     float blot = fbm(uv + 5., 3., 4);
-    h = 0.5 + n * 0.15 - pores * 0.12 - crease * 0.2;
-    vec3 c = mix(vec3(0.92, 0.88, 0.86), vec3(0.9, 0.82, 0.82), blot);
-    c *= 0.92 + 0.12 * n;
-    c *= 1. - crease * 0.15 - pores * 0.06;
+    float flush = smoothstep(0.45, 0.8, fbm(uv + 9., 4., 4));
+    h = 0.5 + n * 0.15 - pores * 0.14 - crease * 0.26;
+    // living skin: warm base with ruddy patches, darker creases, no plastic white
+    vec3 c = mix(vec3(0.86, 0.78, 0.74), vec3(0.84, 0.66, 0.62), blot);
+    c = mix(c, vec3(0.82, 0.56, 0.52), flush * 0.45);
+    c *= 0.9 + 0.14 * n;
+    c *= 1. - crease * 0.24 - pores * 0.08;
     col = srgb(c);
     rough = 0.55 + pores * 0.2 + crease * 0.1;
     metal = 0.;
@@ -157,7 +160,7 @@ const SURFS = {
   }`,
 };
 
-const NS = { bark: 1.6, metal: 0.5, skin: 0.2, fur: 1.2, glove: 0.6, robe: 0.45 };
+const NS = { bark: 1.6, metal: 0.5, skin: 0.42, fur: 1.2, glove: 0.6, robe: 0.45 };
 
 const VERT = /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }`;
 

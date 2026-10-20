@@ -10,19 +10,19 @@ import { fingerSeg, roundedBox, sphere, mergeGeos, lathe, xf, torus, cyl, V } fr
 
 const FINGERS = [
   // knuckle x, y, z ; segment lengths ; radii (base..tip)
-  { x: -0.029, y: 0.001, z: -0.089, L: [0.043, 0.026, 0.021], r: [0.0098, 0.0089, 0.0081, 0.0071], splay: -0.08 },
-  { x: -0.0095, y: 0.002, z: -0.094, L: [0.047, 0.029, 0.022], r: [0.0101, 0.0092, 0.0083, 0.0073], splay: -0.02 },
-  { x: 0.0105, y: 0.001, z: -0.091, L: [0.044, 0.027, 0.021], r: [0.0096, 0.0087, 0.0079, 0.0069], splay: 0.04 },
-  { x: 0.0285, y: -0.002, z: -0.082, L: [0.035, 0.021, 0.019], r: [0.0086, 0.0077, 0.0070, 0.0062], splay: 0.12 },
+  { x: -0.028, y: 0.001, z: -0.089, L: [0.041, 0.025, 0.02], r: [0.0102, 0.0094, 0.0085, 0.0074], splay: -0.06 },
+  { x: -0.0092, y: 0.002, z: -0.094, L: [0.045, 0.028, 0.021], r: [0.0105, 0.0097, 0.0087, 0.0076], splay: -0.015 },
+  { x: 0.0102, y: 0.001, z: -0.091, L: [0.042, 0.026, 0.02], r: [0.0099, 0.0091, 0.0082, 0.0072], splay: 0.035 },
+  { x: 0.0278, y: -0.002, z: -0.082, L: [0.033, 0.02, 0.018], r: [0.0089, 0.008, 0.0073, 0.0064], splay: 0.1 },
 ];
-const THUMB = { x: -0.027, y: -0.008, z: -0.02, L: [0.042, 0.031, 0.026], r: [0.0125, 0.0112, 0.0102, 0.0092] };
+const THUMB = { x: -0.027, y: -0.008, z: -0.02, L: [0.04, 0.03, 0.025], r: [0.0138, 0.0122, 0.011, 0.0096] };
 
 // Finger curls are authored; thumb joint angles are solved (below) so the
 // thumb tip lands on target points, which is far easier than hand-tuning
 // Euler angles. t = [yaw, pitch, roll, curl1, curl2].
 const BASE_POSES = {
   relaxed: { f: [[0.25, 0.3, 0.2, 0], [0.3, 0.35, 0.22, 0], [0.38, 0.4, 0.25, 0], [0.45, 0.45, 0.3, 0]], thumb: [[-0.049, -0.024, -0.05], [-0.059, -0.034, -0.074], [-0.058, -0.042, -0.097]] },
-  open: { f: [[0.14, 0.18, 0.1, -0.07], [0.2, 0.26, 0.14, 0], [0.3, 0.32, 0.2, 0.07], [0.42, 0.38, 0.24, 0.16]], thumb: [[-0.052, -0.016, -0.046], [-0.071, -0.02, -0.066], [-0.086, -0.022, -0.086]] },
+  open: { f: [[0.12, 0.2, 0.12, -0.04], [0.18, 0.27, 0.16, 0], [0.27, 0.34, 0.22, 0.04], [0.38, 0.42, 0.28, 0.09]], thumb: [[-0.052, -0.016, -0.046], [-0.071, -0.02, -0.066], [-0.086, -0.022, -0.086]] },
   cradle: { f: [[0.3, 0.32, 0.18, -0.05], [0.32, 0.36, 0.2, 0], [0.38, 0.4, 0.22, 0.05], [0.48, 0.45, 0.25, 0.12]], thumb: [[-0.05, -0.022, -0.048], [-0.066, -0.03, -0.068], [-0.076, -0.034, -0.09]] },
   spread: { f: [[-0.05, 0.05, 0.05, -0.2], [-0.05, 0.04, 0.04, -0.03], [0.0, 0.06, 0.05, 0.13], [0.05, 0.08, 0.06, 0.32]], thumb: [[-0.054, -0.012, -0.04], [-0.077, -0.012, -0.056], [-0.099, -0.01, -0.07]] },
   claw: { f: [[0.35, 0.95, 0.75, -0.18], [0.3, 1.0, 0.8, -0.03], [0.38, 1.0, 0.8, 0.12], [0.45, 1.0, 0.8, 0.3]], thumb: [[-0.052, -0.022, -0.045], [-0.067, -0.036, -0.062], [-0.068, -0.054, -0.078]] },
@@ -203,10 +203,16 @@ export function buildHand(opts) {
   const se = (v, e) => Math.sign(v) * Math.pow(Math.abs(v), e);
   for (let i = 0; i < pp.count; i++) {
     const nx = pp.getX(i), ny = pp.getY(i), nz = pp.getZ(i);
-    let x = se(nx, 0.5) * 0.041, y = se(ny, 0.75) * 0.0145, z = se(nz, 0.55) * 0.05;
+    let x = se(nx, 0.66) * 0.041, y = se(ny, 0.8) * 0.0145, z = se(nz, 0.6) * 0.05;
     const t = (z + 0.05) / 0.1; // 0 knuckles .. 1 wrist
-    x *= 1 - t * 0.16;
-    if (y > 0) y = y * (1 - t * 0.15) + 0.004 * Math.cos((x / 0.042) * Math.PI * 0.5) * y / 0.0145;
+    x *= 1 - t * 0.22;
+    if (y > 0) {
+      y = y * (1 - t * 0.15) + 0.004 * Math.cos((x / 0.042) * Math.PI * 0.5) * y / 0.0145;
+      // extensor tendons fanning from the wrist to each knuckle
+      let ten = 0;
+      for (const fx of [-0.029, -0.0095, 0.0105, 0.0285]) { const cx = fx * (1 - t * 0.55); ten += Math.exp(-Math.pow((x - cx) / 0.0042, 2)); }
+      y += 0.0011 * ten * Math.sin(Math.PI * Math.min(1, t * 1.25)) * (y / 0.0145);
+    }
     else {
       y *= 1 + 0.25 * Math.exp(-Math.pow((x + 0.02) / 0.016, 2)) * Math.exp(-Math.pow((t - 0.62) / 0.3, 2)); // thenar pad
       y *= 1 + 0.15 * Math.exp(-Math.pow((x - 0.028) / 0.012, 2)) * (t > 0.3 ? 1 : t / 0.3); // hypothenar
@@ -222,12 +228,12 @@ export function buildHand(opts) {
     sphere(0.017, rad, 8, { x: -0.025, y: -0.006, z: -0.03, sx: 0.9, sy: 0.75, sz: 1.5, ry: 0.4 }),
   ];
   // wrist + forearm stub reaching back into the sleeve
-  const wr = lathe([[0.0262, -0.012], [0.0252, 0.012], [0.025, 0.03]], rad + 2);
+  const wr = lathe([[0.0305, -0.014], [0.029, 0.008], [0.0295, 0.03]], rad + 4);
   xf(wr, { rx: Math.PI / 2 });
-  wr.scale(1, 0.72, 1);
+  wr.scale(1, 0.66, 1);
   palmParts.push(wr);
   if (style !== 'gauntlet') {
-    for (const f of FINGERS) palmParts.push(sphere(0.0088, 8, 6, { x: f.x, y: 0.004 + f.y, z: f.z + 0.003, sy: 0.85, sz: 1.1 }));
+    for (const f of FINGERS) palmParts.push(sphere(f.r[0] * 1.05, 10, 8, { x: f.x, y: 0.0078 + f.y, z: f.z + 0.003, sx: 1.05, sy: 0.62, sz: 1.1 }));
   }
   add(group, mergeGeos(palmParts), palmMat);
 
@@ -274,7 +280,7 @@ export function buildHand(opts) {
       j.position.set(px, py, pz);
       parent.add(j);
       const mat = matFor(fi, s);
-      add(j, fingerSeg(f.L[s], f.r[s], f.r[s + 1], rad), mat);
+      add(j, fingerSeg(f.L[s], f.r[s], f.r[s + 1], rad, 0.85, s === 2), mat);
       if (style === 'gauntlet' && armor) {
         const pl = lathe([[f.r[s] * 1.32, 0], [f.r[s + 1] * 1.3, f.L[s] * 0.85]], 8, Math.PI * 0.5 + 0.35, Math.PI - 0.7);
         xf(pl, { rx: -Math.PI / 2, z: -0.002 });
@@ -317,7 +323,7 @@ export function buildHand(opts) {
       j.position.set(px, py, pz);
       parent.add(j);
       const mat = s === 0 ? palmMat : matFor(0, s);
-      add(j, fingerSeg(THUMB.L[s], THUMB.r[s], THUMB.r[s + 1], rad, s === 0 ? 0.8 : 0.85), mat);
+      add(j, fingerSeg(THUMB.L[s], THUMB.r[s], THUMB.r[s + 1], rad, s === 0 ? 0.8 : 0.85, s === 2), mat);
       if (style === 'gauntlet' && armor && s > 0) {
         const pl = lathe([[THUMB.r[s] * 1.3, 0], [THUMB.r[s + 1] * 1.28, THUMB.L[s] * 0.85]], 8, Math.PI * 0.5 + 0.35, Math.PI - 0.7);
         xf(pl, { rx: -Math.PI / 2 });

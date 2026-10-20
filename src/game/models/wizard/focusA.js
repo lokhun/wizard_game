@@ -104,13 +104,16 @@ export function pyromancer(kit, meta, o) {
       R: { style: 'glove', glove: kit.glove(0x5a3a2c), cuff: kit.glove(0x3a2218) },
       L: { style: 'fingerless', glove: kit.glove(0x3a2a22), skin: kit.skin(0xd8b098), nail: kit.plain(0x4a3a30, 0.5) },
     },
-    leftGrip: { kind: 'open' },
+    leftGrip: { kind: 'cradle' }, leftHold: 'cradle',
     leftFx(hand) {
       const g = new THREE.Group();
-      const palm = new FlameCluster(kit, meta.color, meta.color2, { count: detail >= 1 ? 9 : 4, size: 0.05, spread: 0.045, seed: 3, intensity: 0.75 });
-      palm.group.position.set(0, -0.03, -0.055);
-      palm.group.rotation.x = Math.PI;
-      g.add(palm.group);
+      const palm = new FlameCluster(kit, meta.color, meta.color2, { count: detail >= 1 ? 7 : 4, size: 0.046, spread: 0.015, seed: 3, intensity: 0.5 });
+      // the fire sits a little off the palm and always burns upward on screen, so it reads in profile
+      const palmAnchor = new THREE.Group();
+      palmAnchor.position.set(0, -0.05, -0.06);
+      palmAnchor.add(palm.group);
+      g.add(palmAnchor);
+      const _q = new THREE.Quaternion();
       palm.materials.forEach((m) => glows.add(m, 1));
       const tipsF = [];
       hand.tips.forEach((tp, i) => {
@@ -125,7 +128,13 @@ export function pyromancer(kit, meta, o) {
       h.position.set(0, -0.04, -0.06);
       g.add(h); glows.add(h.material, 1);
       hand.group.add(g);
-      return { update(t, k) { palm.update(t, k); tipsF.forEach((f, i) => f.update(t + i, k)); } };
+      return {
+        update(t, k) {
+          palmAnchor.getWorldQuaternion(_q);
+          palm.group.quaternion.copy(_q.invert());
+          palm.update(t, k); tipsF.forEach((f, i) => f.update(t + i, k));
+        },
+      };
     },
     update(t, dt, st) {
       const f = 0.85 + 0.15 * flick(t, 1) + 0.6 * st.charge;

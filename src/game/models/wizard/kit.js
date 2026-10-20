@@ -23,6 +23,20 @@ export function getKit(factory) {
     }
     return cache.get(key);
   };
+  // Cheap subsurface look for skin: light wraps past the terminator and the
+  // shadowed side picks up a warm, blood-red bounce instead of going grey.
+  const addSkinScatter = (m) => {
+    m.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+        {
+          float wrapK = 1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0);
+          vec3 lit = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse;
+          float lum = dot(lit, vec3(0.3, 0.55, 0.15));
+          reflectedLight.directDiffuse += diffuseColor.rgb * vec3(0.55, 0.12, 0.06) * (lum * 0.55 + 0.012) * (0.45 + wrapK * 0.55);
+        }`);
+    };
+    m.customProgramCacheKey = () => 'wizskin';
+  };
   const surfMat = (surf, opts = {}) => {
     const t = getSurface(factory, surf, opts.size ?? 512, opts.seed ?? 1);
     const m = new THREE.MeshStandardMaterial({
@@ -37,6 +51,7 @@ export function getKit(factory) {
       m.emissiveIntensity = opts.emissiveIntensity ?? 1;
       if (opts.emissiveMap) m.emissiveMap = opts.emissiveMap;
     }
+    if (surf === 'skin') addSkinScatter(m);
     return m;
   };
   const col = (c, k = 1) => new THREE.Color(c).multiplyScalar(k);
