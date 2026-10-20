@@ -145,6 +145,17 @@ export function generateLevel(seed, floorIndex) {
       level.roomId[i] = room.id;
       level.ceil[i] = biome.outdoor ? 99 : room.ceil;
     }
+    // L-shaped rooms: cut away one corner of larger combat rooms
+    if ((type === ROOM.COMBAT || type === ROOM.ELITE) && w >= 11 && h >= 11 && rng.chance(0.45)) {
+      const cw = Math.floor(w / 3), ch = Math.floor(h / 3);
+      const cxr = rng.chance(0.5) ? ox : ox + w - cw;
+      const cyr = rng.chance(0.5) ? oy : oy + h - ch;
+      for (let y = cyr; y < cyr + ch; y++) for (let x = cxr; x < cxr + cw; x++) {
+        const i = level.idx(x, y);
+        level.cells[i] = SOLID; level.roomId[i] = -1; level.ceil[i] = 0;
+      }
+      room.cut = { x: cxr, y: cyr, w: cw, h: ch };
+    }
     return room;
   };
 
@@ -274,6 +285,7 @@ function wallTorches(level, room, rng, spacing, colorOverride) {
   // place sconces on interior walls facing into the room
   const { x, y, w, h } = room;
   const place = (cx, cy, nx, ny) => {
+    if (level.get(cx, cy) !== FLOOR) return;
     const [wx, wz] = level.center(cx, cy);
     const tx = wx - nx * (T / 2 - 0.15), tz = wz - ny * (T / 2 - 0.15);
     level.torches.push({ x: tx, y: level.hgt[level.idx(cx, cy)] + 2.7, z: tz, nx, nz: ny, type: 'sconce', color: colorOverride });
@@ -566,6 +578,19 @@ function decorateRoom(level, room, rng) {
       P(rng.pick(['armorStand', 'banner', 'candelabra', 'statueSmall', 'banner']), s[0], s[1], { rot: s[2] });
     }
     wallTorches(level, room, rng, 4);
+  }
+
+  // ---------------- raised daises for verticality (indoor combat rooms)
+  if ((b.id === 'dungeon' || b.id === 'keep' || b.id === 'sewers') && (room.type === ROOM.COMBAT || room.type === ROOM.ELITE) && w >= 10 && h >= 10 && rng.chance(0.4) && room.layout !== 'library') {
+    const side = rng.int(0, 3);
+    const depth = 3;
+    const hh = b.id === 'sewers' ? 0.55 : 0.7;
+    const apply = (i) => { if (level.cells[i] === FLOOR && level.kind[i] !== K_WATER) { level.hgt[i] = hh; level.kind[i] = K_DAIS; } };
+    if (side === 0) setRect(level, x + 2, y, w - 4, depth, apply);
+    else if (side === 1) setRect(level, x + 2, y + h - depth, w - 4, depth, apply);
+    else if (side === 2) setRect(level, x, y + 2, depth, h - 4, apply);
+    else setRect(level, x + w - depth, y + 2, depth, h - 4, apply);
+    room.dais = side;
   }
 
   // ---------------- room-type set pieces
