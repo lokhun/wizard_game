@@ -261,16 +261,9 @@ export class SpellRuntime {
           break;
         }
       }
-      if (wallHit) {
-        // step back slightly so effects spawn in front of the wall
-        p.pos.addScaledVector(p.vel, -0.02 / Math.max(0.01, p.vel.length()));
-        if (p.onWall) p.onWall(p, p.pos);
-        if (!p.aoe) g.vfx.impact(p.pos, p.el, 0.8);
-        g.audio?.play('impact_' + soundEl(p.el), { pos: p.pos, volume: 0.6 });
-        this.kill(p, p.pos);
-        this._remove(i);
-        continue;
-      }
+      // step back slightly so effects spawn in front of the wall; actors along
+      // the path up to the wall are still tested below before the wall impact
+      if (wallHit) p.pos.addScaledVector(p.vel, -0.02 / Math.max(0.01, p.vel.length()));
       // actor collisions
       if (p.faction === 'player') {
         if (p.local && g.level.breakables.length) {
@@ -332,6 +325,14 @@ export class SpellRuntime {
           }
           if (p.dead) { this._remove(i); continue; }
         }
+      }
+      if (wallHit) {
+        if (p.onWall) p.onWall(p, p.pos);
+        if (!p.aoe) g.vfx.impact(p.pos, p.el, 0.8);
+        g.audio?.play('impact_' + soundEl(p.el), { pos: p.pos, volume: 0.6 });
+        this.kill(p, p.pos);
+        this._remove(i);
+        continue;
       }
       // floor hit for arcing projectiles
       const gy = g.groundY(p.pos.x, p.pos.z);

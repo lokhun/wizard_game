@@ -51,13 +51,32 @@ const before = await host.evaluate(() => window.__game.stats.damage);
 console.log('client hostiles', await client.evaluate(() => window.__game.actors.hostiles().length), 'client fps-ish rx', await client.evaluate(() => JSON.stringify(window.__net.rx)));
 await client.evaluate(() => {
   const g = window.__game; const inp = window.__input;
-  const a = g.actors.hostiles()[0]; if (!a) return;
-  const p = g.player; const dx = a.pos.x - p.pos.x, dz = a.pos.z - p.pos.z;
-  p.yaw = Math.atan2(-dx, -dz); p.pitch = 0;
-  inp.mouse.left = true;
+  window.__aimT = setInterval(() => {
+    const p = g.player; let best = null, bd = 1e9;
+    for (const a of g.actors.hostiles()) { const d = a.pos.distanceTo(p.pos); if (d < bd) { bd = d; best = a; } }
+    if (!best) return;
+    const dx = best.pos.x - p.pos.x, dz = best.pos.z - p.pos.z, dy = best.pos.y + best.height * 0.5 - (p.pos.y + 1.6);
+    p.yaw = Math.atan2(-dx, -dz); p.pitch = Math.atan2(dy, Math.hypot(dx, dz));
+    inp.mouse.left = true;
+  }, 100);
 });
 await client.waitForTimeout(6000);
-await client.evaluate(() => { window.__input.mouse.left = false; });
+await client.evaluate(() => { clearInterval(window.__aimT); window.__input.mouse.left = false; });
+console.log('client aim', await client.evaluate(() => { const g = window.__game, p = g.player; const ai = p.aimInfo(); const h = g.actors.hostiles().slice(0, 4).map((a) => [a.type, a.pos.toArray().map((v) => +v.toFixed(1)), +a.height.toFixed(2), +a.radius.toFixed(2), a.state, a.anim]); return JSON.stringify({ me: p.pos.toArray().map((v) => +v.toFixed(1)), eye: g.renderer.camera.position.toArray().map((v) => +v.toFixed(1)), yaw: p.yaw, pitch: p.pitch, aimActor: ai.actor?.type, aimPt: ai.point.toArray().map((v) => +v.toFixed(1)), h }); }));
+console.log('client manual', await client.evaluate(() => {
+  const g = window.__game, THREE_V = g.player.pos.constructor;
+  const a = g.actors.hostiles()[0];
+  const o = g.player.eye.clone();
+  const t = new THREE_V(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z);
+  const d = t.clone().sub(o).normalize();
+  let hits = 0; const orig = g.hitActor.bind(g); g.hitActor = (...args) => { hits++; return orig(...args); };
+  const pr = g.spells.spawn({ local: true, faction: 'player', owner: g.player.id, el: 'holy', pos: o, vel: d.multiplyScalar(30), radius: 0.2, life: 2, hit: { dmg: 5, el: 'holy' } });
+  const log = [];
+  for (let i = 0; i < 20 && !pr.dead; i++) { g.spells.update(1 / 30); log.push(pr.pos.toArray().map((v) => +v.toFixed(2)).join(',') + (pr.dead ? ' DEAD' : '')); }
+  g.hitActor = orig;
+  return JSON.stringify({ hits, target: a.pos.toArray(), h: a.height, r: a.radius, o: o.toArray(), log: log.slice(0, 6), inList: g.actors.hostiles().includes(a), alive: a.alive });
+}));
+console.log('client debug', await client.evaluate(() => { const g = window.__game, p = g.player; return JSON.stringify({ alive: p.alive, downed: p.downed, dead: p.dead, paused: g.paused, modal: g.ui.modalOpen, cine: !!g.cinematic, locked: window.__input.locked, proj: g.spells.projectiles.length, rate: p.rateTimer, hp: p.hp, ended: g.ended, menu: g.menuMode, cast: p.castAnim?.slot, stun: p.stunT }); }));
 const hostHp = await host.evaluate(() => window.__game.actors.list.map((a) => Math.round(a.hp)).join(','));
 console.log('enemy hp on host after client fire:', hostHp, 'client dealt', await client.evaluate(() => Math.round(window.__game.stats.damage)));
 // screenshots skipped (norender)
