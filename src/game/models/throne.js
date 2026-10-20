@@ -56,7 +56,8 @@ function modelMatrix(m, b, out) {
 }
 // Let go of a prop bone: on release its current pose is captured, then it tips about `pivot` (bone-local)
 // until its `up` axis lies along the fall direction, the pivot settling to `floor`. u: 0 (held) .. 1 (down).
-// cfg = { key, pivot, up, fwd | dir, floor }; per-instance state is allocated once.
+// cfg = { key, pivot, up, floor } plus the fall direction: fwd (bone-local, flattened), or axis (bone-local hinge,
+// e.g. a banner's crossbar, so the prop lands flat) with dir as the side to fall toward. State is allocated once.
 function dropProp(m, P, name, cfg, u) {
   let d = m.state[cfg.key];
   if (!d) d = m.state[cfg.key] = { held: true, M0: new THREE.Matrix4(), pv: new THREE.Vector3(), ax: new THREE.Vector3(1, 0, 0), ang: 0, y0: 0 };
@@ -67,7 +68,11 @@ function dropProp(m, P, name, cfg, u) {
     modelMatrix(m, b, d.M0);
     d.pv.copy(cfg.pivot).applyMatrix4(d.M0);
     _dV.copy(cfg.up).transformDirection(d.M0);
-    if (cfg.dir) _dW.copy(cfg.dir); else _dW.copy(cfg.fwd).transformDirection(d.M0);
+    if (cfg.axis) {
+      _dW.copy(cfg.axis).transformDirection(d.M0);
+      _dW.set(_dW.z, 0, -_dW.x); // horizontal, perpendicular to the hinge
+      if (_dW.dot(cfg.dir) < 0) _dW.negate();
+    } else _dW.copy(cfg.fwd).transformDirection(d.M0);
     _dW.y = 0;
     if (_dW.lengthSq() < 1e-6) _dW.set(0, 0, 1);
     _dW.normalize();
@@ -130,7 +135,7 @@ function splitSkirt(rig, D, r1, r2, len, c, seed = 2) {
 
 // ============================================================ gildedSentinel ==
 const SENT_EYE = 0xb080ff;
-const GILT = [0.92, 0.82, 0.6]; // tarnished gilding (on the gold surface)
+const GILT = [0.74, 0.65, 0.47]; // tarnished gilding (on the gold surface)
 const GILT_HI = [1.08, 0.95, 0.68];
 const BLACKEN = [0.34, 0.31, 0.36]; // blackened steel (on the steel surface)
 const PURPLE = [0.24, 0.05, 0.32];
@@ -138,12 +143,12 @@ const PURPLE = [0.24, 0.05, 0.32];
 // rest: shield arm braced behind the shield, mace low at the right side (arm angles solved for the shield grip)
 const SN_REST = {
   armL: [0.132, -0.732, 0.582], foreL: [-1.225, 0, 0], handL: [0, 0, 0],
-  armR: [-0.22, 0, -0.12], foreR: [-0.55, 0, 0], handR: [0.75, 0, 0],
+  armR: [0.499, 0.347, -0.75], foreR: [-1.491, 0, 0], handR: [-1.297, 0.079, 0],
 };
 // braced upper body (left shoulder slightly forward, leaning into the shield)
 const SN_UPPER = { spine: [0.08, -0.12, 0], chest: [0.05, -0.05, 0], neck: [-0.05, 0.05, 0], head: [-0.1, 0.1, 0] };
 // wide braced legs (faded out while walking)
-const SN_LEGS = { hips: [0, 0.12, 0, 0, -0.07, 0], thighL: [-0.38, -0.12, 0.13], thighR: [0.18, -0.12, -0.14], shinL: [0.42, 0, 0], shinR: [0.32, 0, 0], footL: [-0.05, 0, -0.05], footR: [-0.15, 0, 0.05] };
+const SN_LEGS = { hips: [0, 0.12, 0, 0, -0.05, 0], thighL: [-0.38, -0.12, 0.13], thighR: [0.18, -0.12, -0.14], shinL: [0.42, 0, 0], shinR: [0.32, 0, 0], footL: [0.0, 0, -0.08], footR: [-0.4, 0, 0.08] };
 // shield placement in the rest pose (world): centre, lean back; grip offset from the centre (shield space)
 const SH_C = [0.1, 1.0, 0.52], SH_LEAN = -0.05;
 const SN_DROP = { key: 'snShield', pivot: new THREE.Vector3(), up: new THREE.Vector3(), fwd: new THREE.Vector3(), floor: 0.0 };
@@ -158,7 +163,7 @@ function bendShield(g, arch = false) {
 function addSentinelShield(rig, bone, t, grip) {
   const hw = SH_W / 2, hh = SH_H / 2;
   // battered face (dished, hammer dents), blackened plum enamel
-  const face = G.box(SH_W, SH_H, 0.045, 10, 16, 1);
+  const face = G.box(SH_W, SH_H, 0.045, 8, 12, 1);
   deform(face, (v) => {
     const d = (vnoise(v.x * 7 + 3, v.y * 7, 1, 21) - 0.5) * 0.012 - Math.exp(-((v.x - 0.18) ** 2 + (v.y + 0.3) ** 2) / 0.004) * 0.015 - Math.exp(-((v.x + 0.22) ** 2 + (v.y - 0.05) ** 2) / 0.003) * 0.012;
     if (v.z > 0) v.z += d;
@@ -174,8 +179,8 @@ function addSentinelShield(rig, bone, t, grip) {
   for (const sx of [-1, 1]) for (const sy of [-1, 1]) caps.push(xf(G.box(0.15, 0.15, 0.088), { x: sx * (hw - 0.025), y: sy * (hh - 0.025), z: shCurve(hw) }));
   rig.add(bone, 'gold', mergeRaw([...rim, ...bands, spine, ...caps]), t, { c: GILT });
   const rv = [];
-  for (const y of [-0.52, -0.12]) for (let i = 0; i < 7; i++) { const x = (i / 6 - 0.5) * (SH_W - 0.14); rv.push([x, y, shCurve(x) + 0.034]); }
-  for (let i = 0; i < 6; i++) for (const sx of [-1, 1]) rv.push([sx * hw, -hh + 0.2 + i * 0.24, shCurve(hw) + 0.04]);
+  for (const y of [-0.52, -0.12]) for (let i = 0; i < 6; i++) { const x = (i / 5 - 0.5) * (SH_W - 0.14); if (Math.abs(x) > 0.05) rv.push([x, y, shCurve(x) + 0.034]); }
+  for (let i = 0; i < 5; i++) for (const sx of [-1, 1]) rv.push([sx * hw, -hh + 0.22 + i * 0.29, shCurve(hw) + 0.04]);
   rig.add(bone, 'steel', rivets(rv, 0.013), t, { c: BLACKEN });
   // royal crest: crowned escutcheon bearing a sword, violet gem in the crown
   const esc = [[-0.21, 0.2], [0.21, 0.2], [0.21, 0.02], [0.16, -0.14], [0.0, -0.28], [-0.16, -0.14], [-0.21, 0.02]];
@@ -213,7 +218,7 @@ export const gildedSentinel = {
     underBody(rig, D, [0.07, 0.055, 0.06]);
     // tarnished gilded plate with blackened trim; own split mail skirt and sleeves
     addPlate(rig, D, { mat: 'gold', c: GILT, bulk: 1.25, pauldron: 0.17, trim: true, trimMat: 'steel', trimC: BLACKEN, mail: false });
-    splitSkirt(rig, D, D.shoulderW * 0.95, D.shoulderW * 1.25, D.thigh * 0.8, [0.6, 0.56, 0.56]);
+    splitSkirt(rig, D, D.shoulderW * 0.95, D.shoulderW * 1.12, D.thigh * 0.8, [0.6, 0.56, 0.56]);
     for (const S of ['L', 'R']) rig.add('arm' + S, 'mail', G.cyl(0.064, 0.058, D.upper, 9, true), { y: -D.upper / 2 }, { c: [0.6, 0.56, 0.56] });
     // raised haute-pieces on the pauldrons
     for (const S of ['L', 'R']) {
@@ -259,8 +264,10 @@ export const gildedSentinel = {
     return D;
   },
   pose(m, s, P, dt) {
+    if (s.anim === 'cast') s.attackType = 'cast';
     const r = humanoidPose(m, s, P, dt);
     holdArm(P, m, s, 1, 0.85);
+    holdArm(P, m, s, -1, 0.8);
     const an = s.anim, T = m.time, w = m.state.moveW ?? 0;
     // heavy stomp: the shield shudders on each footfall
     if (an === 'move' || w > 0.02) {
@@ -298,8 +305,8 @@ export const gildedSentinel = {
       ),
       // overhead mace smash over the shield rim
       slam: act2(
-        { armL: [0.351, -0.414, 0.606], foreL: [-1.229, 0, 0], shield: [-0.04, 0.151, -0.11], armR: [-2.85, 0.25, -0.35], foreR: [-1.25, 0, 0], handR: [-0.3, 0, 0], chest: [-0.2, -0.3, 0], spine: [-0.1, -0.12, 0], head: [-0.05, 0.2, 0], hips: [0, 0, 0, 0, -0.04, -0.06], thighL: [-0.1, 0, 0], shinL: [0.1, 0, 0], thighR: [0.1, 0, 0] },
-        { armL: [-0.46, -1.479, 0.968], foreL: [-1.418, 0, 0], shield: [0.381, 0.505, 0.142], armR: [-0.85, 0.1, 0.3], foreR: [-0.15, 0, 0], handR: [0.5, 0, 0], chest: [0.42, 0.32, 0], spine: [0.3, 0.12, 0], head: [-0.4, -0.2, 0], neck: [-0.1, 0, 0], hips: [0, 0.1, 0, 0, -0.2, 0.18], thighL: [-0.5, 0, 0], shinL: [0.6, 0, 0], thighR: [0.1, 0, 0], shinR: [0.35, 0, 0] },
+        { armL: [0.384, -0.337, 0.682], foreL: [-1.175, 0, 0], shield: [-0.048, 0.312, 0.002], armR: [-2.9, 0.1, -0.3], foreR: [-1.35, 0, 0], handR: [-0.2, 0, 0], chest: [-0.2, -0.3, 0], spine: [-0.1, -0.12, 0], head: [-0.05, 0.2, 0], hips: [0, 0, 0, 0, -0.04, -0.06], thighL: [-0.1, 0, 0], shinL: [0.1, 0, 0], thighR: [0.1, 0, 0] },
+        { armL: [-0.223, -0.338, 1.155], foreL: [-2.021, 0, 0], shield: [0.391, 0.498, -0.058], armR: [-0.85, 0, -0.5], foreR: [-0.12, 0, 0], handR: [0.75, 0, 0], chest: [0.42, 0.15, 0], spine: [0.3, 0.06, 0], head: [-0.4, -0.2, 0], neck: [-0.1, 0, 0], hips: [0, 0.1, 0, 0, -0.2, 0.18], thighL: [-0.5, 0, 0], shinL: [0.6, 0, 0], thighR: [0.1, 0, 0], shinR: [0.35, 0, 0] },
         { hit: 0.26, recover: 0.65, tremble: 0.03 },
       ),
       // brace: plant the shield and crouch behind it
@@ -316,12 +323,12 @@ export const gildedSentinel = {
 
 // sag to the knees with the shield planted, then pitch forward onto the fallen shield
 const SN_KNEEL = {
-  hips: [0.1, 0, 0, 0, -0.5, -0.1], thighL: [-1.35, 0, 0.12], shinL: [1.45, 0, 0], footL: [-0.1, 0, 0], thighR: [0.15, 0, -0.1], shinR: [1.95, 0, 0], footR: [0.7, 0, 0],
+  hips: [0.1, 0, 0, 0, -0.5, -0.1], thighL: [-0.22, 0, 0.1], shinL: [1.7, 0, 0], footL: [1.1, 0, 0], thighR: [-0.12, 0, -0.1], shinR: [1.65, 0, 0], footR: [1.1, 0, 0],
   spine: [0.32, 0, 0], chest: [0.15, 0, 0], neck: [0.2, 0, 0], head: [0.35, 0, 0],
   armL: [-0.475, -0.616, 0.791], foreL: [-1.8, 0, 0], shield: [0.543, 0.198, -0.248], armR: [0.05, 0, -0.18], foreR: [-0.3, 0, 0], handR: [0.4, 0, 0],
 };
 const SN_FALLEN = {
-  hips: [1.42, 0.2, 0, 0, -0.92, 0.35], thighL: [-0.15, 0, 0.15], shinL: [0.35, 0, 0], thighR: [-0.3, 0, -0.12], shinR: [0.8, 0, 0], footL: [0.5, 0, 0], footR: [0.5, 0, 0],
+  hips: [1.42, 0.2, 0, 0, -0.86, 0.35], thighL: [-0.15, 0, 0.15], shinL: [0.35, 0, 0], thighR: [-0.3, 0, -0.12], shinR: [0.8, 0, 0], footL: [0.5, 0, 0], footR: [0.5, 0, 0],
   spine: [0.05, 0, 0], chest: [0, 0, 0], neck: [-0.15, 0, 0], head: [-0.25, 1.0, 0.1],
   armL: [-2.5, 0, 0.5], foreL: [-0.2, 0, 0], armR: [0.25, 0, -0.95], foreR: [-0.4, 0, 0], handR: [0.5, 0, 0],
 };
@@ -331,6 +338,10 @@ function sentinelDeath(P, p, m) {
   P.apply(SN_REST, 1 - a);
   P.apply(SN_KNEEL, a * (1 - b));
   P.apply(SN_FALLEN, b);
+  // the hips swing over the planted knees in an arc rather than cutting through the floor
+  const arc = bump(0.5, 0.86, p);
+  P.p('hips', 0, arc * 0.14 + bump(0, 0.34, p) * 0.13, arc * 0.1);
+  P.r('thighL', -arc * 0.25); P.r('thighR', -arc * 0.25);
   // heavy landing jolt
   const thud = bump(0.86, 0.97, p);
   P.p('hips', 0, thud * 0.035, 0);
@@ -350,7 +361,7 @@ function sentinelSpawn(P, p, m) {
 // =========================================================== hollowBannerman ==
 const BAN_GLOW = 0xb070ff;
 const BONE = [0.8, 0.76, 0.64];
-const ROYAL = [0.32, 0.07, 0.44];
+const ROYAL = [0.3, 0.06, 0.55];
 const GOLDC = [1.0, 0.8, 0.4];
 
 // hunched bearer: right fist holds the pole upright at chest height, left hand above it (angles solved)
@@ -364,7 +375,7 @@ const POLE_LEAN = 0.05;
 const POLE_LO = -0.88, POLE_HI = 2.1; // pole span along its axis from the right fist (spear butt below POLE_LO)
 const BAR_Y = 1.9; // crossbar height on the pole
 const BAN_W = 0.9, BAN_H = 1.4;
-const BN_DROP = { key: 'bnPole', pivot: new THREE.Vector3(), up: new THREE.Vector3(), dir: new THREE.Vector3(-0.35, 0, 1).normalize(), floor: 0.08 };
+const BN_DROP = { key: 'bnPole', pivot: new THREE.Vector3(), up: new THREE.Vector3(), axis: new THREE.Vector3(), dir: new THREE.Vector3(0, 0, 1), floor: 0.075 };
 
 // banner cloth in banner space: hangs from y=0 to -BAN_H, inner (pole) edge at x=0, fly end toward -x.
 // Closely spaced vertex columns / rows keep the gold border crisp in vertex colour.
@@ -404,8 +415,8 @@ function morion() {
   deform(dome, (v) => { v.z *= 1.12; });
   const comb = xf(extrude([[0.13, 0.2], [0.11, 0.28], [0.06, 0.35], [-0.02, 0.38], [-0.1, 0.355], [-0.14, 0.28], [-0.15, 0.2]], 0.014, 0.004, 1), { ry: -Math.PI / 2 });
   const AS = 32, pos = [], idx = [];
-  const brimR = (a) => 0.142 + 0.1 * Math.abs(Math.cos(a)) ** 2.5;
-  const brimY = (a, k) => 0.112 + k * 0.1 * Math.abs(Math.cos(a)) ** 3;
+  const brimR = (a) => 0.146 + 0.055 * Math.abs(Math.cos(a)) ** 4;
+  const brimY = (a, k) => 0.112 + k * (0.13 * Math.abs(Math.cos(a)) ** 3.5 - 0.014);
   for (let i = 0; i <= AS; i++) {
     const a = (i / AS) * TAU;
     pos.push(Math.sin(a) * 0.121, brimY(a, 0), Math.cos(a) * 0.121 * 1.12);
@@ -422,7 +433,7 @@ function morion() {
 }
 
 export const hollowBannerman = {
-  id: 'hollowBannerman', height: 2.0, radius: 0.42, eyeColor: BAN_GLOW, magicColor: BAN_GLOW, defaultAttack: 'jab', attackTypes: ['rally', 'jab'], flutter: 0.035, orbSize: 0.075,
+  id: 'hollowBannerman', height: 2.0, radius: 0.42, eyeColor: BAN_GLOW, magicColor: BAN_GLOW, defaultAttack: 'jab', attackTypes: ['rally', 'jab'], flutter: 0.035, orbSize: 0.09,
   build(rig) {
     const D = humanSkeleton(rig, { thigh: 0.45, shin: 0.44, ankle: 0.07, hipW: 0.1, spine: 0.16, chest: 0.31, neck: 0.09, shoulderW: 0.19, upper: 0.3, fore: 0.28, jaw: [0.045, 0.03] });
     rig.bone('pole', 'handR', 0, -0.07, 0);
@@ -439,6 +450,7 @@ export const hollowBannerman = {
     const Lp = seatM(RW.pole, PW);
     BN_DROP.pivot.set(0, POLE_LO - 0.2, 0).applyMatrix4(Lp);
     BN_DROP.up.set(0, 1, 0).transformDirection(Lp);
+    BN_DROP.axis.set(1, 0, 0).transformDirection(Lp);
 
     // --- body: bone hands / neck, chain hauberk, ragged royal surcoat
     rig.add('neck', 'bone', G.cyl(0.018, 0.022, D.neck + 0.03, 6), { y: D.neck / 2 }, { c: BONE });
@@ -447,21 +459,21 @@ export const hollowBannerman = {
     const mailTorso = lathe([[W * 0.82, -0.05], [W * 0.78, 0.05 + D.spine * 0.5], [W * 0.82, 0.05 + D.spine + D.chest * 0.5], [W * 0.92, 0.05 + D.spine + D.chest * 0.85], [W * 0.5, 0.06 + D.spine + D.chest], [0.05, 0.1 + D.spine + D.chest]], 14);
     deform(mailTorso, (v) => { v.z *= 0.7; if (v.z < 0) v.z -= clamp((v.y - D.spine) / D.chest) ** 2 * 0.04; });
     rig.add('hips', 'mail', mailTorso, {}, { c: [0.72, 0.7, 0.72], skin: chainSkin([['hips', 0.0], ['spine', 0.05 + D.spine * 0.45], ['chest', 0.05 + D.spine + D.chest * 0.25]], (v) => v.y) });
-    splitSkirt(rig, D, W * 0.82, W * 1.15, D.thigh * 0.95, [0.7, 0.68, 0.7], 4);
+    splitSkirt(rig, D, W * 0.82, W * 1.08, D.thigh * 0.9, [0.7, 0.68, 0.7], 4);
     // ragged surcoat front/back: royal purple with gold border, a gold crown on the chest
     const scLen = D.spine + D.thigh * 1.05 + 0.25, scW = W * 1.9;
     for (const [z, ry, sd] of [[1, 0, 3], [-1, Math.PI, 6]]) {
       const pg = panel(scW, scLen, { ws: 7, hs: 9, tatter: 0.5, seed: sd, curve: 0.09, taperBot: 1.12 });
-      rig.add('chest', 'cloth', pg, { y: D.chest * 0.92, z: z * 0.15, ry, rx: z * 0.07 }, {
+      rig.add('chest', 'cloth', pg, { y: D.chest * 0.92, z: z * 0.155, ry, rx: -z * 0.17 }, {
         cfn: (v) => (Math.abs(v.x) > scW * 0.41 || (v.y < -scLen * 0.84 && v.y > -scLen * 0.89) ? [0.75, 0.56, 0.26] : ROYAL),
         anim: (v) => clamp((-v.y - D.chest * 0.6) / scLen) * 1.3,
         skin: chainSkin([['hips', -D.spine - 0.4], ['spine', -D.spine * 0.5], ['chest', 0.0]], (v) => v.y),
       });
     }
     const crownMotif = mergeRaw([xf(G.box(0.12, 0.028, 0.012), {}), ...[-1, 0, 1].map((i) => xf(G.cone(0.018, i === 0 ? 0.07 : 0.05, 4), { x: i * 0.045, y: 0.04, ry: Math.PI / 4, sz: 0.5 }))]);
-    rig.add('chest', 'gold', crownMotif, { y: D.chest * 0.6, z: 0.165, rx: 0.07 }, { c: GOLDC });
+    rig.add('chest', 'gold', crownMotif, { y: D.chest * 0.3, z: 0.168, rx: 0.07 }, { c: GOLDC });
     // tattered shoulder mantle + rope belt with a gold buckle
-    rig.add('chest', 'cloth', robe(0.09, 0.22, 0.24, { seg: 16, rows: 2, folds: 7, foldAmp: 0.12, tatter: 0.5, seed: 9 }), { y: D.chest + 0.08, sz: 0.85 }, { cfn: (v) => (v.y < -0.19 ? [0.6, 0.45, 0.22] : [0.2, 0.05, 0.27]), anim: (v) => clamp(-v.y * 3) * 0.6 });
+    rig.add('chest', 'cloth', robe(0.09, 0.21, 0.22, { seg: 16, rows: 2, folds: 7, foldAmp: 0.12, tatter: 0.3, seed: 9 }), { y: D.chest + 0.08, sz: 0.85 }, { cfn: (v) => (v.y > -0.03 ? [0.6, 0.45, 0.22] : [0.2, 0.05, 0.27]), anim: (v) => clamp(-v.y * 3) * 0.6 });
     rig.add('hips', 'cloth', xf(G.tor(W * 0.9, 0.018, 4, 18), { rx: Math.PI / 2, sz: 0.85 }), { y: 0.06 }, { c: [0.25, 0.17, 0.1] });
     rig.add('hips', 'gold', xf(G.box(0.05, 0.045, 0.02), {}), { y: 0.06, z: W * 0.9 * 0.85 + 0.01 }, { c: GOLDC });
     // limbs: mail sleeves, bony forearms in rags, bony legs with wrapped shins, bone feet
@@ -522,7 +534,14 @@ export const hollowBannerman = {
     return D;
   },
   pose(m, s, P, dt) {
-    if (s.anim === 'cast') s.attackType = 'rally';
+    const st = m.state;
+    if (s.anim === 'cast') {
+      s.attackType = 'rally';
+      // a second cast pass (progress restarted after the plant) only holds and recovers
+      if (st.rallyPlanted && s.progress + 0.2 < st.rallyP) st.rallyHold = true;
+      if (s.progress > 0.5) st.rallyPlanted = true;
+      st.rallyP = s.progress;
+    } else { st.rallyPlanted = false; st.rallyHold = false; st.rallyP = 0; }
     const r = humanoidPose(m, s, P, dt);
     holdArm(P, m, s, -1, 1);
     holdArm(P, m, s, 1, 1);
@@ -543,7 +562,7 @@ export const hollowBannerman = {
     }
     // finial glow pulses; flares while rallying
     let orb = 0.55 + 0.15 * Math.sin(T * 3.1);
-    if (s.attackType === 'rally' && action) orb = an === 'windup' ? 0.7 + 0.4 * s.progress : 1.35 - 0.5 * smooth(0.8, 1, s.progress) + 0.12 * Math.sin(T * 22);
+    if (s.attackType === 'rally' && action) orb = an === 'windup' ? 0.7 + 0.4 * s.progress : st.rallyHold ? 1.3 - 0.6 * smooth(0.3, 1, s.progress) : 0.8 + 0.6 * smooth(0.45, 0.55, s.progress) - 0.3 * smooth(0.85, 1, s.progress) + 0.12 * Math.sin(T * 22);
     if (an === 'death') orb *= 1 - smooth(0.3, 0.75, s.progress);
     if (an === 'spawn') orb *= smooth(0.3, 1, s.progress);
     m.setOrb(orb);
@@ -561,11 +580,7 @@ export const hollowBannerman = {
     },
     actions: {
       // raise the banner high, then plant it with a burst from the finial
-      rally: act2(
-        { armR: [-1.967, -0.03, -0.145], foreR: [-1.848, 0, 0], handR: [1.983, 0.068, 0], pole: [0.031, -0.086, 0.696], armL: [-1.411, -0.9, -0.603], foreL: [-1.645, 0, 0], chest: [-0.15, 0, 0], head: [-0.3, 0, 0], neck: [-0.05, 0, 0], hips: [0, 0, 0, 0, -0.04, 0] },
-        { armR: [0.008, 0.258, -0.56], foreR: [-1.621, 0, 0], handR: [-0.567, -0.378, 0], pole: [0.386, -0.281, 0.042], armL: [-2.5, 0, 0.55], foreL: [-0.35, 0, 0], handL: [-0.4, 0, 0], chest: [-0.22, 0, 0], spine: [0.05, 0, 0], head: [-0.45, 0, 0], jaw: [0.75, 0, 0], hips: [0, 0, 0, 0, -0.08, 0], thighL: [-0.3, 0, 0.08], shinL: [0.35, 0, 0] },
-        { hit: 0.3, recover: 0.82, recoverAmt: 0.45, tremble: 0.035 },
-      ),
+      rally: (P, ph, p, m) => rallyAction(P, ph, p, m),
       // quick thrust with the spear butt: the pole tips back over the shoulder, the butt drives forward
       jab: act2(
         { armR: [-0.032, 0.275, -0.053], foreR: [-1.778, 0, 0], handR: [-0.567, -0.378, 0], pole: [-0.584, -0.079, 0.805], armL: [-0.184, -0.479, 0.214], foreL: [-1.496, 0, 0], chest: [-0.05, -0.35, 0], spine: [0.1, -0.15, 0], head: [-0.1, 0.3, 0], hips: [0, -0.1, 0, 0, -0.05, -0.08], thighR: [0.25, 0, 0], shinR: [0.35, 0, 0] },
@@ -579,15 +594,46 @@ export const hollowBannerman = {
   },
 };
 
+// rally: raise the banner overhead (0..0.4), slam the butt down (0.42..0.52), hold it planted, recover.
+// The game plays it as two 'cast' states (windup, then recovery); the second pass just holds and recovers.
+const RALLY_UP = { armR: [-1.967, -0.03, -0.145], foreR: [-1.848, 0, 0], handR: [1.983, 0.068, 0], pole: [0.031, -0.086, 0.696], armL: [-1.411, -0.9, -0.603], foreL: [-1.645, 0, 0], chest: [-0.15, 0, 0], head: [-0.3, 0, 0], neck: [-0.05, 0, 0], hips: [0, 0, 0, 0, -0.04, 0] };
+const RALLY_PLANT = { armR: [0.008, 0.258, -0.56], foreR: [-1.621, 0, 0], handR: [-0.567, -0.378, 0], pole: [0.386, -0.281, 0.042], armL: [-2.5, 0, 0.55], foreL: [-0.35, 0, 0], handL: [-0.4, 0, 0], chest: [-0.22, 0, 0], spine: [0.05, 0, 0], head: [-0.45, 0, 0], jaw: [0.75, 0, 0], hips: [0, 0, 0, 0, -0.08, 0], thighL: [-0.3, 0, 0.08], shinL: [0.35, 0, 0] };
+function rallyAction(P, ph, p, m) {
+  const T = m.time;
+  if (ph === 'windup') {
+    P.apply(RALLY_UP);
+    const tr = smooth(0.5, 1, p) * 0.03;
+    P.r('armR', Math.sin(T * 37) * tr); P.r('pole', Math.sin(T * 29) * tr, 0, Math.sin(T * 23) * tr);
+    return 9;
+  }
+  if (m.state.rallyHold) {
+    const rec = smooth(0.2, 1, p);
+    P.apply(RALLY_PLANT, 1 - rec); P.apply(BN_REST, rec);
+    return 10;
+  }
+  const a = easeOut(smooth(0, 0.4, p)), b = easeIn(smooth(0.42, 0.52, p)), rec = smooth(0.86, 1, p) * 0.5;
+  P.apply(BN_REST, 1 - a + a * b * rec);
+  P.apply(RALLY_UP, a * (1 - b));
+  P.apply(RALLY_PLANT, a * b * (1 - rec));
+  // raised banner trembles with effort; the plant jars the whole body
+  const tr = bump(0.15, 0.45, p) * 0.03, jar = bump(0.5, 0.62, p);
+  P.r('armR', Math.sin(T * 37) * tr); P.r('pole', Math.sin(T * 29) * tr - jar * 0.06, 0, Math.sin(T * 23) * tr);
+  P.p('hips', 0, -jar * 0.05, 0); P.r('chest', jar * 0.12); P.r('flag', jar * 0.4, 0, jar * 0.2);
+  return p < 0.42 ? 12 : 30;
+}
+
 // crumple to the knees, then slump forward and aside
-const BN_KNEEL = { hips: [0.15, 0, 0, 0, -0.52, -0.05], thighL: [-1.2, 0, 0.15], shinL: [2.1, 0, 0], thighR: [-0.9, 0, -0.15], shinR: [2.2, 0, 0], footL: [0.6, 0, 0], footR: [0.6, 0, 0], spine: [0.35, 0, 0], chest: [0.2, 0, 0], neck: [0.25, 0, 0], head: [0.4, 0, 0.15], jaw: [0.5, 0, 0], armR: [-0.4, 0, -0.3], foreR: [-0.9, 0, 0], armL: [0.1, 0, 0.1], foreL: [-0.3, 0, 0] };
-const BN_SLUMP = { hips: [0.6, 0, -0.5, 0, -0.85, 0.1], thighL: [-1.3, 0, 0.3], shinL: [2.2, 0, 0], thighR: [-1.0, 0, -0.1], shinR: [2.3, 0, 0], footL: [0.6, 0, 0], footR: [0.6, 0, 0], spine: [0.4, 0, -0.3], chest: [0.3, 0, -0.2], neck: [0.3, 0, 0], head: [0.6, 0.5, 0.6], jaw: [0.8, 0, 0], armL: [0.2, 0, 0.6], foreL: [-0.6, 0, 0], armR: [-0.6, 0, -0.9], foreR: [-0.5, 0, 0] };
+const BN_KNEEL = { hips: [0.15, 0, 0, 0, -0.44, -0.05], thighL: [-0.25, 0, 0.1], shinL: [1.65, 0, 0], thighR: [-0.15, 0, -0.1], shinR: [1.6, 0, 0], footL: [1.1, 0, 0], footR: [1.1, 0, 0], spine: [0.35, 0, 0], chest: [0.2, 0, 0], neck: [0.25, 0, 0], head: [0.4, 0, 0.15], jaw: [0.5, 0, 0], armR: [-0.4, 0, -0.3], foreR: [-0.9, 0, 0], armL: [0.1, 0, 0.1], foreL: [-0.3, 0, 0] };
+const BN_SLUMP = { hips: [1.35, 0.3, 0.25, 0, -0.78, 0.3], thighL: [-0.35, 0, 0.2], shinL: [0.9, 0, 0], thighR: [-0.1, 0, -0.1], shinR: [0.5, 0, 0], footL: [0.6, 0, 0], footR: [0.6, 0, 0], spine: [0.05, 0, -0.1], chest: [0.0, 0, -0.05], neck: [-0.15, 0, 0], head: [-0.25, 0.9, 0.15], jaw: [0.8, 0, 0], armL: [0.3, 0, 0.9], foreL: [-0.5, 0, 0], armR: [-2.85, 0, -0.35], foreR: [-0.1, 0, 0], handR: [0.2, 0, 0] };
 function bannermanDeath(P, p, m) {
   const a = smooth(0, 0.35, p), b = smooth(0.32, 0.82, p);
   P.apply(BN_UPPER, 1 - a);
   P.apply(BN_REST, 1 - a);
   P.apply(BN_KNEEL, a * (1 - b));
   P.apply(BN_SLUMP, b);
+  const arc = bump(0.32, 0.82, p);
+  P.p('hips', 0, arc * 0.12 + bump(0, 0.35, p) * 0.1, arc * 0.08);
+  P.r('thighL', -arc * 0.25); P.r('thighR', -arc * 0.25);
   return 12;
 }
 function bannermanSpawn(P, p, m) {

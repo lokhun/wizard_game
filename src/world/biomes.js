@@ -118,7 +118,7 @@ export const BIOMES = [
     grade: { lift: [0.008, 0.004, 0.014], gain: [1.02, 0.95, 1.02], saturation: 0.82, exposure: 1.0, bloom: 0.7 },
     rooms: 4,
     branches: 0,
-    enemies: ['royalGuard', 'animatedArmor', 'wraith', 'courtSorcerer', 'skeletonArcher'],
+    enemies: ['royalGuard', 'gildedSentinel', 'hollowBannerman', 'animatedArmor', 'wraith', 'courtSorcerer', 'skeletonArcher'],
     elites: ['royalGuard'],
     boss: 'hollowKing',
     music: 'throne',
