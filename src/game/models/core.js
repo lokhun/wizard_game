@@ -396,8 +396,9 @@ export function setEnemyRim(color, k = 1) { RIM.uRim.value.set(color).multiplySc
 const RIM_CHUNK = `
 #ifdef EN_RIM
   {
-    float ndv = clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0);
-    totalEmissiveRadiance += uRim * pow(1.0 - ndv, 2.5);
+    // use the smooth geometric normal, not the bumpy mapped one, so only true silhouette edges catch it
+    float ndv = clamp(dot(normalize(vNormal), normalize(vViewPosition)), 0.0, 1.0);
+    totalEmissiveRadiance += uRim * pow(1.0 - ndv, 4.0) * 1.6;
   }
 #endif
 `;
