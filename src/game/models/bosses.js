@@ -12,22 +12,7 @@ import { motherOfFilth } from './bossFilth.js';
 
 const _tmp = new THREE.Vector3();
 
-// =============================================================== executioner ==
-export const executioner = {
-  id: 'executioner', height: 4.6, radius: 1.2, boss: true, eyeColor: 0xff3a20, defaultAttack: 'slam', attackTypes: ['slam', 'sweep', 'charge', 'roar'],
-  build(rig) { rig.scale = 1.8; return buildHeadsman(rig, { boss: true }); },
-  pose: humanoidPose,
-  anim: {
-    ...HEADSMAN_ANIM, breath: 1.0, look: 0.6,
-    actions: {
-      charge: act2(
-        { chest: [0.3, 0, 0], spine: [0.25, 0, 0], head: [-0.25, 0, 0], armR: [-0.6, 0, 0.3], foreR: [-0.9, 0, 0], handR: [0.4, 0, 0], armL: [-0.6, 0, -0.3], foreL: [-1.0, 0, 0], hips: [0, 0, 0, 0, -0.18, -0.15], thighL: [-0.8, 0, 0], shinL: [1.0, 0, 0], thighR: [0.3, 0, 0], shinR: [0.6, 0, 0] },
-        { chest: [0.45, 0.3, 0], spine: [0.35, 0.2, 0], head: [-0.4, -0.2, 0], armR: [-1.2, 0, 0.4], foreR: [-0.4, 0, 0], handR: [0.8, 0, 0], armL: [-1.0, 0, -0.3], foreL: [-0.6, 0, 0], hips: [0, 0, 0, 0, -0.1, 0.2] },
-        { hit: 0.15, recover: 0.85, recoverAmt: 0.25 },
-      ),
-    },
-  },
-};
+import { executioner } from './bossHeadsman.js';
 
 // =============================================================== stoneWyvern ==
 const MAGMA = 0xff5a14;
