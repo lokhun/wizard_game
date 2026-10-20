@@ -13,7 +13,7 @@ import { Director } from './director.js';
 import { LocalPlayer } from './player.js';
 import { RemotePlayer } from './remote.js';
 import { resolveHit, ST, REACTIONS } from '../game/combat.js';
-import { getViewModel, preloadEnemies, getEnemyModel } from './models.js';
+import { getViewModel, preloadEnemies, getEnemyModel, getAvatar } from './models.js';
 import { rollTomes, rollRelics, RARITY, TOMES } from './upgrades.js';
 import { makeChest, makePedestal, makePortal } from './interactables.js';
 import { CLASS_META } from './classMeta.js';
@@ -192,7 +192,20 @@ export class Game {
     for (const p of this.built.interactables) {
       if (p.type === 'chest') this.interactables.push(makeChest(this, p));
       if (p.type === 'shrine') this.interactables.push({ kind: 'shrine', pos: new THREE.Vector3(p.x, 1.2, p.z), r: 2.6, used: false, label: 'Pray at the Shrine', id: 'shrine' + p.x });
-      if (p.type === 'merchant') this.interactables.push({ kind: 'shop', pos: new THREE.Vector3(p.x, 1.2, p.z), r: 3.2, label: 'Trade with the Merchant', id: 'shop' + p.x, stock: null });
+      if (p.type === 'merchant') {
+        const npc = getAvatar('chronomancer', this);
+        npc.root.position.set(p.x, this.groundY(p.x, p.z), p.z - 0.2);
+        npc.root.rotation.y = 0;
+        npc.root.scale.setScalar(1.05);
+        npc.setTint?.(0x6a4a2a, 0.45);
+        this.scene.add(npc.root);
+        this.lights.addTorch(new THREE.Vector3(p.x + 1.2, this.groundY(p.x, p.z) + 2.2, p.z + 0.8), { color: 0xffb060, intensity: 14, range: 8, flicker: 0.3 });
+        this.interactables.push({
+          kind: 'shop', pos: new THREE.Vector3(p.x, 1.2, p.z), r: 3.4, label: 'Trade with the Merchant', id: 'shop' + p.x, stock: null,
+          update: (dt, t) => npc.update(dt, { anim: 'idle', t, speed: 0, pitch: Math.sin(t * 0.5) * 0.1, castProgress: 0, strafe: 0 }),
+          dispose: () => { this.scene.remove(npc.root); npc.dispose?.(); },
+        });
+      }
     }
     // place players
     this.player.rerolls = 1;

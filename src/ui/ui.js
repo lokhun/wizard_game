@@ -94,6 +94,7 @@ export class UI {
         <button class="btn" id="bJoin">Join a Party</button>
         <button class="btn" id="bHelp">How to Play</button>
         <button class="btn" id="bSettings">Settings</button>
+        ${matchMedia('(pointer: coarse)').matches && !matchMedia('(pointer: fine)').matches ? '<div class="stats-line" style="color:#ff9040">Arcane Ascent needs a keyboard and mouse — play on a computer for the full experience.</div>' : ''}
         <div class="stats-line">${s.runs ? `Runs ${s.runs} · Victories ${s.wins ?? 0} · Deepest floor ${s.bestFloor ?? 1} · Foes slain ${s.kills ?? 0}` : 'The Hollow King awaits atop the Ashen Keep.'}</div>
       </div>
       <div class="credit">Co-op for up to 4 wizards · 13 classes · 5 realms</div>`;
