@@ -16,6 +16,13 @@ A first-person, co-op wizard roguelike for the browser. Fight your way up from t
   - Dynamic torch lighting, volumetric-feeling fog, bloom and colour grading.
   - Thousands of GPU particles and element-specific spell effects.
 - **Procedural audio**: all sounds and music are synthesised with Web Audio.
+  - About 100 layered sound effects, ambience for each realm, and generative music that shifts between exploring, combat and boss fights.
+- **And more:**
+  - Sigils above doorways reveal the room beyond: ambush, elite, treasure, shrine, merchant or boss.
+  - Barrels and crates can be destroyed.
+  - Champion enemies carry affixes: hasted, vampiric, volatile or shielded.
+  - Boss intro cinematics, and fallen co-op players spectate their teammates.
+  - Winning unlocks **Ascension** difficulty levels.
 
 ## Controls
 
