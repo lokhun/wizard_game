@@ -479,7 +479,7 @@ export class Game {
     if (!vm) return;
     const p = this.player;
     const ca = p.castAnim;
-    vm.root.visible = !p.dead && this.settings.showHands !== false;
+    vm.root.visible = !p.dead && !this.cinematic && this.settings.showHands !== false;
     vm.update(dt, {
       t: this.time, speed: p.speedNorm ?? 0, grounded: p.grounded, look: p.lookDelta,
       cast: ca ? { slot: ca.slot, hand: ca.hand, t: ca.t, style: p.channel ? 'channel' : ca.style } : null,
