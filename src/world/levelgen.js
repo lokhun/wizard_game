@@ -164,8 +164,8 @@ export function generateLevel(seed, floorIndex) {
   mainRooms.forEach((r, i) => { r.main = true; r.order = i; });
 
   // --- branches
-  // optional side rooms: two of treasure / shrine / trial, then an elite
-  const sideTypes = [...rng.shuffle([ROOM.TREASURE, ROOM.SHRINE, ROOM.TRIAL]).slice(0, 2), ROOM.TREASURE, ROOM.ELITE];
+  // optional side rooms: always a treasure vault, then a trial or a shrine
+  const sideTypes = [ROOM.TREASURE, rng.chance(0.5) ? ROOM.TRIAL : ROOM.SHRINE, ROOM.SHRINE, ROOM.ELITE];
   let branches = biome.branches;
   const candidates = rng.shuffle(mainRooms.slice(1, -2));
   for (const host of candidates) {
