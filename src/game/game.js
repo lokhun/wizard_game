@@ -650,7 +650,7 @@ export class Game {
   addHazard(h) {
     const hz = { ...h, t: 0, done: false, hitLocal: false };
     const color = h.el === 'enemyGreen' || h.el === 'poison' ? [1.0, 2.2, 0.2] : h.el === 'enemyPurple' || h.el === 'arcane' || h.el === 'necrotic' ? [1.6, 0.3, 2.6] : h.el === 'holy' ? [2.4, 1.9, 0.6] : h.el === 'frost' ? [0.6, 1.6, 2.6] : [2.6, 0.35, 0.1];
-    hz.color = color;
+    hz.color = color.map((c) => c * 0.55);
     if (h.vis && h.shape !== 'arc' && h.shape !== 'wave' && h.shape !== 'los') {
       const dur = h.teleDur ?? h.delay;
       if (h.shape === 'circle') this.vfx.telegraph({ x: h.x, y: h.y ?? this.groundY(h.x, h.z), z: h.z }, { shape: 'circle', radius: h.r, dur, color });
