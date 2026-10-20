@@ -28,6 +28,9 @@ How the research in `RESEARCH.md` turned into the game.
   - Main path: start → 3–4 combat rooms → elite room → shop → boss.
   - Side branches: treasure (relic choice) and shrine (blessing).
 - **Rewards:** a sigil above each doorway shows what lies beyond.
+- **Trial rooms:** an optional gilded side door (sigil ⧗) on some floors.
+  - Inside: a denser fight with more champions and a 45 s clock (+3 s per realm).
+  - Clear it in time for an Epic-or-better tome and triple gold; if the clock runs out, you still fight your way out for an ordinary reward.
 - **After a combat room is cleared:**
   - A tome pedestal appears. Each player takes 1 of 3 Arcane Tomes; rarity scales the numbers ×1 / 1.3 / 1.6 / 2.0, and players get 1 reroll per floor.
   - Shared gold drops.

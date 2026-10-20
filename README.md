@@ -24,6 +24,11 @@ A first-person, co-op wizard roguelike for the browser. Fight your way up from t
   - War-banner bearers empower everything around them.
   - Powder kegs chain-explode.
   - Pillars and statues break line of sight.
+  - Optional **Trial** rooms: beat a tougher wave against the clock for an Epic tome.
+  - Some rooms have their first squad camped around a fire, so you can scout and strike first.
+- **A living world:**
+  - Rats scurry along the walls, bats burst from the vaults, and crows take wing in the bailey.
+  - Mist drifts over the cobbles, ivy trails from the battlements, and moss, water stains and cracks mark the walls.
 - **And more:**
   - Sigils above doorways reveal the room beyond: ambush, elite, treasure, shrine, merchant or boss.
   - Barrels and crates can be destroyed.
