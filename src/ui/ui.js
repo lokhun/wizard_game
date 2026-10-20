@@ -401,7 +401,9 @@ export class UI {
     // objective
     const room = game.level.roomAt(p.pos.x, p.pos.z);
     let obj = '';
-    if (game.director.active) obj = game.director.active.boss ? 'Defeat the guardian' : 'Survive the ambush';
+    const foes = game.actors.list.reduce((n, a) => n + (a.faction === 'enemy' && (!a.dead || a.collapsed) ? 1 : 0), 0);
+    const locked = game.director.active || (room && !room.cleared && foes > 0);
+    if (locked) obj = game.actors.list.some((a) => a.boss && !a.dead) ? 'Defeat the guardian' : `Survive the ambush — ${foes} foe${foes === 1 ? '' : 's'} remain`;
     else if (room?.type === ROOM.BOSS && room.cleared) obj = 'Step through the portal to ascend';
     else obj = 'Find the way to the guardian\'s lair';
     if (obj !== this._obj) { this._obj = obj; h.obj.textContent = obj; }
@@ -819,10 +821,13 @@ export class UI {
     const mins = Math.floor(s.time / 60), secs = Math.floor(s.time % 60);
     const m = this._modal(`
       <div class="panel end-box">
+        ${classEmblem(p.classId, hex(p.meta.color), 72)}
         <div class="big" style="color:${won ? '#ffd060' : '#c02020'};text-shadow:0 0 30px ${won ? '#ff9a20' : '#ff0000'}">${won ? 'Victory' : 'Defeat'}</div>
+        ${won ? '<div style="color:var(--gold);font-family:var(--serif);letter-spacing:0.1em">A new Ascension level is unlocked</div>' : ''}
         <div class="subtitle">${won ? 'The Hollow King has fallen. The Ashen Keep is free.' : `Fell in ${game.biome.name}`}</div>
         <table>
           <tr><td>Wizard</td><td>${esc(p.name)} the ${p.meta.name}</td></tr>
+          ${game.difficulty?.ascension ? `<tr><td>Ascension</td><td>${game.difficulty.ascension}</td></tr>` : ''}
           <tr><td>Realm reached</td><td>${game.floorIndex + 1} / ${BIOMES.length}</td></tr>
           <tr><td>Time</td><td>${mins}m ${secs}s</td></tr>
           <tr><td>Foes slain (party)</td><td>${s.kills}</td></tr>

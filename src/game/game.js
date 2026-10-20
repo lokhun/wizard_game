@@ -320,6 +320,7 @@ export class Game {
     const cam = this.renderer.camera;
     p.updateCamera(cam, realDt, this.vfx, this.time);
     if (this.cinematic) this._cinematicCam(cam, realDt);
+    else if (p.dead && !this.isSolo) this._spectate(cam, realDt);
     this.selfLight.position.copy(cam.position).add(_v.set(0, -0.2, 0));
     this.selfLight.intensity = (p.dead ? 0 : 2.2) * (this.settings.selfLight ?? 1);
     // flames
@@ -396,6 +397,22 @@ export class Game {
   }
 
   screenTint(rgb, dur) { this.tint = { rgb, t: dur }; }
+
+  // dead in co-op: follow a living teammate from behind
+  _spectate(cam) {
+    const alive = [...this.remotes.values()].filter((r) => !r.dead);
+    if (!alive.length) return;
+    if (this.input.was('jump')) this._specIdx = (this._specIdx ?? 0) + 1;
+    const r = alive[(this._specIdx ?? 0) % alive.length];
+    const back = new THREE.Vector3(Math.sin(r.yaw), 0, Math.cos(r.yaw));
+    const want = r.eye.clone().addScaledVector(back, 3.2).add(new THREE.Vector3(0, 0.8, 0));
+    const dist = this.collision.raycast(r.eye.x, r.eye.y, r.eye.z, back.x, 0.25, back.z, 3.4);
+    if (dist < 3.4) want.copy(r.eye).addScaledVector(back, Math.max(0.5, dist - 0.3)).add(new THREE.Vector3(0, 0.8 * dist / 3.4, 0));
+    this._specPos = this._specPos ? this._specPos.lerp(want, 0.15) : want.clone();
+    cam.position.copy(this._specPos);
+    cam.lookAt(r.eye.x, r.eye.y - 0.2, r.eye.z);
+    this.ui?.prompt(`Spectating ${r.name} — you return when the chamber is cleared · [Space] next`);
+  }
 
   // boss intro: pull the camera's gaze to the boss for a moment
   _cinematicCam(cam, dt) {

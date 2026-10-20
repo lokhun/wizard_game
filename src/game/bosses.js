@@ -362,7 +362,7 @@ SCRIPTS.executioner = {
 SCRIPTS.stoneWyvern = {
   keepDist: 7,
   init(B) { B.data.fly = true; B.fx('fly', { on: 1 }); },
-  modifyDamage(B, dmg) { return B.data.fly ? dmg * 0.75 : dmg; },
+  modifyDamage(B, dmg) { return B.data.fly ? dmg * 0.85 : dmg; },
   phases: [
     {
       at: 1,

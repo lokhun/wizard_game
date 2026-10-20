@@ -65,12 +65,12 @@ export const ENEMY_DEFS = {
   skeleton: {
     name: 'Skeleton Warrior', hp: 60, speed: 4.2, dmg: 11, cost: 2, ai: 'melee', poise: 20, gold: 2, sound: 'skeleton_rattle', deathSound: 'skeleton_death', hitSound: 'enemy_hit_bone', undead: true,
     attacks: [{ id: 'slash', kind: 'melee', range: 2.2, arc: 1.4, windup: 0.5, recover: 0.6, anim: 'swing' }],
-    reassemble: 0.35, resist: { poison: 0.3, blood: 0.5 },
+    reassemble: 0.35, resist: { poison: 0.65, blood: 0.7 },
   },
   skeletonArcher: {
     name: 'Skeleton Archer', hp: 45, speed: 3.6, dmg: 10, cost: 3, ai: 'ranged', range: [9, 18], poise: 15, gold: 2, sound: 'skeleton_rattle', deathSound: 'skeleton_death', hitSound: 'enemy_hit_bone', undead: true,
     attacks: [{ id: 'arrow', kind: 'shoot', windup: 0.9, recover: 0.9, anim: 'shoot', el: 'physical', speed: 34, count: 1, mesh: 'arrow', laser: true, cd: 1.4 }],
-    resist: { poison: 0.3, blood: 0.5 },
+    resist: { poison: 0.65, blood: 0.7 },
   },
   wraith: {
     name: 'Wraith', hp: 80, speed: 4.4, dmg: 12, cost: 4, ai: 'flyer', poise: 25, gold: 4, sound: 'ghost_wail', deathSound: 'ghost_wail', undead: true, flying: true,
@@ -79,7 +79,7 @@ export const ENEMY_DEFS = {
       { id: 'shriek', kind: 'shoot', windup: 0.8, recover: 1.0, anim: 'cast', el: 'enemyPurple', speed: 14, count: 3, spread: 0.25, homing: 1.5, cd: 4 },
       { id: 'phase', kind: 'blink', windup: 0.4, recover: 0.4, anim: 'cast', cd: 7, dist: 7 },
     ],
-    resist: { physical: 0.5, poison: 0, blood: 0.5 },
+    resist: { physical: 0.5, poison: 0.65, blood: 0.7 },
   },
   jailer: {
     name: 'Jailer', hp: 200, speed: 3.4, dmg: 18, cost: 7, ai: 'melee', poise: 120, gold: 6, sound: 'armor_clank', deathSound: 'enemy_death', hitSound: 'enemy_hit_armor',
@@ -110,7 +110,7 @@ export const ENEMY_DEFS = {
   hound: {
     name: 'Hellhound', hp: 70, speed: 7.5, dmg: 12, cost: 3, ai: 'melee', poise: 20, gold: 2, sound: 'beast_growl', deathSound: 'beast_growl', flank: true, pack: [2, 4],
     attacks: [{ id: 'bite', kind: 'lunge', range: 2.0, arc: 1.4, windup: 0.35, recover: 0.6, anim: 'bite', leap: 7, st: { burn: [2, 3] } }],
-    resist: { fire: 0.4 },
+    resist: { fire: 0.6 },
   },
   gargoyle: {
     name: 'Gargoyle', hp: 110, speed: 5.0, dmg: 16, cost: 5, ai: 'flyer', poise: 60, gold: 5, sound: 'stone_grind', deathSound: 'stone_grind', hitSound: 'enemy_hit_armor', flying: true,
@@ -145,7 +145,7 @@ export const ENEMY_DEFS = {
       { id: 'swing', kind: 'melee', range: 3.0, arc: 1.6, windup: 0.65, recover: 0.7, anim: 'swing' },
       { id: 'spin', kind: 'nova', radius: 3.6, windup: 0.9, recover: 0.9, anim: 'spin', cd: 6 },
     ],
-    armor: 0.3, resist: { poison: 0, blood: 0, lightning: 1.4 },
+    armor: 0.3, resist: { poison: 0.65, blood: 0.65, lightning: 1.4 },
   },
   grimoire: {
     name: 'Hungering Grimoire', hp: 40, speed: 5.5, dmg: 8, cost: 2, ai: 'flyer', poise: 5, gold: 2, sound: 'book_flap', deathSound: 'book_flap', flying: true, pack: [2, 4],
@@ -169,7 +169,7 @@ export const ENEMY_DEFS = {
       { id: 'fireball', kind: 'shoot', windup: 0.6, recover: 1.0, anim: 'cast', el: 'enemyFire', speed: 16, count: 1, cd: 2.2, aoe: 1.6 },
       { id: 'claw', kind: 'lunge', range: 1.8, arc: 1.4, windup: 0.35, recover: 0.6, anim: 'bite', leap: 6, st: { burn: [2, 3] } },
     ],
-    resist: { fire: 0 }, deathExplode: { radius: 2.5, el: 'enemyFire' },
+    resist: { fire: 0.6 }, deathExplode: { radius: 2.5, el: 'enemyFire' },
   },
   archivistLich: {
     name: 'Archivist Lich', hp: 800, speed: 3.0, dmg: 22, cost: 22, ai: 'caster', range: [8, 16], poise: 250, gold: 30, elite: true, sound: 'enemy_cast', deathSound: 'boss_roar', undead: true, flying: true,
@@ -205,9 +205,9 @@ export const ENEMY_DEFS = {
 
 // Bosses (behaviour scripted in bosses.js)
 export const BOSS_DEFS = {
-  motherOfFilth: { name: 'Mother of Filth', title: 'Queen of the Drowned Sewers', hp: 5760, dmg: 18, poise: 9999, gold: 60, model: 'motherOfFilth', speed: 2.2, sound: 'slime_squish', deathSound: 'boss_roar', resist: { poison: 0.3 } },
+  motherOfFilth: { name: 'Mother of Filth', title: 'Queen of the Drowned Sewers', hp: 5760, dmg: 18, poise: 9999, gold: 60, model: 'motherOfFilth', speed: 2.2, sound: 'slime_squish', deathSound: 'boss_roar', resist: { poison: 0.75 } },
   executioner: { name: 'The Executioner', title: 'Headsman of the Oubliette', hp: 9360, dmg: 30, poise: 9999, gold: 80, model: 'executioner', speed: 4.2, sound: 'beast_growl', deathSound: 'boss_roar', hitSound: 'enemy_hit' },
-  stoneWyvern: { name: 'Gravemaw', title: 'Stone Wyvern of the Bailey', hp: 13680, dmg: 34, poise: 9999, gold: 100, model: 'stoneWyvern', speed: 5, sound: 'stone_grind', deathSound: 'boss_roar', hitSound: 'enemy_hit_armor', resist: { earth: 0.5, poison: 0.5 } },
+  stoneWyvern: { name: 'Gravemaw', title: 'Stone Wyvern of the Bailey', hp: 13680, dmg: 34, poise: 9999, gold: 100, model: 'stoneWyvern', speed: 5, sound: 'stone_grind', deathSound: 'boss_roar', hitSound: 'enemy_hit_armor', resist: { earth: 0.8, poison: 0.8 } },
   courtArchmage: { name: 'Archmage Veyrin', title: 'The Court Archmage', hp: 17640, dmg: 34, poise: 9999, gold: 120, model: 'courtArchmage', speed: 4, sound: 'enemy_cast', deathSound: 'boss_roar', flying: true },
   hollowKing: { name: 'The Hollow King', title: 'Last Lord of the Ashen Keep', hp: 27000, dmg: 40, poise: 9999, gold: 0, model: 'hollowKing', speed: 4.4, sound: 'boss_roar', deathSound: 'boss_roar', hitSound: 'enemy_hit_armor', undead: true },
 };
