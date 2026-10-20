@@ -10,6 +10,9 @@ export function makeWaterMaterial(factory, tint = 0x0d1a12) {
     color: tint,
     roughness: 0.08,
     metalness: 0.2,
+    // a faint sickly glow so channels read as water even away from torches
+    emissive: 0x0b2416,
+    emissiveIntensity: 0.6,
     normalMap: t.normalMap,
     normalScale: new THREE.Vector2(0.35, 0.35),
     transparent: true,

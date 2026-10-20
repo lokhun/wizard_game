@@ -405,7 +405,7 @@ function decorateRoom(level, room, rng) {
     for (let i = 0; i < rng.int(2, 5); i++) {
       const s = randFloorSpot(1); if (s) P(rng.pick(['grate', 'puddle', 'mushrooms', 'rubble']), s[0], s[1]);
     }
-    wallTorches(level, room, rng, 4);
+    wallTorches(level, room, rng, 5);
     // glowing fungus lights
     for (let i = 0; i < rng.int(1, 3); i++) {
       const s = edgeSpot(); if (!s) continue;
