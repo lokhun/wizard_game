@@ -184,7 +184,10 @@ function showMenu() {
     onSolo: () => { audio?.init(); showSelect(null); },
     onHost: () => { audio?.init(); doHost(); },
     onJoin: () => { audio?.init(); mode = 'join'; const api = ui.showJoin({ onJoin: (c) => doJoin(c, api), onBack: () => { joinGen++; leaveNet(); showMenu(); } }); },
-    onSettings: () => ui.showSettings(settings, (s) => { settings = s; saveSettings(); applyVolumes(); }),
+    onSettings: () => {
+      const q0 = settings.quality;
+      ui.showSettings(settings, (s) => { settings = s; saveSettings(); applyVolumes(); if (settings.quality !== q0 && mode !== 'run') setTimeout(() => location.reload(), 150); });
+    },
     onHelp: () => ui.showHelp(),
   });
 }
