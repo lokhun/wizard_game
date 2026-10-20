@@ -93,6 +93,7 @@ export function buildLevel(level, factory, lightPool) {
 
   const trimB = B('trim');
   const pilasters = [];
+  const wallEdges = [];
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     if (!walkLike(x, y)) continue;
     const i = level.idx(x, y);
@@ -113,6 +114,7 @@ export function buildLevel(level, factory, lightPool) {
       const endB = isSolid(x + px * (d.dx === 1 || d.dy === -1 ? -1 : 1), y + py * (d.dx === 1 || d.dy === -1 ? -1 : 1));
       const tintV = 0.86 + 0.14 * (((x * 73856093) ^ (y * 19349663) ^ (d.dx * 83492791 + d.dy * 4421)) >>> 0) % 1000 / 1000;
       wallStrip(B('wall'), ax, az, bx, bz, d.n, Math.min(h0, 0), h1, u, (endA ? 0.6 : 1) * tintV, (endB ? 0.6 : 1) * tintV);
+      wallEdges.push({ ax, az, bx, bz, n: d.n, h0, h1 });
       // baseboard trim
       if (!biome.outdoor || true) {
         const mx = (ax + bx) / 2 + d.n[0] * 0.08, mz = (az + bz) / 2 + d.n[2] * 0.08;
@@ -326,6 +328,25 @@ export function buildLevel(level, factory, lightPool) {
         flames.push({ x: p.x + ox * c + oz * sn, y: fy + 1.18, z: p.z - ox * sn + oz * c, size: 0.25, kind: 'candle' });
       }
     }
+  }
+
+  // ---------------- ivy hanging from the bailey walls (one alpha-tested mesh)
+  if (biome.outdoor && wallEdges.length) {
+    const ivy = new GeoBuilder();
+    const ir = new RNG(level.seed * 7 + 3);
+    for (const e of wallEdges) {
+      if (ir.next() > 0.38 || e.h1 - e.h0 < 3) continue;
+      const len = Math.hypot(e.bx - e.ax, e.bz - e.az);
+      const dx = (e.bx - e.ax) / len, dz = (e.bz - e.az) / len;
+      const w = ir.range(1.4, 2.6), c = ir.range(0.2, 0.8);
+      const mx = e.ax + dx * len * c + e.n[0] * 0.04, mz = e.az + dz * len * c + e.n[2] * 0.04;
+      const top = e.h1 + 0.1, bot = Math.max(e.h0 + 0.3, top - ir.range(2.5, Math.min(6.5, e.h1 - e.h0)));
+      const u0 = ir.int(0, 3) * 0.25;
+      const tint = ir.range(0.7, 1.05);
+      ivy.quad([mx + dx * w * 0.5, bot, mz + dz * w * 0.5], [mx - dx * w * 0.5, bot, mz - dz * w * 0.5], [mx - dx * w * 0.5, top, mz - dz * w * 0.5], [mx + dx * w * 0.5, top, mz + dz * w * 0.5], e.n,
+        [[u0 + 0.25, (top - bot) / 6.5], [u0, (top - bot) / 6.5], [u0, 0], [u0 + 0.25, 0]], [tint, tint, tint, tint]);
+    }
+    if (ivy.count) group.add(new THREE.Mesh(ivy.build(), ivyMaterial()));
   }
 
   // ---------------- grime: soot above sconces, cobwebs in high corners
@@ -601,7 +622,45 @@ export function buildLevel(level, factory, lightPool) {
   };
 }
 
-let _soot = null, _web = null;
+let _soot = null, _web = null, _ivy = null;
+// Four columns of hanging vines (u 0..1 in quarters), drawn from the top (v=0) down.
+function ivyMaterial() {
+  if (_ivy) return _ivy;
+  const W = 512, H = 1024;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const rnd = (() => { let x = 1234567; return () => ((x = (x * 16807) % 2147483647) / 2147483647); })();
+  for (let col = 0; col < 4; col++) {
+    const x0 = col * 128;
+    for (let v = 0; v < 6; v++) {
+      let x = x0 + 14 + rnd() * 100, y = 0;
+      const len = H * (0.35 + rnd() * 0.65);
+      g.strokeStyle = 'rgb(40,46,22)'; g.lineWidth = 2.2;
+      g.beginPath(); g.moveTo(x, y);
+      while (y < len) {
+        const nx = Math.max(x0 + 6, Math.min(x0 + 122, x + (rnd() - 0.5) * 16)), ny = y + 14 + rnd() * 10;
+        g.lineTo(nx, ny);
+        // leaves along the vine, denser near the top
+        if (rnd() < 0.95 - y / len * 0.5) {
+          for (let k = 0; k < 2; k++) {
+            const lx = nx + (rnd() - 0.5) * 22, ly = ny + (rnd() - 0.5) * 12, r = 5 + rnd() * 7;
+            const shade = 50 + rnd() * 60;
+            g.fillStyle = `rgb(${shade * 0.55 | 0},${shade | 0},${shade * 0.35 | 0})`;
+            g.beginPath(); g.ellipse(lx, ly, r, r * 0.62, rnd() * Math.PI, 0, Math.PI * 2); g.fill();
+          }
+        }
+        x = nx; y = ny;
+      }
+      g.stroke();
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  _ivy = new THREE.MeshStandardMaterial({ map: t, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85, vertexColors: true });
+  return _ivy;
+}
 function sootMaterial() {
   if (_soot) return _soot;
   const c = document.createElement('canvas');
