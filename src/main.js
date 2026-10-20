@@ -102,13 +102,15 @@ window.addEventListener('keydown', () => { audio?.init(); });
 // menu backdrop: a slowly drifting camera through a torch-lit level
 // ---------------------------------------------------------------------------
 function startBackdrop(floor) {
-  const f = floor ?? Math.floor(Math.random() * 5);
+  // the menu shows off the most atmospheric realms: the moonlit bailey, the keep halls, the throne
+  const f = floor ?? [2, 3, 4][Math.floor(Math.random() * 3)];
   game.menuMode = true;
   game.startRun({ seed: Math.floor(Math.random() * 1e9), localId: 'menu', name: 'menu', classId: selectedClass, isHost: true, net: null, floor: f });
   game.menuMode = true;
   game.ui?.hideHud();
   audio?.setMusic('menu');
-  const room = game.level.rooms[Math.min(1, game.level.rooms.length - 1)];
+  const fights = game.level.rooms.filter((r) => r.type === 'combat' || r.type === 'elite');
+  const room = fights.sort((a, b) => b.w * b.h - a.w * a.h)[0] ?? game.level.rooms[Math.min(1, game.level.rooms.length - 1)];
   // showcase spot: the start room (small and uncluttered), camera on a clear side
   const sr = game.level.startRoom;
   const free = (x, z) => !game.collision.cellBlocked(Math.floor(x / 2), Math.floor(z / 2), 0.5) && !game.collision.pushOut(x, z, 0.6);
