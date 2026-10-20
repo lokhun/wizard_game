@@ -130,7 +130,8 @@ export class ActorManager {
     a.model.root.scale.setScalar(a.scale);
     a.model.root.position.copy(a.pos);
     a.model.root.rotation.y = a.yaw;
-    if (a.def.tint) a.model.setTint?.(a.def.tint, 0.5);
+    if (a.faction === 'ally') a.model.setTint?.(0x50e890, 0.45);
+    else if (a.def.tint) a.model.setTint?.(a.def.tint, 0.5);
     if (a.elite && !a.def.elite) a.model.setTint?.(0xffaa30, 0.25);
     if (g.shadowsOn) a.model.root.traverse((o) => { if (o.isMesh && !o.material?.transparent) o.castShadow = true; });
     g.scene.add(a.model.root);
@@ -464,6 +465,7 @@ export class ActorManager {
         if (tint !== a._tint) {
           a._tint = tint;
           if (tint) m.setTint?.(tint, frozen ? 0.65 : 0.35);
+          else if (a.faction === 'ally') m.setTint?.(0x50e890, 0.45); // summoned allies wear a spectral green
           else if (a.def.tint) m.setTint?.(a.def.tint, 0.5);
           else if (a.elite && !a.def.elite) m.setTint?.(0xffaa30, 0.25);
           else m.setTint?.(null, 0);
@@ -487,6 +489,7 @@ export class ActorManager {
       P.glow({ x: x + Math.cos(ang) * r * 1.2, y: y + 0.1, z: z + Math.sin(ang) * r * 1.2, vx: -Math.sin(ang) * 1.2, vy: rand(0.8, 1.8), vz: Math.cos(ang) * 1.2, r: col[0], g: col[1], b: col[2], life: 0.9, size: 0.09, sprite: SPR.SPARK, drag: 1 });
     }
     if (a.elite && !a.def.elite) g.lights.request(_v.set(x, y + h * 0.5, z), 0xffa040, 2.5, 4);
+    if (a.faction === 'ally' && Math.random() < dt * 8) P.glow({ x: x + rand(-r, r), y: y + h * rand(0.2, 0.9), z: z + rand(-r, r), vy: 0.6, r: 0.4, g: 1.6, b: 0.8, life: 0.9, size: 0.08, sprite: SPR.WISP });
     if ((m & ST.empower) && Math.random() < dt * 10) {
       const ang = Math.random() * Math.PI * 2;
       P.glow({ x: x + Math.cos(ang) * r, y: y + 0.05, z: z + Math.sin(ang) * r, vy: rand(1.2, 2.2), r: 2.2, g: 1.4, b: 0.35, life: 0.8, size: 0.07, sprite: SPR.SPARK, drag: 0.5 });

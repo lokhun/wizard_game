@@ -135,7 +135,9 @@ export class BossBrain {
     this.invuln = Math.max(0, this.invuln - dt);
     // phase transitions
     const phases = S.phases;
-    while (this.phase < phases.length - 1 && this.hpf <= phases[this.phase + 1].at) {
+    this.fightT = (this.fightT ?? 0) + dt;
+    // a phase can also begin after a set time (the Hollow King won't sit forever)
+    while (this.phase < phases.length - 1 && (this.hpf <= phases[this.phase + 1].at || (phases[this.phase + 1].after && this.fightT >= phases[this.phase + 1].after))) {
       this.phase++;
       this.events.length = 0;
       this.moveVel = null;
@@ -554,6 +556,7 @@ SCRIPTS.hollowKing = {
     },
     {
       at: 0.7,
+      after: 22,
       enter(B) {
         B.data.seated = false;
         B.banner('THE KING RISES', 'The Hollow King draws his blade', '#b070ff');

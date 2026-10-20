@@ -112,6 +112,7 @@ export function getSharedMaterials(factory) {
   m.charcoal = new THREE.MeshStandardMaterial({ color: 0x110a08, roughness: 1, emissive: 0xff4010, emissiveIntensity: 0.9 });
   m.glow = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(2.5, 2.5, 2.5) });
   m.glass = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.1, emissive: 0xffffff, emissiveIntensity: 0.5, transparent: true, opacity: 0.85 });
+  m.darkGlass = new THREE.MeshStandardMaterial({ color: 0x2a3036, roughness: 0.06, metalness: 0.2, transparent: true, opacity: 0.5, depthWrite: false });
   m.slime = new THREE.MeshStandardMaterial({ color: 0x2a4a10, roughness: 0.15, emissive: 0x0a2004, transparent: true, opacity: 0.75, side: THREE.DoubleSide });
   m.decalBlood = new THREE.MeshStandardMaterial({ color: 0x2a0204, roughness: 0.3, transparent: true, alphaMap: splatTexture(), depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
   m.puddle = new THREE.MeshStandardMaterial({ color: 0x050605, roughness: 0.04, metalness: 0.4, transparent: true, alphaMap: radialAlphaTexture(0.5, 1), depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });

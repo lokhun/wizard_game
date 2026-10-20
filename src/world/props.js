@@ -649,7 +649,15 @@ function merchantStall() {
   for (const x of [-1.5, 1.5]) parts.push(['wood', tf(box(0.12, 3.0, 0.12), { x, y: 1.5, z: -0.6 })]);
   const awning = new THREE.PlaneGeometry(3.4, 2.2, 6, 2);
   parts.push(['banner', colorize(tf(awning, { y: 2.9, z: 0.4, rx: -1.1 }), 0x6a1a20)]);
-  for (let i = 0; i < 5; i++) parts.push(['glass', colorize(tf(sph(0.1, 8, 6), { x: -1.0 + i * 0.5, y: 1.15, z: 0.8 }), [0xff3030, 0x3060ff, 0x30ff60, 0xffc030, 0xc040ff][i])]);
+  // potion bottles: dark glass with a glowing draught, a neck and a cork
+  for (let i = 0; i < 5; i++) {
+    const x = -1.0 + i * 0.5, z = 0.8, col = [0xc81818, 0x1840c8, 0x18b840, 0xd09018, 0x9020c8][i];
+    const tall = i % 2 === 0;
+    parts.push(['darkGlass', tf(sph(0.085, 10, 8), { x, y: 1.13, z, sy: tall ? 1.25 : 1 })]);
+    parts.push(['glow', colorize(tf(sph(0.07, 8, 6), { x, y: 1.11, z, sy: tall ? 1.1 : 0.85 }), new THREE.Color(col).multiplyScalar(0.45))]);
+    parts.push(['darkGlass', tf(cyl(0.025, 0.03, 0.09, 8), { x, y: 1.25 + (tall ? 0.03 : 0), z })]);
+    parts.push(['wood', tf(cyl(0.03, 0.026, 0.04, 6), { x, y: 1.31 + (tall ? 0.03 : 0), z })]);
+  }
   parts.push(['leather', colorize(tf(box(0.4, 0.06, 0.3, 2), { x: 1.0, y: 1.06, z: 0.7 }), 0x4a2a14)]);
   return parts;
 }

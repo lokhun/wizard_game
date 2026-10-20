@@ -605,6 +605,8 @@ function decorateRoom(level, room, rng) {
         level.torches.push({ x: wx, y: 2.4, z: wz, type: 'brazier', color: 0x9a5cff, intensity: 14, range: 14 });
       }
       P('stainedGlass', cx * T, (y) * T + 0.1, { rot: 0, y: 7 });
+      // a cold shaft of light falls on the throne itself
+      level.torches.push({ x: cx * T, y: 4.8, z: (y + 3.5) * T, type: 'brazier', color: 0xb4c8ff, intensity: 80, range: 12, priority: 0.1, noFlame: true });
       // warm fire either side of the throne so the King stands out against the purple hall
       for (const sx of [-5.5, 5.5]) {
         const wx = cx * T + sx, wz = (y + 2.5) * T;

@@ -424,7 +424,8 @@ export function buildLevel(level, factory, lightPool) {
       flames.push({ x: t.x + t.nx * 0.06, y: t.y + 0.05, z: t.z + t.nz * 0.06, size: 0.9, kind: 'fire', color: t.color });
       lightPool.addTorch(new THREE.Vector3(t.x + t.nx * 0.5, t.y + 0.2, t.z + t.nz * 0.5), { color: t.color ?? biome.torchColor, intensity: 30, range: 16 });
     } else if (t.type === 'brazier') {
-      lightPool.addTorch(new THREE.Vector3(t.x, t.y + 0.4, t.z), { color: t.color ?? biome.torchColor, intensity: t.intensity ?? 40, range: t.range ?? 18, priority: t.priority });
+      lightPool.addTorch(new THREE.Vector3(t.x, t.y + 0.4, t.z), { color: t.color ?? biome.torchColor, intensity: t.intensity ?? 40, range: t.range ?? 18, priority: t.priority, flicker: t.noFlame ? 0.08 : 1 });
+      if (t.noFlame) continue;
       if (!flames.some((f) => Math.abs(f.x - t.x) < 0.1 && Math.abs(f.z - t.z) < 0.1)) flames.push({ x: t.x, y: t.y - 0.1, z: t.z, size: 1.6, kind: 'fire', color: t.color });
       else flames.forEach((f) => { if (Math.abs(f.x - t.x) < 0.1 && Math.abs(f.z - t.z) < 0.1) f.color = t.color; });
     } else if (t.type === 'fungus') {

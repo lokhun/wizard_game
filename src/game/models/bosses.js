@@ -566,8 +566,8 @@ export const hollowKing = {
     rig.add('head', 'gold', xf(G.box(0.16, 0.02, 0.03), {}), { y: 0.2, z: 0.13 }, { c: GOLDTRIM });
     const crownG = mergeRaw([xf(G.cyl(0.16, 0.15, 0.06, 18, true), {}), spikeRing(0.16, 9, 0.24, 0.03, 0.03, 0.15), spikeRing(0.15, 9, 0.12, 0.025, 0.03, 0.08)]);
     rig.add('crown', 'gold', crownG, { sz: 1.05 }, { c: [0.7, 0.55, 0.3] });
-    rig.add('crown', 'glow', mergeRaw([0, 3, 6].map((i) => xf(G.oct(0.022), { x: Math.sin((i + 0.5) / 9 * TAU) * 0.165, z: Math.cos((i + 0.5) / 9 * TAU) * 0.17, y: 0.03 }))), {}, { c: HDR(HOLLOW, 4) });
-    rig.add('crown', 'spirit', xf(G.tor(0.18, 0.02, 4, 24), { rx: Math.PI / 2 }), { y: 0.06 }, { c: HDR(HOLLOW, 0.4) });
+    rig.add('crown', 'glow', mergeRaw([0, 1, 3, 4, 6, 7].map((i) => xf(G.oct(0.026), { x: Math.sin((i + 0.5) / 9 * TAU) * 0.165, z: Math.cos((i + 0.5) / 9 * TAU) * 0.17, y: 0.03 }))), {}, { c: HDR(HOLLOW, 6) });
+    rig.add('crown', 'spirit', xf(G.tor(0.18, 0.02, 4, 24), { rx: Math.PI / 2 }), { y: 0.06 }, { c: HDR(HOLLOW, 0.9) });
     // giant greatsword with a glowing fuller
     addSword(rig, 'handR', { len: 1.7, w: 0.13, th: 0.022, notch: 0.15, bladeC: [1.0, 1.0, 1.1], guardW: 0.46, grip: 0.32, guardMat: 'gold', guardC: GOLDTRIM, glowEdge: HDR(HOLLOW, 3), seed: 4 });
     rig.socket('muzzle', 'handR', 0, -0.07, 1.6);
