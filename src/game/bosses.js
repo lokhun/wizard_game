@@ -125,6 +125,8 @@ export class BossBrain {
   sound(name, vol = 1) { this.g.net?.broadcast({ t: 'snd', n: name, x: this.a.pos.x, y: this.a.pos.y, z: this.a.pos.z, v: vol }); this.g.audio?.play(name, { pos: this.a.pos, volume: vol }); }
   fx(kind, extra = {}) { this.g.net?.broadcast({ t: 'bfx', k: kind, id: this.a.id, ...extra }); this.g.bossFx(kind, this.a, extra); }
 
+  idleType() { const t = this.script.idleType; return typeof t === 'function' ? t(this) : (t ?? ''); }
+
   // ------------------------------------------------ main update
   update(dt, mm, am) {
     const a = this.a;
@@ -162,10 +164,10 @@ export class BossBrain {
     if (this.busy > 0) {
       this.busy -= dt * Math.max(0.3, am);
       if (this.move?.track && tgt) this.face(tgt, this.move.track, dt);
-      if (this.busy <= 0 && a.anim !== 'idle' && a.anim !== 'move') this.anim('idle', S.idleType ?? '', 1);
+      if (this.busy <= 0 && a.anim !== 'idle' && a.anim !== 'move') this.anim('idle', this.idleType(), 1);
       return out;
     }
-    if (!tgt) { this.anim('idle', S.idleType ?? '', 1); return out; }
+    if (!tgt) { this.anim('idle', this.idleType(), 1); return out; }
     // choose a move
     const dist = Math.hypot(tgt.pos.x - a.pos.x, tgt.pos.z - a.pos.z);
     const pool = phases[this.phase].moves.filter((m) => (this.cds[m.name] ?? 0) <= 0 && (!m.range || (dist >= m.range[0] && dist <= m.range[1])) && (!m.when || m.when(this)));
@@ -182,6 +184,7 @@ export class BossBrain {
       this.busy = (dur ?? 1) / (phases[this.phase].speed ?? 1);
       return out;
     }
+    if (this.data.seated) { if (a.anim !== 'idle') this.anim('idle', this.idleType(), 1); this.face(tgt, 2, dt); return out; }
     // walk toward the target
     const speed = (a.def.speed ?? 3) * mm * (phases[this.phase].speed ?? 1);
     const want = S.keepDist ?? 3.5;
@@ -193,7 +196,7 @@ export class BossBrain {
       this.face(tgt, 5, dt);
       out.x = -Math.sin(a.yaw) * speed * dt; out.z = -Math.cos(a.yaw) * speed * dt;
       if (a.anim !== 'move') { a.anim = 'move'; a.animT = 0; }
-    } else if (a.anim !== 'idle') this.anim('idle', S.idleType ?? '', 1);
+    } else if (a.anim !== 'idle') this.anim('idle', this.idleType(), 1);
     return out;
   }
 }
@@ -510,7 +513,7 @@ SCRIPTS.hollowKing = {
     B.data.seated = true;
     B.anim('idle', 'seated', 1);
   },
-  idleType: '',
+  idleType: (B) => (B.data.seated ? 'seated' : ''),
   modifyDamage(B, dmg) { return B.data.seated ? dmg * 0.35 : dmg; },
   phases: [
     {
