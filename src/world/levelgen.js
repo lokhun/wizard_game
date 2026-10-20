@@ -36,6 +36,7 @@ export class Level {
     this.props = [];
     this.torches = [];
     this.colliders = []; // circles {x,z,r}
+    this.breakables = []; // barrels/crates {i,type,x,z,r,alive}
   }
   idx(x, y) { return y * this.W + x; }
   inb(x, y) { return x >= 0 && y >= 0 && x < this.W && y < this.H; }
@@ -316,7 +317,26 @@ function decorateRoom(level, room, rng) {
   const cx = x + w / 2, cy = y + h / 2;
   const isBoss = room.type === ROOM.BOSS;
   room.layout = 'plain';
-  const P = (type, wx, wz, extra = {}) => level.props.push({ type, x: wx, z: wz, rot: extra.rot ?? rng.range(0, Math.PI * 2), ...extra });
+  const P = (type, wx, wz, extra = {}) => {
+    const prop = { type, x: wx, z: wz, rot: extra.rot ?? rng.range(0, Math.PI * 2), ...extra };
+    if (type === 'barrel' || type === 'crate') {
+      // destructible clutter: gets a collider and a stable index for co-op sync
+      prop.breakable = level.breakables.length;
+      const c = { x: wx, z: wz, r: type === 'barrel' ? 0.42 : 0.45, breakable: prop.breakable };
+      level.colliders.push(c);
+      level.breakables.push({ i: prop.breakable, type, x: wx, z: wz, r: c.r, collider: c, alive: true, rot: prop.rot });
+      // sometimes a stack of two crates / cluster of barrels
+      if (rng.chance(0.3)) {
+        const ox = wx + Math.cos(prop.rot) * 0.9, oz = wz - Math.sin(prop.rot) * 0.9;
+        const i2 = level.breakables.length;
+        const c2 = { x: ox, z: oz, r: c.r, breakable: i2 };
+        level.colliders.push(c2);
+        level.breakables.push({ i: i2, type, x: ox, z: oz, r: c.r, collider: c2, alive: true, rot: prop.rot + 0.7 });
+      }
+      return;
+    }
+    level.props.push(prop);
+  };
   const randFloorSpot = (margin = 1) => {
     for (let t = 0; t < 40; t++) {
       const fx = rng.int(x + margin, x + w - 1 - margin), fy = rng.int(y + margin, y + h - 1 - margin);
@@ -581,7 +601,7 @@ function decorateRoom(level, room, rng) {
   }
 
   // ---------------- raised daises for verticality (indoor combat rooms)
-  if ((b.id === 'dungeon' || b.id === 'keep' || b.id === 'sewers') && (room.type === ROOM.COMBAT || room.type === ROOM.ELITE) && w >= 10 && h >= 10 && rng.chance(0.4) && room.layout !== 'library') {
+  if ((b.id === 'dungeon' || b.id === 'keep') && (room.type === ROOM.COMBAT || room.type === ROOM.ELITE) && w >= 10 && h >= 10 && rng.chance(0.4) && room.layout !== 'library') {
     const side = rng.int(0, 3);
     const depth = 3;
     const hh = b.id === 'sewers' ? 0.55 : 0.7;

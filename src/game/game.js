@@ -309,6 +309,35 @@ export class Game {
     }
   }
 
+  // ---------------------------------------------------------------- breakables
+  breakablesNear(pos, radius) {
+    const out = [];
+    for (const b of this.level.breakables) {
+      if (!b.alive) continue;
+      const dx = b.x - pos.x, dz = b.z - pos.z;
+      if (dx * dx + dz * dz < (radius + b.r) ** 2 && pos.y < this.groundY(b.x, b.z) + 1.4) out.push(b);
+    }
+    return out;
+  }
+  smashAt(pos, radius) {
+    for (const b of this.breakablesNear(pos, radius)) this.breakProp(b.i, true);
+  }
+  breakProp(i, local = false) {
+    const b = this.level.breakables[i];
+    if (!b || !b.alive) return;
+    b.alive = false;
+    this.collision.removeCollider(b.collider);
+    this.built.hideBreakable(b);
+    const gy = this.groundY(b.x, b.z);
+    const c = new THREE.Vector3(b.x, gy + 0.5, b.z);
+    this.vfx.burst(c, { count: 22, speed: 6, life: 1.1, size: 0.12, sprite: SPR.CHUNK, solid: true, color: [0.34, 0.22, 0.12], color2: [0.25, 0.16, 0.09], gravity: 16, spin: 8, upward: 0.8 });
+    this.vfx.smoke(c, { count: 4, size: 0.6, color: [0.3, 0.26, 0.2], alpha: 0.4, life: 1.4 });
+    if (b.type === 'barrel' && Math.random() < 0.5) this.vfx.burst(c, { count: 16, speed: 3, life: 0.8, size: 0.06, sprite: SPR.DROP, solid: true, color: [0.25, 0.12, 0.05], gravity: 12, upward: 1 });
+    this.audio?.play('impact_earth', { pos: c, volume: 0.7 });
+    if (local) this.net?.broadcastOrSend({ t: 'brk', i });
+    if (this.isHost && Math.random() < 0.35) this.spawnDrop(Math.random() < 0.2 ? 'health' : 'gold', c, Math.random() < 0.2 ? 15 : 3 + this.floorIndex * 2);
+  }
+
   _ambient(dt) {
     const cam = this.renderer.camera.position;
     const id = this.biome.id;

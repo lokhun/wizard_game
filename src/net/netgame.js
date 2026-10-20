@@ -39,6 +39,7 @@ export function handleGameMessage(game, msg, from) {
     case 'nextfloor': if (game.isHost) game.goNextFloor(); break;
     // ------------------------------------------------ shared events
     case 'pick': game.removeDrop(msg.id); break;
+    case 'brk': game.breakProp(msg.i, false); break;
     case 'chest': {
       const it = game.interactables.find((i) => i.id === msg.id);
       it?.open?.();

@@ -175,6 +175,7 @@ export class SpellRuntime {
   // damage all hostile actors in radius (from a local player)
   damageArea(pos, radius, H, _hitIds, exclude) {
     const hits = [];
+    this.g.smashAt?.(pos, radius * 0.8);
     for (const a of this.g.actors.hostiles()) {
       if (exclude && exclude.has(a.id)) continue;
       const dx = a.pos.x - pos.x, dz = a.pos.z - pos.z;
@@ -271,6 +272,13 @@ export class SpellRuntime {
       }
       // actor collisions
       if (p.faction === 'player') {
+        if (p.local && g.level.breakables.length) {
+          const hitB = g.breakablesNear(p.pos, p.radius);
+          if (hitB.length) {
+            for (const b of hitB) g.breakProp(b.i, true);
+            if (p.pierce <= 0 && !p.noWall) { g.vfx.impact(p.pos, p.el, 0.7); this.kill(p, p.pos); this._remove(i); continue; }
+          }
+        }
         for (const a of g.actors.hostiles()) {
           if (p.hitIds.has(a.id)) continue;
           const r = p.radius + a.radius;

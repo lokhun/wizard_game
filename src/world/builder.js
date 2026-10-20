@@ -366,6 +366,33 @@ export function buildLevel(level, factory, lightPool) {
     }
   }
 
+  // ---------------- destructible barrels & crates (instanced so they can vanish)
+  const breakMeshes = [];
+  {
+    const byType = { barrel: [], crate: [] };
+    for (const b of level.breakables) byType[b.type].push(b);
+    for (const [type, list] of Object.entries(byType)) {
+      if (!list.length) continue;
+      const parts = PROPS[type](r01);
+      const perMat = {};
+      for (const [key, geo] of parts) (perMat[key] ??= []).push(geo);
+      for (const [key, geos] of Object.entries(perMat)) {
+        const gb = new GeoBuilder();
+        for (const g of geos) gb.addGeometry(g, new THREE.Matrix4());
+        const inst = new THREE.InstancedMesh(gb.build(), mats[key] ?? mats.wood, list.length);
+        const m4 = new THREE.Matrix4();
+        list.forEach((b, k) => {
+          b.slot = k;
+          m4.compose(new THREE.Vector3(b.x, level.floorAt(b.x, b.z), b.z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), b.rot), new THREE.Vector3(1, 1, 1));
+          inst.setMatrixAt(k, m4);
+        });
+        inst.userData.type = type;
+        group.add(inst);
+        breakMeshes.push(inst);
+      }
+    }
+  }
+
   // ---------------- torches
   lightPool.clearTorches();
   for (const t of level.torches) {
@@ -500,6 +527,14 @@ export function buildLevel(level, factory, lightPool) {
       }
       if (sky) sky.material.uniforms.uTime.value = time;
       if (grassMat) grassMat.userData.time.value = time;
+    },
+    hideBreakable(b) {
+      const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+      for (const m of breakMeshes) {
+        if (m.userData.type !== b.type) continue;
+        m.setMatrixAt(b.slot, zero);
+        m.instanceMatrix.needsUpdate = true;
+      }
     },
     setDoor(doorId, closed) {
       const d = doors[doorId];

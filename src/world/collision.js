@@ -24,6 +24,12 @@ export class Collision {
       this.hash.get(k).push(c);
     }
   }
+  removeCollider(c) {
+    for (const list of this.hash.values()) {
+      const i = list.indexOf(c);
+      if (i >= 0) list.splice(i, 1);
+    }
+  }
   setDoorBlocked(door, blocked) {
     for (const i of door.cells) this.dyn[i] = blocked ? 1 : 0;
   }
