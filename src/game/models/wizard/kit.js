@@ -11,6 +11,32 @@ const kits = new WeakMap();
 
 const hexKey = (c) => (c instanceof THREE.Color ? c.getHexString() : typeof c === 'number' ? c.toString(16) : String(c));
 
+let _metalEnv = null;
+function metalEnv() {
+  if (_metalEnv) return _metalEnv;
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 128;
+  const g = c.getContext('2d');
+  const bg = g.createLinearGradient(0, 0, 0, 128);
+  bg.addColorStop(0, '#2a2622'); bg.addColorStop(0.45, '#3a3028'); bg.addColorStop(0.55, '#1a1612'); bg.addColorStop(1, '#0a0806');
+  g.fillStyle = bg; g.fillRect(0, 0, 256, 128);
+  for (let i = 0; i < 7; i++) {
+    const x = (i / 7) * 256 + 18, y = 46 + Math.sin(i * 1.7) * 8, r = 7 + (i % 3) * 3;
+    const hg = g.createRadialGradient(x, y, 0, x, y, r * 3);
+    hg.addColorStop(0, 'rgba(255,200,140,1)'); hg.addColorStop(0.35, 'rgba(220,130,60,0.5)'); hg.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = hg; g.fillRect(x - r * 3, y - r * 3, r * 6, r * 6);
+  }
+  // a cool skylight band overhead
+  const sky = g.createLinearGradient(0, 0, 0, 30);
+  sky.addColorStop(0, 'rgba(120,140,170,0.35)'); sky.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = sky; g.fillRect(0, 0, 256, 30);
+  const t = new THREE.CanvasTexture(c);
+  t.mapping = THREE.EquirectangularReflectionMapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  _metalEnv = t;
+  return t;
+}
+
 export function getKit(factory) {
   if (kits.has(factory)) return kits.get(factory);
   const cache = new Map();
@@ -55,19 +81,21 @@ export function getKit(factory) {
     return m;
   };
   const col = (c, k = 1) => new THREE.Color(c).multiplyScalar(k);
+  // metals need something to reflect: a dim vault with warm torch hotspots
+  const withEnv = (m, k = 1) => { m.envMap = metalEnv(); m.envMapIntensity = k; return m; };
 
   const kit = {
     factory,
     // staff wood: grain along v. tint multiplies the neutral brown
     wood: (tint = 0xffffff, k = 1) => shared(`wood:${hexKey(tint)}:${k}`, () => surfMat('bark', { color: col(tint, k), normalScale: 1.2 })),
-    metal: (tint = 0xffffff, rough = 1) => shared(`metal:${hexKey(tint)}:${rough}`, () => surfMat('metal', { color: tint, roughness: rough })),
+    metal: (tint = 0xffffff, rough = 1) => shared(`metal:${hexKey(tint)}:${rough}`, () => withEnv(surfMat('metal', { color: tint, roughness: rough }), 1.1)),
     brass: () => kit.metal(0xd8a050, 1),
     gold: () => kit.metal(0xffc860, 0.9),
     copper: () => kit.metal(0xe07848, 1),
     silver: () => kit.metal(0xd8dce8, 0.85),
     steel: () => kit.metal(0x9aa2ae, 0.9),
     darkIron: () => kit.metal(0x3a3a40, 1.2),
-    iron: () => shared('iron', () => surfMat('iron', { size: 1024 })),
+    iron: () => shared('iron', () => withEnv(surfMat('iron', { size: 1024 }), 0.8)),
     leather: (tint = 0x6a4a30) => shared(`leather:${hexKey(tint)}`, () => surfMat('glove', { color: tint, normalScale: 1.3 })),
     glove: (tint = 0xffffff) => shared(`glove:${hexKey(tint)}`, () => surfMat('glove', { color: tint })),
     cloth: (color) => shared(`cloth:${hexKey(color)}`, () => surfMat('robe', { color: col(color, 1.2) })),
