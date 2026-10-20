@@ -418,6 +418,58 @@ export function buildLevel(level, factory, lightPool) {
     meshes.push(mesh);
   }
 
+  // ---------------- instanced grass tufts swaying in the wind (courtyard)
+  let grassMat = null;
+  if (biome.outdoor) {
+    const blade = new GeoBuilder();
+    const rg = new RNG(level.seed + 77);
+    for (let b = 0; b < 7; b++) {
+      const a = rg.range(0, Math.PI * 2), r = rg.range(0, 0.12);
+      const bx = Math.cos(a) * r, bz = Math.sin(a) * r;
+      const h = rg.range(0.28, 0.6), w = rg.range(0.025, 0.045);
+      const lean = rg.range(-0.12, 0.12), dir = rg.range(0, Math.PI * 2);
+      const dx = Math.cos(dir), dz = Math.sin(dir);
+      const c0 = [0.12, 0.15, 0.06], c1 = [0.42, 0.46, 0.2];
+      blade.vert(bx - dz * w, 0, bz + dx * w, 0, 1, 0, 0, 0, c0);
+      blade.vert(bx + dz * w, 0, bz - dx * w, 0, 1, 0, 1, 0, c0);
+      const t = blade.vert(bx + dx * lean, h, bz + dz * lean, 0, 1, 0, 0.5, 1, c1);
+      blade.tri(t - 2, t - 1, t);
+    }
+    const geo = blade.build();
+    grassMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide });
+    grassMat.userData.time = { value: 0 };
+    grassMat.onBeforeCompile = (sh) => {
+      sh.uniforms.uTime = grassMat.userData.time;
+      sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+        vec4 wp = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+        float sway = sin(uTime * 1.7 + wp.x * 0.35 + wp.z * 0.21) * 0.6 + sin(uTime * 3.1 + wp.x * 0.9) * 0.25;
+        transformed.x += sway * uv.y * 0.12;
+        transformed.z += sway * uv.y * 0.05;`);
+    };
+    const spots = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = level.idx(x, y);
+      if (level.cells[i] !== FLOOR || level.kind[i] !== K_MAIN) continue;
+      const n = 10;
+      for (let k = 0; k < n; k++) {
+        const px = (x + rg.next()) * T, pz = (y + rg.next()) * T;
+        if (level.colliders.some((c) => c.r && (c.x - px) ** 2 + (c.z - pz) ** 2 < (c.r + 0.3) ** 2)) continue;
+        spots.push([px, pz]);
+      }
+    }
+    const inst = new THREE.InstancedMesh(geo, grassMat, spots.length);
+    const m4 = new THREE.Matrix4(), qq = new THREE.Quaternion(), sc = new THREE.Vector3();
+    spots.forEach(([px, pz], i) => {
+      qq.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rg.range(0, Math.PI * 2));
+      const k = rg.range(0.7, 1.5);
+      sc.set(k, k * rg.range(0.8, 1.3), k);
+      m4.compose(new THREE.Vector3(px, level.floorAt(px, pz), pz), qq, sc);
+      inst.setMatrixAt(i, m4);
+    });
+    inst.receiveShadow = true;
+    group.add(inst);
+  }
+
   // ---------------- outdoor sky & distant keep
   let sky = null;
   if (biome.outdoor) {
@@ -447,6 +499,7 @@ export function buildLevel(level, factory, lightPool) {
         }
       }
       if (sky) sky.material.uniforms.uTime.value = time;
+      if (grassMat) grassMat.userData.time.value = time;
     },
     setDoor(doorId, closed) {
       const d = doors[doorId];

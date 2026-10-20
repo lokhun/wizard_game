@@ -65,7 +65,7 @@ export const BIOMES = [
     outdoor: true,
     fog: { color: 0x0d1424, density: 0.028 },
     ambient: { sky: 0x4a5a88, ground: 0x10120c, intensity: 0.55 },
-    moon: { color: 0x9fb4ff, intensity: 1.1 },
+    moon: { color: 0xa8bcff, intensity: 1.6 },
     torchColor: 0xff9040,
     grade: { lift: [0.004, 0.008, 0.02], gain: [0.95, 0.98, 1.06], saturation: 0.78, exposure: 1.05, bloom: 0.6 },
     rooms: 6,
