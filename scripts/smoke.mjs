@@ -15,7 +15,7 @@ await page.waitForTimeout(+wait);
 if (scriptFile) {
   const code = fs.readFileSync(scriptFile, 'utf8');
   const res = await page.evaluate(code);
-  if (res !== undefined) console.log('[script]', JSON.stringify(res).slice(0, 2000));
+  if (res !== undefined) console.log('[script]', JSON.stringify(res).slice(0, 20000));
 }
 await page.screenshot({ path: out, timeout: 120000 });
 console.log('errors:', errors.length);

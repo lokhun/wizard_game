@@ -31,7 +31,10 @@ export class Director {
 
   spawnEnemy(type, x, z, opts = {}) {
     const def = ENEMY_DEFS[type] ?? BOSS_DEFS[type];
-    const hp = def.hp * this.hpScale() * (opts.elite ? 3 : 1) * (BOSS_DEFS[type] ? (1 + 0.45 * (this.partySize() - 1)) / (1 + 0.32 * (this.partySize() - 1)) : 1);
+    // boss HP in BOSS_DEFS is already tuned per realm, so bosses skip the floor multiplier
+    const hp = BOSS_DEFS[type]
+      ? def.hp * (1 + 0.45 * (this.partySize() - 1)) * (this.g.difficulty?.enemyHp ?? 1)
+      : def.hp * this.hpScale() * (opts.elite ? 3 : 1);
     const dmg = def.dmg * this.dmgScale() * (opts.elite ? 1.3 : 1);
     const a = this.g.actors.spawn(type, x, z, { hp, dmg, elite: opts.elite, affix: opts.affix, yaw: opts.yaw ?? Math.random() * 6.28 });
     if (this.active && !opts.noCredit) this.active.spawned.add(a.id);

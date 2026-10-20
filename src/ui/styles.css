@@ -83,7 +83,7 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .card .cname { font-family: var(--serif); font-size: 12.5px; letter-spacing: 0.08em; margin-top: 6px; text-align: center; }
 .card .crole { font-size: 11px; color: var(--text-dim); }
 .card .taken { position: absolute; top: 4px; right: 6px; font-size: 10px; color: var(--gold); font-family: var(--serif); }
-#classSelect .detail { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; padding: 22px 26px; max-width: 640px; margin-left: auto; align-self: flex-end; }
+#classSelect .detail { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; padding: 20px 24px; max-width: min(480px, 36vw); margin-left: auto; align-self: flex-end; }
 #classSelect .detail h2 { font-family: 'Cinzel Decorative', var(--serif); font-size: 40px; margin: 0; letter-spacing: 0.06em; }
 #classSelect .detail .ctitle { font-family: var(--serif); color: var(--text-dim); letter-spacing: 0.2em; font-size: 13px; text-transform: uppercase; margin-bottom: 10px; }
 #classSelect .detail .blurb { font-size: 17px; line-height: 1.45; margin-bottom: 12px; }

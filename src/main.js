@@ -145,16 +145,17 @@ function updateBackdrop(dt) {
     const camPos = new THREE.Vector3(ax + Math.sin(angle) * 3.4, ag + 1.6, az + Math.cos(angle) * 3.4);
     if (!b.snapped) { cam.position.copy(camPos); b.snapped = true; }
     cam.position.lerp(camPos, 1 - Math.exp(-dt * 3));
-    // look slightly right of the wizard so they stand left of the detail panel
+    // frame the wizard in the gap between the class grid and the detail panel
     const side = new THREE.Vector3(Math.cos(angle), 0, -Math.sin(angle));
-    const look = new THREE.Vector3(ax, ag + 1.15, az).addScaledVector(side, 1.0);
+    const look = new THREE.Vector3(ax, ag + 1.05, az).addScaledVector(side, -0.12);
     cam.lookAt(look);
     menuAvatar.root.position.set(ax, ag, az);
     menuAvatar.root.rotation.y = angle + Math.sin(b.t * 0.3) * 0.25;
     menuAvatar.update(dt, { anim: Math.floor(b.t / 5) % 3 === 2 ? 'cast' : 'idle', t: b.t, speed: 0, pitch: 0, castProgress: (b.t % 5) / 5, strafe: 0 });
     const fwd = new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle));
-    game.lights.request(new THREE.Vector3(ax, ag + 2.6, az).addScaledVector(fwd, 1.6).addScaledVector(side, -1.2), 0xffa060, 16, 9);
-    game.lights.request(new THREE.Vector3(ax, ag + 1.6, az).addScaledVector(fwd, -1.4).addScaledVector(side, 1.0), CLASS_META[selectedClass].color, 14, 6);
+    game.lights.request(new THREE.Vector3(ax, ag + 2.6, az).addScaledVector(fwd, 1.8).addScaledVector(side, -1.2), 0xffb070, 30, 10);
+    game.lights.request(new THREE.Vector3(ax, ag + 1.0, az).addScaledVector(fwd, 1.6).addScaledVector(side, 1.4), 0xc0b0ff, 8, 6);
+    game.lights.request(new THREE.Vector3(ax, ag + 1.8, az).addScaledVector(fwd, -1.4).addScaledVector(side, 1.0), CLASS_META[selectedClass].color, 24, 6);
     if (Math.random() < dt * 20) {
       const c = new THREE.Color(CLASS_META[selectedClass].color);
       game.vfx.P.glow({ x: ax + (Math.random() - 0.5) * 3, y: ag + Math.random() * 0.3, z: az + (Math.random() - 0.5) * 3, vy: 0.4 + Math.random() * 0.6, r: c.r * 3, g: c.g * 3, b: c.b * 3, life: 2.5, size: 0.04, sprite: 0 });
