@@ -11,6 +11,8 @@ page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 await page.goto('http://localhost:' + (process.env.PORT ?? 5190) + '/' + query);
 await page.waitForTimeout(3000);
 console.log('[setup]', JSON.stringify(await page.evaluate(fs.readFileSync(setup, 'utf8'))));
+// hold the world still between steps so each frame shows exactly step seconds
+await page.evaluate('window.__freeze = true');
 const files = [];
 for (let i = 0; i < +frames; i++) {
   await page.evaluate(`window.__sim(${step}, 1/30, window.__each); null`);

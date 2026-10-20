@@ -5,6 +5,7 @@ import { buildHand, gripPose, POSES, lerpPose, clonePose } from './hand.js';
 import { buildFocus } from './foci.js';
 import { lathe, torus, mergeGeos, xf, mulberry, V, uvs } from './shapes.js';
 import { wob } from './fx.js';
+import { SigilPool } from './sigil.js';
 
 // ---------------------------------------------------------------------------
 // First-person viewmodel: two hands with robe sleeves, the class focus and
@@ -82,6 +83,19 @@ const STYLES = {
   snap: { keys: [[0, [0, 0, 0, 0, 0, 0]], [0.08, [-0.03, 0.07, -0.05, -0.1, 0, 0.3]], [0.12, [-0.035, 0.065, -0.07, -0.25, 0, 0.32]], [0.36, [0, 0, 0, 0, 0, 0]]], fingers: [[0, 'open'], [0.06, 'snapPre'], [0.1, 'snapPost'], [0.3, null]] },
 };
 const ZERO6 = [0, 0, 0, 0, 0, 0];
+
+// idle fidgets: small, slow moves played after standing still a while, so the
+// hands never freeze into a screenshot. Same key format as STYLES.
+const FIDGETS = {
+  // free hand comes up, palm turned to the eye, fingers flex one after another
+  palm: { hand: 'left', keys: [[0, ZERO6], [0.55, [-0.05, 0.1, -0.04, 0.34, 0.2, 0.6]], [1.7, [-0.055, 0.105, -0.045, 0.37, 0.22, 0.65]], [2.3, ZERO6]],
+    fingers: [[0, null], [0.4, 'open'], [0.8, 'claw'], [1.1, 'spread'], [1.45, 'claw'], [1.85, null]] },
+  // weight the focus, a quarter turn in the grip and back
+  twirl: { hand: 'right', keys: [[0, ZERO6], [0.35, [0.005, 0.02, 0.01, 0.12, 0.05, -0.2]], [0.8, [0.005, 0.028, 0.0, 0.14, 0.55, -0.26]], [1.2, [0.0, 0.02, 0.0, 0.08, -0.15, -0.16]], [1.7, ZERO6]] },
+  // lower the focus a touch and settle the grip
+  regrip: { hand: 'right', keys: [[0, ZERO6], [0.3, [0.01, -0.035, 0.02, -0.12, 0, 0.06]], [0.55, [0.012, -0.03, 0.02, -0.1, 0, 0.05]], [1.0, ZERO6]] },
+};
+const FIDGET_ORDER = ['palm', 'twirl', 'regrip', 'palm', 'regrip'];
 const STIFF = { swing: 2400, flick: 1500, thrust: 1100, slam: 1300, throw: 1300, snap: 1200 };
 
 function sampleKeys(keys, t, out) {
@@ -312,8 +326,17 @@ export function createViewModel(classId, ctx) {
   const light = new THREE.PointLight(new THREE.Color(0xffe2c4).lerp(new THREE.Color(F.light?.color ?? meta.color), 0.3), 0.8, 2, 2);
   root.add(light);
   const lightAnchor = F.lightAnchor ?? muzzle;
-  const lightOffset = V(-0.14, -0.18, 0.26);
+  // a long staff shaft runs right past the light: sit it further inboard so the
+  // shaft's specular doesn't blow out into a glowing rod
+  const lightOffset = F.hold === 'staff' ? V(-0.26, -0.1, 0.2) : V(-0.14, -0.18, 0.26);
   const lightBase = 0.8;
+
+  // rune circles that bloom where each spell leaves the focus or hand
+  const sigils = new SigilPool(root, classId, new THREE.Color(meta.color).lerp(new THREE.Color(0xffffff), 0.15), (anchor, out) => {
+    anchor.getWorldPosition(out);
+    root.worldToLocal(out);
+    out.z += 0.04; // just in front of the tip so the focus never clips it
+  });
 
   // ---------------- state ----------------
   const sR = new Spring(6, 700, 0.42), sL = new Spring(6, 700, 0.42);
@@ -323,6 +346,8 @@ export function createViewModel(classId, ctx) {
   let wasGrounded = true;
   let lastCastT = -1, lastCastKey = '';
   let prevHurt = 0;
+  // idle fidget state
+  let stillT = 0, fidget = null, fidgetT = 0, fidgetN = 0, nextFidget = 6;
   let power = 0;
   let downedK = 0, dashK = 0, chargeK = 0;
   let flare = 0;
@@ -399,14 +424,44 @@ export function createViewModel(classId, ctx) {
       const hand = cast.hand ?? (style === 'throw' || style === 'snap' ? 'left' : 'right');
       if (hand === 'right' || hand === 'both') castR = style;
       if (hand === 'left' || hand === 'both') castL = style;
+      // blades cut, they don't conjure: no circle on a sword swing
+      if (isNew && style !== 'swing') {
+        const big = style === 'raise' || style === 'slam';
+        const o = { size: big ? 0.18 : style === 'channel' ? 0.1 : 0.12, dur: big ? 0.7 : 0.5, peak: big ? 0.7 : 0.6 };
+        if (castR) sigils.burst(muzzle, o);
+        if (castL) sigils.burst(offhand, o);
+      }
     } else {
       lastCastT = -1; lastCastKey = '';
     }
     flare *= Math.exp(-dt * 6);
 
+    // --- idle fidgets ---
+    const busy = cast || speed > 0.08 || chargeK > 0.05 || downedK > 0.05 || !grounded || dashK > 0.05 || Math.abs(lx) + Math.abs(ly) > 30;
+    stillT = busy ? 0 : stillT + dt;
+    if (fidget) {
+      fidgetT += dt;
+      const F0 = FIDGETS[fidget];
+      if (busy || fidgetT >= F0.keys[F0.keys.length - 1][0]) { fidget = null; nextFidget = stillT + 7 + Math.random() * 6; }
+    } else if (stillT > nextFidget) {
+      let name = FIDGET_ORDER[fidgetN++ % FIDGET_ORDER.length];
+      // a hand busy holding something (book, cradled flame on a pole) skips the palm flex
+      if (name === 'palm' && (lg.kind === 'pole' || F.left)) name = 'regrip';
+      if (name !== 'palm' && gripR.kind !== 'pole') name = lg.kind !== 'pole' && !F.left ? 'palm' : null;
+      fidget = name; fidgetT = 0;
+      if (!name) nextFidget = stillT + 8;
+    }
+    const fidR = fidget && FIDGETS[fidget].hand === 'right' ? FIDGETS[fidget] : null;
+    const fidL = fidget && FIDGETS[fidget].hand === 'left' ? FIDGETS[fidget] : null;
+
     const applyRig = (sp, castStyle, isRight) => {
       const tg = sp.target;
       for (let i = 0; i < 6; i++) tg[i] = 0;
+      const fid = isRight ? fidR : fidL;
+      if (fid && !castStyle) {
+        sampleKeys(fid.keys, fidgetT, tmp6);
+        for (let i = 0; i < 6; i++) tg[i] += tmp6[i];
+      }
       if (castStyle) {
         const S = STYLES[castStyle];
         let tt = castT;
@@ -427,7 +482,7 @@ export function createViewModel(classId, ctx) {
       tg[0] += downedK * wob(t * 37, isRight ? 9 : 10) * 0.004; tg[1] += downedK * wob(t * 41, isRight ? 11 : 12) * 0.004;
       // jump: hands float up while airborne
       if (!grounded) { tg[1] += 0.015; tg[3] += 0.06; }
-      sp.k = castStyle ? (STIFF[castStyle] ?? 700) : 700;
+      sp.k = castStyle ? (STIFF[castStyle] ?? 700) : fid ? 160 : 700;
       sp.c = 2 * 0.42 * Math.sqrt(sp.k);
       sp.step(dt);
     };
@@ -466,7 +521,7 @@ export function createViewModel(classId, ctx) {
       handR.setPose(poseR);
     }
     if (lg.kind !== 'pole' && !F.left) {
-      let name = castL ? sampleFingers(STYLES[castL].fingers, castT) : null;
+      let name = castL ? sampleFingers(STYLES[castL].fingers, castT) : fidL ? sampleFingers(fidL.fingers, fidgetT) : null;
       if (!name && downedK > 0.5) name = 'relaxed';
       if (!name && chargeK > 0.3) name = 'claw';
       freePose(handL, poseL, restPoseL, name, 26, dt);
@@ -518,6 +573,10 @@ export function createViewModel(classId, ctx) {
     lightAnchor.getWorldPosition(light.position);
     root.worldToLocal(light.position).add(lightOffset);
     light.intensity = lightBase * (0.85 + 0.15 * wob(t * 6, 3)) * (1 + chargeK * 1.2 + power * 0.6 + flare * 1.4);
+    // world matrices were refreshed after posing (accelerations above), so
+    // circles sit exactly on the tip
+    const sigCharge = s.downed ? 0 : chargeK;
+    if (sigils.busy(sigCharge)) sigils.update(dt, muzzle, sigCharge);
   }
 
   update(0.016, { t: 0 });
@@ -528,6 +587,7 @@ export function createViewModel(classId, ctx) {
     setPower(k) { power = THREE.MathUtils.clamp(k ?? 0, 0, 1); },
     dispose() {
       glows.dispose();
+      sigils.dispose();
       root.traverse((o) => {
         if (o.isMesh || o.isSprite) {
           if (o.geometry && !o.geometry.userData?.shared) o.geometry.dispose?.();
@@ -536,6 +596,6 @@ export function createViewModel(classId, ctx) {
       root.removeFromParent();
     },
     // debugging handles
-    _parts: { handR, handL, focus: F, animR, animL, pivotR, pivotL },
+    _parts: { handR, handL, focus: F, animR, animL, pivotR, pivotL, sigils },
   };
 }

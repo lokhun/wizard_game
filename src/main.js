@@ -478,7 +478,8 @@ function loop(now) {
       audio?.setListener(cam.position, new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion));
     } else {
       if (game.viewmodel) game.viewmodel.root.visible = true;
-      game.update(dt);
+      // tests set __freeze to hold the world still between __sim steps (filmstrips)
+      if (!window.__freeze) game.update(dt);
     }
   }
   if (!NORENDER) renderer.render(performance.now() / 1000);

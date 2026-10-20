@@ -372,8 +372,40 @@ const PD_EYE = 0xb8e040, PD_TOXIC = 0x9be03c;
 const PD_CHAIN = 0.42; // fist -> censer centre
 const PD_FLOOR = 0.075; // censer radius: it rests on the floor at this height
 
+// core.tube() winds its faces inward while its normals point outward (so from outside you see the far
+// wall, lit from behind and caught by the rim light). Re-wind every triangle to agree with its normals.
+function outward(g) {
+  const p = g.getAttribute('position'), n = g.getAttribute('normal');
+  if (!g.index) g.setIndex([...Array(p.count).keys()]);
+  const idx = g.index.array, a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), s = new THREE.Vector3(), t = new THREE.Vector3();
+  for (let k = 0; k < idx.length; k += 3) {
+    a.fromBufferAttribute(p, idx[k]); b.fromBufferAttribute(p, idx[k + 1]); c.fromBufferAttribute(p, idx[k + 2]);
+    b.sub(a); c.sub(a); b.cross(c);
+    s.fromBufferAttribute(n, idx[k]).add(t.fromBufferAttribute(n, idx[k + 1])).add(t.fromBufferAttribute(n, idx[k + 2]));
+    if (b.dot(s) < 0) { const q = idx[k + 1]; idx[k + 1] = idx[k + 2]; idx[k + 2] = q; }
+  }
+  g.index.needsUpdate = true;
+  return g;
+}
+const tubeO = (...a) => outward(tube(...a));
+// inner face of a single-sided sheet: reversed winding, flipped normals, pushed in by d (own colour, no z-fight)
+function lining(g, d = 0.004) {
+  const s = g.index ? g.toNonIndexed() : g.clone();
+  const p = s.getAttribute('position'), n = s.getAttribute('normal');
+  const pos = new Float32Array(p.count * 3), nrm = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i += 3) for (let k = 0; k < 3; k++) {
+    const src = i + (2 - k), dst = (i + k) * 3;
+    pos[dst] = p.getX(src) - n.getX(src) * d; pos[dst + 1] = p.getY(src) - n.getY(src) * d; pos[dst + 2] = p.getZ(src) - n.getZ(src) * d;
+    nrm[dst] = -n.getX(src); nrm[dst + 1] = -n.getY(src); nrm[dst + 2] = -n.getZ(src);
+  }
+  const o = new THREE.BufferGeometry();
+  o.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  o.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  return o;
+}
+
 // waxed, stained coat leather / pale waxed mask leather / blackened hat leather (on the leather surface)
-const PD_COAT = [0.6, 0.55, 0.5], PD_MASK = [2.3, 2.05, 1.6], PD_HAT = [0.32, 0.3, 0.3], PD_GLOVE = [0.42, 0.36, 0.33];
+const PD_COAT = [0.6, 0.55, 0.5], PD_MASK = [2.3, 2.05, 1.6], PD_HAT = [0.13, 0.12, 0.12], PD_GLOVE = [0.42, 0.36, 0.33];
 const PD_BRASS = [0.78, 0.62, 0.42], PD_CLOTH = [0.16, 0.15, 0.14];
 function coatStain(v) {
   const n = vnoise(v.x * 7 + 3, v.y * 5, v.z * 7, 61), d = vnoise(v.x * 19, v.y * 19, v.z * 19, 7);
@@ -406,7 +438,7 @@ function coatSkirt(rTop, rBot, len, o = {}) {
     p.setXYZ(i, Math.sin(a) * rr, y, Math.cos(a) * rr);
   }
   g.computeVertexNormals();
-  return twoSided(g);
+  return g;
 }
 
 // wide-brimmed hat: drooping brim ring (two-sided) + band; origin at the crown base
@@ -417,7 +449,8 @@ function hatBrim(r0, r1, AS = 28) {
     for (let k = 0; k <= RS; k++) {
       const u = k / RS, r = lerp(r0, r1, u);
       // droops at front and back, a dent on the left, slight wave
-      const y = -0.045 * u * u * (0.55 + 0.45 * Math.cos(a) ** 2) + 0.012 * u * Math.sin(a * 3 + 1) - 0.02 * u * Math.exp(-((a - 1.2) ** 2) / 0.15);
+      // droops at front and back, curls up at the very edge, a dent on the left, slight wave
+      const y = -0.05 * u * u * (0.55 + 0.45 * Math.cos(a) ** 2) + 0.03 * smooth(0.7, 1, u) * (1 - 0.6 * Math.cos(a) ** 2) + 0.012 * u * Math.sin(a * 3 + 1) - 0.02 * u * Math.exp(-((a - 1.2) ** 2) / 0.15);
       pos.push(Math.sin(a) * r, y, Math.cos(a) * r);
     }
   }
@@ -476,7 +509,7 @@ function censerSim(m, s, dt) {
   const an = s.anim;
   // overhead censing whirl: the bob is pulled around a tilted circle above the raised fist
   const cense = (an === 'cast' || (an === 'windup' && s.attackType === 'cense'));
-  const whirlT = cense ? (an === 'cast' ? smooth(0.04, 0.2, s.progress) * (1 - smooth(0.82, 0.98, s.progress)) : smooth(0.4, 1, s.progress) * 0.7) : 0;
+  const whirlT = cense ? (an === 'cast' ? (st.cenSecond ? 1 - smooth(0.5, 0.9, s.progress) : smooth(0.04, 0.2, s.progress)) : smooth(0.4, 1, s.progress) * 0.7) : 0;
   if (dt > 0) {
     c.whirlW += (whirlT - c.whirlW) * (1 - Math.exp(-6 * dt));
     c.whirl += dt * (4 + 6.5 * c.whirlW);
@@ -536,24 +569,43 @@ export const plagueDoctor = {
     // --- coat: gaunt hunched body, long open skirt over the legs, shoulder capelet, high collar
     const tors = lathe([[0.001, -0.09], [W * 0.72, -0.07], [W * 0.8, 0.04], [W * 0.72, 0.05 + D.spine * 0.7], [W * 0.78, 0.05 + D.spine + D.chest * 0.35], [W * 0.9, 0.05 + D.spine + D.chest * 0.75], [W * 0.82, 0.05 + D.spine + D.chest * 0.95], [W * 0.42, top + 0.02], [0.001, top + 0.04]], 14);
     deform(tors, (v) => { v.z *= 0.68; const k = clamp((v.y - D.spine) / D.chest); if (v.z < 0) v.z -= k * k * 0.05; });
-    rig.add('hips', 'leather', tors, {}, { cfn: coatStain, skin: torsoSkin });
+    rig.add('hips', 'leather', tors, {}, { cfn: coatStain, skin: torsoSkin, uv: 3 });
     const skirtLen = 0.84;
-    rig.add('hips', 'leather', coatSkirt(W * 0.84, 0.33, skirtLen, { seed: 5, tatter: 0.12 }), { y: 0.07, sz: 0.82 }, {
+    const skirt = coatSkirt(W * 0.84, 0.33, skirtLen, { seed: 5, tatter: 0.12 });
+    const skirtSkin = (v) => { const t = clamp((-v.y - 0.06) / (skirtLen * 0.85)) * lerp(0.85, 0.32, smooth(0.02, -0.2, v.z)), l = clamp(0.5 + v.x * 2.6); return [['hips', 1 - t], ['thighL', t * l], ['thighR', t * (1 - l)]]; };
+    const skirtAnim = (v) => clamp((-v.y - 0.25) / skirtLen) * 1.1;
+    rig.add('hips', 'leather', lining(skirt, 0.005), { y: 0.07, sz: 0.82 }, { c: [0.3, 0.25, 0.22], anim: skirtAnim, skin: skirtSkin, uv: 3 });
+    rig.add('hips', 'leather', skirt, { y: 0.07, sz: 0.82 }, {
+      uv: 3,
       cfn: (v) => { const c = coatStain(v); const k = 1 - smooth(-0.45, -0.8, v.y) * 0.45; return [c[0] * k, c[1] * k, c[2] * k]; },
-      anim: (v) => clamp((-v.y - 0.25) / skirtLen) * 1.1,
-      skin: (v) => { const t = clamp((-v.y - 0.06) / (skirtLen * 0.85)) * 0.85, l = clamp(0.5 + v.x * 6); return [['hips', 1 - t], ['thighL', t * l], ['thighR', t * (1 - l)]]; },
+      anim: skirtAnim,
+      // front panels ride on the thighs, the tails mostly hang from the hips (a sharp left/right split at the back folds the hem)
+      skin: skirtSkin,
     });
-    rig.add('chest', 'leather', twoSided(robe(0.1, 0.27, 0.3, { seg: 16, rows: 3, folds: 8, foldAmp: 0.1, tatter: 0.25, seed: 11 })), { y: D.chest + 0.06, sz: 0.82 }, { cfn: coatStain, anim: (v) => clamp(-v.y * 3) * 0.6 });
+    rig.add('chest', 'leather', twoSided(robe(0.1, 0.3, 0.33, { seg: 24, rows: 4, folds: 9, foldAmp: 0.065, tatter: 0.3, seed: 11 })), { y: D.chest + 0.07, sz: 0.8 }, { cfn: coatStain, anim: (v) => clamp(-v.y * 3) * 0.6, uv: 3 });
     rig.add('chest', 'leather', shell([[0.07, 0], [0.078, 0.06], [0.092, 0.14]], 0.008, 12, 0.55, TAU - 1.1), { y: D.chest - 0.01, z: -0.01 }, { c: PD_COAT });
     // buttoned placket, belt with a brass buckle, pouches
     rig.add('chest', 'gold', rivets([0, 1, 2, 3, 4].map((i) => [0, D.chest * (0.82 - i * 0.16), 0.122 - Math.abs(i - 1.5) * 0.004]), 0.011), {}, { c: PD_BRASS });
     rig.add('hips', 'leather', xf(G.cyl(W * 0.84, W * 0.86, 0.05, 16, true), { sz: 0.74 }), { y: 0.06 }, { c: [0.32, 0.25, 0.2] });
     rig.add('hips', 'gold', mergeRaw([xf(G.box(0.055, 0.05, 0.012), {}), xf(G.box(0.012, 0.05, 0.016), { x: 0.012 })]), { y: 0.06, z: W * 0.86 * 0.74 + 0.005 }, { c: PD_BRASS });
     rig.add('hips', 'leather', mergeRaw([xf(G.box(0.08, 0.1, 0.045), { x: 0.13, y: -0.01, z: 0.075, ry: 0.6 }), xf(G.box(0.085, 0.03, 0.05), { x: 0.13, y: 0.04, z: 0.077, ry: 0.6 }), xf(G.box(0.07, 0.085, 0.04), { x: -0.14, y: 0.0, z: 0.06, ry: -0.7 })]), {}, { c: [0.45, 0.33, 0.25] });
+    // blood-stained surgeon's apron tied at the waist over the coat
+    const apron = panel(0.32, 0.6, { ws: 5, hs: 7, tatter: 0.12, seed: 14, curve: 0.08, taperBot: 1.15 });
+    rig.add('hips', 'leather', apron, { y: 0.075, z: W * 0.86 * 0.74 + 0.012, rx: -0.06 }, {
+      uv: 2.5,
+      cfn: (v) => { const n = vnoise(v.x * 9 + 2, v.y * 7, 3, 77), d = 0.85 + 0.25 * vnoise(v.x * 30, v.y * 30, 1, 5); const bl = smooth(0.5, 0.72, n + smooth(-0.1, -0.5, v.y) * 0.25); return [lerp(2.3, 1.15, bl) * d, lerp(1.95, 0.32, bl) * d, lerp(1.5, 0.22, bl) * d]; },
+      anim: (v) => clamp(-v.y / 0.6) * 0.6,
+      skin: (v) => { const t = clamp((-v.y - 0.05) / 0.5) * 0.7, l = clamp(0.5 + v.x * 4); return [['hips', 1 - t], ['thighL', t * l], ['thighR', t * (1 - l)]]; },
+    });
+    // surgeon's tool roll on the right hip (handles poking out), two vials hung on cords at the left
+    rig.add('hips', 'leather', xf(G.cyl(0.035, 0.035, 0.17, 8), { rz: Math.PI / 2 - 0.25 }), { x: -0.13, y: -0.06, z: 0.11, ry: -0.5 }, { c: [0.5, 0.38, 0.28] });
+    rig.add('hips', 'steel', mergeRaw([0, 1, 2, 3].map((i) => xf(G.cyl(0.005, 0.006, 0.07, 5), { x: -0.04 + i * 0.026, y: 0.045 + (i % 2) * 0.012, z: 0.02 }))), { x: -0.13, y: -0.06, z: 0.11, ry: -0.5, rz: -0.25 }, { c: [0.85, 0.8, 0.75] });
+    rig.add('hips', 'glow', mergeRaw([xf(G.sph(0.02, 7, 5), { x: 0.17, y: -0.15, z: 0.06, sy: 1.3 }), xf(G.sph(0.016, 7, 5), { x: 0.2, y: -0.11, z: 0.02, sy: 1.4 })]), {}, { c: HDR(PD_TOXIC, 1.2), anim: 0.5 });
+    rig.add('hips', 'gold', mergeRaw([xf(G.cyl(0.007, 0.008, 0.02, 6), { x: 0.17, y: -0.115, z: 0.06 }), xf(G.cyl(0.006, 0.007, 0.018, 6), { x: 0.2, y: -0.08, z: 0.02 }), xf(G.cyl(0.002, 0.002, 0.1, 3), { x: 0.165, y: -0.06, z: 0.065, rz: 0.15 }), xf(G.cyl(0.002, 0.002, 0.08, 3), { x: 0.197, y: -0.035, z: 0.025, rz: 0.1 })]), {}, { c: PD_BRASS, anim: 0.5 });
     // bandolier of toxic flasks across the chest
-    const strap = tube([[-0.13, D.chest + 0.03, 0.05], [-0.07, D.chest * 0.74, 0.118], [0.02, D.chest * 0.42, 0.13], [0.1, D.chest * 0.1, 0.12], [0.15, -0.06, 0.09]], 0.009, 16, 4);
+    const strap = tubeO([[-0.13, D.chest + 0.03, 0.05], [-0.07, D.chest * 0.74, 0.118], [0.02, D.chest * 0.42, 0.13], [0.1, D.chest * 0.1, 0.12], [0.15, -0.06, 0.09]], 0.009, 16, 4);
     rig.add('chest', 'leather', xf(strap, { sz: 0.7 }), { z: 0.0 }, { c: [0.3, 0.22, 0.17] });
-    rig.add('chest', 'leather', xf(tube([[-0.13, D.chest + 0.03, 0.05], [-0.1, D.chest + 0.04, -0.08], [0.0, D.chest * 0.5, -0.14], [0.15, -0.06, -0.08]], 0.009, 10, 4), {}), {}, { c: [0.3, 0.22, 0.17] });
+    rig.add('chest', 'leather', xf(tubeO([[-0.13, D.chest + 0.03, 0.05], [-0.1, D.chest + 0.04, -0.08], [0.0, D.chest * 0.5, -0.14], [0.15, -0.06, -0.08]], 0.009, 10, 4), {}), {}, { c: [0.3, 0.22, 0.17] });
     const fl = [[-0.06, 0.72], [0.0, 0.5], [0.055, 0.3], [0.1, 0.1]];
     rig.add('chest', 'glow', mergeRaw(fl.map(([x, y]) => xf(G.sph(0.021, 7, 5), { x, y: D.chest * y - 0.012, z: 0.128, sy: 1.25 }))), {}, { c: HDR(PD_TOXIC, 1.4) });
     rig.add('chest', 'gold', mergeRaw(fl.flatMap(([x, y]) => [xf(G.cyl(0.008, 0.01, 0.022, 6), { x, y: D.chest * y + 0.02, z: 0.128 }), xf(G.cyl(0.011, 0.011, 0.008, 6), { x, y: D.chest * y + 0.034, z: 0.128 })])), {}, { c: PD_BRASS });
@@ -561,17 +613,17 @@ export const plagueDoctor = {
     // --- head: hood, pale beaked mask with brass-rimmed glass eyes, wide-brimmed hat
     rig.add('neck', 'cloth', taper(0.05, 0.055, D.neck + 0.05, 8, 1), { y: D.neck + 0.02 }, { c: PD_CLOTH });
     // leather hood drawn tight over the skull, its cowl spilling onto the capelet
-    const hoodG = deform(G.sph(0.118, 14, 10), (v) => { v.z *= 1.1; if (v.z < 0) v.z *= 1 + clamp(-v.y / 0.1) * 0.25; v.y *= 1.05; });
+    const hoodG = deform(G.sph(0.118, 12, 9), (v) => { v.z *= 1.1; if (v.z < 0) v.z *= 1 + clamp(-v.y / 0.1) * 0.25; v.y *= 1.05; });
     rig.add('head', 'leather', hoodG, { y: 0.1, z: -0.015 }, { c: [0.42, 0.38, 0.34] });
     rig.add('head', 'leather', twoSided(robe(0.1, 0.19, 0.2, { seg: 14, rows: 2, folds: 6, foldAmp: 0.12, tatter: 0.25, seed: 6 })), { y: 0.07, z: -0.02 }, { cfn: coatStain, anim: (v) => clamp(-v.y * 4) * 0.5 });
     const face = new THREE.SphereGeometry(0.11, 16, 8, -Math.PI * 0.4, Math.PI * 0.8, Math.PI * 0.2, Math.PI * 0.42);
-    rig.add('head', 'leather', face, { y: 0.1, z: 0.012, sz: 1.08 }, { c: PD_MASK });
+    rig.add('head', 'leather', face, { y: 0.1, z: 0.012, sz: 1.08 }, { c: PD_MASK, uv: 3.5 });
     const beakPts = [[0, 0.082, 0.07], [0, 0.07, 0.17], [0, 0.04, 0.27], [0, 0.0, 0.35], [0, -0.05, 0.415]];
-    const beak = tube(beakPts, (u) => 0.062 * (1 - u) ** 0.85 + 0.005, 16, 10);
+    const beak = tubeO(beakPts, (u) => 0.062 * (1 - u) ** 0.85 + 0.005, 16, 10);
     deform(beak, (v) => { v.x *= 0.82; });
-    rig.add('head', 'leather', beak, {}, { c: PD_MASK, cfn: (v) => { const k = 0.82 + 0.25 * vnoise(v.x * 30, v.y * 30, v.z * 30, 5) - smooth(0.25, 0.42, v.z) * 0.25; return [PD_MASK[0] * k, PD_MASK[1] * k, PD_MASK[2] * k]; } });
+    rig.add('head', 'leather', beak, {}, { uv: 3.5, c: PD_MASK, cfn: (v) => { const k = 0.82 + 0.25 * vnoise(v.x * 30, v.y * 30, v.z * 30, 5) - smooth(0.25, 0.42, v.z) * 0.25; return [PD_MASK[0] * k, PD_MASK[1] * k, PD_MASK[2] * k]; } });
     // stitched seam along the beak ridge, nostril holes, a strap round the head
-    rig.add('head', 'leather', tube(beakPts.map(([x, y, z], i) => [x, y + (0.062 * (1 - i / 4) ** 0.85 + 0.003) * 0.98, z]), 0.004, 12, 3), {}, { c: [0.9, 0.75, 0.55] });
+    rig.add('head', 'leather', tubeO(beakPts.map(([x, y, z], i) => [x, y + (0.062 * (1 - i / 4) ** 0.85 + 0.003) * 0.98, z]), 0.004, 12, 3), {}, { c: [0.9, 0.75, 0.55] });
     rig.add('head', 'dark', mergeRaw([xf(G.sph(0.008, 5, 4), { x: 0.021, y: 0.06, z: 0.2 }), xf(G.sph(0.008, 5, 4), { x: -0.021, y: 0.06, z: 0.2 })]));
     rig.add('head', 'leather', xf(G.tor(0.113, 0.009, 3, 18), { rx: Math.PI / 2 + 0.25, sz: 1.08 }), { y: 0.08, z: -0.005 }, { c: [0.35, 0.27, 0.21] });
     for (const sx of [-1, 1]) {
@@ -579,21 +631,29 @@ export const plagueDoctor = {
       rig.add('head', 'gold', mergeRaw([xf(G.cyl(0.031, 0.033, 0.026, 12, true), { rx: Math.PI / 2 }), xf(G.tor(0.032, 0.006, 4, 12), { z: 0.013 })]), eye, { c: PD_BRASS });
       rig.add('head', 'glow', xf(G.cyl(0.027, 0.027, 0.006, 12), { rx: Math.PI / 2, z: 0.008 }), eye, { c: HDR(PD_EYE, 4.5) });
     }
-    const crown = lathe([[0.123, 0], [0.125, 0.05], [0.118, 0.115], [0.108, 0.135], [0.06, 0.142], [0.001, 0.143]], 18);
+    const crown = lathe([[0.124, 0], [0.126, 0.04], [0.12, 0.085], [0.11, 0.102], [0.06, 0.108], [0.001, 0.106]], 18);
+    deform(crown, (v) => { if (v.y > 0.095) v.y -= Math.exp(-(v.x * v.x) / 0.002) * 0.012; }); // pinched top
     const hatT = { y: 0.168, z: -0.012, rx: 0.12, rz: 0.04 };
-    rig.add('head', 'leather', crown, hatT, { c: PD_HAT });
-    rig.add('head', 'leather', hatBrim(0.118, 0.3), hatT, { c: PD_HAT });
+    rig.add('head', 'leather', crown, hatT, { c: PD_HAT, uv: 3 });
+    rig.add('head', 'leather', hatBrim(0.118, 0.315), hatT, { c: PD_HAT, uv: 3 });
     rig.add('head', 'leather', xf(G.cyl(0.127, 0.127, 0.03, 18, true), { y: 0.022 }), hatT, { c: [0.6, 0.45, 0.35] });
     rig.add('head', 'gold', xf(G.box(0.035, 0.03, 0.012), { y: 0.022, x: 0.06, z: 0.112, ry: 0.5 }), hatT, { c: PD_BRASS });
 
     // --- arms: coat sleeves with turned-back cuffs, long leather gloves
     for (const S of ['L', 'R']) {
       const sx = S === 'L' ? 1 : -1;
-      rig.add('arm' + S, 'leather', taper(0.056, 0.046, D.upper, 9, 2), {}, { cfn: coatStain });
-      rig.add('fore' + S, 'leather', taper(0.048, 0.04, D.fore * 0.7, 9, 2), {}, { cfn: coatStain });
-      rig.add('fore' + S, 'leather', shell([[0.05, -0.03], [0.062, 0.03]], 0.006, 10), { y: -D.fore * 0.45 }, { c: [0.42, 0.37, 0.32] });
+      // creased coat sleeves, the forearm flaring into a wide turned-back cuff (lined)
+      const up = robe(0.064, 0.058, D.upper + 0.04, { seg: 11, rows: 3, folds: 5, foldAmp: 0.09, tatter: 0, seed: 3 + sx });
+      rig.add('arm' + S, 'leather', up, { y: 0.03 }, { cfn: coatStain, uv: 3 });
+      rig.add('arm' + S, 'leather', G.sph(0.06, 9, 6), { y: -0.005, sy: 0.9 }, { cfn: coatStain, uv: 3 });
+      const lo = robe(0.054, 0.07, D.fore * 0.72, { seg: 11, rows: 3, folds: 5, foldAmp: 0.1, tatter: 0.08, seed: 6 + sx });
+      rig.add('fore' + S, 'leather', lo, { y: 0.0 }, { cfn: coatStain, uv: 3 });
+      rig.add('fore' + S, 'leather', lining(lo, 0.004), { y: 0.0 }, { c: [0.25, 0.21, 0.19], uv: 3 });
+      rig.add('fore' + S, 'leather', shell([[0.07, -0.035], [0.08, 0.035]], 0.006, 11), { y: -D.fore * 0.66 }, { c: [0.42, 0.37, 0.32], uv: 3 });
       rig.add('fore' + S, 'leather', shell([[0.036, -D.fore - 0.01], [0.04, -D.fore + 0.05], [0.058, -D.fore + 0.15]], 0.006, 10), {}, { c: PD_GLOVE });
-      addFleshHand(rig, 'hand' + S, sx, { mat: 'leather', c: PD_GLOVE, m: 0.88, grip: true, fingerLen: 1.12 });
+      const np = rig.parts.length;
+      addFleshHand(rig, 'hand' + S, sx, { mat: 'leather', c: PD_GLOVE, m: 0.92, grip: true, fingerLen: 1.12 });
+      for (let i = np; i < rig.parts.length; i++) outward(rig.parts[i].geo);
       // legs: dark breeches, tall boots with folded cuffs
       rig.add('thigh' + S, 'cloth', taper(0.086, 0.064, D.thigh + 0.02, 9, 2), { y: 0.02 }, { c: [0.2, 0.18, 0.16] });
       rig.add('shin' + S, 'cloth', taper(0.062, 0.058, D.shin * 0.3, 9, 1), { y: 0.0 }, { c: [0.2, 0.18, 0.16] });
@@ -626,14 +686,20 @@ export const plagueDoctor = {
     for (let i = 0; i < 3; i++) {
       const a = (i / 3) * TAU, pts = [];
       for (let k = 0; k <= 7; k++) { const u = k / 7; pts.push([Math.sin(a + u * 4.5) * (0.012 + u * 0.07) + (R() - 0.5) * 0.03, 0.01 + u * (0.4 + i * 0.08), Math.cos(a + u * 4.5) * (0.012 + u * 0.07) + (R() - 0.5) * 0.03]); }
-      wisps.push(tube(pts, (u) => 0.005 + u * 0.022, 18, 5));
+      wisps.push(tubeO(pts, (u) => 0.005 + u * 0.022, 18, 5));
     }
     rig.add('smoke', 'spirit', mergeRaw(wisps), {}, { cfn: (v) => { const k = 0.06 * (1 - smooth(0.15, 0.55, v.y)) + 0.012; return HDR(PD_TOXIC, k); }, anim: (v) => clamp(v.y * 2.4) * 1.6 });
     rig.socket('muzzle', 'censer', 0, cz, 0);
     return D;
   },
   pose(m, s, P, dt) {
-    if (s.anim === 'cast') s.attackType = 'cense';
+    const st = m.state;
+    if (s.anim === 'cast') {
+      s.attackType = 'cense';
+      // the game plays a heal as two 'cast' passes (raise, then mend + recover): the second only whirls down
+      if (st.cenP != null && s.progress + 0.2 < st.cenP) st.cenSecond = true;
+      st.cenP = s.progress;
+    } else { st.cenP = null; st.cenSecond = false; }
     let r = humanoidPose(m, s, P, dt);
     const an = s.anim, T = m.time, w = m.state.moveW ?? 0;
     const action = an === 'windup' || an === 'attack' || an === 'cast';
@@ -674,7 +740,7 @@ export const plagueDoctor = {
       // censing: the censer is raised overhead and whirled in a wide circle, smoke pouring down
       cense: (P, ph, p, m) => {
         if (ph === 'windup') { P.blend(PD_CENSE_IN, PD_CENSE, smooth(0.2, 1, p)); return 8; }
-        const up = smooth(0, 0.18, p), down = smooth(0.84, 1, p);
+        const second = m.state.cenSecond, up = second ? 1 : smooth(0, 0.18, p), down = second ? smooth(0.55, 1, p) : smooth(0.9, 1, p) * 0.25;
         P.apply(PD_CENSE_IN, (1 - up) + down * 0.6);
         P.apply(PD_CENSE, up * (1 - down * 0.6));
         // the fist drives the whirl in a small circle, body rocking with it
