@@ -617,6 +617,14 @@ export class Game {
     // local feedback
     if (dmg > 0) {
       if (H.tag !== 'dot') a.hitFlash = res.crit ? 0.6 : 0.4;
+      // shield-bearers turn frontal hits: show it, so players learn to flank or stun them
+      if (a.def.frontShield && H.tag !== 'dot' && !(a.st.stun?.t > 0)) {
+        const pp = this.player.pos, dx = pp.x - a.pos.x, dz = pp.z - a.pos.z, dl = Math.hypot(dx, dz) || 1;
+        if ((Math.sin(a.yaw) * dx + Math.cos(a.yaw) * dz) / dl > 0.5) {
+          this.vfx.burst(pos, { count: 8, speed: 6, life: 0.3, size: 0.04, sprite: SPR.SPARK, stretch: 0.04, gravity: 8, color: [3, 2.4, 1.4] });
+          if (!(a._blockT > this.time)) { a._blockT = this.time + 1.6; this.ui?.floatText(pos.clone().add(_v.set(0, 0.5, 0)), 'BLOCKED — flank it', '#c8c0b0'); this.audio?.play('enemy_hit_armor', { pos, volume: 0.6 }); }
+        }
+      }
       // a flinch away from the caster, bigger for crits and chunky hits (not for damage over time)
       if (H.tag !== 'dot') {
         const pp = this.player.pos, dx = a.pos.x - pp.x, dz = a.pos.z - pp.z, dl = Math.hypot(dx, dz) || 1;
