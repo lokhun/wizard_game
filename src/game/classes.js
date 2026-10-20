@@ -17,6 +17,17 @@ import { CLASS_META } from './classMeta.js';
 
 const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const tmp = new THREE.Vector3();
+const tmp2 = new THREE.Vector3();
+
+// Rate-based emission: how many particles to spawn this frame for `rate` per
+// second, carrying the fraction over in S[key]. Keeps channel/zone effects the
+// same density at 30, 60 or 144 fps.
+function emitN(S, key, rate, dt) {
+  const a = (S[key] ?? 0) + rate * dt;
+  const n = Math.floor(a);
+  S[key] = a - n;
+  return n;
+}
 
 // small helper: hold-to-channel beam that damages the first enemy it touches
 function beamChannel({ el, range, width, dmg, interval = 0.1, st, heal = 0, allyHeal = 0, pierce = false, sound, max = 4, onTickHit }) {
@@ -37,8 +48,9 @@ function beamChannel({ el, range, width, dmg, interval = 0.1, st, heal = 0, ally
       S.beam.alpha = 0.85 + Math.sin(ctx.time * 40) * 0.15;
       S.beam.update(o, S.end, width * (0.9 + Math.random() * 0.2));
       // impact sparks at the end
-      ctx.vfx.burst(S.end, { element: el, count: 2, speed: 4, life: 0.3, size: 0.08, stretch: 0.04, drag: 3 });
-      if (Math.random() < 0.3) ctx.vfx.P.glow({ x: S.end.x, y: S.end.y, z: S.end.z, r: fxOf(el).core[0], g: fxOf(el).core[1], b: fxOf(el).core[2], life: 0.08, size: width * 6, sprite: SPR.GLOW });
+      const ns = emitN(S, 'eS', 70, dt);
+      if (ns) ctx.vfx.burst(S.end, { element: el, count: ns, speed: 4, life: 0.3, size: 0.05, stretch: 0.02, drag: 3 });
+      if (emitN(S, 'eG', 14, dt)) { const c = fxOf(el).mid; ctx.vfx.P.glow({ x: S.end.x, y: S.end.y, z: S.end.z, r: c[0] * 0.6, g: c[1] * 0.6, b: c[2] * 0.6, life: 0.1, size: width * 5, sprite: SPR.GLOW }); }
       ctx.lightAt(S.end, fxOf(el).light, 8, 6);
       ctx.lightAt(tmp.copy(o).addScaledVector(d, Math.min(len, 3)), fxOf(el).light, 5, 5);
       S.snd?.setPos(o);
@@ -64,17 +76,35 @@ function beamChannel({ el, range, width, dmg, interval = 0.1, st, heal = 0, ally
 function coneChannel({ el, range, angle, dmg, interval = 0.12, st, sound, max = 3 }) {
   return {
     max,
-    start(ctx, S) { S.acc = 0; S.snd = ctx.loop(sound); },
+    start(ctx, S) {
+      S.acc = 0; S.snd = ctx.loop(sound);
+      // roaring volume behind the particles: scrolling-noise flame cone
+      S.cone = ctx.vfx.cone({ element: el, speed: 4.5 });
+    },
     update(ctx, S, dt) {
       const o = ctx.origin, d = ctx.dir;
       const fx = fxOf(el);
-      // stream of flames
-      for (let i = 0; i < 6; i++) {
+      // the cone starts just past the focus so its throat isn't on the lens
+      tmp2.copy(o).addScaledVector(d, 0.35);
+      S.cone.update(tmp2, d, range * 0.95, Math.tan(angle) * range * 0.8, 0.9 + 0.1 * Math.sin(ctx.time * 31));
+      // stream of flame tongues: hot at the throat, deep red and sooty at the end
+      const n = emitN(S, 'eF', 120, dt);
+      for (let i = 0; i < n; i++) {
         const sx = d.x + rand(-1, 1) * angle * 0.5, sy = d.y + rand(-1, 1) * angle * 0.35, sz = d.z + rand(-1, 1) * angle * 0.5;
         const sp = range * rand(1.3, 1.8);
-        ctx.vfx.P.glow({ x: o.x, y: o.y, z: o.z, vx: sx * sp, vy: sy * sp, vz: sz * sp, r: fx.core[0], g: fx.core[1], b: fx.core[2], r2: fx.end[0], g2: fx.end[1], b2: fx.end[2], life: rand(0.35, 0.55), size: 0.15, size2: 1.4, sprite: SPR.FLAME, drag: 2.2, spin: rand(-3, 3) });
+        const f0 = rand(0.3, 0.7);
+        ctx.vfx.P.glow({ x: o.x + d.x * f0, y: o.y + d.y * f0, z: o.z + d.z * f0, vx: sx * sp, vy: sy * sp, vz: sz * sp, r: fx.core[0] * 0.55, g: fx.core[1] * 0.55, b: fx.core[2] * 0.55, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2], life: rand(0.35, 0.55), size: 0.12, size2: 1.25, sprite: SPR.FLAME, drag: 2.2, spin: rand(-3, 3) });
       }
-      if (Math.random() < 0.5) ctx.vfx.P.solid({ x: o.x + d.x * range * 0.7, y: o.y + 0.3, z: o.z + d.z * range * 0.7, vx: d.x * 2, vy: 1.2, vz: d.z * 2, r: 0.06, g: 0.05, b: 0.04, a: 0.35, life: 1.6, size: 0.6, size2: 2, sprite: SPR.SMOKE, drag: 1 });
+      const ne = emitN(S, 'eE', 30, dt);
+      for (let i = 0; i < ne; i++) {
+        const sp = range * rand(1.2, 2.2);
+        ctx.vfx.P.glow({ x: o.x + d.x * 0.6, y: o.y + d.y * 0.6, z: o.z + d.z * 0.6, vx: (d.x + rand(-1, 1) * angle * 0.6) * sp, vy: (d.y + rand(-0.5, 1) * angle * 0.5) * sp, vz: (d.z + rand(-1, 1) * angle * 0.6) * sp, r: 1.5, g: 0.42, b: 0.05, r2: 0.4, g2: 0.03, b2: 0, life: rand(0.4, 0.8), size: 0.025, sprite: SPR.EMBER, drag: 1.6, gravity: -1, stretch: 0.01 });
+      }
+      const nm = emitN(S, 'eM', 14, dt);
+      for (let i = 0; i < nm; i++) {
+        const f = rand(0.55, 0.95) * range;
+        ctx.vfx.P.solid({ x: o.x + d.x * f + rand(-0.6, 0.6), y: o.y + d.y * f + 0.3, z: o.z + d.z * f + rand(-0.6, 0.6), vx: d.x * 2, vy: 1.2, vz: d.z * 2, r: 0.045, g: 0.035, b: 0.03, a: 0.4, life: 1.6, size: 0.6, size2: 2, sprite: SPR.SMOKE, drag: 1, spin: rand(-0.5, 0.5) });
+      }
       ctx.lightAt(tmp.copy(o).addScaledVector(d, range * 0.5), fx.light, 22, 10);
       S.snd?.setPos(o);
       S.acc += dt;
@@ -83,7 +113,7 @@ function coneChannel({ el, range, angle, dmg, interval = 0.12, st, sound, max = 
         for (const a of ctx.rt.inCone(o, d, range, angle)) ctx.hit(a, { dmg, el, st, tag: 'cone' }, v3(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z));
       }
     },
-    end(ctx, S) { S.snd?.stop(0.2); },
+    end(ctx, S) { S.cone?.release(0.25); S.snd?.stop(0.2); },
   };
 }
 
@@ -152,8 +182,17 @@ export const CLASSES = {
               const ty = ctx.groundAt(tx, tz);
               const start = v3(tx - 6, ty + 22, tz - 3);
               const vel = v3(tx, ty, tz).sub(start).normalize().multiplyScalar(32);
-              ctx.vfx.telegraph(v3(tx, ty, tz), { radius: 3, dur: 0.7, color: [2.5, 0.8, 0.1] });
+              ctx.vfx.telegraph(v3(tx, ty, tz), { radius: 3, dur: 0.7, color: [1.8, 0.5, 0.06] });
               ctx.proj({ el: 'fire', pos: start, vel, radius: 0.8, life: 3, core: 2.4, mesh: 'meteor', light: 25, trail: 3, noWallUntilGround: true,
+                data: {},
+                // burning rock: a thick smoke plume and flame tongues streaming off it
+                onTick: (p, dt) => {
+                  const ns = emitN(p.data, 'eS', 40, dt);
+                  for (let i = 0; i < ns; i++) ctx.vfx.P.solid({ x: p.pos.x + rand(-0.4, 0.4), y: p.pos.y + rand(-0.4, 0.4), z: p.pos.z + rand(-0.4, 0.4), vx: -p.vel.x * 0.05, vy: 0.8, vz: -p.vel.z * 0.05, r: 0.05, g: 0.04, b: 0.035, a: 0.55, life: rand(1.2, 2), size: 0.7, size2: 2.4, sprite: SPR.SMOKE, drag: 1, spin: rand(-0.6, 0.6) });
+                  const nf = emitN(p.data, 'eF', 70, dt);
+                  const fx = fxOf('fire');
+                  for (let i = 0; i < nf; i++) ctx.vfx.P.glow({ x: p.pos.x + rand(-0.5, 0.5), y: p.pos.y + rand(-0.5, 0.5), z: p.pos.z + rand(-0.5, 0.5), vx: -p.vel.x * 0.15 + rand(-1, 1), vy: -p.vel.y * 0.15 + rand(0, 1), vz: -p.vel.z * 0.15 + rand(-1, 1), r: fx.mid[0] * 0.8, g: fx.mid[1] * 0.8, b: fx.mid[2] * 0.8, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2], life: rand(0.25, 0.45), size: 0.9, size2: 0.2, sprite: SPR.FLAME, drag: 2, spin: rand(-2, 2) });
+                },
                 hit: { dmg: 30, el: 'fire' }, aoe: { radius: 3.2, dmg: 60, el: 'fire', st: { burn: [4, 8] }, kb: 10 } });
             });
           }
@@ -195,7 +234,7 @@ export const CLASSES = {
           ctx.vfx.decal(p, 'frost', R * 2, 6);
           for (let i = 0; i < 40; i++) {
             const a = (i / 40) * Math.PI * 2;
-            ctx.vfx.P.glow({ x: p.x, y: p.y + 0.3, z: p.z, vx: Math.cos(a) * R * 2, vy: rand(0, 2), vz: Math.sin(a) * R * 2, r: 2, g: 2.6, b: 3, life: 0.6, size: 0.25, sprite: SPR.SHARD, drag: 3, spin: 4 });
+            ctx.vfx.P.glow({ x: p.x, y: p.y + 0.3, z: p.z, vx: Math.cos(a) * R * 2, vy: rand(0, 2), vz: Math.sin(a) * R * 2, r: 0.95, g: 1.25, b: 1.5, life: 0.6, size: 0.22, sprite: SPR.SHARD, drag: 3, spin: 4 });
           }
           ctx.area(v3(p.x, p.y + 1, p.z), R, { dmg: 25, el: 'frost', st: { freeze: 2.5 }, kb: 3 });
           ctx.kick(0.2, 3);
@@ -221,9 +260,10 @@ export const CLASSES = {
           ctx.vfx.decal(c, 'frost', R * 2.2, 8);
           ctx.zone({ pos: c, radius: R, life: 6, interval: 0.25, el: 'frost', dmg: 7, st: { chill: 1 },
             visual: (z, dt) => {
-              for (let i = 0; i < 14; i++) {
+              const n = emitN(z, 'eS', 480, dt);
+              for (let i = 0; i < n; i++) {
                 const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * z.radius;
-                ctx.vfx.P.glow({ x: z.pos.x + Math.cos(a) * r - 3, y: z.pos.y + 9, z: z.pos.z + Math.sin(a) * r, vx: 6, vy: -14, vz: rand(-1, 1), r: 1.8, g: 2.3, b: 3, life: 0.65, size: 0.12, sprite: i % 3 ? SPR.SNOW : SPR.SHARD, stretch: 0.03, spin: 3 });
+                ctx.vfx.P.glow({ x: z.pos.x + Math.cos(a) * r - 3, y: z.pos.y + 9, z: z.pos.z + Math.sin(a) * r, vx: 6, vy: -14, vz: rand(-1, 1), r: 0.9, g: 1.15, b: 1.5, life: 0.65, size: 0.1, sprite: i % 3 ? SPR.SNOW : SPR.SHARD, stretch: 0.02, spin: 3 });
               }
               if (Math.random() < dt * 6) ctx.vfx.smoke(v3(z.pos.x + rand(-1, 1) * z.radius * 0.7, z.pos.y + 0.5, z.pos.z + rand(-1, 1) * z.radius * 0.7), { count: 1, size: 2, color: [0.6, 0.7, 0.8], alpha: 0.25, life: 2.5, speed: 3 });
               ctx.lightAt(v3(z.pos.x, z.pos.y + 3, z.pos.z), 0x80c8ff, 14, z.radius * 1.6);
@@ -267,7 +307,7 @@ export const CLASSES = {
             data: { acc: 0 },
             onTick: (p, dt) => {
               p.data.acc += dt;
-              if (Math.random() < 0.4) ctx.vfx.lightning(p.pos, p.pos.clone().add(v3(rand(-1.4, 1.4), rand(-1, 1), rand(-1.4, 1.4))), { life: 0.06, branches: 0, width: 0.04 });
+              if (emitN(p.data, 'eL', 14, dt)) ctx.vfx.lightning(p.pos, tmp.copy(p.pos).add(tmp2.set(rand(-1.4, 1.4), rand(-1, 1), rand(-1.4, 1.4))), { life: 0.06, branches: 0, width: 0.035 });
               if (p.data.acc >= 0.25) {
                 p.data.acc = 0;
                 const t = ctx.rt.nearest(p.pos, ctx.aoe(5.5));
@@ -368,7 +408,8 @@ export const CLASSES = {
           ctx.sound('cast_arcane_big');
           ctx.proj({ el: 'arcane', vel: ctx.dir.clone().multiplyScalar(15), radius: 0.6, life: 1.6, core: 1.6, mesh: 'orb', meshScale: 1.3, light: 14, trail: 2, pierce: 99,
             hit: { dmg: 14, el: 'arcane', kb: 3 }, aoe: { radius: ctx.aoe(4), dmg: 32, el: 'arcane' },
-            onTick: (p) => { if (Math.random() < 0.5) ctx.vfx.P.glow({ x: p.pos.x, y: p.pos.y, z: p.pos.z, vx: rand(-1, 1), vy: rand(-1, 1), vz: rand(-1, 1), r: 2, g: 1, b: 3, life: 0.6, size: 0.3, sprite: SPR.RUNE, drag: 2, spin: 2 }); } });
+            data: {},
+            onTick: (p, dt) => { if (emitN(p.data, 'eR', 25, dt)) ctx.vfx.P.glow({ x: p.pos.x, y: p.pos.y, z: p.pos.z, vx: rand(-1, 1), vy: rand(-1, 1), vz: rand(-1, 1), r: 0.9, g: 0.4, b: 1.4, life: 0.6, size: 0.26, sprite: SPR.RUNE, drag: 2, spin: 2 }); } });
         },
       },
       ability1: {
@@ -409,12 +450,17 @@ export const CLASSES = {
               hum?.setPos?.(c);
               ctx.zone({ pos: c, radius: R, life: 3.5, interval: 0.25, el: 'arcane', dmg: 9, pull: 7,
                 visual: (z, dt) => {
-                  for (let i = 0; i < 8; i++) {
+                  const n = emitN(z, 'eS', 260, dt);
+                  for (let i = 0; i < n; i++) {
                     const a = Math.random() * Math.PI * 2, r = z.radius * rand(0.5, 1);
                     const px = z.pos.x + Math.cos(a) * r, pz = z.pos.z + Math.sin(a) * r, py = z.pos.y + rand(-1, 2);
-                    ctx.vfx.P.glow({ x: px, y: py, z: pz, vx: (z.pos.x - px) * 2 + Math.cos(a + 1.5) * 4, vy: (z.pos.y - py) * 2, vz: (z.pos.z - pz) * 2 + Math.sin(a + 1.5) * 4, r: 2, g: 0.8, b: 3.2, life: 0.5, size: 0.12, stretch: 0.06, sprite: SPR.SPARK });
+                    ctx.vfx.P.glow({ x: px, y: py, z: pz, vx: (z.pos.x - px) * 2 + Math.cos(a + 1.5) * 4, vy: (z.pos.y - py) * 2, vz: (z.pos.z - pz) * 2 + Math.sin(a + 1.5) * 4, r: 0.9, g: 0.35, b: 1.5, life: 0.5, size: 0.07, stretch: 0.03, sprite: SPR.SPARK });
                   }
-                  ctx.vfx.P.glow({ x: z.pos.x, y: z.pos.y, z: z.pos.z, r: 0.3, g: 0.1, b: 0.6, life: 0.1, size: 3 + Math.sin(z.age * 20) * 0.3, sprite: SPR.RING, rot: z.age * 4 });
+                  // dark heart with a violet event-horizon ring
+                  if (emitN(z, 'eC', 24, dt)) {
+                    ctx.vfx.P.solid({ x: z.pos.x, y: z.pos.y, z: z.pos.z, r: 0, g: 0, b: 0, a: 0.85, life: 0.15, size: 1.8, sprite: SPR.GLOW });
+                    ctx.vfx.P.glow({ x: z.pos.x, y: z.pos.y, z: z.pos.z, r: 0.35, g: 0.1, b: 0.7, life: 0.15, size: 3 + Math.sin(z.age * 20) * 0.3, sprite: SPR.RING, rot: z.age * 4 });
+                  }
                   ctx.lightAt(z.pos, 0xb050ff, 25, 14);
                 },
                 onEnd: (z) => {
@@ -449,7 +495,7 @@ export const CLASSES = {
       secondary: {
         name: 'Life Drain', icon: 'drain', desc: 'Channel a beam that siphons health from the enemy.', mode: 'channel', cd: 5, style: 'channel', hand: 'left',
         channel: beamChannel({ el: 'necrotic', range: 15, width: 0.1, dmg: 4.5, interval: 0.1, heal: 0.35, sound: 'loop_beam_shadow', max: 4,
-          onTickHit: (ctx, a) => { if (Math.random() < 0.5) ctx.vfx.P.glow({ x: a.pos.x, y: a.pos.y + a.height * 0.6, z: a.pos.z, vx: (ctx.origin.x - a.pos.x) * 2, vy: 1, vz: (ctx.origin.z - a.pos.z) * 2, r: 1, g: 3, b: 1, life: 0.5, size: 0.15, sprite: SPR.WISP }); } }),
+          onTickHit: (ctx, a) => { if (Math.random() < 0.5) ctx.vfx.P.glow({ x: a.pos.x, y: a.pos.y + a.height * 0.6, z: a.pos.z, vx: (ctx.origin.x - a.pos.x) * 2, vy: 1, vz: (ctx.origin.z - a.pos.z) * 2, r: 0.45, g: 1.3, b: 0.45, life: 0.5, size: 0.15, sprite: SPR.WISP }); } }),
       },
       ability1: {
         name: 'Raise Dead', icon: 'raise', desc: 'Raise 2 skeleton warriors to fight for you (20s).', cd: 12, style: 'raise', hand: 'both',
@@ -521,7 +567,8 @@ export const CLASSES = {
           ctx.sound('cast_blade'); ctx.sound('cast_blood');
           const o = ctx.casterPos().clone().add(v3(0, 1.2, 0));
           const d = ctx.flatDir();
-          ctx.slashFx(o, d, 'blood', 4.2);
+          ctx.vfx.slash(o, d, 'blood', 4.2, 1, { life: 0.3, tilt: 0.35 });
+          ctx.vfx.slash(o.clone().add(v3(0, -0.15, 0)), d, 'blood', 3.4, 1, { life: 0.34, tilt: 0.3, alpha: 0.5, sparks: 0 });
           for (const a of ctx.rt.inCone(o, d, ctx.aoe(4.4), 1.0)) ctx.hit(a, { dmg: 32, el: 'blood', st: { bleed: [4, 5] }, kb: 6 }, v3(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z));
         },
       },
@@ -547,7 +594,7 @@ export const CLASSES = {
           for (const a of hits) {
             const ap = v3(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z);
             ctx.hit(a, { dmg: 22, el: 'blood', st: { bleed: [3, 4] } }, ap);
-            for (let i = 0; i < 6; i++) ctx.vfx.P.glow({ x: ap.x, y: ap.y, z: ap.z, vx: (p.x - ap.x) * 1.6 + rand(-1, 1), vy: 2 + rand(0, 2), vz: (p.z - ap.z) * 1.6 + rand(-1, 1), r: 3, g: 0.2, b: 0.3, life: 0.6, size: 0.15, sprite: SPR.DROP, gravity: 4 });
+            for (let i = 0; i < 6; i++) ctx.vfx.P.glow({ x: ap.x, y: ap.y, z: ap.z, vx: (p.x - ap.x) * 1.6 + rand(-1, 1), vy: 2 + rand(0, 2), vz: (p.z - ap.z) * 1.6 + rand(-1, 1), r: 1.4, g: 0.06, b: 0.1, life: 0.6, size: 0.13, sprite: SPR.DROP, gravity: 4 });
           }
           ctx.healSelf(12 + hits.length * 6);
           ctx.healAllies(p, 14, 12 + hits.length * 4);
@@ -593,10 +640,11 @@ export const CLASSES = {
           ctx.sound('cast_time');
           ctx.proj({ el: 'time', vel: ctx.dir.clone().multiplyScalar(22).add(v3(0, 4, 0)), gravity: 18, radius: 0.25, life: 1.8, core: 0.8, mesh: 'orb', light: 8, trail: 0.6, sticky: true,
             onHit: (p, a) => { if (a) { p.data.stuckTo = a; p.stuck = true; p.vel.set(0, 0, 0); } },
-            onTick: (p) => {
+            onTick: (p, dt) => {
               if (p.data.stuckTo && !p.data.stuckTo.dead) p.pos.set(p.data.stuckTo.pos.x, p.data.stuckTo.pos.y + p.data.stuckTo.height * 0.6, p.data.stuckTo.pos.z);
               const k = p.age / p.life;
-              if (Math.random() < 0.3 + k) ctx.vfx.P.glow({ x: p.pos.x, y: p.pos.y, z: p.pos.z, r: 0.5, g: 3, b: 2.5, life: 0.15, size: 0.4 + k * 1.2, sprite: SPR.RING, rot: p.age * 8 });
+              // ticking faster as it nears detonation
+              if (emitN(p.data, 'eR', 10 + 30 * k, dt)) ctx.vfx.P.glow({ x: p.pos.x, y: p.pos.y, z: p.pos.z, r: 0.25, g: 1.4, b: 1.15, life: 0.15, size: 0.4 + k * 1.2, sprite: SPR.RING, rot: p.age * 8 });
             },
             aoe: { radius: ctx.aoe(3.6), dmg: 42, el: 'time', st: { slow: 2.5 }, tag: 'big' } });
         },
@@ -620,7 +668,7 @@ export const CLASSES = {
           ctx.vfx.decal(c, 'glyph', R * 2, 4, 0x40e0c8);
           const sh = ctx.vfx.shell(v3(c.x, c.y, c.z), { element: 'time', radius: R, follow: true });
           ctx.zone({ pos: c, radius: R, life: 4, interval: 0.25, el: 'time', dmg: 3, st: { slow: 0.6, stun: 0.3 },
-            visual: (z) => { sh?.update(z.pos, 0.35); if (Math.random() < 0.4) ctx.vfx.P.glow({ x: z.pos.x + rand(-1, 1) * R * 0.7, y: z.pos.y + rand(0, 3), z: z.pos.z + rand(-1, 1) * R * 0.7, r: 0.5, g: 2.5, b: 2, life: 1.2, size: 0.2, sprite: SPR.STAR }); },
+            visual: (z, dt) => { sh?.update(z.pos, 0.35); if (emitN(z, 'eS', 16, dt)) ctx.vfx.P.glow({ x: z.pos.x + rand(-1, 1) * R * 0.7, y: z.pos.y + rand(0, 3), z: z.pos.z + rand(-1, 1) * R * 0.7, r: 0.25, g: 1.25, b: 1.0, life: 1.2, size: 0.18, sprite: SPR.STAR }); },
             onEnd: () => sh?.release() });
         },
       },
@@ -673,14 +721,18 @@ export const CLASSES = {
           const c = ctx.aimPoint.clone(); c.y = ctx.groundAt(c.x, c.z) + 1.2;
           const R = ctx.aoe(7);
           ctx.zone({ pos: c, radius: R, life: 3, interval: 0.25, el: 'shadow', dmg: 7, pull: 9, st: { hex: 2 },
-            visual: (z) => {
-              for (let i = 0; i < 5; i++) {
+            visual: (z, dt) => {
+              const n = emitN(z, 'eW', 170, dt);
+              for (let i = 0; i < n; i++) {
                 const a = Math.random() * Math.PI * 2, r = z.radius * rand(0.4, 1);
                 const px = z.pos.x + Math.cos(a) * r, pz = z.pos.z + Math.sin(a) * r;
-                ctx.vfx.P.glow({ x: px, y: z.pos.y + rand(-1, 1), z: pz, vx: (z.pos.x - px) * 2.2, vy: 0, vz: (z.pos.z - pz) * 2.2, r: 1.6, g: 0.3, b: 2.6, life: 0.45, size: 0.2, sprite: SPR.WISP, stretch: 0.03 });
+                ctx.vfx.P.glow({ x: px, y: z.pos.y + rand(-1, 1), z: pz, vx: (z.pos.x - px) * 2.2, vy: 0, vz: (z.pos.z - pz) * 2.2, r: 0.7, g: 0.12, b: 1.2, life: 0.45, size: 0.18, sprite: SPR.WISP, stretch: 0.02 });
               }
-              ctx.vfx.P.solid({ x: z.pos.x, y: z.pos.y, z: z.pos.z, r: 0, g: 0, b: 0, a: 0.9, life: 0.12, size: 1.6, sprite: SPR.GLOW });
-              ctx.vfx.P.glow({ x: z.pos.x, y: z.pos.y, z: z.pos.z, r: 1.2, g: 0.2, b: 2, life: 0.12, size: 2.2 + Math.sin(z.age * 30) * 0.2, sprite: SPR.RING, rot: -z.age * 5 });
+              // a black maw ringed in violet: dark enough that enemies stay visible against it
+              if (emitN(z, 'eC', 24, dt)) {
+                ctx.vfx.P.solid({ x: z.pos.x, y: z.pos.y, z: z.pos.z, r: 0, g: 0, b: 0, a: 0.85, life: 0.15, size: 1.6, sprite: SPR.GLOW });
+                ctx.vfx.P.glow({ x: z.pos.x, y: z.pos.y, z: z.pos.z, r: 0.5, g: 0.08, b: 0.85, life: 0.15, size: 2.2 + Math.sin(z.age * 30) * 0.2, sprite: SPR.RING, rot: -z.age * 5 });
+              }
               ctx.lightAt(z.pos, 0xa040ff, 14, 10);
             } });
         },
@@ -744,8 +796,9 @@ export const CLASSES = {
           const R = ctx.aoe(5.5);
           ctx.vfx.decal(c, 'glyph', R * 2.1, 6, 0xffd060);
           ctx.zone({ pos: c, radius: R, life: 6, interval: 0.5, el: 'holy', dmg: 8, healAllies: 4,
-            visual: (z) => {
-              if (Math.random() < 0.7) { const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * z.radius; ctx.vfx.P.glow({ x: z.pos.x + Math.cos(a) * r, y: z.pos.y + 0.1, z: z.pos.z + Math.sin(a) * r, vy: rand(1, 2.5), r: 3, g: 2.4, b: 1, life: 1.4, size: 0.1, sprite: SPR.STAR }); }
+            visual: (z, dt) => {
+              const n = emitN(z, 'eS', 36, dt);
+              for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * z.radius; ctx.vfx.P.glow({ x: z.pos.x + Math.cos(a) * r, y: z.pos.y + 0.1, z: z.pos.z + Math.sin(a) * r, vy: rand(1, 2.5), r: 1.4, g: 1.1, b: 0.45, life: 1.4, size: 0.09, sprite: SPR.STAR }); }
               ctx.lightAt(v3(z.pos.x, z.pos.y + 2, z.pos.z), 0xffd870, 10, z.radius * 2);
             } });
         },
@@ -947,7 +1000,10 @@ export const CLASSES = {
           ctx.sound('cast_blade', 0.8);
           const o = ctx.casterPos().clone().add(v3(0, 1.3, 0));
           const d = ctx.flatDir();
-          ctx.slashFx(o, d, 'blade', 3.6, ctx.counter('slash') % 2 ? 1 : -1);
+          const side = ctx.counter('slash') % 2 ? 1 : -1;
+          // bright leading edge + a fainter inner echo so the cut has weight
+          ctx.vfx.slash(o, d, 'blade', 3.6, side, { life: 0.24 });
+          ctx.vfx.slash(o, d, 'blade', 2.8, side, { life: 0.28, alpha: 0.4, sparks: 0, tilt: 0.42 });
           let hitAny = false;
           for (const a of ctx.rt.inCone(o, d, 3.8, 1.0)) {
             ctx.hit(a, { dmg: 24, el: 'blade', kb: 5 }, v3(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z));
@@ -972,6 +1028,9 @@ export const CLASSES = {
           ctx.parry(0.7);
           const p = ctx.casterPos();
           ctx.vfx.shell(v3(p.x, p.y + 1.1, p.z), { element: 'blade', radius: 1.4, life: 0.7, alpha: 0.7 });
+          // the caster sits inside that shell, so show the ward as a sweep in front of them
+          ctx.vfx.slash(v3(p.x, p.y + 1.25, p.z), ctx.flatDir(), 'blade', 1.6, 1, { life: 0.35, tilt: 1.2, alpha: 0.7, sparks: 4 });
+          ctx.vfx.ring(p, 1.8, fxOf('blade').mid, 0.5, 0.15);
         },
       },
       ability2: {
@@ -985,7 +1044,8 @@ export const CLASSES = {
           for (let i = 0; i <= 8; i++) {
             ctx.after(i * 0.025, () => {
               const c = v3(a.x + d.x * i * 1.35, a.y + 1, a.z + d.z * i * 1.35);
-              ctx.vfx.burst(c, { element: 'blade', count: 6, speed: 3, life: 0.3, size: 0.08, stretch: 0.05 });
+              ctx.vfx.burst(c, { element: 'blade', count: 4, speed: 3, life: 0.3, size: 0.05, stretch: 0.03 });
+              if (i % 3 === 1) ctx.vfx.slash(c, d, 'blade', 2.2, i % 2 ? 1 : -1, { life: 0.22, tilt: 0.7, sparks: 3 });
               for (const t of ctx.rt.inRadius(c, 1.8)) {
                 if (hits.has(t.id)) continue;
                 hits.add(t.id);
@@ -1001,13 +1061,14 @@ export const CLASSES = {
         cast(ctx) {
           ctx.sound('cast_blade_big', 1.3);
           ctx.zone({ follow: true, pos: ctx.casterPos().clone(), radius: ctx.aoe(5.5), life: 6, interval: 0.2, el: 'blade', dmg: 11, st: { bleed: [2, 3] },
-            visual: (z) => {
+            visual: (z, dt) => {
               const p = ctx.casterPos();
               z.pos.copy(p);
-              for (let i = 0; i < 10; i++) {
-                const a = z.age * 6 + (i / 10) * Math.PI * 2;
-                const r = z.radius * (0.55 + 0.35 * Math.sin(z.age * 3 + i));
-                ctx.vfx.P.glow({ x: p.x + Math.cos(a) * r, y: p.y + 0.8 + Math.sin(a * 2 + i) * 0.5, z: p.z + Math.sin(a) * r, vx: -Math.sin(a) * 18, vz: Math.cos(a) * 18, r: 1.2, g: 2.6, b: 4.4, life: 0.1, size: 0.12, stretch: 0.05, sprite: SPR.SHARD });
+              const n = emitN(z, 'eB', 330, dt);
+              for (let i = 0; i < n; i++) {
+                const a = z.age * 6 + Math.random() * Math.PI * 2;
+                const r = z.radius * (0.55 + 0.35 * Math.sin(z.age * 3 + a * 5));
+                ctx.vfx.P.glow({ x: p.x + Math.cos(a) * r, y: p.y + 0.8 + Math.sin(a * 2) * 0.5, z: p.z + Math.sin(a) * r, vx: -Math.sin(a) * 18, vz: Math.cos(a) * 18, r: 0.55, g: 1.15, b: 1.9, life: 0.12, size: 0.1, stretch: 0.03, sprite: SPR.SHARD });
               }
               ctx.lightAt(v3(p.x, p.y + 1, p.z), 0x60b8ff, 10, 8);
             } });
@@ -1027,7 +1088,7 @@ export const CLASSES = {
         name: 'Wind Blade', icon: 'crescent', desc: 'Piercing crescents of cutting wind.', mode: 'auto', rate: 0.4, style: 'flick', hand: 'right',
         cast(ctx) {
           ctx.sound('cast_wind', 0.7);
-          ctx.fan(1, 2, (dir) => ctx.proj({ el: 'wind', vel: dir.multiplyScalar(38), radius: 0.4, life: 1.2, core: 0.3, mesh: 'crescent', light: 2, trail: 0.7, pierce: 2,
+          ctx.fan(1, 2, (dir) => ctx.proj({ el: 'wind', vel: dir.multiplyScalar(38), radius: 0.4, life: 1.2, core: 0.3, mesh: 'crescent', light: 3, trail: 1.6, pierce: 2,
             hit: { dmg: 13, el: 'wind', kb: 3 } }));
           ctx.muzzle('wind');
         },
@@ -1038,9 +1099,18 @@ export const CLASSES = {
           ctx.sound('cast_wind_big');
           const o = ctx.casterPos().clone().add(v3(0, 1.2, 0));
           const d = ctx.dir;
-          for (let i = 0; i < 40; i++) {
+          // a visible blast of air: a short-lived swirling cone, pale streaks and
+          // a wall of grey dust shoved forward (dust reads on bright floors too)
+          ctx.vfx.cone({ element: 'wind', hot: [0.55, 0.7, 0.68], mid: [0.4, 0.52, 0.5], cool: [0.1, 0.14, 0.14], speed: 7, alpha: 1.2,
+            life: 0.45, origin: o.clone().addScaledVector(d, 0.8), dir: d, len: ctx.aoe(9) * 0.9, radius: Math.tan(0.6) * ctx.aoe(9) * 0.75 });
+          for (let i = 0; i < 46; i++) {
             const sx = d.x + rand(-0.4, 0.4), sy = d.y + rand(-0.2, 0.3), sz = d.z + rand(-0.4, 0.4);
-            ctx.vfx.P.glow({ x: o.x, y: o.y, z: o.z, vx: sx * 22, vy: sy * 22, vz: sz * 22, r: 1.2, g: 1.6, b: 1.6, life: 0.4, size: 0.3, sprite: SPR.WISP, stretch: 0.05, drag: 3 });
+            const f0 = rand(0.8, 2.5);
+            ctx.vfx.P.glow({ x: o.x + d.x * f0, y: o.y + d.y * f0, z: o.z + d.z * f0, vx: sx * 24, vy: sy * 24, vz: sz * 24, r: 0.65, g: 0.85, b: 0.85, life: 0.45, size: 0.22, sprite: SPR.WISP, stretch: 0.035, drag: 3 });
+          }
+          for (let i = 0; i < 16; i++) {
+            const sx = d.x + rand(-0.45, 0.45), sz = d.z + rand(-0.45, 0.45), f0 = rand(1.5, 3.5);
+            ctx.vfx.P.solid({ x: o.x + d.x * f0, y: o.y - rand(0.3, 1.0), z: o.z + d.z * f0, vx: sx * 14, vy: rand(-0.5, 1.5), vz: sz * 14, r: 0.42, g: 0.44, b: 0.42, a: 0.3, life: 0.9, size: 0.5, size2: 1.8, sprite: SPR.SMOKE, drag: 2.5, spin: rand(-2, 2) });
           }
           for (const a of ctx.rt.inCone(o, d, ctx.aoe(9), 0.6)) ctx.hit(a, { dmg: 16, el: 'wind', kb: 20, st: { stun: 0.4 } }, v3(a.pos.x, a.pos.y + 1, a.pos.z));
           ctx.kick(0.1, 2);
@@ -1051,16 +1121,28 @@ export const CLASSES = {
         cast(ctx) {
           ctx.sound('cast_wind_big');
           const snd = ctx.loop('loop_tornado');
-          ctx.proj({ el: 'wind', pos: ctx.casterPos().clone().add(v3(0, 0.3, 0)).addScaledVector(ctx.flatDir(), 1.5), vel: ctx.flatDir().multiplyScalar(6.5), radius: 1.6, life: 5, core: 0, light: 0, trail: 0, pierce: 999, noWall: false,
+          // twisting dust funnel (mesh) with wisps and flung debris around it
+          const fun = ctx.vfx.funnel({ r0: 0.35, r1: 2.1, height: 5.5, snake: 0.35, spin: 2.8, twist: 3.5, color: [0.2, 0.21, 0.2], hi: [0.62, 0.7, 0.68], alpha: 0.85 });
+          const base = v3();
+          ctx.proj({ el: 'wind', pos: ctx.casterPos().clone().add(v3(0, 0.3, 0)).addScaledVector(ctx.flatDir(), 1.5), vel: ctx.flatDir().multiplyScalar(6.5), radius: 1.6, life: 5, core: 0, light: 3, trail: 0, pierce: 999, noWall: false,
             data: { acc: 0 },
             onTick: (p, dt) => {
               p.pos.y = ctx.groundAt(p.pos.x, p.pos.z) + 0.3;
               snd?.setPos(p.pos);
-              for (let i = 0; i < 6; i++) {
-                const h = Math.random() * 5, a = Math.random() * Math.PI * 2, r = 0.3 + h * 0.35;
-                ctx.vfx.P.glow({ x: p.pos.x + Math.cos(a) * r, y: p.pos.y + h, z: p.pos.z + Math.sin(a) * r, vx: -Math.sin(a) * 10 * r, vy: 2, vz: Math.cos(a) * 10 * r, r: 0.9, g: 1.2, b: 1.2, life: 0.25, size: 0.4, sprite: SPR.WISP, stretch: 0.04 });
+              fun.update(base.set(p.pos.x, p.pos.y - 0.3, p.pos.z), Math.min(1, (p.life - p.age) / 0.4));
+              const nw = emitN(p.data, 'eW', 150, dt);
+              for (let i = 0; i < nw; i++) {
+                const h = Math.random() * 5, a = Math.random() * Math.PI * 2, r = 0.35 + Math.pow(h / 5, 1.6) * 1.8;
+                ctx.vfx.P.glow({ x: p.pos.x + Math.cos(a) * r, y: p.pos.y + h, z: p.pos.z + Math.sin(a) * r, vx: -Math.sin(a) * 9 * r, vy: 2, vz: Math.cos(a) * 9 * r, r: 0.5, g: 0.62, b: 0.6, life: 0.3, size: 0.32, sprite: SPR.WISP, stretch: 0.03, drag: 1 });
               }
-              if (Math.random() < dt * 8) ctx.vfx.P.solid({ x: p.pos.x, y: p.pos.y + rand(0, 3), z: p.pos.z, vx: rand(-3, 3), vy: 3, vz: rand(-3, 3), r: 0.4, g: 0.38, b: 0.32, a: 0.4, life: 0.8, size: 0.8, size2: 1.6, sprite: SPR.SMOKE });
+              // debris: grit and stones whipped around and flung out
+              const nd = emitN(p.data, 'eD', 45, dt);
+              for (let i = 0; i < nd; i++) {
+                const h = Math.random() * 3.5, a = Math.random() * Math.PI * 2, r = 0.4 + h * 0.3;
+                ctx.vfx.P.solid({ x: p.pos.x + Math.cos(a) * r, y: p.pos.y + h, z: p.pos.z + Math.sin(a) * r, vx: -Math.sin(a) * 9 + Math.cos(a) * 2, vy: rand(2, 5), vz: Math.cos(a) * 9 + Math.sin(a) * 2, r: 0.2, g: 0.17, b: 0.13, life: rand(0.6, 1.1), size: rand(0.04, 0.12), sprite: SPR.CHUNK, gravity: 9, spin: rand(-8, 8), drag: 0.8 });
+              }
+              const ns = emitN(p.data, 'eS', 10, dt);
+              for (let i = 0; i < ns; i++) ctx.vfx.P.solid({ x: p.pos.x + rand(-0.8, 0.8), y: p.pos.y - 0.1, z: p.pos.z + rand(-0.8, 0.8), vx: rand(-3, 3), vy: rand(0.5, 1.5), vz: rand(-3, 3), r: 0.3, g: 0.27, b: 0.22, a: 0.4, life: 1.2, size: 0.8, size2: 2.2, sprite: SPR.SMOKE, drag: 1.2, spin: rand(-1, 1) });
               p.data.acc += dt;
               if (p.data.acc > 0.2) {
                 p.data.acc = 0;
@@ -1069,7 +1151,7 @@ export const CLASSES = {
                 }
               }
             },
-            onExpire: () => snd?.stop(0.5) });
+            onExpire: () => { snd?.stop(0.5); fun.release(0.5); } });
         },
       },
       ability2: {
@@ -1088,17 +1170,34 @@ export const CLASSES = {
         cast(ctx) {
           ctx.sound('cast_wind_big', 1.3);
           const snd = ctx.loop('loop_tornado');
-          ctx.zone({ follow: true, pos: ctx.casterPos().clone(), radius: ctx.aoe(10), life: 6, interval: 0.2, el: 'wind', dmg: 9, pull: 6,
-            visual: (z) => {
+          const RR = ctx.aoe(10);
+          // the eye wall: a slow, wide funnel around the caster (it fades where
+          // it nears the camera), plus a ring of debris and wind streaks
+          const wall = ctx.vfx.funnel({ r0: RR * 0.7, r1: RR * 1.05, height: 8, snake: 0.4, spin: 1.2, twist: 2, color: [0.16, 0.18, 0.18], hi: [0.55, 0.64, 0.62], alpha: 0.55 });
+          const base = v3();
+          ctx.zone({ follow: true, pos: ctx.casterPos().clone(), radius: RR, life: 6, interval: 0.2, el: 'wind', dmg: 9, pull: 6,
+            visual: (z, dt) => {
               const p = ctx.casterPos();
               z.pos.copy(p);
               snd?.setPos(p);
-              for (let i = 0; i < 12; i++) {
-                const a = Math.random() * Math.PI * 2, r = z.radius * rand(0.3, 1);
-                ctx.vfx.P.glow({ x: p.x + Math.cos(a) * r, y: p.y + rand(0, 4), z: p.z + Math.sin(a) * r, vx: -Math.sin(a) * 16, vy: 1, vz: Math.cos(a) * 16, r: 0.9, g: 1.3, b: 1.3, life: 0.35, size: 0.35, sprite: SPR.WISP, stretch: 0.05 });
+              wall.update(base.set(p.x, ctx.groundAt(p.x, p.z) - 0.2, p.z), Math.min(1, (z.life - z.age) / 0.6));
+              const nw = emitN(z, 'eW', 300, dt);
+              for (let i = 0; i < nw; i++) {
+                const a = Math.random() * Math.PI * 2, r = z.radius * rand(0.35, 1);
+                ctx.vfx.P.glow({ x: p.x + Math.cos(a) * r, y: p.y + rand(0, 4.5), z: p.z + Math.sin(a) * r, vx: -Math.sin(a) * 16, vy: 1, vz: Math.cos(a) * 16, r: 0.5, g: 0.65, b: 0.64, life: 0.35, size: 0.3, sprite: SPR.WISP, stretch: 0.035 });
+              }
+              const nd = emitN(z, 'eD', 70, dt);
+              for (let i = 0; i < nd; i++) {
+                const a = Math.random() * Math.PI * 2, r = z.radius * rand(0.45, 0.95);
+                ctx.vfx.P.solid({ x: p.x + Math.cos(a) * r, y: p.y + rand(0, 3), z: p.z + Math.sin(a) * r, vx: -Math.sin(a) * 14, vy: rand(1, 4), vz: Math.cos(a) * 14, r: 0.2, g: 0.17, b: 0.13, life: rand(0.5, 1), size: rand(0.05, 0.14), sprite: SPR.CHUNK, gravity: 6, spin: rand(-8, 8), drag: 0.6 });
+              }
+              const ns = emitN(z, 'eS', 14, dt);
+              for (let i = 0; i < ns; i++) {
+                const a = Math.random() * Math.PI * 2, r = z.radius * rand(0.6, 1);
+                ctx.vfx.P.solid({ x: p.x + Math.cos(a) * r, y: p.y + rand(0, 1), z: p.z + Math.sin(a) * r, vx: -Math.sin(a) * 8, vy: 1, vz: Math.cos(a) * 8, r: 0.3, g: 0.29, b: 0.26, a: 0.35, life: 1.4, size: 1, size2: 3, sprite: SPR.SMOKE, drag: 0.8, spin: rand(-1, 1) });
               }
             },
-            onEnd: () => snd?.stop(0.6) });
+            onEnd: () => { snd?.stop(0.6); wall.release(0.6); } });
         },
       },
     },

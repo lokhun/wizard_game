@@ -220,9 +220,15 @@ function makeAtlas() {
   return tex;
 }
 
+// Near-camera readability: particles closer than uNear.x fade toward uNear.z
+// brightness/opacity (full strength from uNear.y metres), and no particle may
+// grow wider on screen than uMaxAng * depth. Sprite indices >= 16 opt out of
+// the near fade (ambient torches and braziers the player walks past).
 const VERT = /* glsl */ `
 uniform float uTime;
 uniform float uFogDensity;
+uniform vec3 uNear;
+uniform float uMaxAng;
 attribute vec3 iPos;
 attribute vec3 iVel;
 attribute vec4 iColor;
@@ -245,14 +251,15 @@ void main(){
   vec3 vel = iVel * exp(-drag * age);
   vel.y -= iPhys.x * age;
   vec4 mv = viewMatrix * vec4(p, 1.0);
-  float size = mix(iTime.z, iTime.w, f);
+  float depth = -mv.z;
+  float size = min(mix(iTime.z, iTime.w, f), max(depth, 0.05) * uMaxAng);
   vec2 corner = position.xy;
   vec2 ax, ay;
   if (iPhys.w > 0.0) {
     vec2 d = (viewMatrix * vec4(vel, 0.0)).xy;
     float sp = length(d);
     d = sp > 1e-4 ? d / sp : vec2(1.0, 0.0);
-    ax = d * (size + sp * iPhys.w);
+    ax = d * min(size + sp * iPhys.w, max(depth, 0.05) * uMaxAng * 1.5);
     ay = vec2(-d.y, d.x) * size;
   } else {
     float rot = iMisc.y + iPhys.z * age;
@@ -262,12 +269,12 @@ void main(){
   }
   mv.xy += ax * corner.x + ay * corner.y;
   gl_Position = projectionMatrix * mv;
-  float spr = iMisc.x;
+  float spr = mod(iMisc.x, 16.0);
+  float nearK = iMisc.x > 15.5 ? 1.0 : mix(uNear.z, 1.0, smoothstep(uNear.x, uNear.y, depth));
   vec2 cell = vec2(mod(spr, 4.0), 3.0 - floor(spr / 4.0));
   vUv = (cell + corner + 0.5) / 4.0;
-  float a = iColor.a * smoothstep(0.0, 0.08, f) * (1.0 - smoothstep(0.55, 1.0, f));
+  float a = iColor.a * smoothstep(0.0, 0.08, f) * (1.0 - smoothstep(0.55, 1.0, f)) * nearK;
   vColor = vec4(mix(iColor.rgb, iColor2, f), a);
-  float depth = -mv.z;
   vFog = 1.0 - exp(-uFogDensity * uFogDensity * depth * depth);
 }
 `;
@@ -301,7 +308,7 @@ void main(){
 `;
 
 class ParticleLayer {
-  constructor(capacity, atlas, additive) {
+  constructor(capacity, atlas, additive, near, maxAng) {
     this.capacity = capacity;
     const geo = new THREE.InstancedBufferGeometry();
     const quad = new THREE.PlaneGeometry(1, 1);
@@ -318,12 +325,15 @@ class ParticleLayer {
     // all particles start dead
     for (let i = 0; i < capacity; i++) this.a.iTime.array[i * 4] = -1e6;
     for (const [k, v] of Object.entries(this.a)) geo.setAttribute(k, v);
+    this.attrs = Object.values(this.a);
     geo.instanceCount = capacity;
     this.uniforms = {
       uTime: { value: 0 },
       uAtlas: { value: atlas },
       uFogDensity: { value: 0.04 },
       uFogColor: { value: new THREE.Color(0x05070a) },
+      uNear: { value: new THREE.Vector3(...near) },
+      uMaxAng: { value: maxAng },
     };
     const mat = new THREE.ShaderMaterial({
       vertexShader: VERT,
@@ -373,9 +383,11 @@ class ParticleLayer {
     this.uniforms.uTime.value = time;
     if (this.dirtyMax < 0) return;
     const min = this.dirtyMin, max = this.dirtyMax;
-    for (const attr of Object.values(this.a)) {
+    // append (don't replace) the range: several updates can run before the
+    // next render (hitches, fixed-step catch-up, tests) and three only clears
+    // the ranges once it has uploaded them
+    for (const attr of this.attrs) {
       const n = attr.itemSize;
-      attr.clearUpdateRanges();
       attr.addUpdateRange(min * n, (max - min + 1) * n);
       attr.needsUpdate = true;
     }
@@ -387,8 +399,11 @@ class ParticleLayer {
 export class Particles {
   constructor(scene) {
     this.atlas = makeAtlas();
-    this.add = new ParticleLayer(24000, this.atlas, true);
-    this.alpha = new ParticleLayer(8000, this.atlas, false);
+    // glows dim to 30% right in front of the lens (muzzles, trails leaving the
+    // focus); smoke and debris vanish entirely within ~0.7 m so puffs never
+    // turn into flat discs over the screen
+    this.add = new ParticleLayer(24000, this.atlas, true, [0.9, 5.0, 0.3], 0.5);
+    this.alpha = new ParticleLayer(8000, this.atlas, false, [0.7, 2.4, 0.0], 0.7);
     scene.add(this.add.mesh);
     scene.add(this.alpha.mesh);
     this.time = 0;
@@ -401,6 +416,8 @@ export class Particles {
   }
   // additive (glowing) particle
   glow(o) { this.add.spawn(this.time, o); }
+  // additive particle that ignores the near-camera fade (ambient fire)
+  glowAmbient(o) { o.sprite = (o.sprite ?? 0) + 16; this.add.spawn(this.time, o); }
   // alpha-blended (smoke, debris, blood)
   solid(o) { this.alpha.spawn(this.time, o); }
   update(time) {

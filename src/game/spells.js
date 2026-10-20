@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { fxOf } from '../render/vfx.js';
+import { fxOf, nearFade, clampHDR } from '../render/vfx.js';
 import { SPR } from '../render/particles.js';
 import { rand } from '../core/rng.js';
 import { segPointDist2 } from '../core/math.js';
@@ -27,6 +27,25 @@ function glowTexture() {
   return new THREE.CanvasTexture(c);
 }
 
+// emissive map for meteors: black crust with glowing fissures
+function magmaTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#000'; g.fillRect(0, 0, 128, 128);
+  g.strokeStyle = '#ff9a40'; g.lineCap = 'round';
+  for (let i = 0; i < 26; i++) {
+    let x = Math.random() * 128, y = Math.random() * 128;
+    g.lineWidth = 1 + Math.random() * 2.5;
+    g.beginPath(); g.moveTo(x, y);
+    for (let k = 0; k < 5; k++) { x += (Math.random() - 0.5) * 30; y += (Math.random() - 0.5) * 30; g.lineTo(x, y); }
+    g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 export class SpellRuntime {
   constructor(game) {
     this.g = game;
@@ -51,7 +70,8 @@ export class SpellRuntime {
     const rock = new THREE.DodecahedronGeometry(0.22, 0);
     M.rock = { geo: rock, mat: new THREE.MeshStandardMaterial({ color: 0x6a5a48, roughness: 0.95, emissive: 0x401800, emissiveIntensity: 0.4, flatShading: true }) };
     const meteor = new THREE.DodecahedronGeometry(0.9, 1);
-    M.meteor = { geo: meteor, mat: new THREE.MeshStandardMaterial({ color: 0x2a1a10, roughness: 1, emissive: 0xff5010, emissiveIntensity: 1.5, flatShading: true }) };
+    // charred rock glowing from within: dark faces, hot cracks via the emissive map
+    M.meteor = { geo: meteor, mat: new THREE.MeshStandardMaterial({ color: 0x1a1210, roughness: 1, emissive: 0xff4808, emissiveIntensity: 1.1, emissiveMap: magmaTexture(), flatShading: true }) };
     const boulder = new THREE.DodecahedronGeometry(2.2, 1);
     M.boulder = { geo: boulder, mat: new THREE.MeshStandardMaterial({ color: 0x5a4a38, roughness: 1, emissive: 0x803000, emissiveIntensity: 0.6, flatShading: true }) };
     const spear = new THREE.ConeGeometry(0.07, 1.4, 6);
@@ -59,14 +79,28 @@ export class SpellRuntime {
     M.spear = { geo: spear, mat: new THREE.MeshStandardMaterial({ color: 0xe8e0c8, roughness: 0.6, emissive: 0x204010, emissiveIntensity: 0.6 }) };
     const blade = new THREE.BoxGeometry(0.06, 0.012, 1.1);
     blade.translate(0, 0, 0.2);
-    M.blade = { geo: blade, mat: new THREE.MeshBasicMaterial({ color: new THREE.Color(1.2, 2.8, 4.5), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }) };
+    M.blade = { geo: blade, mat: nearFade(new THREE.MeshBasicMaterial({ color: new THREE.Color(0.5, 1.1, 1.8), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })) };
     const arrow = new THREE.CylinderGeometry(0.015, 0.015, 0.8, 4);
     arrow.rotateX(Math.PI / 2);
     M.arrow = { geo: arrow, mat: new THREE.MeshStandardMaterial({ color: 0x4a3018, roughness: 0.8 }) };
-    const cres = new THREE.TorusGeometry(0.6, 0.05, 4, 16, Math.PI * 0.8);
+    // wind blade: a thicker crescent tapered toward the horns, bulging forward
+    const cres = new THREE.TorusGeometry(0.62, 0.075, 6, 24, Math.PI * 0.9);
+    {
+      const pa = cres.getAttribute('position');
+      for (let i = 0; i < pa.count; i++) {
+        const x = pa.getX(i), y = pa.getY(i), z = pa.getZ(i);
+        const a = Math.atan2(y, x) / (Math.PI * 0.9); // 0..1 along the arc
+        const taper = 0.25 + 0.75 * Math.sin(Math.min(1, Math.max(0, a)) * Math.PI);
+        const r = Math.hypot(x, y), ring = 0.62;
+        const k = ring + (r - ring) * taper;
+        pa.setXYZ(i, x / r * k, y / r * k, z * taper * 0.8);
+      }
+      cres.computeVertexNormals();
+    }
+    cres.rotateZ(-Math.PI * 0.45);
     cres.rotateX(Math.PI / 2);
-    cres.rotateY(Math.PI / 2 + Math.PI * 0.1);
-    M.crescent = { geo: cres, mat: new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 2.6, 2.5), transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }) };
+    cres.rotateY(-Math.PI / 2);
+    M.crescent = { geo: cres, mat: nearFade(new THREE.MeshBasicMaterial({ color: new THREE.Color(0.75, 1.15, 1.1), transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })) };
     const orb = new THREE.SphereGeometry(0.25, 16, 12);
     M.orb = { geo: orb, mat: null }; // per element basic material
     const flask = new THREE.SphereGeometry(0.12, 10, 8);
@@ -77,14 +111,18 @@ export class SpellRuntime {
   _spriteMat(el) {
     if (this.spriteMats.has(el)) return this.spriteMats.get(el);
     const fx = fxOf(el);
-    const m = new THREE.SpriteMaterial({ map: this.glowTex, color: new THREE.Color(fx.core[0] * 0.6, fx.core[1] * 0.6, fx.core[2] * 0.6), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
+    // core glow: brightest channel capped at ~1.4 and dimmed/shrunk near the lens
+    const c = clampHDR([fx.core[0] * 0.75, fx.core[1] * 0.75, fx.core[2] * 0.75], 1.4);
+    const m = nearFade(new THREE.SpriteMaterial({ map: this.glowTex, color: new THREE.Color(c[0], c[1], c[2]), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false }));
     this.spriteMats.set(el, m);
     return m;
   }
   _orbMat(el) {
     if (this.orbMats.has(el)) return this.orbMats.get(el);
     const fx = fxOf(el);
-    const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(fx.core[0] * 0.7, fx.core[1] * 0.7, fx.core[2] * 0.7) });
+    // solid orb body: element mid tone with a hotter rim of core sprite around it
+    const c = clampHDR([fx.mid[0] * 0.15 + fx.core[0] * 0.55, fx.mid[1] * 0.15 + fx.core[1] * 0.55, fx.mid[2] * 0.15 + fx.core[2] * 0.55], 1.3);
+    const m = nearFade(new THREE.MeshBasicMaterial({ color: new THREE.Color(c[0], c[1], c[2]) }));
     this.orbMats.set(el, m);
     return m;
   }
@@ -132,7 +170,9 @@ export class SpellRuntime {
     // visual
     const group = new THREE.Group();
     group.position.copy(proj.pos);
-    const coreSize = p.core ?? 0.6;
+    // big cores right at the muzzle blew the screen out: cap them (the light,
+    // trail and mesh carry the size of heavier spells)
+    const coreSize = Math.min(p.core ?? 0.6, 0.85);
     if (coreSize > 0) {
       const s = new THREE.Sprite(this._spriteMat(proj.el));
       s.scale.setScalar(coreSize);

@@ -18,9 +18,10 @@ import { DUNGEON_TYPES } from './models/dungeon.js';
 import { COURTYARD_TYPES } from './models/courtyard.js';
 import { KEEP_TYPES } from './models/keep.js';
 import { BOSS_TYPES } from './models/bosses.js';
+import { THRONE_TYPES } from './models/throne.js';
 
 const SPECS = {};
-for (const list of [SEWER_TYPES, DUNGEON_TYPES, COURTYARD_TYPES, KEEP_TYPES, BOSS_TYPES]) for (const s of list) SPECS[s.id] = s;
+for (const list of [SEWER_TYPES, DUNGEON_TYPES, COURTYARD_TYPES, KEEP_TYPES, THRONE_TYPES, BOSS_TYPES]) for (const s of list) SPECS[s.id] = s;
 
 export const ENEMY_TYPES = Object.keys(SPECS);
 

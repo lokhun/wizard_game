@@ -12,8 +12,17 @@ import { wob } from './fx.js';
 // origin looking down -Z).
 // ---------------------------------------------------------------------------
 
-const BASE_R = V(0.27, -0.25, -0.55);
-const BASE_L = V(-0.28, -0.23, -0.5);
+// rest pose sits low and wide so the focus frames the crosshair instead of
+// covering it (cast keys are offsets from here, so they still line up)
+const BASE_R = V(0.295, -0.282, -0.56);
+const BASE_L = V(-0.305, -0.258, -0.51);
+
+// The viewmodel is drawn a hand's length from the lens, so authored glow
+// (shared with the class-select avatars) would bloom into a white blob right
+// next to the crosshair. Scale the first-person copy down: the focus still
+// glows in its class colour but stays below the bloom threshold at rest.
+const VIEW_GLOW = 0.4;      // unlit glow / halo colours
+const VIEW_EMISSIVE = 0.6;  // emissive intensity of lit crystal shells and runes
 
 // Hold presets. Pole holds give the pole direction (tilt forward about X,
 // lean inward about Z); the roll of the fist around the pole is solved so the
@@ -24,7 +33,8 @@ const HOLDS = {
   staff: { pole: true, tilt: -0.62, lean: 0.24, roll: 0.15, pos: [0, 0, 0] },
   wand: { pole: true, tilt: -1.2, lean: 0.3, roll: 0.0, pos: [-0.01, 0.03, -0.02] },
   dagger: { pole: true, tilt: -0.45, lean: 0.3, roll: 0.0, pos: [-0.03, 0.07, -0.02] },
-  sword: { pole: true, tilt: -0.55, lean: 0.3, roll: 0.0, pos: [0, 0.01, 0] },
+  // leaned out and back so the blade rests beside the crosshair, not across it
+  sword: { pole: true, tilt: -0.72, lean: 0.12, roll: 0.0, pos: [0.012, -0.012, 0] },
   claw: { rot: [1.15, 0.45, 0.15], order: 'YXZ', pos: [-0.04, 0.09, -0.05] },
   fist: { rot: [0.6, 0.8, 0.0], pos: [-0.04, 0.06, -0.04] },
 };
@@ -274,6 +284,21 @@ export function createViewModel(classId, ctx) {
   const fxL = F.leftFx ? F.leftFx(handL) : null;
   const fxR = F.rightFx ? F.rightFx(handR) : null;
 
+  // dim this instance's glow (see VIEW_GLOW). Animated glows are rescaled at
+  // the source; the rest (static halos and accents) once, here.
+  for (const it of glows.items) it.k *= it.kind === 'basic' ? VIEW_GLOW : VIEW_EMISSIVE;
+  {
+    const animated = new Set(glows.items.map((it) => it.mat));
+    root.traverse((o) => {
+      const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+      for (const m of mats) {
+        if (animated.has(m) || m.userData.shared || m.userData.vmDim) continue;
+        if (m.userData.glow) { m.color.multiplyScalar(VIEW_GLOW); m.userData.vmDim = true; }
+        else if (m.userData.glowStd || (m.emissiveIntensity > 0.5 && m.emissive && m.emissive.getHex() !== 0)) { m.emissiveIntensity *= VIEW_EMISSIVE; m.userData.vmDim = true; }
+      }
+    });
+  }
+
   // muzzles
   const muzzle = F.tip ?? F.handTip?.(handR) ?? handR.palmCenter;
   const offhand = new THREE.Object3D();
@@ -481,15 +506,17 @@ export function createViewModel(classId, ctx) {
     first = false;
 
     // glow
-    const glow = 1 + chargeK * 1.4 + power * 0.8 + flare * 1.2;
-    st.charge = chargeK; st.power = power; st.glow = glow; st.castK = castR || castL ? 1 : 0;
+    // charge / cast flare brighten the focus, but gently: it sits by the crosshair
+    const glow = 1 + chargeK * 0.9 + power * 0.5 + flare * 0.6;
+    // foci that write their colours directly scale them by st.glow
+    st.charge = chargeK; st.power = power; st.glow = glow * VIEW_GLOW; st.castK = castR || castL ? 1 : 0;
     glows.set(glow);
     F.update?.(t, dt, st);
     fxL?.update(t, 1 + chargeK, dt);
     fxR?.update(t, 1 + chargeK, dt);
     lightAnchor.getWorldPosition(light.position);
     root.worldToLocal(light.position).add(lightOffset);
-    light.intensity = lightBase * (0.85 + 0.15 * wob(t * 6, 3)) * (1 + chargeK * 1.5 + power * 0.8 + flare * 2);
+    light.intensity = lightBase * (0.85 + 0.15 * wob(t * 6, 3)) * (1 + chargeK * 1.2 + power * 0.6 + flare * 1.4);
   }
 
   update(0.016, { t: 0 });

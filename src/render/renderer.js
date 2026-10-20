@@ -67,6 +67,9 @@ const GradeShader = {
   `,
 };
 
+const BLOOM_THRESHOLD = 1.05;
+const BLOOM_SCALE = 0.6;
+
 export class Renderer {
   constructor(canvas, quality = 'high') {
     this.quality = quality;
@@ -77,6 +80,8 @@ export class Renderer {
       stencil: false,
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality === 'low' ? 0.85 : quality === 'medium' ? 1 : quality === 'high' ? 1.25 : 1.5));
+    // synchronous shader error checks dominate warm-up; only pay for them in test runs
+    this.renderer.debug.checkShaderErrors = new URLSearchParams(location.search).has('test');
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -120,7 +125,10 @@ export class Renderer {
     this.viewPass = new ViewModelPass(this.viewScene, this.viewCamera);
     this.composer.addPass(this.viewPass);
 
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.65, 0.55, 0.82);
+    // Bloom only catches genuinely hot pixels (magic cores, flames): threshold
+    // above 1.0 so lit stone, skin and pale enemies never glow, and a modest
+    // strength so a burst of spells can't fog the whole frame white.
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.45, 0.5, BLOOM_THRESHOLD);
     this.composer.addPass(this.bloom);
 
     this.grade = new ShaderPass(GradeShader);
@@ -139,8 +147,10 @@ export class Renderer {
     if (g.saturation !== undefined) u.uSaturation.value = g.saturation;
     if (g.vignette !== undefined) u.uVignette.value = g.vignette;
     if (g.exposure !== undefined) this.renderer.toneMappingExposure = g.exposure;
-    if (g.bloom !== undefined) this.bloom.strength = g.bloom;
-    if (g.bloomThreshold !== undefined) this.bloom.threshold = g.bloomThreshold;
+    // biome grades author bloom around 0.6-0.85 for the old, softer setup;
+    // scale into the readable range (~0.36-0.5) rather than editing biomes
+    if (g.bloom !== undefined) this.bloom.strength = g.bloom * BLOOM_SCALE;
+    this.bloom.threshold = Math.max(BLOOM_THRESHOLD, g.bloomThreshold ?? 0);
   }
 
   resize() {
