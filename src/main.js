@@ -372,12 +372,13 @@ function hostStart() {
 }
 
 function lateState() {
-  return { cleared: game.level.rooms.filter((r) => r.cleared).map((r) => r.id), visited: game.level.rooms.filter((r) => r.visited).map((r) => r.id), active: game.director.active?.room.id ?? -1 };
+  return { cleared: game.level.rooms.filter((r) => r.cleared).map((r) => r.id), visited: game.level.rooms.filter((r) => r.visited).map((r) => r.id), active: game.director.active?.room.id ?? -1, broken: game.level.breakables.filter((b) => !b.alive).map((b) => b.i) };
 }
 function applyLateState(s) {
   for (const id of s.cleared ?? []) game.level.rooms[id].cleared = true;
   for (const id of s.visited ?? []) game.level.rooms[id].visited = true;
   if (s.active >= 0) game.setRoomLocked(s.active, true);
+  for (const i of s.broken ?? []) game.breakProp(i, false);
 }
 
 function leaveNet() {
