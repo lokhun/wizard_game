@@ -44,6 +44,52 @@ How the research in `RESEARCH.md` turned into the game.
   - Trash health grows by only +32% per extra player, because the research flagged health sponges as a common complaint.
   - Boss health grows by +45% per extra player.
 
+## Combat design: how a fight actually plays
+
+The target pace is quicker than Dark and Darker, nowhere near a boomer shooter, with decisions that matter more than reflexes.
+
+- **Movement:**
+  - 6 m/s base speed with a touch of acceleration weight (about 0.12 s to full speed).
+  - Two dash charges with 3 s recharge, each dash 6.5 m with i-frames.
+  - Skirmishers (rats, hounds, imps) are faster than you, so you deal with them rather than outrun them. Line troops are slower, so you can reposition.
+- **Room spacing:**
+  - Fight rooms are about 20–30 m across (about 600 m² of floor). Boss arenas are 36 m.
+  - Crossing a room takes about 4 s at a run, so there is space to reposition without kiting forever.
+- **Waves are squads, not piles:**
+  - Every enemy has a role: fodder, skirmisher, line, heavy, ranged or caster.
+  - Each wave is built from a template per realm:
+    - *shieldwall*: a melee line with archers behind it.
+    - *coven*: casters with guards.
+    - *hunters*: a fast pack with an anchor.
+    - *horde*, *vanguard* and *crossfire*.
+  - The opening wave uses a simple squad. A squad's minimum slots always spawn. Waves are capped at 9 bodies, +50% per extra player.
+- **Readable arrivals:**
+  - Enemies spawn across the room from where the party entered, at least 8–11 m away. The backline spawns at the far edges.
+  - Spawns are staggered with a summoning glyph.
+- **Fairness rules:**
+  - At most 3 melee attackers press one player; the rest circle.
+  - At most 2–3 shooters wind up on one player at once.
+  - Overlapping pools don't stack.
+- **Telegraphs and interrupts:**
+  - Heavy attacks paint the ground: circle, cone, rectangle or wave.
+  - Melee wind-ups flash a glint at the head and play the creature's voice. When the attacker is behind you, a screen-edge marker shows.
+  - **Killing an enemy mid-windup cancels its attack** ("INTERRUPTED"), so it pays to focus the big wind-up.
+- **Positional enemies:**
+  - Shield-bearers (Jailer, Royal Guard, Gilded Sentinel) turn frontal hits ("BLOCKED — flank it").
+  - The Hollow Bannerman empowers foes within 9 m (+30% damage, +15% speed) until it dies.
+- **The environment:**
+  - Sewer and throne rooms have mid-room pillars or statues to break line of sight.
+  - Shots fly over low clutter.
+  - Water slows and makes you Wet, which conducts lightning.
+  - **Powder kegs** (about 1 in 5 barrels) explode when broken, chain into each other and hurt anyone close.
+- **Sustain:**
+  - Clearing a room restores 15% health. Health orbs drop from about 10% of kills and pull in from 5 m.
+  - Bosses are a test of the build and of dodging, not of attrition.
+- **Feedback:**
+  - Hit flinch on a damped spring, a flash, merged damage numbers and a hitmarker.
+  - Bodies ride the killing blow and linger.
+  - Debris matches the material: bone, metal, slime, spirit or flesh.
+
 ## Combat model
 - **Statuses:** Burn, Chill (5 stacks become Freeze), Shock, Poison (stacking), Hex, Bleed, Slow, Stun, Wet (from standing in water), Root and Mark.
 - **Reactions** are resolved on the attacker's machine, using the target's replicated status flags. The host then applies the numbers.
