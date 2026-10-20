@@ -405,6 +405,18 @@ export class Game {
     if (id === 'courtyard' && Math.random() < dt * 3) {
       P.solid({ x: cam.x + rnd(24), y: cam.y + 6, z: cam.z + rnd(24), vx: 1.2, vy: -0.6, vz: rnd(0.5), r: 0.25, g: 0.2, b: 0.12, a: 0.8, life: 7, size: 0.06, sprite: SPR.FEATHER, spin: 2 });
     }
+    // low ground mist drifting through the bailey and over the sewer channels
+    if ((id === 'courtyard' || id === 'sewers') && Math.random() < dt * (id === 'courtyard' ? 7 : 5)) {
+      const a = Math.random() * Math.PI * 2, d = 5 + Math.random() * 18;
+      const x = cam.x + Math.cos(a) * d, z = cam.z + Math.sin(a) * d;
+      const cell = this.level.cells[Math.floor(z / T) * this.level.W + Math.floor(x / T)];
+      const wet = this.level.kind[Math.floor(z / T) * this.level.W + Math.floor(x / T)] === K_WATER;
+      if (cell === 1 && (id === 'courtyard' || wet || Math.random() < 0.3)) {
+        const gy = this.groundY(x, z);
+        const col = id === 'courtyard' ? [0.32, 0.36, 0.46] : [0.2, 0.27, 0.21];
+        P.solid({ x, y: gy + 0.25 + Math.random() * 0.3, z, vx: (id === 'courtyard' ? 0.35 : 0.1) + rnd(0.15), vy: 0.02, vz: rnd(0.2), r: col[0], g: col[1], b: col[2], a: id === 'courtyard' ? 0.13 : 0.16, life: 9 + Math.random() * 5, size: 2.4 + Math.random() * 2, size2: 4.5, sprite: SPR.SMOKE, spin: 0.05, drag: 0.05 });
+      }
+    }
     if (id === 'throne' && Math.random() < dt * 10) {
       P.glow({ x: cam.x + rnd(20), y: cam.y + 4 + rnd(2), z: cam.z + rnd(20), vx: rnd(0.3), vy: -0.4, vz: rnd(0.3), r: 1.2, g: 0.5, b: 1.6, r2: 0.2, g2: 0.05, b2: 0.3, life: 8, size: 0.04, sprite: SPR.EMBER, drag: 0.2 });
     }
