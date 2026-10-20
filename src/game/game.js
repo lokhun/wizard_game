@@ -1099,7 +1099,9 @@ export class Game {
     this.audio?.play(locked ? 'door_close' : 'door_open', { pos: new THREE.Vector3(room.cx, 1, room.cz) });
     if (locked) {
       this.audio?.setMusic(room.type === ROOM.BOSS ? 'boss' : 'combat');
-      if (room.type !== ROOM.BOSS) this.ui?.banner(room.type === ROOM.ELITE ? 'ELITE CHAMBER' : 'AMBUSH', room.type === ROOM.ELITE ? 'A champion bars the way' : 'The doors slam shut', room.type === ROOM.ELITE ? '#ff9040' : '#d04030');
+      if (room.type === ROOM.ELITE) this.ui?.banner('ELITE CHAMBER', 'A champion bars the way', '#ff9040');
+      else if (room.sentriesPlaced) this.ui?.banner('SENTRIES', 'Strike before they rally', '#d08040');
+      else if (room.type !== ROOM.BOSS) this.ui?.banner('AMBUSH', 'The doors slam shut', '#d04030');
     }
   }
 

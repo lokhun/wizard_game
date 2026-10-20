@@ -68,7 +68,7 @@ export function handleGameMessage(game, msg, from) {
     case 'snap': if (!game.isHost) game.actors.applySnapshot(msg.a); break;
     case 'spawn': {
       if (game.isHost || game.actors.byId.has(msg.id)) return;
-      const a = game.actors.spawn(msg.ty, msg.x, msg.z, { id: msg.id, yaw: msg.yaw, elite: !!msg.e, hp: msg.hp, faction: msg.f ? 'ally' : 'enemy', affix: msg.af, life: msg.life, silent: true });
+      const a = game.actors.spawn(msg.ty, msg.x, msg.z, { id: msg.id, yaw: msg.yaw, elite: !!msg.e, hp: msg.hp, faction: msg.f ? 'ally' : 'enemy', affix: msg.af, life: msg.life, silent: true, spawnFx: msg.nf ? false : undefined, dormant: !!msg.dm });
       a.net.x = msg.x; a.net.z = msg.z; a.net.yaw = msg.yaw;
       if (msg.fly) a.model?.setFlying?.(true);
       break;
@@ -93,6 +93,7 @@ export function handleGameMessage(game, msg, from) {
       if (game.isHost) return;
       const room = game.level.rooms[msg.r];
       if (!room) return;
+      if (msg.sen) room.sentriesPlaced = true;
       game.setRoomLocked(msg.r, !!msg.on);
       if (msg.clear) { room.cleared = true; game.onRoomCleared(room); }
       break;

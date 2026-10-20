@@ -48,6 +48,21 @@ export class Director {
     this.level = level;
     this.active = null;
     this.rng = new RNG(level.seed * 13 + level.floorIndex);
+    // about half the fight rooms have their first squad already on guard, so the party
+    // can scout through the doorway and choose its opening
+    for (const r of level.rooms) if (r.type === ROOM.COMBAT && this.rng.chance(0.5)) r.sentries = true;
+  }
+
+  // place a room's first squad, idle, when the party draws near
+  _placeSentries(room) {
+    room.sentriesPlaced = true;
+    room.plannedWaves = this._planWaves(room);
+    room.sentryIds = [];
+    for (const s of room.plannedWaves[0] ?? []) {
+      const p = this._spawnPoint(room, s.role);
+      const a = this.spawnEnemy(s.type, p.x, p.z, { elite: s.elite, affix: s.affix, dormant: true, homeRoom: room, spawnFx: false });
+      room.sentryIds.push(a.id);
+    }
   }
 
   get floor() { return this.level.floorIndex; }
@@ -63,7 +78,7 @@ export class Director {
       ? def.hp * (1 + 0.45 * (this.partySize() - 1)) * (this.g.difficulty?.enemyHp ?? 1)
       : def.hp * this.hpScale() * (opts.elite ? 3 : 1);
     const dmg = def.dmg * this.dmgScale() * (opts.elite ? 1.3 : 1);
-    const a = this.g.actors.spawn(type, x, z, { hp, dmg, elite: opts.elite, affix: opts.affix, yaw: opts.yaw ?? Math.random() * 6.28 });
+    const a = this.g.actors.spawn(type, x, z, { hp, dmg, elite: opts.elite, affix: opts.affix, yaw: opts.yaw ?? Math.random() * 6.28, dormant: opts.dormant, homeRoom: opts.homeRoom, spawnFx: opts.spawnFx });
     if (this.active && !opts.noCredit) this.active.spawned.add(a.id);
     return a;
   }
@@ -73,6 +88,12 @@ export class Director {
     const g = this.g;
     const L = this.level;
     if (!L) return;
+    // sentry squads appear (idle) as the party approaches their room
+    for (const room of L.rooms) {
+      if (!room.sentries || room.sentriesPlaced || room.cleared) continue;
+      const R = Math.max(room.w, room.h) * T * 0.5 + 14;
+      if (g.allPlayers().some((p) => p.alive && Math.hypot(p.pos.x - room.cx, p.pos.z - room.cz) < R)) this._placeSentries(room);
+    }
     // detect room entry
     if (!this.active) {
       for (const p of g.allPlayers()) {
@@ -104,20 +125,24 @@ export class Director {
 
   startEncounter(room) {
     const g = this.g;
-    const waves = this._planWaves(room);
+    const waves = room.sentriesPlaced ? room.plannedWaves : this._planWaves(room);
     // remember where the party came in, so enemies can appear across the room from them
     const ps = g.allPlayers().filter((p) => p.alive && !p.dead);
     const entry = ps.length ? { x: ps.reduce((s, p) => s + p.pos.x, 0) / ps.length, z: ps.reduce((s, p) => s + p.pos.z, 0) / ps.length } : null;
     this.active = { room, waves, waveIdx: -1, spawned: new Set(), t: 0, waveT: 0, clearT: 0, entry };
     g.setRoomLocked(room.id, true);
-    g.net?.broadcast({ t: 'lock', r: room.id, on: 1 });
+    g.net?.broadcast({ t: 'lock', r: room.id, on: 1, sen: room.sentriesPlaced ? 1 : 0 });
     // pull stragglers into the room
     for (const p of g.allPlayers()) {
       if (g.level.roomAt(p.pos.x, p.pos.z) === room) continue;
       g.requestTeleport(p.id, room.cx + (Math.random() - 0.5) * 3, room.cz + (Math.random() - 0.5) * 3);
     }
     if (room.type === ROOM.BOSS) this._startBoss(room);
-    else this._nextWave();
+    else if (room.sentriesPlaced) {
+      // the sentries are the first wave
+      this.active.waveIdx = 0;
+      for (const id of room.sentryIds) if (g.actors.byId.get(id)?.alive) this.active.spawned.add(id);
+    } else this._nextWave();
   }
 
   _planWaves(room) {

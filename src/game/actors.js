@@ -67,6 +67,9 @@ export class Actor {
     this.shieldHp = 0;
     this.speedMult = 1;
     this.collapsed = false;
+    // sentries placed before the party arrives: idle until they notice someone
+    this.dormant = !!opts.dormant;
+    this.homeRoom = opts.homeRoom ?? null;
   }
   get alive() { return !this.dead && !this.collapsed; }
 }
@@ -143,10 +146,10 @@ export class ActorManager {
       g.lights.flash(new THREE.Vector3(x, gy + 0.6, z), a.faction === 'ally' ? 0x60ff80 : 0xff3020, 6, 5, 0.8);
       g.audio?.play('summon', { pos: a.pos, volume: 0.5 });
     }
-    a.state = 'spawn';
-    a.anim = 'spawn';
+    a.state = a.dormant ? 'chase' : 'spawn';
+    a.anim = a.dormant ? 'idle' : 'spawn';
     a.stateT = 0;
-    if (g.isHost && !opts.silent) g.net?.broadcast({ t: 'spawn', id, ty: type, x, z, yaw: a.yaw, e: a.elite ? 1 : 0, hp: a.maxHp, f: a.faction === 'ally' ? 1 : 0, af: a.affix, life: a.life });
+    if (g.isHost && !opts.silent) g.net?.broadcast({ t: 'spawn', id, ty: type, x, z, yaw: a.yaw, e: a.elite ? 1 : 0, hp: a.maxHp, f: a.faction === 'ally' ? 1 : 0, af: a.affix, life: a.life, nf: spawnFx ? 0 : 1, dm: a.dormant ? 1 : 0 });
     if (a.boss) a.brain = new BossBrain(g, a);
     this._rebuildLists();
     return a;
@@ -170,6 +173,22 @@ export class ActorManager {
     a.jv = a.jv ?? [0, 0, 0, 0]; // pitch, roll, pitchVel, rollVel
     a.jv[2] += (dirX * fx + dirZ * fz) * amp;
     a.jv[3] -= (dirX * rx + dirZ * rz) * amp;
+  }
+
+  // A sentry notices the party: it shouts, and nearby sleepers follow a beat later.
+  wake(a, alert = true) {
+    if (!a.dormant) return;
+    a.dormant = false;
+    a.wakeAt = 0;
+    a.retargetT = 0;
+    const g = this.g;
+    g.audio?.play(a.def.sound ?? 'beast_growl', { pos: a.pos, volume: 0.7 });
+    g.ui?.floatText(new THREE.Vector3(a.pos.x, a.pos.y + a.height + 0.3, a.pos.z), '!', '#ff6040', true);
+    if (!alert) return;
+    for (const b of this._hostiles) {
+      if (!b.dormant || b.wakeAt) continue;
+      if ((b.pos.x - a.pos.x) ** 2 + (b.pos.z - a.pos.z) ** 2 < 13 * 13) b.wakeAt = g.time + 0.3 + Math.random() * 0.5;
+    }
   }
 
   // Melee wind-ups have no ground telegraph, so they get a tell: a glint at the head,
@@ -204,6 +223,7 @@ export class ActorManager {
     if (a.state === 'spawn' && a.stateT < 0.3 && !a.boss) return 0;
     let dmg = H.dmg ?? 0;
     const def = a.def;
+    if (a.dormant) this.wake(a);
     if (def.armor) dmg *= 1 - def.armor;
     if (def.frontShield && H.kbDir) {
       // blocked from the front
@@ -618,7 +638,9 @@ export class ActorManager {
       if (d2 < rr * rr && d2 > 1e-6) { const d = Math.sqrt(d2); mx += dx / d * (rr - d) * 0.5; mz += dz / d * (rr - d) * 0.5; }
     }
     if (mx || mz) {
-      const r = g.collision.move(a.pos.x, a.pos.z, a.pos.y, mx, mz, Math.min(a.radius, 0.9));
+      let r = g.collision.move(a.pos.x, a.pos.z, a.pos.y, mx, mz, Math.min(a.radius, 0.9));
+      // sentries are leashed to their room, so doors never lock them out of their own fight
+      if (a.homeRoom && g.level.roomAt(r.x, r.z) !== a.homeRoom) r = { x: a.pos.x, z: a.pos.z };
       a.moveSpeed = Math.hypot(r.x - a.pos.x, r.z - a.pos.z) / dt;
       a.pos.x = r.x; a.pos.z = r.z;
     } else a.moveSpeed = 0;
@@ -669,6 +691,25 @@ export class ActorManager {
     const def = a.def;
     const out = { x: 0, z: 0 };
     for (const k in a.cds) a.cds[k] -= dt * am;
+
+    if (a.dormant) {
+      a.anim = 'idle';
+      // sentries glance about; they notice a player who comes close or into plain view
+      a.yaw += Math.sin(g.time * 0.4 + a.id) * dt * 0.35;
+      a.dormantT = (a.dormantT ?? 0) - dt;
+      if (a.wakeAt && g.time >= a.wakeAt) this.wake(a);
+      else if (a.dormantT <= 0) {
+        a.dormantT = 0.25;
+        const A = g.director.active;
+        if (A && a.homeRoom && A.room === a.homeRoom && A.t > 5) this.wake(a);
+        for (const p of g.allPlayers()) {
+          if (!p.alive || p.dead) continue;
+          const d = Math.hypot(p.pos.x - a.pos.x, p.pos.z - a.pos.z);
+          if (d < 4 || (d < 11 && g.collision.los(a.pos.x, a.pos.y + a.height * 0.8, a.pos.z, p.pos.x, p.pos.y + 1.4, p.pos.z))) { this.wake(a); break; }
+        }
+      }
+      return out;
+    }
 
     if (a.state === 'spawn') {
       if (a.stateT > 0.9) this._setState(a, 'chase', 'idle');
