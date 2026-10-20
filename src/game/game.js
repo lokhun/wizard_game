@@ -14,6 +14,7 @@ import { LocalPlayer } from './player.js';
 import { RemotePlayer } from './remote.js';
 import { resolveHit, ST, REACTIONS } from '../game/combat.js';
 import { getViewModel, preloadEnemies, getEnemyModel, getAvatar, setEnemyRim } from './models.js';
+import { Critters } from '../world/critters.js';
 import { rollTomes, rollRelics, RARITY, TOMES } from './upgrades.js';
 import { makeChest, makePedestal, makePortal } from './interactables.js';
 import { CLASS_META } from './classMeta.js';
@@ -157,6 +158,8 @@ export class Game {
     this.biome = level.biome;
     this.collision = new Collision(level);
     this.built = buildLevel(level, this.texFactory, this.lights);
+    this.critters?.dispose();
+    this.critters = this.settings?.quality === 'low' ? null : new Critters(this.scene, level);
     this.scene.add(this.built.group);
     this.built.onDoorSlam = (d) => {
       const door = d.door;
@@ -366,6 +369,7 @@ export class Game {
   _kegBlast(b, c, local) {
     const R = 3.6;
     this.vfx.explosion(c, 'fire', R, { groundY: c.y - 0.5 });
+    this.critters?.startle(c, 14);
     this.vfx.addShake?.(0.35);
     this.audio?.play('explosion_big', { pos: c });
     const p = this.player;
@@ -439,6 +443,7 @@ export class Game {
     this._updateTips(realDt);
     this._updateDoorSigns(realDt);
     this._ambient(realDt);
+    this.critters?.update(dt, this.time, this.renderer.camera.position, this.allPlayers());
 
     // camera & lighting
     const cam = this.renderer.camera;
@@ -1100,6 +1105,7 @@ export class Game {
       this.collision.setDoorBlocked(door, locked);
     }
     this.audio?.play(locked ? 'door_close' : 'door_open', { pos: new THREE.Vector3(room.cx, 1, room.cz) });
+    if (locked) this.critters?.startle(new THREE.Vector3(room.cx, 1, room.cz), Math.max(room.w, room.h) * T);
     if (locked) {
       this.audio?.setMusic(room.type === ROOM.BOSS ? 'boss' : 'combat');
       if (room.type === ROOM.ELITE) this.ui?.banner('ELITE CHAMBER', 'A champion bars the way', '#ff9040');
