@@ -330,6 +330,35 @@ export function buildLevel(level, factory, lightPool) {
     }
   }
 
+  // ---------------- wall grime: moss, water stains, cracks and smears (one merged mesh)
+  if (!biome.outdoor && wallEdges.length) {
+    const grime = new GeoBuilder();
+    const gr = new RNG(level.seed * 11 + 5);
+    // atlas columns: 0 water stain, 1 moss drip, 2 cracks, 3 blood smear
+    const pool = { sewers: [0, 1, 1, 0, 2], dungeon: [0, 2, 2, 3, 0], keep: [0, 2, 0], throne: [2, 0] }[biome.id] ?? [0, 2];
+    const density = biome.id === 'sewers' ? 0.32 : biome.id === 'dungeon' ? 0.26 : 0.14;
+    for (const e of wallEdges) {
+      if (gr.next() > density || e.h1 - e.h0 < 2.5) continue;
+      const len = Math.hypot(e.bx - e.ax, e.bz - e.az);
+      const dx = (e.bx - e.ax) / len, dz = (e.bz - e.az) / len;
+      const kind = pool[gr.int(0, pool.length - 1)];
+      const w = kind === 2 ? gr.range(0.8, 1.6) : gr.range(0.6, 1.3);
+      const c = gr.range(0.25, 0.75);
+      const off = 0.012 + gr.next() * 0.004;
+      const mx = e.ax + dx * len * c + e.n[0] * off, mz = e.az + dz * len * c + e.n[2] * off;
+      // stains and moss run down from the top; cracks and smears sit at body height
+      let top, bot;
+      if (kind === 0 || kind === 1) { top = e.h1 - gr.range(0, 0.6); bot = Math.max(e.h0 + 0.05, top - gr.range(1.6, Math.min(3.6, e.h1 - e.h0))); }
+      else { const mid = e.h0 + gr.range(0.6, 2.2); top = mid + w * 0.6; bot = mid - w * 0.6; }
+      const u0 = kind * 0.25, flip = gr.next() < 0.5;
+      const ua = flip ? u0 + 0.25 : u0, ub = flip ? u0 : u0 + 0.25;
+      const t = gr.range(0.75, 1.0);
+      grime.quad([mx + dx * w * 0.5, bot, mz + dz * w * 0.5], [mx - dx * w * 0.5, bot, mz - dz * w * 0.5], [mx - dx * w * 0.5, top, mz - dz * w * 0.5], [mx + dx * w * 0.5, top, mz + dz * w * 0.5], e.n,
+        [[ub, 1], [ua, 1], [ua, 0], [ub, 0]], [t, t, t, t]);
+    }
+    if (grime.count) { const m = new THREE.Mesh(grime.build(), grimeMaterial()); m.renderOrder = 2; group.add(m); }
+  }
+
   // ---------------- ivy hanging from the bailey walls (one alpha-tested mesh)
   if (biome.outdoor && wallEdges.length) {
     const ivy = new GeoBuilder();
@@ -624,7 +653,75 @@ export function buildLevel(level, factory, lightPool) {
   };
 }
 
-let _soot = null, _web = null, _ivy = null;
+let _soot = null, _web = null, _ivy = null, _grime = null;
+// Wall grime atlas, four columns drawn from the top (v=0) down: water stain, moss drip, cracks, blood smear.
+function grimeMaterial() {
+  if (_grime) return _grime;
+  const W = 1024, H = 512, cw = W / 4;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  let seed = 98765;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  // 0: water stain - soft dark vertical streaks fading downward
+  for (let i = 0; i < 9; i++) {
+    const x = 30 + rnd() * (cw - 60), w = 16 + rnd() * 34, len = H * (0.45 + rnd() * 0.55);
+    const gr = g.createLinearGradient(0, 0, 0, len);
+    gr.addColorStop(0, 'rgba(12,10,8,0.8)'); gr.addColorStop(0.65, 'rgba(12,10,8,0.4)'); gr.addColorStop(1, 'rgba(12,10,8,0)');
+    g.fillStyle = gr;
+    g.beginPath(); g.moveTo(x - w, 0); g.quadraticCurveTo(x - w * 0.3, len * 0.6, x + (rnd() - 0.5) * 6, len); g.quadraticCurveTo(x + w * 0.3, len * 0.6, x + w, 0); g.fill();
+  }
+  // 1: moss drip - a mossy cap with green-black runnels
+  {
+    const x0 = cw;
+    for (let i = 0; i < 260; i++) {
+      const x = x0 + rnd() * cw, y = rnd() * rnd() * H * 0.35, r = 3 + rnd() * 10;
+      g.fillStyle = `rgba(${22 + rnd() * 18 | 0},${38 + rnd() * 30 | 0},${14 + rnd() * 10 | 0},${0.5 + rnd() * 0.4})`;
+      g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+    }
+    for (let i = 0; i < 14; i++) {
+      const x = x0 + 12 + rnd() * (cw - 24), len = H * (0.3 + rnd() * 0.65), w = 3 + rnd() * 8;
+      const gr = g.createLinearGradient(0, 0, 0, len);
+      gr.addColorStop(0, 'rgba(20,34,12,0.75)'); gr.addColorStop(1, 'rgba(10,16,8,0)');
+      g.fillStyle = gr; g.fillRect(x - w / 2, 0, w, len);
+    }
+  }
+  // 2: cracks - branching dark lines with a lighter chipped edge
+  {
+    const x0 = cw * 2;
+    const crack = (x, y, a, len, w, depth) => {
+      g.lineWidth = w; g.strokeStyle = 'rgba(6,5,4,0.92)';
+      g.beginPath(); g.moveTo(x, y);
+      let px = x, py = y;
+      const steps = 6 + rnd() * 6 | 0;
+      for (let k = 0; k < steps; k++) {
+        a += (rnd() - 0.5) * 0.9;
+        px += Math.cos(a) * len / steps; py += Math.sin(a) * len / steps;
+        px = Math.max(x0 + 4, Math.min(x0 + cw - 4, px)); py = Math.max(4, Math.min(H - 4, py));
+        g.lineTo(px, py);
+        if (depth < 2 && rnd() < 0.3) { g.stroke(); crack(px, py, a + (rnd() < 0.5 ? 1 : -1) * (0.5 + rnd()), len * 0.5, w * 0.6, depth + 1); g.lineWidth = w; g.strokeStyle = 'rgba(6,5,4,0.92)'; g.beginPath(); g.moveTo(px, py); }
+      }
+      g.stroke();
+    };
+    for (let i = 0; i < 3; i++) crack(x0 + cw * 0.5 + (rnd() - 0.5) * 40, H * 0.5 + (rnd() - 0.5) * 80, rnd() * Math.PI * 2, 260 + rnd() * 120, 9, 0);
+  }
+  // 3: blood smear - a dark handprint-ish smear dragged downward
+  {
+    const x0 = cw * 3;
+    for (let i = 0; i < 5; i++) {
+      const x = x0 + cw * 0.3 + rnd() * cw * 0.4, y = H * 0.25 + rnd() * 40, len = 120 + rnd() * 220, w = 10 + rnd() * 18;
+      const gr = g.createLinearGradient(0, y, 0, y + len);
+      gr.addColorStop(0, 'rgba(58,6,6,0.85)'); gr.addColorStop(0.6, 'rgba(40,4,4,0.5)'); gr.addColorStop(1, 'rgba(30,2,2,0)');
+      g.fillStyle = gr; g.beginPath(); g.ellipse(x, y + len / 2, w, len / 2, (rnd() - 0.5) * 0.2, 0, Math.PI * 2); g.fill();
+    }
+    for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(50,4,4,${0.4 + rnd() * 0.5})`; g.beginPath(); g.arc(x0 + cw * 0.2 + rnd() * cw * 0.6, H * 0.15 + rnd() * H * 0.3, 1 + rnd() * 5, 0, Math.PI * 2); g.fill(); }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  _grime = new THREE.MeshStandardMaterial({ map: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, roughness: 0.6, vertexColors: true });
+  return _grime;
+}
 // Four columns of hanging vines (u 0..1 in quarters), drawn from the top (v=0) down.
 function ivyMaterial() {
   if (_ivy) return _ivy;
