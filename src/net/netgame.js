@@ -66,6 +66,14 @@ export function handleGameMessage(game, msg, from) {
     }
     // ------------------------------------------------ host -> clients
     case 'snap': if (!game.isHost) game.actors.applySnapshot(msg.a); break;
+    case 'trial': {
+      if (game.isHost) return;
+      const room = game.level.rooms[msg.r];
+      if (!room) return;
+      room.trialWon = !!msg.won;
+      if (!msg.won) game.onTrialResult(room, false);
+      break;
+    }
     case 'wake': { const a = game.actors.byId.get(msg.id); if (a) a.dormant = false; break; }
     case 'spawn': {
       if (game.isHost || game.actors.byId.has(msg.id)) return;
@@ -95,6 +103,7 @@ export function handleGameMessage(game, msg, from) {
       const room = game.level.rooms[msg.r];
       if (!room) return;
       if (msg.sen) room.sentriesPlaced = true;
+      if (msg.tl) { room.trialLimit = msg.tl; room.trialEnd = game.time + msg.tl; room.trialWon = null; }
       game.setRoomLocked(msg.r, !!msg.on);
       if (msg.clear) { room.cleared = true; game.onRoomCleared(room); }
       break;

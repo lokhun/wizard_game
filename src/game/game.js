@@ -308,7 +308,7 @@ export class Game {
     for (const s of this.doorSigns ?? []) { this.scene.remove(s.sprite); s.sprite.material.dispose(); }
     this.doorSigns = [];
     const L = this.level;
-    const glyph = { boss: ['☠', '#ff5040'], shop: ['⚖', '#f0c050'], shrine: ['✚', '#ffe080'], treasure: ['♦', '#ffb030'], elite: ['★', '#ff9040'], combat: ['⚔', '#d8c8a8'], start: null };
+    const glyph = { boss: ['☠', '#ff5040'], shop: ['⚖', '#f0c050'], shrine: ['✚', '#ffe080'], treasure: ['♦', '#ffb030'], elite: ['★', '#ff9040'], trial: ['⧗', '#ffcf60'], combat: ['⚔', '#d8c8a8'], start: null };
     for (const door of L.doors) {
       const other = L.rooms[door.other];
       const g = glyph[other.type];
@@ -362,6 +362,10 @@ export class Game {
     this.audio?.play('impact_earth', { pos: c, volume: 0.7 });
     if (local) this.net?.broadcastOrSend({ t: 'brk', i });
     if (this.isHost && Math.random() < 0.35) this.spawnDrop(Math.random() < 0.2 ? 'health' : 'gold', c, Math.random() < 0.2 ? 15 : 3 + this.floorIndex * 2);
+  }
+
+  onTrialResult(room, won) {
+    if (!won) { this.ui?.banner('THE TRIAL IS LOST', 'Fight on — the reward has dimmed', '#a08870'); this.audio?.play('ui_error'); }
   }
 
   // A powder keg goes off. Everyone sees the blast and checks their own player;
@@ -1120,7 +1124,8 @@ export class Game {
     if (locked) this.critters?.startle(new THREE.Vector3(room.cx, 1, room.cz), Math.max(room.w, room.h) * T);
     if (locked) {
       this.audio?.setMusic(room.type === ROOM.BOSS ? 'boss' : 'combat');
-      if (room.type === ROOM.ELITE) this.ui?.banner('ELITE CHAMBER', 'A champion bars the way', '#ff9040');
+      if (room.type === ROOM.TRIAL) { this.ui?.banner('TRIAL OF SPEED', `Slay them all within ${room.trialLimit ?? 45} seconds`, '#ffcf60'); this.audio?.play('boss_roar', { volume: 0.4 }); }
+      else if (room.type === ROOM.ELITE) this.ui?.banner('ELITE CHAMBER', 'A champion bars the way', '#ff9040');
       else if (room.sentriesPlaced) this.ui?.banner('SENTRIES', 'Strike before they rally', '#d08040');
       else if (room.type !== ROOM.BOSS) this.ui?.banner('AMBUSH', 'The doors slam shut', '#d04030');
     }
@@ -1130,15 +1135,16 @@ export class Game {
     this.audio?.setMusic('explore');
     this.audio?.play('room_clear');
     if (room.type === ROOM.BOSS) return; // handled by boss death
-    this.ui?.banner('CHAMBER CLEARED', room.type === ROOM.ELITE ? 'A rare tome awaits' : 'Claim your reward', '#e8c070');
+    if (room.type === ROOM.TRIAL) this.ui?.banner(room.trialWon ? 'TRIAL CONQUERED' : 'CHAMBER CLEARED', room.trialWon ? 'An epic tome is yours' : 'Too slow — a lesser reward', room.trialWon ? '#ffcf60' : '#e8c070');
+    else this.ui?.banner('CHAMBER CLEARED', room.type === ROOM.ELITE ? 'A rare tome awaits' : 'Claim your reward', '#e8c070');
     // revive dead teammates at the end of a room
     if (this.player.dead) { this.player.dead = false; this.player.downed = false; this.player.hp = Math.round(this.player.maxHp * 0.3); this.player.spawnAt(room.cx, room.cz, this.player.yaw); this.ui?.toast('You return from beyond the veil'); }
     if (this.player.downed) this.player.revive(0.3);
     else if (this.player.alive && this.player.hp < this.player.maxHp) this.player.heal(this.player.maxHp * 0.15); // a breath of respite between fights
-    this.spawnPedestal(room, room.type === ROOM.ELITE ? 1 : 0);
+    this.spawnPedestal(room, room.type === ROOM.TRIAL ? (room.trialWon ? 2 : 0) : room.type === ROOM.ELITE ? 1 : 0);
     if (this._ctxTips?.sigil) { this._tipQ?.unshift(this._ctxTips.sigil); this._ctxTips.sigil = null; }
     if (this.isHost) {
-      const gold = Math.round((10 + this.floorIndex * 6) * (room.type === ROOM.ELITE ? 2.5 : 1));
+      const gold = Math.round((10 + this.floorIndex * 6) * (room.type === ROOM.ELITE ? 2.5 : room.type === ROOM.TRIAL && room.trialWon ? 3 : 1));
       this.spawnDrop('gold', new THREE.Vector3(room.cx, this.groundY(room.cx, room.cz), room.cz), gold);
     }
   }

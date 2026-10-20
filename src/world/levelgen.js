@@ -18,7 +18,7 @@ const BLOCKSZ = 20; // macro block size in cells
 
 export const ROOM = {
   START: 'start', COMBAT: 'combat', ELITE: 'elite', TREASURE: 'treasure',
-  SHRINE: 'shrine', SHOP: 'shop', BOSS: 'boss', EXIT: 'exit',
+  SHRINE: 'shrine', SHOP: 'shop', BOSS: 'boss', EXIT: 'exit', TRIAL: 'trial',
 };
 
 export class Level {
@@ -133,7 +133,7 @@ export function generateLevel(seed, floorIndex) {
       doors: [],
       neighbors: [],
       layout: null,
-      cleared: type !== ROOM.COMBAT && type !== ROOM.ELITE && type !== ROOM.BOSS,
+      cleared: type !== ROOM.COMBAT && type !== ROOM.ELITE && type !== ROOM.BOSS && type !== ROOM.TRIAL,
       visited: false,
     };
     room.cx = (ox + w / 2) * T;
@@ -147,7 +147,7 @@ export function generateLevel(seed, floorIndex) {
       level.ceil[i] = biome.outdoor ? 99 : room.ceil;
     }
     // L-shaped rooms: cut away one corner of larger combat rooms
-    if ((type === ROOM.COMBAT || type === ROOM.ELITE) && w >= 11 && h >= 11 && rng.chance(0.45)) {
+    if ((type === ROOM.COMBAT || type === ROOM.ELITE || type === ROOM.TRIAL) && w >= 11 && h >= 11 && rng.chance(0.45)) {
       const cw = Math.floor(w / 3), ch = Math.floor(h / 3);
       const cxr = rng.chance(0.5) ? ox : ox + w - cw;
       const cyr = rng.chance(0.5) ? oy : oy + h - ch;
@@ -164,7 +164,8 @@ export function generateLevel(seed, floorIndex) {
   mainRooms.forEach((r, i) => { r.main = true; r.order = i; });
 
   // --- branches
-  const sideTypes = [ROOM.TREASURE, ROOM.SHRINE, ROOM.TREASURE, ROOM.ELITE];
+  // optional side rooms: two of treasure / shrine / trial, then an elite
+  const sideTypes = [...rng.shuffle([ROOM.TREASURE, ROOM.SHRINE, ROOM.TRIAL]).slice(0, 2), ROOM.TREASURE, ROOM.ELITE];
   let branches = biome.branches;
   const candidates = rng.shuffle(mainRooms.slice(1, -2));
   for (const host of candidates) {
@@ -478,7 +479,7 @@ function decorateRoom(level, room, rng) {
     setRect(level, px0, y, 3, h, (i) => { level.kind[i] = K_ALT; });
     if (!isBoss) {
       // fights get a centrepiece to circle around; other rooms keep the middle for their feature
-      if (room.type === ROOM.COMBAT || room.type === ROOM.ELITE) {
+      if (room.type === ROOM.COMBAT || room.type === ROOM.ELITE || room.type === ROOM.TRIAL) {
         const centerPiece = rng.pick(['well', 'statue', 'fountain', 'deadTree']);
         addPillar(level, cx * T, cy * T, centerPiece === 'fountain' ? 2.2 : centerPiece === 'deadTree' ? 0.7 : 1.1, centerPiece);
         room.layout = centerPiece;
@@ -640,7 +641,7 @@ function decorateRoom(level, room, rng) {
   }
 
   // ---------------- raised daises for verticality (indoor combat rooms)
-  if ((b.id === 'dungeon' || b.id === 'keep') && (room.type === ROOM.COMBAT || room.type === ROOM.ELITE) && w >= 10 && h >= 10 && rng.chance(0.4) && room.layout !== 'library') {
+  if ((b.id === 'dungeon' || b.id === 'keep') && (room.type === ROOM.COMBAT || room.type === ROOM.ELITE || room.type === ROOM.TRIAL) && w >= 10 && h >= 10 && rng.chance(0.4) && room.layout !== 'library') {
     const side = rng.int(0, 3);
     const depth = 3;
     const hh = b.id === 'sewers' ? 0.55 : 0.7;
@@ -654,7 +655,7 @@ function decorateRoom(level, room, rng) {
 
   // ---------------- mid-room cover for realms whose rooms are otherwise open floor,
   // so ranged foes can be broken line of sight with and melee can be kited around
-  if ((room.type === ROOM.COMBAT || room.type === ROOM.ELITE) && w >= 10 && h >= 10 && (b.id === 'sewers' || b.id === 'throne')) {
+  if ((room.type === ROOM.COMBAT || room.type === ROOM.ELITE || room.type === ROOM.TRIAL) && w >= 10 && h >= 10 && (b.id === 'sewers' || b.id === 'throne')) {
     const kind = b.id === 'sewers' ? 'pillarSquare' : 'statue';
     const rad = b.id === 'sewers' ? 0.6 : 0.85;
     const spots = rng.shuffle([[-1, -1], [1, -1], [-1, 1], [1, 1], [0, -1.3], [0, 1.3]]);
@@ -693,7 +694,7 @@ function decorateRoom(level, room, rng) {
 
   // ---------------- powder kegs out on the fighting floor (not just against the walls),
   // so every fight offers a chance to lure a pack and set one off
-  if ((room.type === ROOM.COMBAT || room.type === ROOM.ELITE) && w >= 9 && h >= 9) {
+  if ((room.type === ROOM.COMBAT || room.type === ROOM.ELITE || room.type === ROOM.TRIAL) && w >= 9 && h >= 9) {
     const want = rng.int(1, 2);
     let placed = 0;
     for (let t = 0; t < 20 && placed < want; t++) {

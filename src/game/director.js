@@ -40,6 +40,8 @@ export function fightsHere(a, room) {
   return !a.homeRoom || !room || a.homeRoom === room;
 }
 
+const TRIAL_TIME = 45;
+
 // roles that hang back: they spawn far from the party and away from the action
 const BACKLINE = new Set(['ranged', 'caster']);
 
@@ -118,7 +120,7 @@ export class Director {
         const room = this._interiorRoom(p.pos);
         if (!room) continue;
         if (!room.visited) { room.visited = true; g.net?.broadcast({ t: 'visit', r: room.id }); g.onRoomVisited?.(room); }
-        if (!room.cleared && (room.type === ROOM.COMBAT || room.type === ROOM.ELITE || room.type === ROOM.BOSS)) {
+        if (!room.cleared && (room.type === ROOM.COMBAT || room.type === ROOM.ELITE || room.type === ROOM.BOSS || room.type === ROOM.TRIAL)) {
           this.startEncounter(room);
           break;
         }
@@ -147,8 +149,10 @@ export class Director {
     const ps = g.allPlayers().filter((p) => p.alive && !p.dead);
     const entry = ps.length ? { x: ps.reduce((s, p) => s + p.pos.x, 0) / ps.length, z: ps.reduce((s, p) => s + p.pos.z, 0) / ps.length } : null;
     this.active = { room, waves, waveIdx: -1, spawned: new Set(), t: 0, waveT: 0, clearT: 0, entry };
+    // a trial is against the clock: clear it in time for an epic reward
+    if (room.type === ROOM.TRIAL) { room.trialLimit = TRIAL_TIME + this.floor * 3; room.trialEnd = g.time + room.trialLimit; room.trialWon = null; }
     g.setRoomLocked(room.id, true);
-    g.net?.broadcast({ t: 'lock', r: room.id, on: 1, sen: room.sentriesPlaced ? 1 : 0 });
+    g.net?.broadcast({ t: 'lock', r: room.id, on: 1, sen: room.sentriesPlaced ? 1 : 0, tl: room.trialLimit ?? 0 });
     // pull stragglers into the room
     for (const p of g.allPlayers()) {
       if (g.level.roomAt(p.pos.x, p.pos.z) === room) continue;
@@ -168,7 +172,8 @@ export class Director {
     const f = this.floor;
     if (room.type === ROOM.BOSS) return [];
     const depth = room.depth ?? 1;
-    const nWaves = room.type === ROOM.ELITE ? 2 : rng.int(2, 3);
+    const trial = room.type === ROOM.TRIAL;
+    const nWaves = room.type === ROOM.ELITE || trial ? 2 : rng.int(2, 3);
     // the realm's roster grouped by role (duplicates in the roster act as weights)
     const byRole = {};
     for (const t of b.enemies) if (ENEMY_DEFS[t]) (byRole[roleOf(t)] ??= []).push(t);
@@ -176,7 +181,7 @@ export class Director {
     const waves = [];
     let last = null;
     for (let w = 0; w < nWaves; w++) {
-      let budget = (8 + f * 3 + depth * 1.2 + w * 2.5) * this.countScale();
+      let budget = (8 + f * 3 + depth * 1.2 + w * 2.5) * this.countScale() * (trial ? 1.45 : 1);
       const list = [];
       if (room.type === ROOM.ELITE && w === nWaves - 1) {
         list.push({ type: rng.pick(b.elites), elite: false, champion: true, role: 'heavy' });
@@ -194,7 +199,7 @@ export class Director {
         const pack = def.pack ? rng.int(def.pack[0], def.pack[1]) : 1;
         for (let i = 0; i < pack && ((budget > 0 && list.length < cap) || (force && i === 0)); i++) {
           // occasional champion (elite affix) from floor 2 on
-          const elite = f >= 1 && rng.chance(0.04 + f * 0.02) && def.cost >= 2;
+          const elite = (f >= 1 || trial) && rng.chance((trial ? 0.18 : 0.04) + f * 0.02) && def.cost >= 2;
           list.push({ type, elite, affix: elite ? rng.pick(AFFIXES) : null, role: roleOf(type) });
           budget -= def.cost * (elite ? 3 : 1);
         }
@@ -294,6 +299,12 @@ export class Director {
     const A = this.active;
     const g = this.g;
     A.t += dt;
+    const R = A.room;
+    if (R.type === ROOM.TRIAL && R.trialWon === null && g.time > R.trialEnd) {
+      R.trialWon = false;
+      g.net?.broadcast({ t: 'trial', r: R.id, won: 0 });
+      g.onTrialResult?.(R, false);
+    }
     A.waveT += dt;
     let alive = 0;
     for (const id of A.spawned) {
@@ -306,7 +317,8 @@ export class Director {
     const wave = A.waves[A.waveIdx];
     if (!A.boss && wave && A.waveIdx < A.waves.length - 1) {
       // next wave when the current one is mostly dead, or after a long time
-      if ((alive <= Math.max(1, Math.floor(wave.length * 0.25)) && A.waveT > 2.5) || A.waveT > 40) this._nextWave();
+      const frac = A.room.type === ROOM.TRIAL ? 0.5 : 0.25;
+      if ((alive <= Math.max(1, Math.floor(wave.length * frac)) && A.waveT > 2.5) || A.waveT > 40) this._nextWave();
       return;
     }
     if (A.boss && !A.bossId) return;
@@ -322,6 +334,7 @@ export class Director {
     if (!A) return;
     const room = A.room;
     room.cleared = true;
+    if (room.type === ROOM.TRIAL && room.trialWon === null) { room.trialWon = true; this.g.net?.broadcast({ t: 'trial', r: room.id, won: 1 }); }
     this.active = null;
     g.setRoomLocked(room.id, false);
     g.net?.broadcast({ t: 'lock', r: room.id, on: 0, clear: 1 });
