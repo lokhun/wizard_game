@@ -7,6 +7,7 @@ A first-person, co-op wizard roguelike for the browser. Fight your way up from t
 - **Roguelite runs**:
   - Procedurally generated floors with ambush rooms, elite chambers, treasure rooms, shrines and a merchant.
   - Arcane Tomes (pick 1 of 3, with four rarities) and relics.
+  - 39 **spell augments**, three per class, that change how a spell works. For example, Fireball bursts into cinders, Chain Lightning forks, and the Arcane Orb boomerangs back to you.
   - A boss at the end of every realm: Mother of Filth, The Executioner, Gravemaw the Stone Wyvern, Archmage Veyrin and the Hollow King. Each boss has 3 phases.
 - **Co-op for 1–4 players**: peer-to-peer over WebRTC with a 5-letter party code, so no game server is needed.
   - Fallen allies can be revived. Allies who bleed out come back when the chamber is cleared.

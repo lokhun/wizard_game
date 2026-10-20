@@ -28,6 +28,10 @@ How the research in `RESEARCH.md` turned into the game.
   - Main path: start → 3–4 combat rooms → elite room → shop → boss.
   - Side branches: treasure (relic choice) and shrine (blessing).
 - **Rewards:** a sigil above each doorway shows what lies beyond.
+- **Spell augments:**
+  - 39 class-specific tomes, three per class, at Rare rarity or better. Each changes a spell's behaviour rather than its numbers.
+  - About half of all tome offers include one.
+  - Several feed reactions, for example Crown of Rime → Shatter, Ossuary Wake → Blight and Recurrence → Paradox, so builds lean into a class's combo.
 - **Trial rooms:** an optional gilded side door (sigil ⧗) on some floors.
   - Inside: a denser fight with more champions and a 45 s clock (+3 s per realm).
   - Clear it in time for an Epic-or-better tome and triple gold; if the clock runs out, you still fight your way out for an ordinary reward.
