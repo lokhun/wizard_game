@@ -82,7 +82,7 @@ export class Renderer {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     // shadow maps are only used by the courtyard moon (outdoor realm)
     this.renderer.shadowMap.enabled = quality === 'high' || quality === 'ultra';
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.info.autoReset = true;
 
     this.scene = new THREE.Scene();

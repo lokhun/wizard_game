@@ -541,7 +541,8 @@ export class VFX {
     const additive = type === 'glyph' || type === 'frost';
     mat.blending = additive ? THREE.AdditiveBlending : THREE.NormalBlending;
     mat.color.set(color ?? 0xffffff);
-    if (additive && color === undefined) mat.color.set(0x88ccff);
+    // additive frost rime stacks with every impact, so keep it faint
+    if (additive && color === undefined) mat.color.set(0x23394d);
     mat.needsUpdate = true;
     m.position.set(pos.x, (pos.y ?? 0) + 0.03 + Math.random() * 0.01, pos.z);
     m.rotation.set(0, Math.random() * Math.PI * 2, 0);
