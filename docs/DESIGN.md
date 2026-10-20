@@ -31,11 +31,13 @@ How the research in `RESEARCH.md` turned into the game.
 - **After a combat room is cleared:**
   - A tome pedestal appears. Each player takes 1 of 3 Arcane Tomes; rarity scales the numbers ×1 / 1.3 / 1.6 / 2.0, and players get 1 reroll per floor.
   - Shared gold drops.
+  - Every living player recovers 15% health (a breath of respite), and health orbs pull in from 5 m.
 - **After a boss falls:** the party gets a heal, a tome pedestal with better odds, and a portal to the next realm.
-- **Pacing:** a bot with perfect aim clears rooms in 10–25 s and bosses in about 1–2.5 min. Human players should land at roughly 30–60 s per room and 2–4 min per boss.
+- **Pacing:** a bot with perfect aim (that never dodges) clears rooms in 10–25 s and bosses in about 40–80 s. Human players should land at roughly 30–60 s per room and 2–4 min per boss.
 
 ## Scaling
-- **Enemy health per floor:** ×1 / 1.65 / 2.5 / 3.5 / 4.8.
+- **Enemy health per floor:** ×1 / 1.65 / 2.5 / 3.5 / 4.8. This applies to regular and elite enemies only.
+- **Boss health** is tuned per boss in `BOSS_DEFS` (5,760 / 9,360 / 13,680 / 17,640 / 27,000) and does not get the floor multiplier.
 - **Enemy damage per floor:** ×1 / 1.25 / 1.55 / 1.85 / 2.2.
 - **Party size:**
   - Enemy count grows by +50% per extra player.
@@ -63,4 +65,7 @@ How the research in `RESEARCH.md` turned into the game.
   - A fixed-size pool of point lights is reassigned to the nearest torches and spell effects each frame. Fading prevents popping.
   - The courtyard adds moonlight with shadow maps.
 - **Post-processing:** ACES tone mapping, bloom, colour grade per realm, vignette, film grain, chromatic aberration, and damage and heal vignettes.
+- **Characters:** every enemy, boss and wizard is built from primitives at load time:
+  - Skinned or rigid parts, with procedural poses for idle, move, wind-up, attack, hurt and death.
+  - Wizards get a first-person viewmodel (class focus plus articulated hands) and a third-person avatar.
 - **Particles:** a GPU particle system where motion is evaluated in the vertex shader (2 layers, 32k particles). It drives flames, sparks, smoke, runes, snow and blood.
