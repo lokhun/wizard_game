@@ -24,12 +24,13 @@ const optional = import.meta.glob(['./audio/audio.js', './game/enemyModels.js', 
 // settings
 // ---------------------------------------------------------------------------
 const SETTINGS_KEY = 'arcane-ascent-settings';
-const defaults = { master: 0.8, music: 0.55, sfx: 0.85, sensitivity: 1, fov: 80, shake: 1, quality: 'high', invertY: false, name: '', lastClass: 'pyromancer' };
+const defaults = { master: 0.8, music: 0.55, sfx: 0.85, sensitivity: 1, fov: 80, shake: 1, quality: 'high', invertY: false, name: '', lastClass: 'pyromancer', showFps: false };
 let settings = { ...defaults };
 try { settings = { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; } catch { /* ignore */ }
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* ignore */ } };
 if (!settings.name) settings.name = ['Morvain', 'Elsabeth', 'Corvin', 'Ysolde', 'Thadric', 'Isolde', 'Varian', 'Maelis', 'Orin', 'Seraphine'][Math.floor(Math.random() * 10)];
 const q = new URLSearchParams(location.search);
+const NORENDER = !!q.get('norender'); // headless logic tests
 if (q.get('quality')) settings.quality = q.get('quality');
 
 // ---------------------------------------------------------------------------
@@ -102,6 +103,7 @@ window.addEventListener('keydown', () => { audio?.init(); });
 // ---------------------------------------------------------------------------
 function startBackdrop(floor) {
   const f = floor ?? Math.floor(Math.random() * 5);
+  game.menuMode = true;
   game.startRun({ seed: Math.floor(Math.random() * 1e9), localId: 'menu', name: 'menu', classId: selectedClass, isHost: true, net: null, floor: f });
   game.menuMode = true;
   game.ui?.hideHud();
@@ -261,6 +263,7 @@ ui.onReturnToMenu = () => {
 // ---------------------------------------------------------------------------
 async function doHost() {
   net = new Net();
+  window.__net = net;
   try {
     ui.toast?.('Opening a portal…');
     const code = await net.host();
@@ -284,6 +287,7 @@ async function doHost() {
 async function doJoin(code, api) {
   if (!code || code.length < 4) { api?.setStatus('Enter a valid party code.'); return; }
   net = new Net();
+  window.__net = net;
   api?.setStatus?.('Connecting…');
   if (!api) ui.showJoin({ onJoin: (c) => doJoin(c), onBack: showMenu, status: 'Connecting to ' + code + '…' });
   try {
@@ -401,10 +405,24 @@ canvas.addEventListener('click', () => {
 // main loop
 // ---------------------------------------------------------------------------
 let last = performance.now();
+const perf = { frames: 0, t: 0, warned: false, fps: 60 };
+const fpsEl = document.createElement('div');
+fpsEl.style.cssText = 'position:fixed;right:8px;top:4px;z-index:60;font:12px monospace;color:#9a8;pointer-events:none;text-shadow:0 1px 2px #000';
+document.body.appendChild(fpsEl);
 function loop(now) {
   requestAnimationFrame(loop);
   let dt = (now - last) / 1000;
   last = now;
+  perf.frames++; perf.t += dt;
+  if (perf.t >= 1) {
+    perf.fps = perf.frames / perf.t;
+    perf.frames = 0; perf.t = 0;
+    fpsEl.textContent = settings.showFps ? `${Math.round(perf.fps)} fps · ${renderer.lastStats?.calls ?? 0} calls` : '';
+    if (mode === 'run' && !perf.warned && perf.fps < 35 && game && game.time > 8 && settings.quality !== 'low' && !NORENDER) {
+      perf.warned = true;
+      ui.toast(`Running at ${Math.round(perf.fps)} fps — try a lower Graphics quality in Settings (Esc)`, '#ff9040');
+    }
+  }
   if (dt > 0.05) dt = 0.05;
   if (game) {
     if (game.menuMode) {
@@ -429,7 +447,7 @@ function loop(now) {
       game.update(dt);
     }
   }
-  renderer.render(performance.now() / 1000);
+  if (!NORENDER) renderer.render(performance.now() / 1000);
   input.endFrame();
 }
 

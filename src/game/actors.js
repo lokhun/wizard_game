@@ -404,6 +404,8 @@ export class ActorManager {
       a.hp = (arr[i + 5] / 1000) * a.maxHp;
       const anim = ANIMS[arr[i + 6]] ?? 'idle';
       const prog = arr[i + 7] / 100;
+      const newState = anim === 'spawn' ? 'spawn' : 'chase';
+      if (newState !== a.state) { a.state = newState; this._listsDirty = true; }
       if (anim !== a.anim) { a.anim = anim; a.animT = 0; a.progress = prog; }
       else if (Math.abs(prog - a.progress) > 0.25) a.progress = prog;
       a.mask = arr[i + 8];
@@ -413,8 +415,10 @@ export class ActorManager {
       if (a.attackDef) a.netDur = a.anim === 'windup' ? a.attackDef.windup : 0.4;
       a.stacks.poison = arr[i + 10];
       a.stacks.chill = arr[i + 11];
-      a.collapsed = anim === 'death' && !a.dead;
+      const col = anim === 'death' && !a.dead;
+      if (col !== a.collapsed) { a.collapsed = col; this._listsDirty = true; }
     }
+    if (this._listsDirty) { this._listsDirty = false; this._rebuildLists(); }
   }
 
   snapshot() {

@@ -36,7 +36,7 @@ export class Game {
     this.settings = settings;
     this.texFactory = new TextureFactory(renderer.renderer);
     const q = settings.quality ?? 'high';
-    this.lights = new LightPool(this.scene, q === 'low' ? { torchCount: 6, fxCount: 4 } : q === 'medium' ? { torchCount: 8, fxCount: 6 } : { torchCount: 10, fxCount: 8 });
+    this.lights = new LightPool(this.scene, q === 'low' ? { torchCount: 5, fxCount: 4 } : q === 'medium' ? { torchCount: 7, fxCount: 5 } : q === 'high' ? { torchCount: 9, fxCount: 6 } : { torchCount: 12, fxCount: 8 });
     this.particles = new Particles(this.scene);
     this.vfx = new VFX(this.scene, renderer.camera, this.particles, this.lights);
     this.spells = new SpellRuntime(this);
@@ -192,6 +192,26 @@ export class Game {
     this.audio?.setMusic(index === 0 ? 'explore' : 'explore');
     this.audio?.play('floor_enter');
     this.ui?.onFloor(this, b, index);
+    if (index === 0 && !this.menuMode) this._tutorialTips();
+  }
+
+  _tutorialTips() {
+    let seen = 0;
+    try { seen = +(localStorage.getItem('arcane-ascent-tips') ?? 0); } catch { /* ignore */ }
+    if (seen >= 2) return;
+    try { localStorage.setItem('arcane-ascent-tips', String(seen + 1)); } catch { /* ignore */ }
+    const sp = this.player.cls.spells;
+    const tips = [
+      'WASD to move · Mouse to aim · Space to jump',
+      `Hold Left Click — ${sp.primary.name}`,
+      `Right Click — ${sp.secondary.name}`,
+      `Q — ${sp.ability1.name} · E — ${sp.ability2.name}`,
+      `R — ${sp.ultimate.name} (charges as you deal damage)`,
+      'Shift to dash — you are briefly invulnerable',
+      'Sigils above doorways reveal what lies beyond',
+      'F to interact · Tab for the map · G to ping',
+    ];
+    tips.forEach((t, i) => setTimeout(() => { if (!this.ended && this.floorIndex === 0) this.ui?.toast(t, '#e2c48a'); }, 2500 + i * 3800));
   }
 
   // floating sigils above doorways show what lies beyond (boss, shop, treasure...)
@@ -484,7 +504,7 @@ export class Game {
     const pos = new THREE.Vector3(a.pos.x, a.pos.y + a.height * 0.8, a.pos.z);
     if (src === this.player.id) this.ui?.damageNumber(pos, Math.round(dot), a.st.burn?.t > 0 ? 'fire' : a.st.poison?.t > 0 ? 'poison' : 'blood', false, true);
     else if (src) this.net?.sendTo(src, { t: 'dn', id: a.id, d: Math.round(dot) });
-    if (src === this.player.id) this.player.onDealtDamage(dot, false);
+    if (src === this.player.id) { this.player.onDealtDamage(dot, false); this.stats.damage += dot; }
   }
 
   // ======================================================================

@@ -2,13 +2,13 @@
 // Usage: (npx peerjs --port 9000 --path /wizard &) ; node scripts/coop-test.mjs
 import { chromium } from 'playwright-core';
 const PORT = process.env.PORT ?? 5190;
-const peerQ = 'peerHost=127.0.0.1&peerPort=9000&peerPath=/wizard&peerSecure=0&quality=low&test=1';
+const peerQ = 'peerHost=127.0.0.1&peerPort=9000&peerPath=/wizard&peerSecure=0&quality=low&test=1&norender=1';
 const browser = await chromium.launch({
   executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
-  args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+  args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--disable-renderer-backgrounding', '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows'],
 });
 const mk = async (tag) => {
-  const p = await browser.newPage({ viewport: { width: 960, height: 540 } });
+  const p = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   p.on('pageerror', (e) => console.log(`[${tag} pageerror]`, e.message));
   p.on('console', (m) => { if (m.type() === 'error') console.log(`[${tag} err]`, m.text().slice(0, 300)); });
   return p;
@@ -33,6 +33,12 @@ await host.click('#bGo');
 await host.waitForFunction(() => window.__game && !window.__game.menuMode && window.__game.remotes.size === 1, null, { timeout: 120000 });
 await client.waitForFunction(() => window.__game && !window.__game.menuMode && window.__game.remotes.size === 1, null, { timeout: 120000 });
 console.log('both in run');
+await host.evaluate(() => { window.__lastPs = null; window.__net.on((m) => { if (m.t === 'ps') window.__lastPs = m; }); });
+await client.evaluate(() => { window.__lastPs = null; window.__net.on((m) => { if (m.t === 'ps') window.__lastPs = m; }); });
+await host.waitForTimeout(4000);
+console.log('host lastPs', await host.evaluate(() => JSON.stringify(window.__lastPs)), 'floor', await host.evaluate(() => window.__game.floorIndex), 'remotes', await host.evaluate(() => JSON.stringify([...window.__game.remotes.keys()])));
+console.log('client lastPs', await client.evaluate(() => JSON.stringify(window.__lastPs)), 'remotes', await client.evaluate(() => JSON.stringify([...window.__game.remotes.keys()])), 'me', await client.evaluate(() => window.__game.player.id));
+console.log('host rx', await host.evaluate(() => JSON.stringify(window.__net?.rx)), 'client rx', await client.evaluate(() => JSON.stringify(window.__net?.rx)));
 // host walks into a combat room; client follows via teleport
 await host.evaluate(() => { const g = window.__game; const r = g.level.rooms.find((x) => x.type === 'combat'); g.player.pos.set(r.cx, 0, r.cz); });
 await host.waitForTimeout(12000);
@@ -42,6 +48,7 @@ console.log('host state', JSON.stringify(hs));
 console.log('client state', JSON.stringify(cs));
 // client casts at an enemy: verify host receives damage
 const before = await host.evaluate(() => window.__game.stats.damage);
+console.log('client hostiles', await client.evaluate(() => window.__game.actors.hostiles().length), 'client fps-ish rx', await client.evaluate(() => JSON.stringify(window.__net.rx)));
 await client.evaluate(() => {
   const g = window.__game; const inp = window.__input;
   const a = g.actors.hostiles()[0]; if (!a) return;
@@ -53,7 +60,8 @@ await client.waitForTimeout(6000);
 await client.evaluate(() => { window.__input.mouse.left = false; });
 const hostHp = await host.evaluate(() => window.__game.actors.list.map((a) => Math.round(a.hp)).join(','));
 console.log('enemy hp on host after client fire:', hostHp, 'client dealt', await client.evaluate(() => Math.round(window.__game.stats.damage)));
-await host.screenshot({ path: 'test-output/coop-host.png', timeout: 120000 });
-await client.screenshot({ path: 'test-output/coop-client.png', timeout: 120000 });
+// screenshots skipped (norender)
+//await host.screenshot({ path: 'test-output/coop-host.png', timeout: 120000 });
+//await client.screenshot({ path: 'test-output/coop-client.png', timeout: 120000 });
 await browser.close();
 void before;

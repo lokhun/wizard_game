@@ -110,7 +110,8 @@ export function buildLevel(level, factory, lightPool) {
       const px = -d.dy, py = d.dx; // perpendicular
       const endA = isSolid(x - px * (d.dx === 1 || d.dy === -1 ? -1 : 1), y - py * (d.dx === 1 || d.dy === -1 ? -1 : 1));
       const endB = isSolid(x + px * (d.dx === 1 || d.dy === -1 ? -1 : 1), y + py * (d.dx === 1 || d.dy === -1 ? -1 : 1));
-      wallStrip(B('wall'), ax, az, bx, bz, d.n, Math.min(h0, 0) - (level.kind[i] === K_WATER ? 0 : 0), h1, u, endA ? 0.6 : 1, endB ? 0.6 : 1);
+      const tintV = 0.86 + 0.14 * (((x * 73856093) ^ (y * 19349663) ^ (d.dx * 83492791 + d.dy * 4421)) >>> 0) % 1000 / 1000;
+      wallStrip(B('wall'), ax, az, bx, bz, d.n, Math.min(h0, 0), h1, u, (endA ? 0.6 : 1) * tintV, (endB ? 0.6 : 1) * tintV);
       // baseboard trim
       if (!biome.outdoor || true) {
         const mx = (ax + bx) / 2 + d.n[0] * 0.08, mz = (az + bz) / 2 + d.n[2] * 0.08;
@@ -326,6 +327,45 @@ export function buildLevel(level, factory, lightPool) {
     }
   }
 
+  // ---------------- grime: soot above sconces, cobwebs in high corners
+  {
+    const soot = new GeoBuilder();
+    for (const t of level.torches) {
+      if (t.type !== 'sconce') continue;
+      const nx = t.nx, nz = t.nz;
+      const px = t.x - nx * 0.06, pz = t.z - nz * 0.06;
+      const rx = -nz, rz = nx; // along the wall
+      const w = 0.9, h0 = t.y - 0.1, h1 = t.y + 2.2;
+      soot.quad([px - rx * w, h0, pz - rz * w], [px + rx * w, h0, pz + rz * w], [px + rx * w, h1, pz + rz * w], [px - rx * w, h1, pz - rz * w], [nx, 0, nz],
+        [[0, 0], [1, 0], [1, 1], [0, 1]]);
+    }
+    if (soot.count) {
+      const m = new THREE.Mesh(soot.build(), sootMaterial());
+      m.renderOrder = 3;
+      group.add(m);
+    }
+    if (!biome.outdoor) {
+      const webs = new GeoBuilder();
+      const rngW = new RNG(level.seed + 5);
+      for (const room of level.rooms) {
+        const corners = [[room.x, room.y, 1, 1], [room.x + room.w, room.y, -1, 1], [room.x, room.y + room.h, 1, -1], [room.x + room.w, room.y + room.h, -1, -1]];
+        for (const [cx, cz, sx, sz] of corners) {
+          if (!rngW.chance(0.6)) continue;
+          const X = cx * T, Z = cz * T, Y = room.ceil - 0.05;
+          const r = rngW.range(1.0, 2.2);
+          // a triangle spanning the corner, sagging slightly
+          webs.quad([X, Y, Z], [X + sx * r, Y, Z], [X + sx * r * 0.45, Y - r * 0.55, Z + sz * r * 0.45], [X, Y, Z + sz * r], [0, -1, 0],
+            [[0, 1], [1, 1], [0.5, 0.2], [0, 0]]);
+        }
+      }
+      if (webs.count) {
+        const m = new THREE.Mesh(webs.build(), webMaterial());
+        m.renderOrder = 3;
+        group.add(m);
+      }
+    }
+  }
+
   // ---------------- torches
   lightPool.clearTorches();
   for (const t of level.torches) {
@@ -413,6 +453,44 @@ export function buildLevel(level, factory, lightPool) {
       group.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
     },
   };
+}
+
+let _soot = null, _web = null;
+function sootMaterial() {
+  if (_soot) return _soot;
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 128;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32, 40, 2, 32, 64, 64);
+  gr.addColorStop(0, 'rgba(0,0,0,0.85)'); gr.addColorStop(0.5, 'rgba(0,0,0,0.4)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 128);
+  const t = new THREE.CanvasTexture(c);
+  t.flipY = false;
+  _soot = new THREE.MeshBasicMaterial({ color: 0x000000, alphaMap: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, side: THREE.DoubleSide });
+  return _soot;
+}
+function webMaterial() {
+  if (_web) return _web;
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d');
+  g.strokeStyle = 'rgba(255,255,255,0.55)';
+  g.lineWidth = 1.2;
+  // radial threads from the corner (0,0) plus sagging spiral arcs
+  for (let i = 0; i <= 8; i++) { const a = (i / 8) * Math.PI / 2; g.beginPath(); g.moveTo(0, 0); g.lineTo(Math.cos(a) * 256, Math.sin(a) * 256); g.stroke(); }
+  for (let r = 20; r < 256; r += 18 + Math.random() * 8) {
+    g.beginPath();
+    for (let i = 0; i <= 8; i++) {
+      const a = (i / 8) * Math.PI / 2;
+      const rr = r * (0.92 + 0.08 * Math.sin(i * 1.7));
+      const x = Math.cos(a) * rr, y = Math.sin(a) * rr;
+      if (i === 0) g.moveTo(x, y); else g.quadraticCurveTo(Math.cos(a - 0.1) * rr * 0.93, Math.sin(a - 0.1) * rr * 0.93, x, y);
+    }
+    g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  _web = new THREE.MeshStandardMaterial({ color: 0xbbbbbb, alphaMap: t, transparent: true, depthWrite: false, side: THREE.DoubleSide, roughness: 1 });
+  return _web;
 }
 
 function makeNightSky() {

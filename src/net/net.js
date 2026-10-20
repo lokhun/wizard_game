@@ -56,10 +56,11 @@ export class Net {
     this.stateT = 0;
     this.snapT = 0;
     this.closed = false;
+    this.rx = {};
   }
 
   on(fn) { this.handlers.add(fn); return () => this.handlers.delete(fn); }
-  _emit(msg, from) { for (const h of this.handlers) { try { h(msg, from); } catch (e) { console.error('net handler', e); } } }
+  _emit(msg, from) { this.rx[msg.t] = (this.rx[msg.t] ?? 0) + 1; for (const h of this.handlers) { try { h(msg, from); } catch (e) { console.error('net handler', e); } } }
 
   // ------------------------------------------------------------- hosting
   host() {

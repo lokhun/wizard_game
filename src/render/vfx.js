@@ -108,7 +108,7 @@ void main(){
   float flow = n1(along * 2.0 - uTime * 18.0) * n1(along * 5.3 - uTime * 31.0 + vUv.x * 6.0);
   float flick = mix(1.0, 0.6 + 0.8 * flow, uNoise);
   float tip = smoothstep(0.0, 0.03, vUv.y) * smoothstep(1.0, 0.97, vUv.y);
-  vec3 c = (uColor * glow * flick + uCore * core * 1.5) * uAlpha * tip;
+  vec3 c = (uColor * glow * flick * 0.55 + uCore * core * 0.6) * uAlpha * tip;
   gl_FragColor = vec4(c, 1.0);
 }`;
 
@@ -119,7 +119,7 @@ void main(){
   float f = 1.0 - abs(dot(vN, vV));
   float rim = pow(f, 2.5);
   float hex = 0.6 + 0.4 * sin(vUv.x * 60.0 + uTime * 2.0) * sin(vUv.y * 40.0 - uTime * 1.5);
-  vec3 c = uColor * (rim * 1.4 + 0.06) * hex * uAlpha;
+  vec3 c = uColor * (rim * 0.9 + 0.03) * hex * uAlpha;
   gl_FragColor = vec4(c, 1.0);
 }`;
 
@@ -594,8 +594,9 @@ export class VFX {
     const s = radius / 3;
     this.P.glow({ x: pos.x, y: pos.y, z: pos.z, r: fx.mid[0] * 0.5, g: fx.mid[1] * 0.5, b: fx.mid[2] * 0.5, life: 0.22, size: radius * 1.1, size2: radius * 0.4, sprite: SPR.GLOW });
     this.flash(pos, fx.light, 60 * s, radius * 4, 0.35);
-    this.ring({ x: pos.x, y: (o.groundY ?? pos.y - 0.5), z: pos.z }, radius * 1.15, fx.mid, 0.45, 0.25);
-    this.shell(pos, { element, radius: radius * 1.1, from: radius * 0.2, life: 0.3, alpha: 0.8 });
+    this.ring({ x: pos.x, y: (o.groundY ?? pos.y - 0.5), z: pos.z }, radius * 1.15, [fx.mid[0] * 0.45, fx.mid[1] * 0.45, fx.mid[2] * 0.45], 0.45, 0.18);
+    // the expanding shock shell looks wrong from inside, so skip it when the camera is within range
+    if (this.camera.position.distanceTo(pos) > radius * 1.3) this.shell(pos, { element, radius: radius * 1.1, from: radius * 0.2, life: 0.3, alpha: 0.35 });
     this.burst(pos, { element, count: Math.round(40 * s), speed: 10 * s, life: 0.6, size: 0.12, sprite: fx.spark, gravity: 6, stretch: 0.05, drag: 2.5 });
     const ground = { x: pos.x, y: o.groundY ?? pos.y - 0.5, z: pos.z };
     switch (element) {
