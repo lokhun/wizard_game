@@ -10,6 +10,33 @@ import { RNG } from '../core/rng.js';
 
 const AFFIXES = ['hasted', 'vampiric', 'volatile', 'shielded'];
 
+// Combat role of an enemy type, derived from its definition. Waves are built
+// from roles so every fight has a readable shape (a line to break, a caster to
+// dive, a pack to kite) instead of a random pile of monsters.
+export function roleOf(type) {
+  const d = ENEMY_DEFS[type];
+  if (!d) return 'line';
+  if (d.ai === 'support' || d.ai === 'caster') return 'caster';
+  if (d.ai === 'ranged') return 'ranged';
+  if (d.cost >= 10) return 'heavy';
+  if (d.flank || d.speed >= 5.5) return 'skirmisher';
+  if (d.cost <= 2) return 'fodder';
+  return 'line';
+}
+
+// Squad templates: [role, min, max] slots, filled from the realm's roster.
+// 'fill' soaks up the rest of the wave budget with that role.
+const SQUADS = {
+  horde:      { slots: [['fodder', 3, 6], ['skirmisher', 1, 2]], fill: 'fodder', intro: true },
+  shieldwall: { slots: [['line', 2, 3], ['ranged', 2, 3]], fill: 'line', intro: true },
+  coven:      { slots: [['caster', 1, 2], ['line', 2, 3]], fill: 'fodder' },
+  hunters:    { slots: [['skirmisher', 2, 3], ['line', 1, 1]], fill: 'skirmisher', intro: true },
+  vanguard:   { slots: [['heavy', 1, 1], ['ranged', 1, 2]], fill: 'fodder' },
+  crossfire:  { slots: [['ranged', 2, 3], ['skirmisher', 1, 2]], fill: 'line' },
+};
+// roles that hang back: they spawn far from the party and away from the action
+const BACKLINE = new Set(['ranged', 'caster']);
+
 export class Director {
   constructor(game) {
     this.g = game;
@@ -78,7 +105,10 @@ export class Director {
   startEncounter(room) {
     const g = this.g;
     const waves = this._planWaves(room);
-    this.active = { room, waves, waveIdx: -1, spawned: new Set(), t: 0, waveT: 0, clearT: 0 };
+    // remember where the party came in, so enemies can appear across the room from them
+    const ps = g.allPlayers().filter((p) => p.alive && !p.dead);
+    const entry = ps.length ? { x: ps.reduce((s, p) => s + p.pos.x, 0) / ps.length, z: ps.reduce((s, p) => s + p.pos.z, 0) / ps.length } : null;
+    this.active = { room, waves, waveIdx: -1, spawned: new Set(), t: 0, waveT: 0, clearT: 0, entry };
     g.setRoomLocked(room.id, true);
     g.net?.broadcast({ t: 'lock', r: room.id, on: 1 });
     // pull stragglers into the room
@@ -97,48 +127,87 @@ export class Director {
     if (room.type === ROOM.BOSS) return [];
     const depth = room.depth ?? 1;
     const nWaves = room.type === ROOM.ELITE ? 2 : rng.int(2, 3);
+    // the realm's roster grouped by role (duplicates in the roster act as weights)
+    const byRole = {};
+    for (const t of b.enemies) if (ENEMY_DEFS[t]) (byRole[roleOf(t)] ??= []).push(t);
+    const usable = Object.keys(SQUADS).filter((k) => SQUADS[k].slots.every(([r]) => byRole[r]?.length));
     const waves = [];
+    let last = null;
     for (let w = 0; w < nWaves; w++) {
-      let budget = (6 + f * 1.5 + depth * 1.2 + w * 2) * this.countScale();
+      let budget = (8 + f * 3 + depth * 1.2 + w * 2.5) * this.countScale();
       const list = [];
       if (room.type === ROOM.ELITE && w === nWaves - 1) {
-        list.push({ type: rng.pick(b.elites), elite: false, champion: true });
+        list.push({ type: rng.pick(b.elites), elite: false, champion: true, role: 'heavy' });
         budget *= 0.4;
       }
-      let guard = 0;
-      while (budget > 0 && guard++ < 50) {
-        const type = rng.pick(b.enemies);
+      // the opening wave uses a simple, readable squad; later waves get nastier ones
+      let pool = usable.filter((k) => k !== last && (w > 0 || SQUADS[k].intro));
+      if (!pool.length) pool = usable.filter((k) => k !== last);
+      const squadName = pool.length ? rng.pick(pool) : null;
+      last = squadName;
+      // keep a wave fightable: past ~9 bodies a room turns into mush rather than tactics
+      const cap = Math.round(9 * this.countScale());
+      const add = (type, force = false) => {
         const def = ENEMY_DEFS[type];
-        if (!def) continue;
         const pack = def.pack ? rng.int(def.pack[0], def.pack[1]) : 1;
-        for (let i = 0; i < pack && budget > 0; i++) {
+        for (let i = 0; i < pack && ((budget > 0 && list.length < cap) || (force && i === 0)); i++) {
           // occasional champion (elite affix) from floor 2 on
           const elite = f >= 1 && rng.chance(0.04 + f * 0.02) && def.cost >= 2;
-          list.push({ type, elite, affix: elite ? rng.pick(AFFIXES) : null });
+          list.push({ type, elite, affix: elite ? rng.pick(AFFIXES) : null, role: roleOf(type) });
           budget -= def.cost * (elite ? 3 : 1);
         }
+      };
+      if (squadName) {
+        const sq = SQUADS[squadName];
+        for (const [role, lo, hi] of sq.slots) {
+          const n = rng.int(lo, hi) + (role === 'ranged' && f >= 3 ? 1 : 0);
+          // the minimum always spawns (a healer with no one to guard makes no fight)
+          for (let i = 0; i < n && (i < lo || budget > 0); i++) add(rng.pick(byRole[role]), i < lo);
+        }
+        let guard = 0;
+        const fillRole = byRole[sq.fill]?.length ? sq.fill : 'line';
+        while (budget > 0 && guard++ < 40) add(rng.pick(byRole[fillRole] ?? b.enemies));
+      } else {
+        let guard = 0;
+        while (budget > 0 && guard++ < 50) add(rng.pick(b.enemies));
       }
+      list.squad = squadName;
       waves.push(list);
     }
     return waves;
   }
 
-  _spawnPoint(room, minDist = 6) {
+  // Pick a spawn cell for an enemy of the given role. Enemies appear where the
+  // party can see them coming: the backline far away, the rest across the room
+  // from where the party entered, never right on top of anyone.
+  _spawnPoint(room, role = 'line') {
     const L = this.level;
     const g = this.g;
-    for (let i = 0; i < 40; i++) {
+    const A = this.active;
+    const back = BACKLINE.has(role);
+    const minDist = back ? 11 : role === 'skirmisher' ? 8 : 9;
+    const players = g.allPlayers().filter((p) => p.alive && !p.dead);
+    const entry = A?.entry;
+    let best = null, bestScore = -1e9;
+    for (let i = 0; i < 24; i++) {
       const cx = room.x + 1 + Math.floor(this.rng.next() * (room.w - 2));
       const cy = room.y + 1 + Math.floor(this.rng.next() * (room.h - 2));
       const idx = cy * L.W + cx;
       if (L.cells[idx] !== FLOOR || L.kind[idx] === K_WATER) continue;
       const x = (cx + 0.5) * T, z = (cy + 0.5) * T;
-      let ok = true;
-      for (const p of g.allPlayers()) if (Math.hypot(p.pos.x - x, p.pos.z - z) < minDist) { ok = false; break; }
-      if (!ok) continue;
       if (g.collision.pushOut(x, z, 0.6)) continue;
-      return { x, z };
+      let near = 1e9;
+      for (const p of players) near = Math.min(near, Math.hypot(p.pos.x - x, p.pos.z - z));
+      let score = Math.min(near, back ? 20 : 14) + this.rng.next() * 3;
+      if (near < minDist) score -= 30;
+      // prefer the far side of the room from the door the party came through
+      if (entry && role !== 'skirmisher') score += Math.min(10, Math.hypot(entry.x - x, entry.z - z)) * 0.4;
+      // the backline likes the room's edges, skirmishers like the flanks
+      const edge = Math.min(cx - room.x, room.x + room.w - 1 - cx, cy - room.y, room.y + room.h - 1 - cy);
+      if (back || role === 'skirmisher') score -= edge * 0.6;
+      if (score > bestScore) { bestScore = score; best = { x, z }; }
     }
-    return { x: room.cx, z: room.cz };
+    return best ?? { x: room.cx, z: room.cz };
   }
 
   _nextWave() {
@@ -152,7 +221,7 @@ export class Director {
     wave.forEach((s, i) => {
       this.g.spells.after(i * 0.12 + Math.random() * 0.2, () => {
         if (this.active !== A) return;
-        const p = this._spawnPoint(room);
+        const p = this._spawnPoint(room, s.role);
         this.spawnEnemy(s.type, p.x, p.z, { elite: s.elite, affix: s.affix });
       });
     });

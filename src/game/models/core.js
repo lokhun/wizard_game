@@ -389,8 +389,22 @@ const FCHUNK = /* glsl */ `
 #endif
 `;
 
+// Shared rim light for every enemy: a faint edge glow so silhouettes separate from
+// dark rooms without flattening the torch-lit look. Colour is set per realm.
+export const RIM = { uRim: { value: new THREE.Color(0.22, 0.2, 0.2) } };
+export function setEnemyRim(color, k = 1) { RIM.uRim.value.set(color).multiplyScalar(k); }
+const RIM_CHUNK = `
+#ifdef EN_RIM
+  {
+    float ndv = clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0);
+    totalEmissiveRadiance += uRim * pow(1.0 - ndv, 2.5);
+  }
+#endif
+`;
+
 export function patchInstanceMaterial(mat, U, feats) {
   const keyBits = [];
+  if (!mat.isMeshBasicMaterial) keyBits.push('R');
   if (feats.flutter) keyBits.push('F');
   if (feats.wobble && !mat.isMeshBasicMaterial) keyBits.push('W');
   if (feats.cracks) keyBits.push('C');
@@ -399,8 +413,12 @@ export function patchInstanceMaterial(mat, U, feats) {
   if (keyBits.includes('F')) mat.defines.EN_FLUTTER = '';
   if (keyBits.includes('W')) mat.defines.EN_WOBBLE = '';
   if (keyBits.includes('C')) mat.defines.EN_CRACKS = '';
+  if (keyBits.includes('R')) mat.defines.EN_RIM = '';
   mat.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, U);
+    Object.assign(sh.uniforms, U, RIM);
+    if (keyBits.includes('R')) {
+      sh.fragmentShader = 'uniform vec3 uRim;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + RIM_CHUNK);
+    }
     sh.vertexShader = 'attribute float aAnim;\nuniform float uTime, uFlutter, uFlutterSpeed, uWobble;\nuniform vec3 uDrag;\n' +
       sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + VCHUNK);
     if (keyBits.includes('C')) {

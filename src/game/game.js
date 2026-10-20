@@ -13,7 +13,7 @@ import { Director } from './director.js';
 import { LocalPlayer } from './player.js';
 import { RemotePlayer } from './remote.js';
 import { resolveHit, ST, REACTIONS } from '../game/combat.js';
-import { getViewModel, preloadEnemies, getEnemyModel, getAvatar } from './models.js';
+import { getViewModel, preloadEnemies, getEnemyModel, getAvatar, setEnemyRim } from './models.js';
 import { rollTomes, rollRelics, RARITY, TOMES } from './upgrades.js';
 import { makeChest, makePedestal, makePortal } from './interactables.js';
 import { CLASS_META } from './classMeta.js';
@@ -220,6 +220,7 @@ export class Game {
     for (const r of this.remotes.values()) { r.pos.set(s.x, 0, s.z); r.net.x = s.x; r.net.z = s.z; }
     level.startRoom.visited = true;
     this._buildDoorSigns();
+    setEnemyRim(b.rim ?? 0x806a60, 0.45);
     this.audio?.setAmbience(b.id);
     this.audio?.setMusic(index === 0 ? 'explore' : 'explore');
     this.audio?.play('floor_enter');
@@ -337,9 +338,32 @@ export class Game {
     this.vfx.burst(c, { count: 22, speed: 6, life: 1.1, size: 0.12, sprite: SPR.CHUNK, solid: true, color: [0.34, 0.22, 0.12], color2: [0.25, 0.16, 0.09], gravity: 16, spin: 8, upward: 0.8 });
     this.vfx.smoke(c, { count: 4, size: 0.6, color: [0.3, 0.26, 0.2], alpha: 0.4, life: 1.4 });
     if (b.type === 'barrel' && Math.random() < 0.5) this.vfx.burst(c, { count: 16, speed: 3, life: 0.8, size: 0.06, sprite: SPR.DROP, solid: true, color: [0.25, 0.12, 0.05], gravity: 12, upward: 1 });
+    if (b.type === 'keg') this.spells.after(0.18, () => this._kegBlast(b, c, local));
     this.audio?.play('impact_earth', { pos: c, volume: 0.7 });
     if (local) this.net?.broadcastOrSend({ t: 'brk', i });
     if (this.isHost && Math.random() < 0.35) this.spawnDrop(Math.random() < 0.2 ? 'health' : 'gold', c, Math.random() < 0.2 ? 15 : 3 + this.floorIndex * 2);
+  }
+
+  // A powder keg goes off. Everyone sees the blast and checks their own player;
+  // the player who broke it deals the damage to enemies and sets off nearby kegs.
+  _kegBlast(b, c, local) {
+    const R = 3.6;
+    this.vfx.explosion(c, 'fire', R, { groundY: c.y - 0.5 });
+    this.vfx.addShake?.(0.35);
+    this.audio?.play('explosion_big', { pos: c });
+    const p = this.player;
+    if (p.alive && !p.downed && !p.dead && p.pos.distanceTo(c) < R + 0.4) p.takeDamage(Math.round(p.maxHp * 0.18), 'fire', c);
+    if (local) {
+      this.localAreaHit(c, R, 70, 'fire', { burn: 2 });
+      this.smashAt(c, R * 0.9);
+    }
+  }
+
+  // An area blast owned by the local player (powder kegs, revive bursts); goes through
+  // the normal hit path so co-op clients forward the damage to the host.
+  localAreaHit(pos, radius, dmg, el = 'fire', st) {
+    const at = new THREE.Vector3(pos.x, pos.y + 0.6, pos.z);
+    return this.spells.damageArea(at, radius, { dmg: dmg * (1 + this.floorIndex * 0.6), el, st, kb: 9, src: this.player.id });
   }
 
   _ambient(dt) {

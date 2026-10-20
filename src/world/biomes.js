@@ -3,7 +3,7 @@
 
 export const BIOMES = [
   {
-    id: 'sewers',
+    id: 'sewers', rim: 0x5a8a66,
     name: 'The Drowned Sewers',
     subtitle: 'Beneath the Ashen Keep',
     wall: 'sewerWall',
@@ -28,7 +28,7 @@ export const BIOMES = [
     corridorWidth: 2,
   },
   {
-    id: 'dungeon',
+    id: 'dungeon', rim: 0x9a6a48,
     name: 'The Oubliette',
     subtitle: 'Prison of the Forgotten',
     wall: 'dungeonWall',
@@ -52,7 +52,7 @@ export const BIOMES = [
     corridorWidth: 2,
   },
   {
-    id: 'courtyard',
+    id: 'courtyard', rim: 0x6a86c0,
     name: 'The Moonlit Bailey',
     subtitle: 'Courtyard of the Fallen Guard',
     wall: 'castleWall',
@@ -77,7 +77,7 @@ export const BIOMES = [
     corridorWidth: 3,
   },
   {
-    id: 'keep',
+    id: 'keep', rim: 0x8a6a9a,
     name: 'The Hall of Whispers',
     subtitle: 'Keep of the Court Archmage',
     wall: 'plaster',
@@ -101,7 +101,7 @@ export const BIOMES = [
     corridorWidth: 2,
   },
   {
-    id: 'throne',
+    id: 'throne', rim: 0x8a60c0,
     name: 'The Hollow Throne',
     subtitle: 'Seat of the Hollow King',
     wall: 'castleWall',
@@ -118,7 +118,7 @@ export const BIOMES = [
     grade: { lift: [0.01, 0.004, 0.018], gain: [1.02, 0.95, 1.05], saturation: 0.9, exposure: 1.05, bloom: 0.85 },
     rooms: 3,
     branches: 0,
-    enemies: ['royalGuard', 'animatedArmor', 'wraith', 'courtSorcerer'],
+    enemies: ['royalGuard', 'animatedArmor', 'wraith', 'courtSorcerer', 'skeletonArcher'],
     elites: ['royalGuard'],
     boss: 'hollowKing',
     music: 'throne',

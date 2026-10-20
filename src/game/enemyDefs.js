@@ -212,5 +212,5 @@ export const BOSS_DEFS = {
   hollowKing: { name: 'The Hollow King', title: 'Last Lord of the Ashen Keep', hp: 27000, dmg: 40, poise: 9999, gold: 0, model: 'hollowKing', speed: 4.4, sound: 'boss_roar', deathSound: 'boss_roar', hitSound: 'enemy_hit_armor', undead: true },
 };
 
-export const FLOOR_HP = [1, 1.65, 2.5, 3.5, 4.8];
+export const FLOOR_HP = [1, 1.5, 2.1, 2.8, 3.6];
 export const FLOOR_DMG = [1, 1.25, 1.55, 1.85, 2.2];

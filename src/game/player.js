@@ -19,9 +19,9 @@ const GRAVITY = 24;
 export function baseStats(classId) {
   const C = CLASSES[classId];
   return {
-    maxHp: C.hp, moveSpeed: 6.6 * C.speed, dmgMult: 1, critChance: 0.05, critMult: 1.75, cdr: 0, rateMult: 0,
+    maxHp: C.hp, moveSpeed: 6.0 * C.speed, dmgMult: 1, critChance: 0.05, critMult: 1.75, cdr: 0, rateMult: 0,
     aoeMult: 1, projSpeed: 1, extraProj: 0, pierce: 0, bounce: 0, homing: 0, lifesteal: 0, armor: 0,
-    dashCharges: 2, dashCd: 2.6, ultRate: 1, elementMult: {}, vs: {}, infuse: null, regen: 0, killHeal: 0,
+    dashCharges: 2, dashCd: 3.0, ultRate: 1, elementMult: {}, vs: {}, infuse: null, regen: 0, killHeal: 0,
     goldMult: 1, extraLives: 0, thorns: 0, dodge: 0, cdRate: 1, statusPower: 1, jumpPower: 1,
     ...structuredClone(C.stats ?? {}),
   };
@@ -492,7 +492,7 @@ export class LocalPlayer {
     this.inWater = g.level.kind[ci] === K_WATER && this.pos.y < 0;
     let speed = st.moveSpeed * (this.inWater ? 0.72 : 1) * (this.channel ? 0.6 : 1);
     if (this.castAnim?.style === 'swing') speed *= 0.85;
-    const accel = this.grounded ? 70 : 18;
+    const accel = this.grounded ? 48 : 16; // a little weight: ~0.12 s to full speed
     const target = wish.multiplyScalar(speed);
     // accelerate horizontal velocity toward target
     const dvx = target.x - this.vel.x, dvz = target.z - this.vel.z;

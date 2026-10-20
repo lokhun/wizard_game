@@ -148,7 +148,7 @@ export class Collision {
       for (const c of list) {
         if (c.seg || c.r < 0.3) continue;
         const ddx = x - c.x, ddz = z - c.z;
-        if (ddx * ddx + ddz * ddz < c.r * c.r && y < 8) return true;
+        if (ddx * ddx + ddz * ddz < c.r * c.r && y < (c.h ?? 8)) return true;
       }
     }
     for (const c of this.dynamic) {

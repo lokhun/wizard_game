@@ -9,6 +9,8 @@ export function setModelModules({ enemy, wizard }) {
   if (enemy) enemyMod = enemy;
   if (wizard) wizardMod = wizard;
 }
+// edge light on enemies for the current realm (see models/core.js RIM)
+export function setEnemyRim(color, k) { enemyMod?.setEnemyRim?.(color, k); }
 
 const phGeo = new THREE.CapsuleGeometry(0.4, 1.0, 4, 8);
 phGeo.translate(0, 0.9, 0);

@@ -11,7 +11,8 @@
 // TextureFactory; each instance clones only its materials (hit flash / tint).
 // See src/game/models/*.js for the individual type definitions.
 // ---------------------------------------------------------------------------
-import { Rig, EnemyInstance, materialLib } from './models/core.js';
+import { Rig, EnemyInstance, materialLib, setEnemyRim } from './models/core.js';
+export { setEnemyRim };
 import { SEWER_TYPES } from './models/sewers.js';
 import { DUNGEON_TYPES } from './models/dungeon.js';
 import { COURTYARD_TYPES } from './models/courtyard.js';

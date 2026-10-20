@@ -369,7 +369,7 @@ export function buildLevel(level, factory, lightPool) {
   // ---------------- destructible barrels & crates (instanced so they can vanish)
   const breakMeshes = [];
   {
-    const byType = { barrel: [], crate: [] };
+    const byType = { barrel: [], keg: [], crate: [] };
     for (const b of level.breakables) byType[b.type].push(b);
     for (const [type, list] of Object.entries(byType)) {
       if (!list.length) continue;

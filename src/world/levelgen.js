@@ -320,18 +320,20 @@ function decorateRoom(level, room, rng) {
   const P = (type, wx, wz, extra = {}) => {
     const prop = { type, x: wx, z: wz, rot: extra.rot ?? rng.range(0, Math.PI * 2), ...extra };
     if (type === 'barrel' || type === 'crate') {
+      // some barrels are powder kegs: break one near a pack and it goes up in flames
+      if (type === 'barrel' && !isBoss && rng.chance(0.22)) type = 'keg';
       // destructible clutter: gets a collider and a stable index for co-op sync
       prop.breakable = level.breakables.length;
-      const c = { x: wx, z: wz, r: type === 'barrel' ? 0.42 : 0.45, breakable: prop.breakable };
+      const c = { x: wx, z: wz, r: type === 'crate' ? 0.45 : 0.42, h: 1.05, breakable: prop.breakable };
       level.colliders.push(c);
       level.breakables.push({ i: prop.breakable, type, x: wx, z: wz, r: c.r, collider: c, alive: true, rot: prop.rot });
       // sometimes a stack of two crates / cluster of barrels
       if (rng.chance(0.3)) {
         const ox = wx + Math.cos(prop.rot) * 0.9, oz = wz - Math.sin(prop.rot) * 0.9;
         const i2 = level.breakables.length;
-        const c2 = { x: ox, z: oz, r: c.r, breakable: i2 };
+        const c2 = { x: ox, z: oz, r: c.r, h: c.h, breakable: i2 };
         level.colliders.push(c2);
-        level.breakables.push({ i: i2, type, x: ox, z: oz, r: c.r, collider: c2, alive: true, rot: prop.rot + 0.7 });
+        level.breakables.push({ i: i2, type: type === 'keg' ? 'barrel' : type, x: ox, z: oz, r: c.r, collider: c2, alive: true, rot: prop.rot + 0.7 });
       }
       return;
     }
@@ -625,6 +627,28 @@ function decorateRoom(level, room, rng) {
     else if (side === 2) setRect(level, x, y + 2, depth, h - 4, apply);
     else setRect(level, x + w - depth, y + 2, depth, h - 4, apply);
     room.dais = side;
+  }
+
+  // ---------------- mid-room cover for realms whose rooms are otherwise open floor,
+  // so ranged foes can be broken line of sight with and melee can be kited around
+  if ((room.type === ROOM.COMBAT || room.type === ROOM.ELITE) && w >= 10 && h >= 10 && (b.id === 'sewers' || b.id === 'throne')) {
+    const kind = b.id === 'sewers' ? 'pillarSquare' : 'statue';
+    const rad = b.id === 'sewers' ? 0.6 : 0.85;
+    const spots = rng.shuffle([[-1, -1], [1, -1], [-1, 1], [1, 1], [0, -1.3], [0, 1.3]]);
+    let placed = 0;
+    const want = rng.int(2, 3);
+    for (const [sx, sy] of spots) {
+      if (placed >= want) break;
+      const fx = Math.floor(cx + sx * w * 0.2), fy = Math.floor(cy + sy * h * 0.2);
+      if (fx < x + 2 || fy < y + 2 || fx > x + w - 3 || fy > y + h - 3) continue;
+      const i = level.idx(fx, fy);
+      if (level.cells[i] !== FLOOR || level.kind[i] === K_WATER || level.kind[i] === K_ALT) continue;
+      const wx = (fx + 0.5) * T, wz = (fy + 0.5) * T;
+      if (level.colliders.some((c) => c.r && Math.hypot(c.x - wx, c.z - wz) < c.r + rad + 1.6)) continue;
+      addPillar(level, wx, wz, rad, kind, { rot: rng.range(0, Math.PI * 2), cover: true });
+      if (b.id === 'sewers') P('rubble', wx + rng.range(-1, 1), wz + rng.range(-1, 1));
+      placed++;
+    }
   }
 
   // ---------------- room-type set pieces

@@ -53,6 +53,18 @@ function barrel(r) {
   return parts;
 }
 
+// powder keg: a red-painted barrel with a lit fuse; explodes when broken
+function keg(r) {
+  const parts = barrel(r).map(([k, g], i) => (i === 0 ? ['cloth', colorize(g, 0x6a1410)] : [k, g]));
+  // pale cloth wrap with a black band (the warning stripe)
+  parts.push(['cloth', colorize(tf(cyl(0.435, 0.435, 0.14, 16, true), { y: 0.5 }), 0xb8a888)]);
+  parts.push(['cloth', colorize(tf(cyl(0.437, 0.437, 0.04, 16, true), { y: 0.5 }), 0x141010)]);
+  // fuse and its ember
+  parts.push(['rope', tf(cyl(0.015, 0.015, 0.16, 5), { x: 0.12, y: 1.07, rz: 0.4 })]);
+  parts.push(['glow', colorize(tf(sph(0.03, 6, 4), { x: 0.09, y: 1.15 }), 0xff7020)]);
+  return parts;
+}
+
 function crate(rng) {
   const s = 0.7 + rng() * 0.3;
   const parts = [['wood', tf(box(s, s, s), { y: s / 2 })]];
@@ -657,7 +669,7 @@ function stairsDown() {
 function glowshrooms(rng) { return mushrooms(rng, true); }
 
 export const PROPS = {
-  barrel, crate, rubble, bones, pillarSquare, pillarRound, pillarGrand, chains, sack, table, longTable, stool,
+  barrel, keg, crate, rubble, bones, pillarSquare, pillarRound, pillarGrand, chains, sack, table, longTable, stool,
   bucket, hay, rack, cage, skeletonSit, bloodstain, puddle, grate, mushrooms, glowshrooms, pipe, sconce, brazier: () => brazier(false),
   brazierTall: () => brazier(true), brazierFloor, chandelier, candles, candelabra, bookPile, scrolls, armorStand, weaponRack, banner,
   painting, chest, statue, statueSmall: (r) => statue(r, true), well, fountain, tree, deadTree: (r) => tree(r, true), grave, hayCart, cart,

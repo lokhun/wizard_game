@@ -71,6 +71,8 @@ export class Actor {
   get alive() { return !this.dead && !this.collapsed; }
 }
 
+const RANGED_KINDS = new Set(['shoot', 'lob', 'circle']);
+
 export class ActorManager {
   constructor(game) {
     this.g = game;
@@ -632,6 +634,9 @@ export class ActorManager {
       for (const at of def.attacks ?? []) {
         if ((a.cds[at.id] ?? 0) > 0) continue;
         if (!this._canUse(a, at, dist, tRad, los)) continue;
+        // ranged "fire tokens": only a couple of shooters wind up on one target at once,
+        // so volleys stay readable and dodgeable
+        if (a.faction === 'enemy' && RANGED_KINDS.has(at.kind) && this._rangedWindups(tgt, a) >= 2 + (g.floorIndex >= 3 ? 1 : 0)) continue;
         a.cds[at.id] = (at.cd ?? 0) * rand(0.85, 1.2);
         this._beginAttack(a, at, tgt);
         return out;
@@ -688,6 +693,12 @@ export class ActorManager {
     // ambient sounds
     if (Math.random() < dt * 0.15 && def.sound) g.audio?.play(def.sound, { pos: a.pos, volume: 0.45 });
     return out;
+  }
+
+  _rangedWindups(tgt, self) {
+    let n = 0;
+    for (const b of this._hostiles) if (b !== self && b.state === 'windup' && b.target === tgt && b.attack && RANGED_KINDS.has(b.attack.kind)) n++;
+    return n;
   }
 
   _canUse(a, at, dist, tRad, los) {
