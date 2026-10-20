@@ -79,7 +79,7 @@ export class Net {
         });
         peer.on('error', (err) => {
           if (!opened && err.type === 'unavailable-id' && tries > 0) { peer.destroy(); attempt(tries - 1); return; }
-          if (!opened) { reject(err); return; }
+          if (!opened) { peer.destroy(); reject(err); return; }
           console.warn('peer error', err);
         });
         peer.on('connection', (conn) => this._accept(conn));
@@ -142,6 +142,7 @@ export class Net {
         if (!done) {
           done = true;
           clearTimeout(timer);
+          try { peer.destroy(); } catch { /* ignore */ }
           reject(new Error(err.type === 'peer-unavailable' ? 'No party found with that code.' : `Connection failed (${err.type ?? err.message}).`));
         }
       });

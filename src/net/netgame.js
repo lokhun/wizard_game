@@ -36,7 +36,7 @@ export function handleGameMessage(game, msg, from) {
       if (a && a.alive) a.hp = Math.min(a.maxHp, a.hp + msg.d * 0.5);
       break;
     }
-    case 'nextfloor': if (game.isHost) game.goNextFloor(); break;
+    case 'nextfloor': if (game.isHost && (msg.f === undefined || msg.f === game.floorIndex)) game.goNextFloor(); break;
     // ------------------------------------------------ shared events
     case 'pick': game.removeDrop(msg.id); break;
     case 'brk': game.breakProp(msg.i, false); break;
@@ -69,6 +69,7 @@ export function handleGameMessage(game, msg, from) {
       if (game.isHost || game.actors.byId.has(msg.id)) return;
       const a = game.actors.spawn(msg.ty, msg.x, msg.z, { id: msg.id, yaw: msg.yaw, elite: !!msg.e, hp: msg.hp, faction: msg.f ? 'ally' : 'enemy', affix: msg.af, life: msg.life, silent: true });
       a.net.x = msg.x; a.net.z = msg.z; a.net.yaw = msg.yaw;
+      if (msg.fly) a.model?.setFlying?.(true);
       break;
     }
     case 'die': {

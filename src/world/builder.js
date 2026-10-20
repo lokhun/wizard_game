@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GeoBuilder, tf, worldBox } from '../render/geo.js';
 import { T, SOLID, FLOOR, BLOCK, K_MAIN, K_ALT, K_WATER, K_DAIS, ROOM } from './levelgen.js';
 import { PROPS, PROP_FLAMES, CHANDELIER_FLAMES, cellBars, bookshelf } from './props.js';
-import { getBiomeMaterials } from './materials.js';
+import { getBiomeMaterials, getSharedMaterials } from './materials.js';
 import { RNG } from '../core/rng.js';
 
 // ---------------------------------------------------------------------------
@@ -580,7 +580,14 @@ export function buildLevel(level, factory, lightPool) {
       d.dustAt = closed ? 0.35 : -1;
     },
     dispose() {
-      group.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+      // shared prop materials live for the whole session; per-floor ones are freed here
+      const shared = new Set(Object.values(getSharedMaterials(factory)));
+      const seen = new Set();
+      group.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        const ms = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+        for (const m of ms) if (!shared.has(m) && !seen.has(m)) { seen.add(m); m.dispose(); }
+      });
     },
   };
 }

@@ -62,12 +62,17 @@ export class RemotePlayer {
   replayCast(msg) {
     const sp = this.cls.spells[msg.slot];
     if (!sp) return;
-    const origin = new THREE.Vector3(...msg.o);
-    const dir = new THREE.Vector3(...msg.d);
+    if (sp.mode === 'channel' && msg.chan === 0) {
+      if (this.channel) { this.channel.sp.channel.end(this.channel.ctx, this.channel.S); this.channel = null; }
+      return;
+    }
+    const origin = msg.o ? new THREE.Vector3(...msg.o) : this.muzzleWorld();
+    const dir = msg.d ? new THREE.Vector3(...msg.d) : this.forward();
     const aim = msg.ap ? new THREE.Vector3(...msg.ap) : null;
     this.castT = 0.5;
     if (sp.mode === 'channel') {
       if (msg.chan === 1) {
+        if (this.channel) { this.channel.sp.channel.end(this.channel.ctx, this.channel.S); this.channel = null; }
         const ctx = makeCtx(this.game, this, { local: false, slot: msg.slot, origin, dir, aimPoint: aim, stats: {} });
         const S = {};
         sp.channel.start(ctx, S);

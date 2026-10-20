@@ -266,6 +266,7 @@ export class UI {
   // HUD
   // ======================================================================
   onRunStart(game) {
+    this.closeAllModals();
     this.clearScreens();
     this.game = game;
     const p = game.player;
@@ -323,6 +324,7 @@ export class UI {
     this.h.boss.classList.add('hidden');
     this.bossActor = null;
     this._mmCache = null;
+    this._mmCenter = null;
   }
 
   update(dt, game) {
@@ -832,7 +834,14 @@ export class UI {
     this._closeModal(m);
   }
 
+  closeAllModals() {
+    for (const m of this.modalStack) m.remove();
+    this.modalStack = [];
+    this.pauseEl = null;
+  }
+
   endScreen(won, game) {
+    this.closeAllModals();
     const s = game.stats;
     const p = game.player;
     const mins = Math.floor(s.time / 60), secs = Math.floor(s.time % 60);

@@ -92,6 +92,7 @@ export class LocalPlayer {
   get eye() { return new THREE.Vector3(this.pos.x, this.pos.y + EYE - this.landDip * 0.15 + (this.downed ? -1.0 : 0), this.pos.z); }
 
   spawnAt(x, z, yaw = 0) {
+    this.history.length = 0;
     this.pos.set(x, this.game.groundY(x, z), z);
     this.vel.set(0, 0, 0);
     this.yaw = yaw;
@@ -181,8 +182,8 @@ export class LocalPlayer {
 
   _goDown() {
     const g = this.game;
-    if (this.stats.extraLives > 0 || this.relicLives > 0) {
-      if (this.relicLives > 0) this.relicLives--; else this.stats.extraLives--;
+    if ((this.stats.extraLives ?? 0) > (this.livesUsed ?? 0) || this.relicLives > 0) {
+      if (this.relicLives > 0) this.relicLives--; else this.livesUsed = (this.livesUsed ?? 0) + 1;
       this.hp = Math.round(this.maxHp * 0.5);
       this.invuln = 2;
       g.vfx.explosion(this.eye, 'fire', 5);
@@ -357,8 +358,9 @@ export class LocalPlayer {
       sp.channel.start(ctx, S);
       this.game.net?.sendCast({ pid: this.id, slot, o: origin, d: dir, ap: aim.point, chan: 1 });
     } else {
+      const edgeBefore = this.edge;
       sp.cast(ctx);
-      this.game.net?.sendCast({ pid: this.id, slot, o: origin, d: dir, ap: aim.point, ch: this.edge });
+      this.game.net?.sendCast({ pid: this.id, slot, o: origin, d: dir, ap: aim.point, ch: edgeBefore });
     }
     this.game.onLocalCast?.(slot);
     return true;

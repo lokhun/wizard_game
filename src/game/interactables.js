@@ -92,7 +92,7 @@ export function makePedestal(game, pos, minRarity = 0) {
   root.scale.setScalar(0.01);
   let appear = 0;
   game.vfx.explosion(pos.clone().add(new THREE.Vector3(0, 1.5, 0)), 'holy', 2);
-  game.vfx.decal(pos, 'glyph', 3, 9999, 0xffc060);
+  const glyph = game.vfx.decal(pos, 'glyph', 3, 9999, 0xffc060);
   const it = {
     kind: 'pedestal', pos: pos.clone().add(new THREE.Vector3(0, 1.4, 0)), r: 3, label: 'Read the Arcane Tome', usedBy: new Set(), minRarity,
     update(dt, t) {
@@ -112,7 +112,13 @@ export function makePedestal(game, pos, minRarity = 0) {
         if (Math.random() < 0.2) game.vfx.P.glow({ x: pos.x, y: pos.y + 1.8, z: pos.z, vy: 0.5, r: 2, g: 1.6, b: 0.8, life: 1.5, size: 0.3, sprite: SPR.RUNE, spin: 1 });
       }
     },
-    dispose() { game.scene.remove(root); },
+    dispose() {
+      game.scene.remove(root);
+      glyph.visible = false;
+      const a = game.vfx.active.find((x) => x.mesh === glyph);
+      if (a) a.t = a.life;
+      root.traverse((o) => { if (o.isMesh && o.material !== mats.stone && o.material !== mats.wood && o.material !== mats.leather) { o.geometry.dispose(); o.material.dispose?.(); } else if (o.isMesh) o.geometry.dispose(); });
+    },
   };
   return it;
 }
@@ -163,6 +169,10 @@ export function makePortal(game, pos) {
         game.vfx.P.glow({ x: pos.x + Math.cos(a) * 1.7, y: pos.y + 2 + Math.sin(a) * 1.7, z: pos.z, vx: -Math.cos(a) * 1.5, vy: -Math.sin(a) * 1.5, r: 1.6, g: 0.8, b: 3, life: 0.9, size: 0.08, sprite: SPR.SPARK });
       }
     },
-    dispose() { game.scene.remove(root); snd?.stop(0.3); },
+    dispose() {
+      game.scene.remove(root);
+      snd?.stop(0.3);
+      root.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
+    },
   };
 }

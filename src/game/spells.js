@@ -175,6 +175,7 @@ export class SpellRuntime {
   // damage all hostile actors in radius (from a local player)
   damageArea(pos, radius, H, _hitIds, exclude) {
     const hits = [];
+    pos = new THREE.Vector3(pos.x, pos.y, pos.z);
     this.g.smashAt?.(pos, radius * 0.8);
     for (const a of this.g.actors.hostiles()) {
       if (exclude && exclude.has(a.id)) continue;
@@ -184,7 +185,7 @@ export class SpellRuntime {
       if (dx * dx + dz * dz > r * r || Math.abs(dy) > radius + a.height * 0.6) continue;
       const d = Math.sqrt(dx * dx + dz * dz);
       const fall = H.falloff ? Math.max(0.4, 1 - d / r) : 1;
-      this.g.hitActor(a, { ...H, dmg: H.dmg * fall, kbDir: d > 0.01 ? [dx / d, dz / d] : [0, 1] }, _v.set(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z));
+      this.g.hitActor(a, { ...H, dmg: H.dmg * fall, kbDir: d > 0.01 ? [dx / d, dz / d] : [0, 1] }, new THREE.Vector3(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z));
       hits.push(a);
     }
     return hits;
@@ -289,7 +290,7 @@ export class SpellRuntime {
           if (d2 > r * r) continue;
           if (p.pos.y < ay0 - p.radius - 0.2 || p.pos.y > ay1 + p.radius + 0.2) continue;
           p.hitIds.add(a.id);
-          const hp = _v.set(a.pos.x, Math.max(ay0 + 0.3, Math.min(ay1 - 0.2, p.pos.y)), a.pos.z);
+          const hp = new THREE.Vector3(a.pos.x, Math.max(ay0 + 0.3, Math.min(ay1 - 0.2, p.pos.y)), a.pos.z);
           if (p.hit && p.local) {
             const vlen = p.vel.length() || 1;
             g.hitActor(a, { ...p.hit, src: p.owner, kbDir: [p.vel.x / vlen, p.vel.z / vlen] }, hp);
@@ -401,7 +402,13 @@ export class SpellRuntime {
   after(t, fn) { this.timers.push({ t, fn }); }
 
   clear() {
-    for (let i = this.projectiles.length - 1; i >= 0; i--) this._remove(i);
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i];
+      p.local = false; p.aoe = null;
+      try { p.onExpire?.(p, p.pos); } catch { /* ignore */ }
+      this._remove(i);
+    }
+    for (const z of this.zones) { z.local = false; z.dmg = 0; z.healAllies = 0; try { z.onEnd?.(z); } catch { /* ignore */ } }
     this.zones.length = 0;
     this.timers.length = 0;
   }

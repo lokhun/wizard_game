@@ -119,7 +119,6 @@ export class ActorManager {
     if (a.elite && !a.def.elite) a.model.setTint?.(0xffaa30, 0.25);
     if (g.shadowsOn) a.model.root.traverse((o) => { if (o.isMesh && !o.material?.transparent) o.castShadow = true; });
     g.scene.add(a.model.root);
-    if (a.boss) a.brain = new BossBrain(g, a);
     this.list.push(a);
     this.byId.set(id, a);
     // summoning circle VFX
@@ -136,6 +135,7 @@ export class ActorManager {
     a.anim = 'spawn';
     a.stateT = 0;
     if (g.isHost && !opts.silent) g.net?.broadcast({ t: 'spawn', id, ty: type, x, z, yaw: a.yaw, e: a.elite ? 1 : 0, hp: a.maxHp, f: a.faction === 'ally' ? 1 : 0, af: a.affix, life: a.life });
+    if (a.boss) a.brain = new BossBrain(g, a);
     this._rebuildLists();
     return a;
   }
@@ -168,7 +168,7 @@ export class ActorManager {
     if (def.frontShield && H.kbDir) {
       // blocked from the front
       const fx = Math.sin(a.yaw), fz = Math.cos(a.yaw);
-      if (fx * -H.kbDir[0] + fz * -H.kbDir[1] > 0.5 && a.st.stun?.t <= 0) dmg *= 1 - def.frontShield;
+      if (fx * -H.kbDir[0] + fz * -H.kbDir[1] > 0.5 && !(a.st.stun?.t > 0)) dmg *= 1 - def.frontShield;
     }
     if (a.shieldHp > 0) { const ab = Math.min(a.shieldHp, dmg); a.shieldHp -= ab; dmg -= ab; }
     if (a.affix === 'shielded' && a.hp > a.maxHp * 0.5) dmg *= 0.6;

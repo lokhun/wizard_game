@@ -407,7 +407,6 @@ export const CLASSES = {
               const R = ctx.aoe(9);
               const hum = ctx.loop('loop_portal');
               hum?.setPos?.(c);
-              ctx.after(3.5, () => hum?.stop?.(0.3));
               ctx.zone({ pos: c, radius: R, life: 3.5, interval: 0.25, el: 'arcane', dmg: 9, pull: 7,
                 visual: (z, dt) => {
                   for (let i = 0; i < 8; i++) {
@@ -419,6 +418,7 @@ export const CLASSES = {
                   ctx.lightAt(z.pos, 0xb050ff, 25, 14);
                 },
                 onEnd: (z) => {
+                  hum?.stop?.(0.3);
                   ctx.vfx.explosion(z.pos, 'arcane', 6);
                   ctx.sound('explosion_big', 1, z.pos);
                   ctx.area(z.pos, ctx.aoe(6.5), { dmg: 120, el: 'arcane', kb: 16, falloff: true });

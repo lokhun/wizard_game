@@ -183,7 +183,7 @@ function showMenu() {
     onName: (n) => { settings.name = n.slice(0, 16); saveSettings(); },
     onSolo: () => { audio?.init(); showSelect(null); },
     onHost: () => { audio?.init(); doHost(); },
-    onJoin: () => { audio?.init(); const api = ui.showJoin({ onJoin: (c) => doJoin(c, api), onBack: showMenu }); },
+    onJoin: () => { audio?.init(); mode = 'join'; const api = ui.showJoin({ onJoin: (c) => doJoin(c, api), onBack: () => { joinGen++; leaveNet(); showMenu(); } }); },
     onSettings: () => ui.showSettings(settings, (s) => { settings = s; saveSettings(); applyVolumes(); }),
     onHelp: () => ui.showHelp(),
   });
@@ -243,7 +243,7 @@ function startSolo() {
 
 function beginRun(opts) {
   mode = 'run';
-  if (menuAvatar) { game.scene.remove(menuAvatar.root); menuAvatar = null; }
+  if (menuAvatar) { game.scene.remove(menuAvatar.root); menuAvatar.dispose?.(); menuAvatar = null; }
   ui.fadeOut(0.6, () => {
     game.menuMode = false;
     game.backdrop = null;
@@ -252,12 +252,14 @@ function beginRun(opts) {
     game.difficulty = { enemyHp: 1 + 0.2 * a, enemyDamage: 1 + 0.15 * a, playerDamage: 1, ascension: a };
     game.startRun({ ...opts, name: settings.name || 'Wizard', classId: selectedClass, floor: opts.floor ?? (+q.get('floor') || 0) });
     if (opts.late) applyLateState(opts.late);
+    if (opts.late && net && !net.isHost) net.send({ t: 'started' });
     ui.fadeIn(1.4);
     input.lock();
   });
 }
 
 ui.onReturnToMenu = () => {
+  ui.closeAllModals();
   leaveNet();
   game.ended = true;
   startBackdrop();
@@ -290,28 +292,36 @@ async function doHost() {
   }
 }
 
+let joinGen = 0;
 async function doJoin(code, api) {
   if (!code || code.length < 4) { api?.setStatus('Enter a valid party code.'); return; }
+  leaveNet();
+  const gen = ++joinGen;
   net = new Net();
+  const myNet = net;
   window.__net = net;
   api?.setStatus?.('Connecting…');
-  if (!api) ui.showJoin({ onJoin: (c) => doJoin(c), onBack: showMenu, status: 'Connecting to ' + code + '…' });
+  if (!api) { mode = 'join'; ui.showJoin({ onJoin: (c) => doJoin(c), onBack: () => { joinGen++; leaveNet(); showMenu(); }, status: 'Connecting to ' + code + '…' }); }
   try {
-    await net.join(code);
+    await myNet.join(code);
+    if (gen !== joinGen || net !== myNet) { myNet.close(); return; }
     lobby = { players: [] };
     net.on(onLobbyMessage);
     net.on((msg, from) => { if (mode === 'run' && game && !game.menuMode) handleGameMessage(game, msg, from); });
     net.onDisconnect = () => {
+      if (net !== myNet) return;
       if (mode === 'run') ui.banner('CONNECTION LOST', 'The host has left the party', '#c04030', 6);
-      setTimeout(() => { leaveNet(); game.ended = true; startBackdrop(); showMenu(); }, mode === 'run' ? 4000 : 0);
+      setTimeout(() => { if (net !== myNet) return; leaveNet(); game.ended = true; startBackdrop(); showMenu(); }, mode === 'run' ? 4000 : 0);
     };
     net.send({ t: 'hello', name: settings.name || 'Wizard', cls: selectedClass });
     showSelect({ isHost: false, code: net.code });
   } catch (e) {
     console.warn(e);
+    if (gen !== joinGen) return;
     const msg = e.message ?? String(e);
     net = null;
-    const a2 = ui.showJoin({ onJoin: (c) => doJoin(c, a2), onBack: showMenu, status: msg });
+    if (mode !== 'menu' && mode !== 'join') return;
+    const a2 = ui.showJoin({ onJoin: (c) => doJoin(c, a2), onBack: () => { joinGen++; leaveNet(); showMenu(); }, status: msg });
   }
 }
 
@@ -332,14 +342,19 @@ function onLobbyMessage(msg, from) {
       pushRoster();
       audio?.play('ui_click');
       if (mode === 'run' && game && !game.menuMode) {
-        // late join: bring them into the current floor
+        // late join: bring them into the current floor; actors follow once they report 'started'
         net.sendTo(from, { t: 'start', seed: game.seed, players: lobby.players, floor: game.floorIndex, late: lateState(), asc: game.difficulty?.ascension ?? 0 });
-        for (const a of game.actors.list) {
-          if (a.dead) continue;
-          net.sendTo(from, { t: 'spawn', id: a.id, ty: a.type, x: a.pos.x, z: a.pos.z, yaw: a.yaw, e: a.elite ? 1 : 0, hp: a.maxHp, f: a.faction === 'ally' ? 1 : 0, af: a.affix });
-        }
         game.addRemote(p);
       }
+    } else if (msg.t === 'started') {
+      if (mode !== 'run' || !game || game.menuMode) return;
+      for (const a of game.actors.list) {
+        if (a.dead) continue;
+        net.sendTo(from, { t: 'spawn', id: a.id, ty: a.type, x: a.pos.x, z: a.pos.z, yaw: a.yaw, e: a.elite ? 1 : 0, hp: a.maxHp, f: a.faction === 'ally' ? 1 : 0, af: a.affix, fly: a.brain?.data?.fly ? 1 : 0 });
+        if (a.boss) net.sendTo(from, { t: 'boss', id: a.id });
+      }
+      const act = game.director.active;
+      if (act) net.sendTo(from, { t: 'tp', x: act.room.cx, z: act.room.cz });
     } else if (msg.t === 'cls') {
       const p = lobby.players.find((x) => x.id === from);
       if (p && CLASS_IDS.includes(msg.cls)) { p.classId = msg.cls; pushRoster(); }
@@ -351,7 +366,11 @@ function onLobbyMessage(msg, from) {
     if (msg.t === 'roster') {
       lobby.players = msg.players;
       refreshLobby();
-      if (mode === 'run') for (const p of msg.players) if (p.id !== net.id) game.addRemote(p);
+      if (mode === 'run') {
+        for (const p of msg.players) if (p.id !== net.id) game.addRemote(p);
+        const ids = new Set(msg.players.map((p) => p.id));
+        for (const id of [...game.remotes.keys()]) if (!ids.has(id)) game.removeRemote(id);
+      }
     } else if (msg.t === 'start') {
       lobby.players = msg.players;
       beginRun({ seed: msg.seed, localId: net.id, isHost: false, net, players: msg.players, floor: msg.floor ?? 0, late: msg.late, ascension: msg.asc ?? 0 });

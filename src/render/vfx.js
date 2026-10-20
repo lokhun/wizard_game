@@ -312,7 +312,7 @@ export class VFX {
     this.active.push({ mesh, life, t: 0, update, onEnd });
   }
 
-  update(dt, time) {
+  update(dt, time, realDt = dt) {
     this.time = time;
     for (let i = this.active.length - 1; i >= 0; i--) {
       const a = this.active[i];
@@ -327,7 +327,7 @@ export class VFX {
     }
     this.shake = Math.max(0, this.shake - dt * 1.6);
     this.fovKick *= Math.exp(-dt * 8);
-    this.hitstop = Math.max(0, this.hitstop - dt);
+    this.hitstop = Math.max(0, this.hitstop - realDt);
   }
 
   addShake(a) { this.shake = Math.min(1, this.shake + a); }

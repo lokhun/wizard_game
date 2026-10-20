@@ -82,6 +82,9 @@ export class Game {
   // run setup
   // ======================================================================
   startRun({ seed, localId, name, classId, isHost, net, players = [], floor = 0 }) {
+    this.player?.endChannel();
+    this.cinematic = null;
+    this.ui?.letterbox?.(false);
     for (const r of this.remotes.values()) r.dispose();
     this.remotes.clear();
     this.stats = { kills: 0, damage: 0, time: 0, gold: 0 };
@@ -136,6 +139,7 @@ export class Game {
   playerById(id) { return id === this.player?.id ? this.player : this.remotes.get(id); }
 
   loadFloor(index) {
+    this.player?.endChannel();
     // tear down
     if (this.built) { this.scene.remove(this.built.group); this.built.dispose(); }
     for (const i of this.interactables) i.dispose?.();
@@ -211,7 +215,7 @@ export class Game {
     this.player.rerolls = 1;
     const s = level.spawn;
     this.player.spawnAt(s.x, s.z, 0);
-    this.player.downed = false;
+    if (this.player.downed) { this.player.downed = false; this.player.hp = Math.max(this.player.hp, Math.round(this.player.maxHp * 0.5)); }
     if (this.player.dead) { this.player.dead = false; this.player.hp = Math.round(this.player.maxHp * 0.5); }
     for (const r of this.remotes.values()) { r.pos.set(s.x, 0, s.z); r.net.x = s.x; r.net.z = s.z; }
     level.startRoom.visited = true;
@@ -280,7 +284,7 @@ export class Game {
 
   // floating sigils above doorways show what lies beyond (boss, shop, treasure...)
   _buildDoorSigns() {
-    for (const s of this.doorSigns ?? []) this.scene.remove(s.sprite);
+    for (const s of this.doorSigns ?? []) { this.scene.remove(s.sprite); s.sprite.material.dispose(); }
     this.doorSigns = [];
     const L = this.level;
     const glyph = { boss: ['☠', '#ff5040'], shop: ['⚖', '#f0c050'], shrine: ['✚', '#ffe080'], treasure: ['♦', '#ffb030'], elite: ['★', '#ff9040'], combat: ['⚔', '#d8c8a8'], start: null };
@@ -410,7 +414,7 @@ export class Game {
     }
     this.lights.update(realDt, this.time, cam.position);
     this.built.update(realDt, this.time);
-    this.vfx.update(dt, this.time);
+    this.vfx.update(dt, this.time, realDt);
     this.particles.update(this.time);
     this._viewModel(realDt);
     this._postFx(realDt);
@@ -425,7 +429,7 @@ export class Game {
     // net
     if (this.net) this.net.tick(realDt, this);
     this.ui?.update(realDt, this);
-    this._checkRunEnd();
+    this._checkRunEnd(realDt);
   }
 
   _viewModel(dt) {
@@ -504,7 +508,7 @@ export class Game {
     const m = new THREE.Matrix4().lookAt(cam.position, look, new THREE.Vector3(0, 1, 0));
     const q = new THREE.Quaternion().setFromRotationMatrix(m);
     cam.quaternion.slerp(q, e);
-    cam.fov -= 18 * e;
+    cam.fov = this.renderer.baseFov - 18 * e;
     cam.updateProjectionMatrix();
     if (c.t > 0.9 && !c.roared) { c.roared = true; this.vfx.addShake(0.5); this.audio?.play('boss_roar', { pos: a.pos }); }
   }
@@ -800,7 +804,10 @@ export class Game {
       if (taken > 0) {
         if (h.kb) this._knock(p, h.x, h.z, h.kb);
         if (h.st?.stun) { p.stunT = h.st.stun; }
-        if (attacker?.affix === 'vampiric') this.net?.send({ t: 'vamp', id: attacker.id, d: taken });
+        if (attacker?.affix === 'vampiric') {
+          if (this.isHost) attacker.hp = Math.min(attacker.maxHp, attacker.hp + taken * 0.5);
+          else this.net?.send({ t: 'vamp', id: attacker.id, d: taken });
+        }
       }
     }
   }
@@ -997,6 +1004,7 @@ export class Game {
   requestTeleport(pid, x, z) {
     if (pid === this.player.id) {
       this.player.pos.set(x, this.groundY(x, z), z);
+      this.player.history.length = 0;
       this.vfx.explosion(this.player.eye, 'arcane', 1.5);
       this.ui?.toast('You are drawn into the fray!');
     } else this.net?.sendTo(pid, { t: 'tp', x, z });
@@ -1087,7 +1095,7 @@ export class Game {
   }
 
   goNextFloor() {
-    if (!this.isHost) { this.net?.send({ t: 'nextfloor' }); return; }
+    if (!this.isHost) { this.net?.send({ t: 'nextfloor', f: this.floorIndex }); return; }
     if (this.transitioning) return;
     this.transitioning = true;
     const next = this.floorIndex + 1;
@@ -1112,12 +1120,12 @@ export class Game {
     saveRunStats(this, true);
   }
 
-  _checkRunEnd() {
+  _checkRunEnd(dt = 1 / 60) {
     if (this.ended || !this.isHost) return;
     const ps = this.allPlayers();
     if (!ps.length) return;
     if (ps.every((p) => p.dead || p.downed)) {
-      this._wipeT = (this._wipeT ?? 0) + 1 / 60;
+      this._wipeT = (this._wipeT ?? 0) + dt;
       if (this._wipeT > 1.5) this.defeat();
     } else this._wipeT = 0;
   }
@@ -1150,7 +1158,7 @@ export class Game {
       this.addPing(msg);
       this.net?.broadcastOrSend(msg);
     }
-    if (!p.alive || p.dead) { this.ui?.prompt(null); return; }
+    if (!p.alive || p.dead || this.ui?.modalOpen) { this.ui?.prompt(null); return; }
     let best = null, bd = Infinity;
     const eye = p.eye;
     const fwd = p.forward();
