@@ -192,9 +192,11 @@ function showMenu() {
 function showSelect(lobbyInfo) {
   mode = 'select';
   placeMenuAvatar();
+  const wins = readStats().wins ?? 0;
   const api = ui.showClassSelect({
     selected: selectedClass,
     lobby: lobbyInfo,
+    ascension: (!lobbyInfo || lobbyInfo.isHost) ? { max: Math.min(10, wins), value: Math.min(settings.ascension ?? 0, wins), onChange: (v) => { settings.ascension = v; saveSettings(); } } : null,
     onSelect: (id) => {
       selectedClass = id;
       settings.lastClass = id;
@@ -233,8 +235,10 @@ function refreshLobby() {
 // ---------------------------------------------------------------------------
 // solo
 // ---------------------------------------------------------------------------
+function currentAscension() { return Math.min(settings.ascension ?? 0, readStats().wins ?? 0); }
+
 function startSolo() {
-  beginRun({ seed: Math.floor(Math.random() * 1e9), localId: 'solo', isHost: true, net: null, players: [] });
+  beginRun({ seed: Math.floor(Math.random() * 1e9), localId: 'solo', isHost: true, net: null, players: [], ascension: currentAscension() });
 }
 
 function beginRun(opts) {
@@ -244,6 +248,8 @@ function beginRun(opts) {
     game.menuMode = false;
     game.backdrop = null;
     game.paused = false;
+    const a = opts.ascension ?? 0;
+    game.difficulty = { enemyHp: 1 + 0.2 * a, enemyDamage: 1 + 0.15 * a, playerDamage: 1, ascension: a };
     game.startRun({ ...opts, name: settings.name || 'Wizard', classId: selectedClass, floor: opts.floor ?? (+q.get('floor') || 0) });
     if (opts.late) applyLateState(opts.late);
     ui.fadeIn(1.4);
@@ -327,7 +333,7 @@ function onLobbyMessage(msg, from) {
       audio?.play('ui_click');
       if (mode === 'run' && game && !game.menuMode) {
         // late join: bring them into the current floor
-        net.sendTo(from, { t: 'start', seed: game.seed, players: lobby.players, floor: game.floorIndex, late: lateState() });
+        net.sendTo(from, { t: 'start', seed: game.seed, players: lobby.players, floor: game.floorIndex, late: lateState(), asc: game.difficulty?.ascension ?? 0 });
         for (const a of game.actors.list) {
           if (a.dead) continue;
           net.sendTo(from, { t: 'spawn', id: a.id, ty: a.type, x: a.pos.x, z: a.pos.z, yaw: a.yaw, e: a.elite ? 1 : 0, hp: a.maxHp, f: a.faction === 'ally' ? 1 : 0, af: a.affix });
@@ -348,7 +354,7 @@ function onLobbyMessage(msg, from) {
       if (mode === 'run') for (const p of msg.players) if (p.id !== net.id) game.addRemote(p);
     } else if (msg.t === 'start') {
       lobby.players = msg.players;
-      beginRun({ seed: msg.seed, localId: net.id, isHost: false, net, players: msg.players, floor: msg.floor ?? 0, late: msg.late });
+      beginRun({ seed: msg.seed, localId: net.id, isHost: false, net, players: msg.players, floor: msg.floor ?? 0, late: msg.late, ascension: msg.asc ?? 0 });
     } else if (msg.t === 'full') {
       alert('That party is full (4 wizards max).');
       leaveNet(); showMenu();
@@ -360,8 +366,9 @@ function hostStart() {
   const seed = Math.floor(Math.random() * 1e9);
   const me = lobby.players.find((p) => p.host);
   me.classId = selectedClass;
-  net.broadcast({ t: 'start', seed, players: lobby.players, floor: +q.get('floor') || 0 });
-  beginRun({ seed, localId: 'host', isHost: true, net, players: lobby.players });
+  const asc = currentAscension();
+  net.broadcast({ t: 'start', seed, players: lobby.players, floor: +q.get('floor') || 0, asc });
+  beginRun({ seed, localId: 'host', isHost: true, net, players: lobby.players, ascension: asc });
 }
 
 function lateState() {

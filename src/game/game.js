@@ -13,10 +13,11 @@ import { Director } from './director.js';
 import { LocalPlayer } from './player.js';
 import { RemotePlayer } from './remote.js';
 import { resolveHit, ST, REACTIONS } from '../game/combat.js';
-import { getViewModel } from './models.js';
+import { getViewModel, preloadEnemies } from './models.js';
 import { rollTomes, rollRelics, RARITY, TOMES } from './upgrades.js';
 import { makeChest, makePedestal, makePortal } from './interactables.js';
 import { CLASS_META } from './classMeta.js';
+import { ENEMY_DEFS, BOSS_DEFS } from './enemyDefs.js';
 import { rand } from '../core/rng.js';
 import { clamp } from '../core/math.js';
 
@@ -153,8 +154,22 @@ export class Game {
     this.collision = new Collision(level);
     this.built = buildLevel(level, this.texFactory, this.lights);
     this.scene.add(this.built.group);
+    this.built.onDoorSlam = (d) => {
+      const door = d.door;
+      const bx = door.x - door.nx * 2, bz = door.z - door.ny * 2;
+      const across = { x: door.ny, z: door.nx };
+      for (let i = 0; i < 10; i++) {
+        const o = (Math.random() - 0.5) * door.width;
+        this.vfx.smoke(new THREE.Vector3(bx + across.x * o, this.groundY(bx, bz) + 0.2, bz + across.z * o), { count: 1, size: 0.7, color: [0.28, 0.24, 0.2], alpha: 0.45, life: 1.8, speed: 1.5, rise: 0.4 });
+      }
+      this.vfx.burst(new THREE.Vector3(bx, this.groundY(bx, bz) + 0.1, bz), { count: 12, speed: 3, life: 0.5, size: 0.05, sprite: SPR.SPARK, gravity: 8, upward: 0.8, color: [2.5, 1.6, 0.6], jitter: door.width * 0.4 });
+      const near = Math.hypot(this.player.pos.x - bx, this.player.pos.z - bz);
+      if (near < 25) this.vfx.addShake(0.25 * (1 - near / 25));
+    };
     this.actors.setLevel(level, this.collision);
     this.director.setLevel(level);
+    const b0 = level.biome;
+    preloadEnemies([...new Set([...b0.enemies, ...b0.elites, b0.boss, 'skeleton', 'hound', 'slime', 'slimeling'].map((t) => ENEMY_DEFS[t]?.model ?? BOSS_DEFS[t]?.model ?? t))], this);
     // atmosphere
     const b = this.biome;
     this.scene.fog = new THREE.FogExp2(b.fog.color, b.fog.density);
@@ -304,6 +319,7 @@ export class Game {
     // camera & lighting
     const cam = this.renderer.camera;
     p.updateCamera(cam, realDt, this.vfx, this.time);
+    if (this.cinematic) this._cinematicCam(cam, realDt);
     this.selfLight.position.copy(cam.position).add(_v.set(0, -0.2, 0));
     this.selfLight.intensity = (p.dead ? 0 : 2.2) * (this.settings.selfLight ?? 1);
     // flames
@@ -380,6 +396,23 @@ export class Game {
   }
 
   screenTint(rgb, dur) { this.tint = { rgb, t: dur }; }
+
+  // boss intro: pull the camera's gaze to the boss for a moment
+  _cinematicCam(cam, dt) {
+    const c = this.cinematic;
+    c.t += dt;
+    const a = c.target;
+    if (!a || a.dead || c.t >= c.dur) { this.cinematic = null; this.ui?.letterbox(false); return; }
+    const k = c.t < 0.5 ? c.t / 0.5 : c.t > c.dur - 0.5 ? (c.dur - c.t) / 0.5 : 1;
+    const e = k * k * (3 - 2 * k);
+    const look = new THREE.Vector3(a.pos.x, a.pos.y + a.height * 0.65, a.pos.z);
+    const m = new THREE.Matrix4().lookAt(cam.position, look, new THREE.Vector3(0, 1, 0));
+    const q = new THREE.Quaternion().setFromRotationMatrix(m);
+    cam.quaternion.slerp(q, e);
+    cam.fov -= 18 * e;
+    cam.updateProjectionMatrix();
+    if (c.t > 0.9 && !c.roared) { c.roared = true; this.vfx.addShake(0.5); this.audio?.play('boss_roar', { pos: a.pos }); }
+  }
 
   groundY(x, z) { return this.level ? this.level.floorAt(x, z) : 0; }
 
@@ -616,6 +649,23 @@ export class Game {
       this.screenTint([1.6, 0.6, 1.8], 0.6);
       this.vfx.addShake(0.8);
       this.audio?.play('explosion_big');
+    }
+    // host: enemy attacks also hit allied summons
+    if (this.isHost && h.shape !== 'los' && h.shape !== 'wave') {
+      for (const al of this.actors.allies()) {
+        const dx = al.pos.x - h.x, dz = al.pos.z - h.z;
+        const d = Math.hypot(dx, dz);
+        let inside = false;
+        if (h.shape === 'circle') inside = d <= h.r + al.radius;
+        else if (h.shape === 'arc' || h.shape === 'cone') {
+          if (d <= h.r + al.radius) { let diff = Math.abs(Math.atan2(dx, dz) - h.rot) % (Math.PI * 2); if (diff > Math.PI) diff = Math.PI * 2 - diff; inside = diff <= h.angle + 0.2 || d < 1; }
+        } else if (h.shape === 'rect') {
+          const fx = Math.sin(h.rot), fz = Math.cos(h.rot);
+          const along = dx * fx + dz * fz, side = Math.abs(dx * fz - dz * fx);
+          inside = along >= -0.5 && along <= h.len + 0.5 && side <= h.w / 2 + al.radius;
+        }
+        if (inside) this.actors.damage(al, { dmg: h.dmg, el: h.el });
+      }
     }
     // does it hit me?
     if (!p.alive || p.downed || p.dead) return;
@@ -905,6 +955,8 @@ export class Game {
   }
 
   onBossSpawn(a) {
+    this.cinematic = { target: a, t: 0, dur: 2.6 };
+    this.ui?.letterbox(true);
     this.ui?.bossIntro(a);
     this.audio?.play('boss_intro');
     this.audio?.setMusic('boss');

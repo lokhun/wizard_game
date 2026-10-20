@@ -718,6 +718,23 @@ export class ActorManager {
     const dmg = a.dmg * (at.dmgMult ?? 1) * (a.affix === 'vampiric' ? 1 : 1);
     this._setState(a, 'attack', at.kind === 'heal' || at.kind === 'summon' || at.kind === 'shoot' && at.anim === 'cast' ? 'cast' : 'attack', at);
     const fx = Math.sin(a.yaw), fz = Math.cos(a.yaw);
+    if (a.faction === 'ally') {
+      // summons strike enemies directly (host-side)
+      if (at.kind === 'lunge') { const leap = at.leap ?? 6; a.leapT = 0.2; a.leapV = { x: fx * leap * 2, z: fz * leap * 2 }; }
+      const reach = (at.range ?? 2) + a.radius + 0.4;
+      g.spells.after(0.1, () => {
+        for (const e of this._hostiles) {
+          const dx = e.pos.x - a.pos.x, dz = e.pos.z - a.pos.z;
+          const d = Math.hypot(dx, dz);
+          if (d > reach + e.radius) continue;
+          if (d > 0.5 && (dx * fx + dz * fz) / d < Math.cos(at.arc ?? 1.4)) continue;
+          this.damage(e, { dmg, el: at.el ?? 'physical', st: at.st, kb: 4, kbDir: [dx / (d || 1), dz / (d || 1)], src: a.owner });
+          g.vfx.impact(new THREE.Vector3(e.pos.x, e.pos.y + e.height * 0.5, e.pos.z), 'physical', 0.6);
+        }
+      });
+      g.audio?.play('swing', { pos: a.pos, volume: 0.5 });
+      return;
+    }
     switch (at.kind) {
       case 'melee':
         g.broadcastHazard({ shape: 'arc', x: a.pos.x, y: a.pos.y, z: a.pos.z, r: at.range + a.radius, rot: a.yaw, angle: at.arc * 0.5, delay: 0.08, dmg, el: at.el ?? 'physical', st: at.st, kb: at.kb ?? 5, vis: 0, src: a.id });

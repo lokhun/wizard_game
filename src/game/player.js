@@ -324,7 +324,7 @@ export class LocalPlayer {
     return { eye, dir, point: eye.clone().addScaledVector(dir, Math.max(1, t)), actor: hits[0]?.actor ?? null };
   }
 
-  canCast() { return this.alive && !this.downed && !this.dead && !this.game.paused && !this.game.ui?.modalOpen; }
+  canCast() { return this.alive && !this.downed && !this.dead && !this.game.paused && !this.game.ui?.modalOpen && !this.game.cinematic; }
 
   tryCast(slot) {
     const sp = this.cls.spells[slot];

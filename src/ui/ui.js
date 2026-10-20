@@ -133,7 +133,7 @@ export class UI {
   }
 
   // class select also doubles as the co-op lobby
-  showClassSelect({ selected, onSelect, onConfirm, onBack, lobby }) {
+  showClassSelect({ selected, onSelect, onConfirm, onBack, lobby, ascension }) {
     this.clearScreens();
     const el = document.createElement('div');
     el.className = 'screen';
@@ -159,6 +159,10 @@ export class UI {
           <div id="lobbyPlayers" style="display:flex;flex-direction:column;gap:4px;margin-top:6px"></div>
           <div id="lobbyStatus" style="color:var(--text-dim);font-size:13px;margin-top:6px"></div>
         </div>
+        ${ascension && ascension.max > 0 ? `<div class="panel" style="padding:10px 16px;display:flex;align-items:center;gap:12px">
+          <div class="subtitle" style="flex:1">Ascension <span style="color:var(--text-dim);letter-spacing:0;text-transform:none;font-size:12px">— enemies +20% health, +15% damage per level</span></div>
+          <button class="btn small" id="ascDown">−</button><span id="ascVal" style="font-family:var(--serif);font-size:22px;color:var(--gold);min-width:24px;text-align:center">${ascension.value}</span><button class="btn small" id="ascUp">+</button>
+        </div>` : ''}
         <div class="cs-buttons">
           <button class="btn" id="bBack">Back</button>
           <button class="btn primary" id="bGo">${lobby ? (lobby.isHost ? 'Begin Ascent' : 'Ready') : 'Begin Ascent'}</button>
@@ -186,6 +190,11 @@ export class UI {
     });
     render(selected);
     el.querySelector('#bGo').onclick = () => onConfirm();
+    if (ascension && ascension.max > 0) {
+      const setA = (v) => { ascension.value = Math.max(0, Math.min(ascension.max, v)); el.querySelector('#ascVal').textContent = ascension.value; ascension.onChange?.(ascension.value); };
+      el.querySelector('#ascDown').onclick = () => setA(ascension.value - 1);
+      el.querySelector('#ascUp').onclick = () => setA(ascension.value + 1);
+    }
     el.querySelector('#bBack').onclick = onBack;
     const api = {
       setLobby: ({ code, players, status, isHost, canStart, link }) => {
@@ -834,6 +843,17 @@ export class UI {
   fadeIn(t) {
     this.fadeEl.style.transition = `opacity ${t}s`;
     this.fadeEl.style.opacity = 0;
+  }
+
+  letterbox(on) {
+    if (!this._lb) {
+      this._lb = document.createElement('div');
+      this._lb.innerHTML = '<i style="position:fixed;left:0;right:0;top:0;height:0;background:#000;transition:height 0.5s;z-index:15"></i><i style="position:fixed;left:0;right:0;bottom:0;height:0;background:#000;transition:height 0.5s;z-index:15"></i>';
+      document.body.appendChild(this._lb);
+    }
+    for (const b of this._lb.children) b.style.height = on ? '11vh' : '0';
+    this.hudEl.style.transition = 'opacity 0.4s';
+    this.hudEl.style.opacity = on ? 0.15 : 1;
   }
 
   hideHud() { this.hudEl.classList.add('hidden'); this.h = null; this.game = null; this.ctx.clearRect(0, 0, innerWidth, innerHeight); }

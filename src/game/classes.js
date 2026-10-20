@@ -405,7 +405,9 @@ export const CLASSES = {
               const c = pos.clone();
               c.y = Math.max(c.y, ctx.groundAt(c.x, c.z) + 1.5);
               const R = ctx.aoe(9);
-              ctx.sound('loop_portal');
+              const hum = ctx.loop('loop_portal');
+              hum?.setPos?.(c);
+              ctx.after(3.5, () => hum?.stop?.(0.3));
               ctx.zone({ pos: c, radius: R, life: 3.5, interval: 0.25, el: 'arcane', dmg: 9, pull: 7,
                 visual: (z, dt) => {
                   for (let i = 0; i < 8; i++) {

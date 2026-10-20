@@ -84,3 +84,9 @@ export function getAvatar(classId, game) {
   const p = placeholder(0x4060a0, 1.85);
   return p;
 }
+
+// Build model templates ahead of time (during floor load) to avoid spawn hitches.
+export function preloadEnemies(types, game) {
+  if (!enemyMod?.preloadEnemyModels) return;
+  try { enemyMod.preloadEnemyModels(types, { factory: game.texFactory }); } catch (e) { console.warn('preload failed', e); }
+}

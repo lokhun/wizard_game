@@ -441,6 +441,10 @@ export function buildLevel(level, factory, lightPool) {
         if (!d.mesh) continue;
         d.y += (d.target - d.y) * Math.min(1, dt * (d.target < d.y ? 9 : 2.5));
         d.mesh.position.y = d.y;
+        if (d.dustAt > 0) {
+          d.dustAt -= dt;
+          if (d.dustAt <= 0 && this.onDoorSlam) this.onDoorSlam(d);
+        }
       }
       if (sky) sky.material.uniforms.uTime.value = time;
     },
@@ -448,6 +452,7 @@ export function buildLevel(level, factory, lightPool) {
       const d = doors[doorId];
       if (!d || !d.mesh) return;
       d.target = closed ? d.mesh.userData.closedY : d.mesh.userData.openY;
+      d.dustAt = closed ? 0.35 : -1;
     },
     dispose() {
       group.traverse((o) => { if (o.geometry) o.geometry.dispose(); });

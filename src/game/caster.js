@@ -34,7 +34,7 @@ function ensureGeo() {
     p.setZ(i, cz + (p.getZ(i) - cz) * k);
   }
   tentacleGeo.computeVertexNormals();
-  tentacleMat = new THREE.MeshStandardMaterial({ color: 0x1a0a22, roughness: 0.3, emissive: 0x5a10a0, emissiveIntensity: 0.5 });
+  tentacleMat = new THREE.MeshStandardMaterial({ color: 0x2a1030, roughness: 0.35, metalness: 0.1, emissive: 0x3a0870, emissiveIntensity: 0.25 });
   slashGeo = new THREE.RingGeometry(0.75, 1.0, 32, 1, -Math.PI * 0.55, Math.PI * 1.1);
   slashGeo.rotateX(-Math.PI / 2);
 }
