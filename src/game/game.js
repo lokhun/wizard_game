@@ -901,7 +901,7 @@ export class Game {
       d.t += dt;
       const gy = this.groundY(d.pos.x, d.pos.z) + 0.25;
       const dist = d.pos.distanceTo(eye);
-      const magnet = d.t > 0.6 && p.alive && !p.downed && (d.type === 'gold' ? dist < 6 : dist < 3 && p.hp < p.maxHp);
+      const magnet = d.t > 0.6 && p.alive && !p.downed && (d.type === 'gold' ? dist < 6 : dist < 5 && p.hp < p.maxHp);
       if (magnet) {
         const dir = eye.clone().sub(d.pos).normalize();
         d.vel.lerp(dir.multiplyScalar(14), Math.min(1, dt * 6));
@@ -1035,6 +1035,7 @@ export class Game {
     // revive dead teammates at the end of a room
     if (this.player.dead) { this.player.dead = false; this.player.downed = false; this.player.hp = Math.round(this.player.maxHp * 0.3); this.player.spawnAt(room.cx, room.cz, this.player.yaw); this.ui?.toast('You return from beyond the veil'); }
     if (this.player.downed) this.player.revive(0.3);
+    else if (this.player.alive && this.player.hp < this.player.maxHp) this.player.heal(this.player.maxHp * 0.15); // a breath of respite between fights
     this.spawnPedestal(room, room.type === ROOM.ELITE ? 1 : 0);
     if (this.isHost) {
       const gold = Math.round((10 + this.floorIndex * 6) * (room.type === ROOM.ELITE ? 2.5 : 1));

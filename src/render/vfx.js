@@ -593,8 +593,12 @@ export class VFX {
   explosion(pos, element, radius = 3, o = {}) {
     const fx = fxOf(element);
     const s = radius / 3;
-    this.P.glow({ x: pos.x, y: pos.y, z: pos.z, r: fx.mid[0] * 0.5, g: fx.mid[1] * 0.5, b: fx.mid[2] * 0.5, life: 0.22, size: radius * 1.1, size2: radius * 0.4, sprite: SPR.GLOW });
-    this.flash(pos, fx.light, 60 * s, radius * 4, 0.35);
+    // big blasts right next to the camera wash the screen out, so dim their glow
+    const camD = this.camera.position.distanceTo(pos);
+    const near = camD < radius * 1.6 ? 0.3 + 0.7 * Math.max(0, camD / (radius * 1.6)) : 1;
+    const gk = 0.5 * near;
+    this.P.glow({ x: pos.x, y: pos.y, z: pos.z, r: fx.mid[0] * gk, g: fx.mid[1] * gk, b: fx.mid[2] * gk, life: 0.22, size: radius * 1.1, size2: radius * 0.4, sprite: SPR.GLOW });
+    this.flash(pos, fx.light, Math.min(60 * s, 70) * near, Math.min(radius * 4, 16), 0.35);
     this.ring({ x: pos.x, y: (o.groundY ?? pos.y - 0.5), z: pos.z }, radius * 1.15, [fx.mid[0] * 0.45, fx.mid[1] * 0.45, fx.mid[2] * 0.45], 0.45, 0.18);
     // the expanding shock shell looks wrong from inside, so skip it when the camera is within range
     if (this.camera.position.distanceTo(pos) > radius * 1.3) this.shell(pos, { element, radius: radius * 1.1, from: radius * 0.2, life: 0.3, alpha: 0.35 });

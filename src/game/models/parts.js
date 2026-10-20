@@ -131,16 +131,40 @@ export function addSkeletonBody(rig, D, o = {}) {
     addBoneHand(rig, 'hand' + S, S === 'L' ? 1 : -1, { mat, c, s, grip: o.grip?.[S] });
   }
 }
+
+// Finger chain in hand space. Palms face the body (-side * X); fingers hang along -Y in a
+// row along Z (index at +Z) and curl toward the palm, wrapping a Z-axis handle at y≈-0.07.
+function fingerPts(side, z, L, curl, y0, spread = 0) {
+  const segs = [0.45, 0.32, 0.23];
+  const bend = [0.12 + curl * 0.35, 0.25 + curl * 1.05, 0.2 + curl * 1.0];
+  const pts = [new THREE.Vector3(side * 0.004, y0, z)];
+  let phi = 0;
+  for (let k = 0; k < 3; k++) {
+    phi += bend[k];
+    const p = pts[k].clone().add(new THREE.Vector3(-side * Math.sin(phi) * segs[k] * L, -Math.cos(phi) * segs[k] * L, spread * segs[k] * L));
+    pts.push(p);
+  }
+  return { pts, phi };
+}
 export function addBoneHand(rig, bone, side, o = {}) {
   const c = o.c, mat = o.mat ?? 'bone', s = o.s ?? 1;
-  rig.add(bone, mat, G.box(0.05, 0.05, 0.02), { y: -0.025 * s, s }, { c });
-  const curl = o.grip ? 1.4 : 0.5;
+  const curl = o.grip ? 1 : (o.curl ?? 0.3);
+  // carpals + metacarpals
+  rig.add(bone, mat, xf(G.sph(0.018, 6, 5), { sx: 0.8, sz: 1.3 }), { y: -0.01 * s, s }, { c });
+  const parts = [], knobs = [];
   for (let i = 0; i < 4; i++) {
-    const x = (i - 1.5) * 0.013 * s;
-    const f = mergeRaw([xf(G.cyl(0.0055, 0.005, 0.035, 4), { y: -0.0175 }), xf(G.cyl(0.005, 0.004, 0.03, 4), { y: -0.035 - 0.012, z: 0.012, rx: -0.9 })]);
-    rig.add(bone, mat, f, { x, y: -0.05 * s, z: 0.004, rx: -curl * 0.5, s }, { c });
+    const z = (1.5 - i) * 0.013;
+    const L = 0.062 * [0.9, 1, 0.95, 0.78][i] * (o.fingerLen ?? 1);
+    parts.push(tube([[0, -0.012, z * 0.5], [side * 0.003, -0.032, z * 0.85], [side * 0.004, -0.05, z]], 0.0045, 3, 4));
+    const { pts } = fingerPts(side, z, L, curl, -0.05, (1.5 - i) * 0.08);
+    for (let k = 0; k < 3; k++) parts.push(tube([pts[k], pts[k + 1]], 0.0042 - k * 0.0006, 1, 4));
+    for (let k = 0; k < 3; k++) knobs.push(xf(G.sph(0.0055 - k * 0.0007, 5, 4), { x: pts[k].x, y: pts[k].y, z: pts[k].z }));
+    if (o.claws) { const a = pts[3], b = pts[3].clone().sub(pts[2]).normalize(); parts.push(tube([a, a.clone().addScaledVector(b, o.claws * 0.6), a.clone().addScaledVector(b, o.claws).add(new THREE.Vector3(-side * 0.01 * curl, 0, 0))], (u) => 0.004 * (1 - u), 4, 3)); }
   }
-  rig.add(bone, mat, G.cyl(0.006, 0.005, 0.04, 4), { x: side * 0.03 * s, y: -0.03 * s, z: 0.015 * s, rz: side * 0.6, rx: -0.6, s }, { c });
+  // thumb
+  const th = [[0, -0.015, 0.012], [-side * 0.004, -0.03, 0.03], [-side * (0.01 + curl * 0.014), -0.045 - curl * 0.01, 0.042 - curl * 0.012], [-side * (0.016 + curl * 0.02), -0.058, 0.046 - curl * 0.02]];
+  parts.push(tube(th, 0.0045, 6, 4));
+  rig.add(bone, mat, mergeRaw([...parts, ...knobs]), { s }, { c });
 }
 
 // -------------------------------------------------------- flesh bodies ----
@@ -184,6 +208,34 @@ export function addFleshBody(rig, D, o = {}) {
     }
     rig.add('chest', mat, mergeRaw(ribs), {}, { c: o.ribC ?? c });
   }
+  const front = (y) => W * 0.42 * (o.depth ?? 1) * (y < 0.05 + D.spine ? (1 - g * 0.15) : 1);
+  if (o.abs) {
+    const ab = [];
+    for (let r = 0; r < 3; r++) for (const sx of [-1, 1]) {
+      const y = 0.05 + D.spine * (0.12 + r * 0.38);
+      ab.push(xf(G.sph(W * 0.14, 8, 6), { x: sx * W * 0.15, y, z: front(y) - 0.012, sx: 1.05, sy: 0.75, sz: 0.38 }));
+    }
+    rig.add('hips', mat, mergeRaw(ab), {}, { c, skin: torsoSkin });
+    // obliques + serratus fingers under the pecs
+    rig.pair('hips', 'hips', mat, bump(G.sph(W * 0.2, 8, 6)), { x: W * 0.48, y: 0.06 + D.spine * 0.4, z: W * 0.18, sx: 0.55, sy: 1.3, sz: 0.9, rz: 0.15 }, { c, skin: torsoSkin });
+    const ser = [];
+    for (let i = 0; i < 3; i++) ser.push(xf(G.sph(W * 0.08, 6, 5), { x: W * 0.68, y: D.chest * (0.2 + i * 0.13), z: W * 0.26, sx: 0.5, sy: 0.6, sz: 1.3, ry: -0.6 }));
+    rig.pair('chest', 'chest', mat, mergeRaw(ser), {}, { c });
+  }
+  if (g > 0) {
+    // bony landmarks: hip crests, sternum, shoulder blades, collar notch
+    rig.pair('hips', 'hips', mat, xf(G.sph(W * 0.16, 8, 6), { sx: 0.45, sy: 0.4, sz: 1.2 }), { x: W * 0.52, y: 0.02, z: W * 0.22, ry: 0.5 }, { c });
+    rig.add('chest', mat, xf(G.box(0.022, D.chest * 0.55, 0.016), {}), { y: D.chest * 0.5, z: front(1) + 0.004, rx: -0.12 }, { c: o.ribC ?? c });
+    rig.pair('chest', 'chest', mat, xf(G.sph(W * 0.32, 8, 6), { sx: 0.8, sy: 1.0, sz: 0.3 }), { x: W * 0.36, y: D.chest * 0.66, z: -W * 0.44, ry: 0.35 }, { c });
+  }
+  if (o.veins) {
+    const R = rng(sd + 7);
+    for (const S of ['L', 'R']) {
+      const vs = [];
+      for (let i = 0; i < 3; i++) { const a = (R() - 0.5) * 1.4; const r = 0.042 * m * 0.95; vs.push(tube([[Math.sin(a) * r, -0.04, Math.cos(a) * r], [Math.sin(a + 0.3) * r * 0.95, -D.fore * 0.45, Math.cos(a + 0.3) * r * 0.95], [Math.sin(a + 0.1) * r * 0.75, -D.fore * 0.9, Math.cos(a + 0.1) * r * 0.75]], 0.0045 * Math.sqrt(m), 8, 3)); }
+      rig.add('fore' + S, mat, mergeRaw(vs), {}, { c: o.veinC ?? c });
+    }
+  }
   // glutes / pelvis mass
   rig.pair('hips', 'hips', mat, bump(G.sph(W * 0.4, 10, 8)), { x: W * 0.3, y: -0.05, z: -0.04, sz: 0.85 }, { c });
   // neck
@@ -210,24 +262,36 @@ export function addFleshBody(rig, D, o = {}) {
     const ft = mergeRaw([xf(G.sph(0.045, 8, 6), { y: -0.04, z: 0.04, sx: 0.9, sy: 0.55, sz: 1.9 })]);
     rig.add('foot' + S, mat, ft, { s: m * 0.6 + 0.4 }, { c });
     if (o.toeClaws) for (let i = 0; i < 3; i++) rig.add('foot' + S, 'bone', G.cone(0.008, 0.05, 4), { x: (i - 1) * 0.025 * (m * 0.6 + 0.4), y: -0.06, z: 0.13 * (m * 0.6 + 0.4), rx: Math.PI / 2 + 0.4 }, { c: 0x2a241c });
-    addFleshHand(rig, 'hand' + S, sx, { mat, c, m: Math.sqrt(m), claws: o.claws, clawC: o.clawC, grip: o.grip?.[S] });
+    if (o.hands !== false) addFleshHand(rig, 'hand' + S, sx, { mat, c, m: Math.sqrt(m), claws: o.claws, clawC: o.clawC, grip: o.grip?.[S], ...o.hand });
   }
 }
 export function addFleshHand(rig, bone, side, o = {}) {
-  const m = o.m ?? 1, mat = o.mat ?? 'skin';
-  rig.add(bone, mat, G.box(0.075 * m, 0.08 * m, 0.035 * m), { y: -0.04 * m }, { c: o.c });
-  const curl = o.grip ? 1.5 : 0.5;
-  const fl = o.claws ? 0.07 : 0.05;
+  const m = o.m ?? 1, mat = o.mat ?? 'skin', c = o.c;
+  const curl = o.grip ? 1 : (o.curl ?? 0.35);
+  const fl = (o.fingerLen ?? (o.claws ? 1.15 : 1));
+  // palm: flattened rounded block, thin along X (palm faces the body)
+  const palm = deform(G.sph(0.043, 9, 7), (v) => { v.x *= 0.5; v.y *= 1.1; if (v.y < 0) v.z *= 1.1; if (v.x * side < 0) v.x *= 0.7; });
+  rig.add(bone, mat, palm, { y: -0.045 * m, s: m }, { c });
+  const fingers = [], knuck = [];
+  const clawG = [];
   for (let i = 0; i < 4; i++) {
-    const x = (i - 1.5) * 0.019 * m;
-    const len = fl * (i === 0 || i === 3 ? 0.85 : 1) * m;
-    rig.add(bone, mat, taper(0.011 * m, 0.008 * m, len, 5, 1), { x, y: -0.075 * m, z: 0.005, rx: -curl * 0.6 }, { c: o.c });
+    const z = (1.5 - i) * 0.0205;
+    const L = 0.085 * [0.9, 1, 0.95, 0.75][i] * fl;
+    const { pts, phi } = fingerPts(side, z, L, curl, -0.078, (1.5 - i) * 0.1);
+    const r0 = 0.0105 * (i === 3 ? 0.85 : 1);
+    fingers.push(tube(pts, (u) => r0 * (1 - u * 0.35), 6, 4));
+    knuck.push(xf(G.sph(r0 * 1.2, 4, 3), { x: pts[0].x + side * 0.002, y: pts[0].y + 0.003, z: pts[0].z }));
     if (o.claws) {
-      const a = -curl * 0.6;
-      rig.add(bone, 'bone', G.cone(0.007 * m, o.claws * m, 4), { x, y: -0.075 * m - Math.cos(a) * len, z: 0.005 - Math.sin(a) * len, rx: Math.PI + a - 0.35 }, { c: o.clawC ?? 0x2b2620 });
+      const a = pts[3], d = new THREE.Vector3(-side * Math.sin(phi + 0.35), -Math.cos(phi + 0.35), 0);
+      clawG.push(tube([a.clone().addScaledVector(d, -0.004), a.clone().addScaledVector(d, o.claws * 0.55), a.clone().addScaledVector(d, o.claws).add(new THREE.Vector3(-side * 0.012, 0, 0))], (u) => 0.0075 * (1 - u * 0.95), 5, 4));
     }
   }
-  rig.add(bone, mat, taper(0.012 * m, 0.009 * m, 0.05 * m, 5, 1), { x: side * 0.04 * m, y: -0.035 * m, z: 0.02, rz: side * 0.7, rx: -0.5 }, { c: o.c });
+  // thumb (front side, opposing)
+  const th = [[side * 0.002, -0.03, 0.03], [-side * 0.006, -0.055, 0.05], [-side * (0.014 + curl * 0.02), -0.078 - curl * 0.006, 0.058 - curl * 0.018], [-side * (0.02 + curl * 0.03), -0.095, 0.058 - curl * 0.03]];
+  fingers.push(tube(th, (u) => 0.012 * (1 - u * 0.3), 7, 4));
+  if (o.claws) { const a = new THREE.Vector3(...th[3]); clawG.push(tube([a, a.clone().add(new THREE.Vector3(-side * 0.01, -o.claws * 0.6, 0.005))], (u) => 0.007 * (1 - u * 0.95), 4, 4)); }
+  rig.add(bone, mat, mergeRaw([...fingers, ...knuck]), { s: m }, { c });
+  if (clawG.length) rig.add(bone, 'bone', mergeRaw(clawG), { s: m }, { c: o.clawC ?? 0x2b2620 });
 }
 
 // -------------------------------------------------------------- armor ----

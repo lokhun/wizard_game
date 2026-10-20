@@ -338,7 +338,7 @@ export function materialLib(factory) {
       if (d.cracks) m.userData.cracks = { lo: d.crackLo ?? 0.045, hi: d.crackHi ?? 0.012 };
     } else if (key === 'slime') {
       const t = factory.get('dirt', 512, 13);
-      m = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.12, metalness: 0.0, normalMap: t.normalMap, normalScale: new THREE.Vector2(0.6, 0.6), transparent: true, opacity: 0.5, depthWrite: false, emissive: 0x0b2a06, emissiveIntensity: 1 });
+      m = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.16, metalness: 0.0, normalMap: t.normalMap, normalScale: new THREE.Vector2(0.3, 0.3), transparent: true, opacity: 0.5, depthWrite: false, emissive: 0x0b2a06, emissiveIntensity: 1 });
       m.envMap = env; m.envMapIntensity = 1.4;
     } else if (key === 'ghost') {
       const t = factory.get('cloth', 512, 14);
@@ -736,7 +736,7 @@ export class EnemyInstance {
       } else {
         m.emissive.copy(e.em);
         if (tc) m.emissive.r += tc.r * tk * 0.22, m.emissive.g += tc.g * tk * 0.22, m.emissive.b += tc.b * tk * 0.22;
-        if (f > 0) { m.emissive.r += f * 0.9; m.emissive.g += f * 0.85; m.emissive.b += f * 0.8; }
+        if (f > 0) { m.emissive.r += f * 0.5; m.emissive.g += f * 0.47; m.emissive.b += f * 0.44; }
         m.emissiveIntensity = 1;
       }
       const o = e.opacity * op;
@@ -762,7 +762,7 @@ export class EnemyInstance {
     this.P.damp(dt, rate);
     if (Math.abs(this._opTarget - this._opacity) > 1e-3) { this._opacity = this._opTarget; this._dirty = true; }
     this._updateOrb(dt);
-    if (this._flash > 0) { this._flash = Math.max(0, this._flash - dt * 6); this._dirty = true; }
+    if (this._flash > 0) { this._flash = Math.max(0, this._flash - dt * 8); this._dirty = true; }
     if (this._dirty) { this._applyMats(); this._dirty = this._flash > 0; }
   }
   dispose() {

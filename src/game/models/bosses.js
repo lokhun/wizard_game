@@ -10,8 +10,19 @@ import { skullGeo } from '../../world/props.js';
 
 // ============================================================ motherOfFilth ==
 const FILTH = 0x9bff3a;
-const TENT = [[0.45, 1.25, 1.5], [-0.45, 1.25, 1.5], [1.35, 1.0, 1.2], [-1.35, 1.0, 1.2], [2.3, 0.7, 1.0], [-2.3, 0.7, 1.0], [2.9, 0.5, 0.8], [-2.9, 0.5, 0.8]]; // [angle, rootY, rootR]
-const TSEG = 5, TLEN = 0.62;
+// tentacles: [angle around body, root height, root radius, length, root thickness, big?]
+// big ones rise from the upper flanks and arch overhead; small ones creep along the ground
+const TENT = [[0.85, 2.0, 1.45, 3.4, 0.3, 1], [-0.85, 2.0, 1.45, 3.4, 0.3, 1], [2.3, 2.1, 1.3, 3.0, 0.27, 1], [-2.3, 2.1, 1.3, 3.0, 0.27, 1], [0.32, 0.45, 2.0, 2.4, 0.19, 0], [-0.32, 0.45, 2.0, 2.4, 0.19, 0], [1.55, 0.45, 2.15, 2.6, 0.2, 0], [-1.55, 0.45, 2.15, 2.6, 0.2, 0]];
+const TSEG = 8;
+// rest curve of tentacle t sampled at u in [0,1]
+function tentCurve(t, u) {
+  const [a, y, r, L, , big] = TENT[t];
+  const f = new THREE.Vector3(Math.sin(a), 0, Math.cos(a)), side = new THREE.Vector3(Math.cos(a), 0, -Math.sin(a));
+  const root = new THREE.Vector3(Math.sin(a) * r, y, Math.cos(a) * r);
+  const sd = t % 2 ? -1 : 1;
+  if (big) return root.addScaledVector(f, L * 0.55 * u).add(new THREE.Vector3(0, L * 0.62 * Math.sin(u * Math.PI * 0.78), 0)).addScaledVector(side, sd * L * 0.12 * Math.sin(u * Math.PI * 1.6));
+  return root.addScaledVector(f, L * 0.9 * u).add(new THREE.Vector3(0, -y * 0.85 * Math.sin(Math.min(1, u * 1.6) * Math.PI / 2) + L * 0.06 * Math.sin(u * Math.PI * 2.2), 0)).addScaledVector(side, sd * L * 0.18 * Math.sin(u * Math.PI * 1.3));
+}
 export const motherOfFilth = {
   id: 'motherOfFilth', height: 4.6, radius: 2.4, boss: true, eyeColor: FILTH, magicColor: FILTH, defaultAttack: 'slam', attackTypes: ['slam', 'spit', 'summon', 'submerge'], wobble: true, orbSize: 0.22, length: 5,
   build(rig) {
@@ -21,13 +32,13 @@ export const motherOfFilth = {
     rig.bone('jaw', 'head', 0, -0.17, 0.35);
     rig.bone('crown', 'head', 0, 0.62, 0.05, { rate: 0.6 });
     for (let i = 0; i < 4; i++) rig.bone('emb' + i, 'mass', 0, 1.5, 0);
-    TENT.forEach(([a, y, r], t) => {
-      const d = new THREE.Vector3(Math.sin(a), 0.4, Math.cos(a)).normalize();
-      let prev = 'base';
+    TENT.forEach((_, t) => {
+      let prev = 'base', last = new THREE.Vector3();
       for (let k = 0; k < TSEG; k++) {
-        const o = k === 0 ? new THREE.Vector3(Math.sin(a) * r, y, Math.cos(a) * r) : d.clone().multiplyScalar(TLEN);
-        rig.bone(`t${t}_${k}`, prev, o.x, o.y, o.z, { rate: 0.7 });
-        prev = `t${t}_${k}`;
+        const p = tentCurve(t, k / TSEG);
+        const o = p.clone().sub(last);
+        rig.bone(`t${t}_${k}`, prev, o.x, o.y, o.z, { rate: 0.75 - k * 0.03 });
+        prev = `t${t}_${k}`; last = p;
       }
     });
     // the mass: huge lumpy translucent mound
@@ -60,34 +71,73 @@ export const motherOfFilth = {
     // glowing pustules + crust patches on the surface
     const R = rng(33);
     const pg = [], pc = [];
-    for (let i = 0; i < 26; i++) {
+    for (let i = 0; i < 14; i++) {
       const a = R() * TAU, y = 0.3 + R() * 2.6;
       const rr = 2.0 * Math.sqrt(Math.max(0.05, 1 - ((y / 0.86 - 2.0) / 2.0) ** 2)) * 1.05 + 0.02;
       const p = { x: Math.sin(a) * rr, y, z: Math.cos(a) * rr };
-      const s = 0.07 + R() * 0.12;
+      const s = 0.05 + R() * 0.08;
       pc.push(xf(G.sph(s, 8, 6), p));
       pg.push(xf(G.sph(s * 0.6, 6, 5), { ...p, x: p.x * 1.03, z: p.z * 1.03 }));
     }
-    rig.add('mass', 'skin', mergeRaw(pc), {}, { c: [0.75, 0.75, 0.38] });
+    rig.add('mass', 'skin', mergeRaw(pc), {}, { c: [0.45, 0.55, 0.25] });
     rig.add('mass', 'glow', mergeRaw(pg), {}, { c: HDR(FILTH, 3.0) });
-    // tentacles: one tube per tentacle skinned along its bone chain
-    TENT.forEach(([a, y, r], t) => {
-      const d = new THREE.Vector3(Math.sin(a), 0.4, Math.cos(a)).normalize();
-      const root = new THREE.Vector3(Math.sin(a) * r, y, Math.cos(a) * r);
-      const L = TSEG * TLEN + 0.4;
-      const pts = [];
-      for (let i = 0; i <= 6; i++) pts.push(root.clone().addScaledVector(d, -0.3 + (i / 6) * L));
-      const geo = tube(pts, (u) => 0.32 * (1 - u * 0.85) + 0.02, 30, 8);
-      const chain = [['base', -0.4], ...Array.from({ length: TSEG }, (_, k) => [`t${t}_${k}`, k * TLEN])];
-      const proj = (v) => _tmp.copy(v).sub(root).dot(d);
-      rig.add('base', 'skin', bumpy(geo, 0.02, 4, t), {}, {
-        skin: chainSkin(chain, proj),
-        cfn: (v) => { const u = clamp(proj(v) / L); const n = vnoise(v.x * 6, v.y * 6, v.z * 6, t); return [lerp(0.55, 0.85, u) * (0.8 + n * 0.4), lerp(0.62, 0.6, u) * (0.8 + n * 0.4), 0.32]; },
+    // tentacles: one tapered tube per tentacle skinned smoothly along its 8-bone chain,
+    // dark mottled back, pale ribbed underside with two rows of suckers, hooked tips
+    const UP = new THREE.Vector3(0, 1, 0);
+    TENT.forEach((def, t) => {
+      const [a, , , , R0, big] = def;
+      const inward = new THREE.Vector3(-Math.sin(a), 0, -Math.cos(a));
+      const N = 64, samp = [];
+      for (let i = 0; i <= N; i++) {
+        const u = i / N, p = tentCurve(t, u);
+        const tg = tentCurve(t, Math.min(1, u + 0.01)).sub(tentCurve(t, Math.max(0, u - 0.01))).normalize();
+        const dn = new THREE.Vector3(0, -1, 0).addScaledVector(inward, big ? 0.6 : 0.2);
+        const n = dn.addScaledVector(tg, -tg.dot(dn)).normalize();
+        samp.push({ u, p, tg, n, rad: R0 * (1 - 0.9 * Math.pow(u, 0.85)) + 0.014 });
+      }
+      const nearest = (v) => { let b = samp[0], bd = 1e9; for (const sm of samp) { const d = v.distanceToSquared(sm.p); if (d < bd) { bd = d; b = sm; } } return b; };
+      const chain = [['base', -0.6], ...Array.from({ length: TSEG }, (_, k) => [`t${t}_${k}`, k])];
+      const skin = chainSkin(chain, (v) => nearest(v).u * TSEG);
+      const geo = tube(samp.filter((_, i) => i % 4 === 0).map((sm) => sm.p), (u) => R0 * (1 - 0.9 * Math.pow(u, 0.85)) + 0.014, 52, 9);
+      // ring ridges along the length
+      deform(geo, (v) => { const sm = nearest(v); const d = v.clone().sub(sm.p); const k = 1 + Math.sin(sm.u * 70) * 0.04 + (vnoise(v.x * 5, v.y * 5, v.z * 5, t) - 0.5) * 0.12; v.copy(sm.p).addScaledVector(d, k); });
+      rig.add('base', 'skin', geo, {}, {
+        skin,
+        cfn: (v) => {
+          const sm = nearest(v); const under = v.clone().sub(sm.p).normalize().dot(sm.n);
+          const n = vnoise(v.x * 4, v.y * 4, v.z * 4, t + 3);
+          const band = 0.85 + 0.15 * Math.sin(sm.u * 70);
+          const top = [0.3 + n * 0.12, 0.34 + n * 0.1, 0.2], bot = [0.95, 0.62, 0.55];
+          const k = smooth(-0.1, 0.6, under);
+          const tip = smooth(0.7, 1, sm.u);
+          return [lerp(top[0], bot[0], k) * band + tip * 0.15, lerp(top[1], bot[1], k) * band, lerp(top[2], bot[2], k) * band + tip * 0.05];
+        },
       });
-      // suckers along the underside
-      const su = [];
-      for (let i = 1; i < 8; i++) { const p = root.clone().addScaledVector(d, i * 0.4); const rad = 0.26 * (1 - (i * 0.4 / L) * 0.85); su.push(xf(G.sph(rad * 0.3, 6, 4), { x: p.x, y: p.y - rad * 0.9, z: p.z, sy: 0.4 })); }
-      rig.add('base', 'skin', mergeRaw(su), {}, { c: [0.75, 0.55, 0.45], skin: chainSkin(chain, proj) });
+      // suckers: two staggered rows on the underside, shrinking toward the tip
+      const su = [], sc = [];
+      for (let i = 0; i < 12; i++) {
+        const u = 0.12 + i * 0.065;
+        const sm = samp[Math.round(u * N)];
+        const b = new THREE.Vector3().crossVectors(sm.tg, sm.n).normalize();
+        for (const row of [-1, 1]) {
+          if ((i + (row > 0 ? 1 : 0)) % 2) continue;
+          const dir = sm.n.clone().multiplyScalar(Math.cos(0.5)).addScaledVector(b, row * Math.sin(0.5)).normalize();
+          const pos = sm.p.clone().addScaledVector(dir, sm.rad * 0.9);
+          const e = new THREE.Euler().setFromQuaternion(new THREE.Quaternion().setFromUnitVectors(UP, dir));
+          const r = sm.rad * 0.36;
+          // fleshy rim (torus) with a dark pit
+          su.push(xf(xf(G.tor(r * 0.72, r * 0.3, 4, 8), { rx: Math.PI / 2, sy: 0.7 }), { x: pos.x, y: pos.y, z: pos.z, rx: e.x, ry: e.y, rz: e.z }));
+          sc.push(xf(xf(G.sph(r * 0.6, 6, 3, 0, TAU, 0, Math.PI / 2), { sy: -0.45 }), { x: pos.x, y: pos.y, z: pos.z, rx: e.x, ry: e.y, rz: e.z }));
+        }
+      }
+      rig.add('base', 'skin', mergeRaw(su), {}, { c: [1.1, 0.68, 0.62], skin });
+      rig.add('base', 'dark', mergeRaw(sc), {}, { c: [4, 1.2, 1.4], skin });
+      // hooked barb at the tip of the big ones
+      if (big) {
+        const sm = samp[N - 2];
+        const hook = tube([sm.p, sm.p.clone().addScaledVector(sm.tg, 0.12).addScaledVector(sm.n, 0.03), sm.p.clone().addScaledVector(sm.tg, 0.2).addScaledVector(sm.n, 0.12)], (u) => 0.035 * (1 - u * 0.9), 6, 5);
+        rig.add('base', 'bone', hook, {}, { c: [0.35, 0.3, 0.22], skin });
+      }
     });
     // crowned rat skull face
     const S = 4.4;
@@ -126,53 +176,59 @@ export const motherOfFilth = {
     P.r('crown', Math.sin(T * 0.9) * 0.05, 0, Math.sin(T * 0.7) * 0.06);
     for (let i = 0; i < 4; i++) { P.p('emb' + i, Math.sin(T * 0.2 + i * 2) * 0.6, (i - 1.5) * 0.4 + Math.sin(T * 0.3 + i) * 0.2, Math.cos(T * 0.25 + i * 1.7) * 0.5); P.r('emb' + i, T * 0.1 + i, T * 0.07 * (i % 2 ? 1 : -1), i); }
     // tentacle writhing: droop toward the ground plus travelling waves
-    const tent = (t, droop, wave = 1, curl = 0, spread = 0) => {
-      const [a] = TENT[t];
+    // droop > 0 bends the tentacle down/outward, < 0 lifts it; curl coils the tip; waves travel root->tip
+    const tent = (t, droop, wave = 1, curl = 0, spread = 0, speed = 1) => {
+      const [a, , , , , big] = TENT[t];
       const ax = Math.cos(a), az = -Math.sin(a); // horizontal axis perpendicular to the tentacle
       for (let k = 0; k < TSEG; k++) {
-        const ph = T * 1.6 - k * 0.9 + t * 1.7;
-        const d = droop * (k === 0 ? 0.6 : 0.35) + curl * (k + 1) * 0.12;
-        const sway = Math.sin(ph) * 0.28 * wave;
-        P.r(`t${t}_${k}`, ax * d + Math.cos(ph * 0.8) * 0.15 * wave, sway + spread * (k === 0 ? (t % 2 ? -1 : 1) : 0), az * d);
+        const g = k / (TSEG - 1);
+        const ph = T * 1.9 * speed - k * 0.75 + t * 1.7;
+        const amp = (0.35 + g * 0.9) * wave;
+        const d = droop * (k === 0 ? 0.5 : 0.17) + curl * g * g * 0.5 + Math.sin(ph) * 0.11 * amp;
+        const sway = Math.sin(ph * 0.83 + 1.3 + t) * (big ? 0.12 : 0.16) * amp;
+        P.r(`t${t}_${k}`, ax * d, sway + spread * (k === 0 ? (t % 2 ? -1 : 1) : 0), az * d);
       }
     };
     const dead = anim === 'death';
-    for (let t = 0; t < TENT.length; t++) tent(t, dead ? 0 : 0.35 + w * 0.15, dead ? 0.2 : 1.3 + w * 0.5, dead ? 0 : 0.35 + Math.sin(T * 0.8 + t) * 0.15);
+    for (let t = 0; t < TENT.length; t++) {
+      const big = TENT[t][5];
+      tent(t, dead ? 0 : (big ? 0.05 : -0.05) + w * 0.05, dead ? 0.15 : 1 + w * 0.6, dead ? 0 : (big ? 0.8 + Math.sin(T * 0.7 + t * 2) * 0.5 : -0.35 + Math.sin(T * 0.9 + t * 2) * 0.35), 0, 1 + w * 0.5);
+    }
     if (anim === 'windup' || anim === 'attack' || anim === 'cast') {
       rate = anim === 'attack' ? 18 : 9;
       if (at === 'slam') {
-        if (anim === 'windup') { tent(0, -1.6 * smooth(0, 0.6, p), 0.3, -0.5); tent(1, -1.6 * smooth(0, 0.6, p), 0.3, -0.5); P.r('head', -0.25 * p); P.r('mass', -0.08 * p); P.p('mass', 0, 0, -0.3 * p); wob = 0.14; }
-        else { const k = smooth(0.0, 0.3, p) * (1 - smooth(0.7, 1, p)); tent(0, 2.4 * k, 0.2, 0.8 * k); tent(1, 2.4 * k, 0.2, 0.8 * k); P.p('mass', 0, 0, 0.4 * bump(0, 0.6, p)); P.r('head', 0.2 * k); sy *= 1 - 0.12 * bump(0.15, 0.5, p); wob = 0.2; }
+        if (anim === 'windup') { tent(0, -1.3 * smooth(0, 0.6, p), 0.3, -1.2 * p); tent(1, -1.3 * smooth(0, 0.6, p), 0.3, -1.2 * p); P.r('head', -0.25 * p); P.r('mass', -0.08 * p); P.p('mass', 0, 0, -0.3 * p); wob = 0.14; }
+        else { const k = smooth(0.0, 0.3, p) * (1 - smooth(0.7, 1, p)); tent(0, 2.6 * k, 0.2, -0.6 * k); tent(1, 2.6 * k, 0.2, -0.6 * k); P.p('mass', 0, 0, 0.4 * bump(0, 0.6, p)); P.r('head', 0.2 * k); sy *= 1 - 0.12 * bump(0.15, 0.5, p); wob = 0.2; }
       } else if (at === 'spit') {
         if (anim === 'windup') { P.r('head', -0.45 * p); P.r('jaw', 0.8 * p); sy *= 1 + 0.08 * p; m.setOrb(0.3 + 0.7 * p); }
         else { P.r('head', 0.35 * bump(0, 0.6, p)); P.r('jaw', 1.0); P.p('head', 0, 0, 0.3 * bump(0, 0.6, p)); m.setOrb(1 - smooth(0.05, 0.3, p)); sy *= 1 - 0.06 * bump(0, 0.4, p); }
       } else if (at === 'summon') {
-        for (let t = 0; t < TENT.length; t++) tent(t, -0.8 * smooth(0, 0.5, p), 1.8, 0, 0.3);
+        for (let t = 0; t < TENT.length; t++) tent(t, -0.5 * smooth(0, 0.5, p), 1.6, 0.6, 0.3, 2.2);
         P.r('head', -0.4 * smooth(0, 0.5, p)); P.r('jaw', 0.9 * smooth(0, 0.5, p));
         sy *= 1 + Math.sin(T * 9) * 0.04; wob = 0.18; m.setOrb(anim === 'attack' ? 0 : 0.6);
       } else if (at === 'submerge') {
         const k = anim === 'windup' ? 0.15 * p : easeIn(p);
         P.p('base', 0, -5.2 * k, 0); sy *= 1 - 0.3 * k;
-        for (let t = 0; t < TENT.length; t++) tent(t, -0.6, 2.5);
+        for (let t = 0; t < TENT.length; t++) tent(t, -0.4, 1.8, 0, 0, 2.5);
         wob = 0.2;
       }
     } else if (anim === 'stagger') {
       const k = s.t < 0.08 ? s.t / 0.08 : Math.exp(-(s.t - 0.08) * 4);
       P.r('head', -0.35 * k, 0.2 * k, 0.15 * k); P.r('mass', -0.1 * k); sy *= 1 - 0.1 * k; wob = 0.25; rate = 20;
-      for (let t = 0; t < TENT.length; t++) tent(t, -0.5 * k, 2);
+      for (let t = 0; t < TENT.length; t++) tent(t, -0.5 * k, 1.5, 0, 0, 3);
     } else if (dead) {
       const e = easeOut(p);
       sy = lerp(sy, 0.16, e); sxz = lerp(1, 1.35, e); wob = 0.05;
       P.p('head', 0, -2.7 * e, 0.4 * e); P.r('head', 0.6 * e, 0.4 * e, 0.5 * e); P.r('jaw', 0.8 * e);
       P.p('crown', 0.3 * smooth(0.4, 1, p), -0.2 * smooth(0.4, 1, p), 0.2 * smooth(0.4, 1, p)); P.r('crown', 0.3 * p, 0, 1.3 * smooth(0.4, 1, p));
-      for (let t = 0; t < TENT.length; t++) tent(t, 1.4 * e, 0.3 * (1 - e));
-      for (let t = 0; t < TENT.length; t++) P.p(`t${t}_0`, 0, -TENT[t][1] * 0.85 * e, 0);
+      for (let t = 0; t < TENT.length; t++) tent(t, (TENT[t][5] ? 1.5 : 0.4) * e, 0.25 * (1 - e), -0.4 * e, 0, 0.5);
+      for (let t = 0; t < TENT.length; t++) P.p(`t${t}_0`, 0, -TENT[t][1] * 0.7 * e, 0);
       m.setOpacity(1 - 0.3 * e);
       rate = 6;
     } else if (anim === 'spawn') {
       const e = easeOut(p);
       P.p('base', 0, -5.2 * (1 - e), 0);
-      for (let t = 0; t < TENT.length; t++) tent(t, -0.6 * (1 - p), 2.5);
+      for (let t = 0; t < TENT.length; t++) tent(t, -0.4 * (1 - p), 1.8, 0, 0, 2.5);
       rate = 12;
     }
     P.sc('mass', sxz, sy, sxz);
@@ -407,7 +463,7 @@ export const courtArchmage = {
     const h = hood(0.135, 0.14, { open: 0.3, peak: 0.5 });
     rig.add('head', 'cloth', h.shell, { y: 0.1, z: -0.01 }, { c: [0.1, 0.04, 0.18] });
     rig.add('head', 'dark', G.sph(0.108, 10, 8), { y: 0.1 });
-    const mask = new THREE.SphereGeometry(0.1, 16, 12, -Math.PI * 0.42, Math.PI * 0.84, Math.PI * 0.12, Math.PI * 0.72);
+    const mask = new THREE.SphereGeometry(0.1, 16, 12, Math.PI * 0.08, Math.PI * 0.84, Math.PI * 0.12, Math.PI * 0.72);
     rig.add('head', 'gold', deform(mask, (v) => { if (Math.abs(v.x) < 0.015 && v.y < 0.03) v.z += 0.014; if (v.y < -0.04) v.x *= 0.85; }), { y: 0.1, z: 0.028 }, { c: [1.2, 1.05, 0.8] });
     rig.pair('head', 'head', 'dark', xf(G.box(0.045, 0.014, 0.02), { rz: 0.25 }), { x: 0.036, y: 0.118, z: 0.122 });
     rig.pair('head', 'head', 'glow', xf(G.box(0.035, 0.007, 0.01), { rz: 0.25 }), { x: 0.036, y: 0.118, z: 0.128 }, { c: HDR(0xc8b0ff, 7) });

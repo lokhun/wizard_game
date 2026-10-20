@@ -229,63 +229,102 @@ function addMonsterJaw(rig, jaw, o = {}) {
   }
 }
 function ghoulHead(rig, o = {}) {
-  const c = o.c, s = o.s ?? 1;
-  rig.add('head', 'skin', fleshCranium({ sunk: 0.032 }), { y: 0.1 * s, z: 0.01, s }, { c });
-  rig.add('head', 'dark', G.box(0.05, 0.03, 0.02), { y: 0.06 * s, z: 0.095 * s, s }); // mouth cavity
-  rig.pair('head', 'head', 'dark', G.box(0.007, 0.02, 0.01), { x: 0.007 * s, y: 0.085 * s, z: 0.11 * s, rz: 0.3, s }); // nose slits
-  rig.pair('head', 'head', 'dark', G.sph(0.02, 8, 6), { x: 0.034 * s, y: 0.1 * s, z: 0.074 * s, s });
-  rig.pair('head', 'head', 'glow', G.sph(0.0125, 8, 6), { x: 0.034 * s, y: 0.1 * s, z: 0.086 * s, s }, { c: HDR(o.eye ?? 0xd8ffe0, 5) });
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 7 - 0.5) * 2.0;
-    rig.add('head', 'bone', G.cone(0.006, 0.028, 4), { x: Math.sin(a) * 0.033 * s, y: 0.05 * s, z: (0.065 + Math.cos(a) * 0.035) * s, rx: Math.PI, s }, { c: 0xcfc49a });
-  }
-  // pointed ears
-  rig.pair('head', 'head', 'skin', xf(G.cone(0.025, 0.09, 5), { sz: 0.35 }), { x: 0.08 * s, y: 0.12 * s, z: -0.0, rz: -1.15, ry: -0.3, s }, { c });
-  addMonsterJaw(rig, 'jaw', { c, s, teeth: 8 });
-  // lank wet hair strands
+  const c = o.c, cfn = o.cfn, s = o.s ?? 1;
+  // long, narrow, skull-tight head with deep sockets, jutting cheekbones and no lips
+  const cran = G.sph(0.1, 20, 16);
+  deform(cran, (v) => {
+    v.x *= 0.76; v.z *= 1.22; v.y *= 1.08;
+    if (v.y < -0.01) { const k = clamp((-v.y - 0.01) / 0.09); v.x *= 1 - k * 0.42; v.z += k * 0.018; }
+    if (v.z > 0.03) {
+      const d2 = (Math.abs(v.x) - 0.033) ** 2 + (v.y - 0.012) ** 2;
+      v.z -= Math.exp(-d2 / 0.0005) * 0.04;
+      v.z += Math.exp(-((v.y - 0.04) ** 2) / 0.00025) * 0.014;
+      v.x *= 1 - Math.exp(-((v.y + 0.035) ** 2) / 0.0007) * 0.22;
+      if (Math.abs(v.x) < 0.012 && v.y > -0.03 && v.y < 0.01) v.z -= 0.012; // collapsed nose
+    }
+    if (v.y > 0.05 && v.z < 0) v.z -= (v.y - 0.05) * 0.35; // elongated back of the skull
+  });
+  rig.add('head', 'skin', bumpy(cran, 0.0035, 22, 3), { y: 0.1 * s, z: 0.015, s }, { c, cfn });
+  rig.pair('head', 'head', 'skin', xf(G.sph(0.016, 7, 5), { sx: 0.6, sy: 0.45, sz: 1.6 }), { x: 0.045 * s, y: 0.08 * s, z: 0.08 * s, ry: 0.4, s }, { c }); // cheekbones
+  rig.add('head', 'dark', xf(G.box(0.06, 0.028, 0.03), {}), { y: 0.055 * s, z: 0.1 * s, s }); // mouth cavity
+  rig.pair('head', 'head', 'dark', G.box(0.006, 0.022, 0.012), { x: 0.007 * s, y: 0.092 * s, z: 0.124 * s, rz: 0.35, s }); // nose slits
+  rig.pair('head', 'head', 'dark', G.sph(0.021, 8, 6), { x: 0.033 * s, y: 0.112 * s, z: 0.088 * s, s });
+  rig.pair('head', 'head', 'glow', G.sph(0.0075, 6, 5), { x: 0.033 * s, y: 0.112 * s, z: 0.106 * s, s }, { c: HDR(o.eye ?? 0xd8ffe0, 6) });
+  // upper needle teeth, uneven
   const R = rng(o.seed ?? 11);
+  const tu = [];
+  for (let i = 0; i < 12; i++) { const a = (i / 11 - 0.5) * 2.3; tu.push(xf(G.cone(0.0045, 0.022 + R() * 0.02, 4), { x: Math.sin(a) * 0.034, y: 0.048, z: 0.07 + Math.cos(a) * 0.036, rx: Math.PI + (R() - 0.5) * 0.3, rz: (R() - 0.5) * 0.3 })); }
+  rig.add('head', 'bone', mergeRaw(tu), { s }, { c: [0.7, 0.66, 0.45] });
+  // pointed, torn ears
+  rig.pair('head', 'head', 'skin', xf(G.cone(0.026, 0.12, 5), { sz: 0.3 }), { x: 0.075 * s, y: 0.125 * s, z: -0.01, rz: -1.2, ry: -0.35, s }, { c });
+  // long hanging jaw with needle teeth
+  const jg = G.box(0.08, 0.026, 0.13, 2, 1, 4);
+  deform(jg, (v) => { const t = clamp((v.z + 0.065) / 0.13); v.x *= 1 - t * 0.45; v.y -= t * 0.012; });
+  rig.add('jaw', 'skin', jg, { y: -0.012 * s, z: 0.06 * s, s }, { c });
+  rig.add('jaw', 'dark', G.box(0.055, 0.01, 0.1), { y: 0.004 * s, z: 0.06 * s, s });
+  const tl = [];
+  for (let i = 0; i < 10; i++) { const a = (i / 9 - 0.5) * 2.0; tl.push(xf(G.cone(0.0045, 0.02 + R() * 0.016, 4), { x: Math.sin(a) * 0.03, y: 0.008, z: 0.075 + Math.cos(a) * 0.045, rz: (R() - 0.5) * 0.4 })); }
+  rig.add('jaw', 'bone', mergeRaw(tl), { s }, { c: [0.7, 0.66, 0.45] });
+  // sparse, lank wet hair
+  // strands plastered to the skull, trailing off the back of the head
   for (let i = 0; i < (o.hair ?? 7); i++) {
-    const a = (R() > 0.5 ? 1 : -1) * (0.9 + R() * 1.6);
-    const x = Math.sin(a) * 0.08, z = Math.cos(a) * 0.08 - 0.01;
-    const len = 0.12 + R() * 0.16;
-    rig.add('head', 'leather', tube([[x, 0.18, z], [x * 1.25, 0.13, z * 1.2], [x * 1.3, 0.16 - len, z * 1.25 - 0.02]], 0.006, 6, 3), { s }, { c: [0.25, 0.3, 0.25], anim: (v) => clamp((0.15 - v.y) * 3) });
+    const x = (R() - 0.5) * 0.11, len = 0.1 + R() * 0.14;
+    rig.add('head', 'dark', tube([[x * 0.6, 0.205, 0.02], [x, 0.19, -0.07], [x * 1.2, 0.13, -0.13], [x * 1.3, 0.13 - len, -0.15 - len * 0.3]], (u) => 0.005 * (1 - u * 0.5), 8, 3), { s }, { c: [1, 1.1, 1], anim: (v) => clamp((0.13 - v.y) * 4) });
   }
 }
 
 // ---------------------------------------------------------------- ghoul ----
-const GHOUL_SKIN = [0.26, 0.42, 0.34];
+const GHOUL_SKIN = [0.42, 0.5, 0.44];
 export const ghoul = {
-  id: 'ghoul', height: 1.65, radius: 0.42, eyeColor: 0xd8ffe0, defaultAttack: 'claw', attackTypes: ['claw', 'swipe', 'bite'],
+  id: 'ghoul', height: 1.6, radius: 0.42, eyeColor: 0xd8ffe0, defaultAttack: 'claw', attackTypes: ['claw', 'swipe', 'bite'],
   flutter: 0.04,
   build(rig) {
-    const D = humanSkeleton(rig, { thigh: 0.45, shin: 0.44, spine: 0.15, chest: 0.32, neck: 0.11, shoulderW: 0.19, upper: 0.33, fore: 0.31, jaw: [0.06, 0.02] });
-    const rot = (v) => { const n = vnoise(v.x * 7 + 3, v.y * 7, v.z * 7, 21), n2 = vnoise(v.x * 23, v.y * 23, v.z * 23, 5); const k = 0.8 + n2 * 0.35; return n > 0.66 ? [0.12 * k, 0.17 * k, 0.11 * k] : [GHOUL_SKIN[0] * k, GHOUL_SKIN[1] * k, GHOUL_SKIN[2] * k]; };
-    addFleshBody(rig, D, { c: GHOUL_SKIN, cfn: rot, gaunt: 1, muscle: 0.78, claws: 0.075, toeClaws: true, ribC: [0.5, 0.6, 0.56], hunch: 0.05, seed: 5, rough: 1.4 });
-    ghoulHead(rig, { c: GHOUL_SKIN });
-    // spine bumps
-    rig.add('hips', 'skin', mergeRaw([0, 1, 2, 3, 4, 5, 6].map((i) => xf(G.sph(0.018, 6, 4), { y: 0.1 + i * 0.055, z: -0.105 - Math.sin(i / 6 * Math.PI) * 0.015 }))), {}, { c: GHOUL_SKIN });
-    // rope belt + tattered loincloth
-    rig.add('hips', 'leather', xf(G.tor(0.135, 0.012, 5, 18), { rx: Math.PI / 2, sz: 0.72 }), { y: 0.0 }, { c: 0x5a4a32 });
-    rig.add('hips', 'cloth', panel(0.2, 0.4, { tatter: 0.45, seed: 3, curve: 0.04, taperBot: 0.7 }), { y: 0.0, z: 0.1 }, { c: 0x4a4434, anim: (v) => -v.y * 0.9 });
-    rig.add('hips', 'cloth', panel(0.22, 0.32, { tatter: 0.5, seed: 8, curve: -0.04, taperBot: 0.6 }), { y: 0.0, z: -0.09 }, { c: 0x3c3a2c, anim: (v) => -v.y * 0.9 });
-    // drowned: hanging weed and barnacles
+    const D = humanSkeleton(rig, { thigh: 0.47, shin: 0.46, spine: 0.17, chest: 0.31, neck: 0.15, neckZ: 0.02, shoulderW: 0.18, upper: 0.37, fore: 0.36, jaw: [0.055, 0.02] });
+    // sickly pale flesh, rotting blotches, darker toward hands and feet
+    const rot = (v) => {
+      const n = vnoise(v.x * 7 + 3, v.y * 7, v.z * 7, 21), n2 = vnoise(v.x * 23, v.y * 23, v.z * 23, 5);
+      const k = 0.78 + n2 * 0.35;
+      if (n > 0.68) return [0.13 * k, 0.17 * k, 0.11 * k];
+      if (n > 0.6) return [0.3 * k, 0.32 * k, 0.22 * k];
+      return [GHOUL_SKIN[0] * k, GHOUL_SKIN[1] * k, GHOUL_SKIN[2] * k];
+    };
+    addFleshBody(rig, D, { c: GHOUL_SKIN, cfn: rot, gaunt: 1.45, muscle: 0.66, torsoW: 0.95, claws: 0.085, toeClaws: true, clawC: [0.12, 0.1, 0.08], ribC: [0.48, 0.55, 0.48], hunch: 0.07, seed: 5, rough: 1.6, veins: true, veinC: [0.25, 0.32, 0.3], hand: { c: [0.3, 0.33, 0.28], m: 0.9, claws: 0.075, fingerLen: 1.45, curl: 0.55, clawC: [0.1, 0.08, 0.07] } });
+    ghoulHead(rig, { c: GHOUL_SKIN, cfn: rot });
+    // knobbly spine
+    rig.add('hips', 'skin', mergeRaw([0, 1, 2, 3, 4, 5, 6, 7].map((i) => xf(G.sph(0.017, 6, 4), { y: 0.06 + i * 0.06, z: -0.1 - Math.sin(i / 7 * Math.PI) * 0.03, sz: 1.3 }))), {}, { c: GHOUL_SKIN, skin: chainSkin([['hips', 0.0], ['spine', 0.05 + D.spine * 0.45], ['chest', 0.05 + D.spine + D.chest * 0.25]], (v) => v.y) });
+    // rope belt + shredded loincloth
+    rig.add('hips', 'leather', xf(G.tor(0.12, 0.011, 5, 18), { rx: Math.PI / 2, sz: 0.72 }), { y: -0.01 }, { c: 0x4a3e2a });
+    rig.add('hips', 'cloth', panel(0.17, 0.38, { tatter: 0.6, seed: 3, curve: 0.04, taperBot: 0.5 }), { y: -0.01, z: 0.09 }, { c: [0.22, 0.2, 0.14], anim: (v) => -v.y * 0.9 });
+    rig.add('hips', 'cloth', panel(0.2, 0.3, { tatter: 0.6, seed: 8, curve: -0.04, taperBot: 0.5 }), { y: -0.01, z: -0.08 }, { c: [0.18, 0.17, 0.12], anim: (v) => -v.y * 0.9 });
+    // drowned: hanging weed and barnacles, a rusted shackle
     const R = rng(21);
-    for (const [b, x, y, z, len] of [['armL', 0.03, -0.05, 0.02, 0.3], ['armR', -0.02, -0.08, -0.02, 0.25], ['chest', 0.12, 0.26, -0.06, 0.35], ['foreL', 0.02, -0.12, 0, 0.2]]) {
-      rig.add(b, 'cloth', tube([[x, y, z], [x + 0.02, y - len * 0.5, z + 0.02], [x - 0.01, y - len, z]], 0.008, 8, 3), {}, { c: 0x203a18, anim: (v) => clamp((y - v.y) * 3) });
+    for (const [b, x, y, z, len] of [['armL', 0.03, -0.05, 0.02, 0.3], ['armR', -0.02, -0.08, -0.02, 0.25], ['foreL', 0.02, -0.12, 0, 0.2], ['thighR', -0.04, -0.1, 0.03, 0.25]]) {
+      rig.add(b, 'cloth', tube([[x, y, z], [x + 0.02, y - len * 0.5, z + 0.02], [x - 0.01, y - len, z]], (u) => 0.008 * (1 - u * 0.6), 8, 3), {}, { c: 0x1c3214, anim: (v) => clamp((y - v.y) * 3) });
     }
-    rig.add('armL', 'stone', mergeRaw(Array.from({ length: 7 }, () => xf(G.cone(0.012, 0.018, 5), { x: 0.04 + R() * 0.03, y: -0.02 - R() * 0.12, z: (R() - 0.5) * 0.06, rz: -1.2 }))), {}, { c: 0x9a9a8a });
-    rig.socket('muzzle', 'handR', 0, -0.12, 0.02);
+    rig.add('armL', 'stone', mergeRaw(Array.from({ length: 7 }, () => xf(G.cone(0.011, 0.016, 5), { x: 0.035 + R() * 0.02, y: -0.04 - R() * 0.14, z: (R() - 0.5) * 0.05, rz: -1.2 }))), {}, { c: 0x9a9a8a });
+    rig.add('foreR', 'iron', mergeRaw([xf(G.tor(0.04, 0.009, 4, 12), { rx: Math.PI / 2, y: -0.3 }), ...[0, 1, 2].map((i) => xf(G.tor(0.016, 0.005, 4, 8), { y: -0.34 - i * 0.026, x: 0.03, ry: (i % 2) * 1.57 }))]), {}, { c: RUSTY });
+    rig.socket('muzzle', 'handR', 0, -0.14, 0.02);
     return D;
   },
   pose: humanoidPose,
   anim: {
-    death: 'fall', spawn: 'rise', armSwing: 0.25, knee: 1.0, stride: 0.6, armOut: 0.18,
+    death: 'fall', spawn: 'rise', armSwing: 0.22, knee: 1.0, stride: 0.6, armOut: 0.16, breath: 2.4,
     stance: (P) => {
-      P.apply({ spine: [0.42, 0, 0], chest: [0.38, 0, 0], neck: [-0.5, 0, 0], head: [-0.32, 0, 0], thighL: [-0.38, 0, 0.06], thighR: [-0.3, 0, -0.06], shinL: [0.6, 0, 0], shinR: [0.52, 0, 0], footL: [-0.22, 0, 0], footR: [-0.22, 0, 0], hips: [0.08, 0, 0, 0, -0.09, -0.04], armL: [-0.35, 0, 0], armR: [-0.3, 0, 0], foreL: [-0.45, 0, 0], foreR: [-0.4, 0, 0], handL: [-0.3, 0, 0], handR: [-0.3, 0, 0] });
+      P.apply({ spine: [0.5, 0, 0], chest: [0.42, 0, 0], neck: [-0.35, 0, 0], head: [-0.55, 0, 0], thighL: [-0.42, 0, 0.07], thighR: [-0.34, 0, -0.07], shinL: [0.68, 0, 0], shinR: [0.58, 0, 0], footL: [-0.24, 0, 0], footR: [-0.24, 0, 0], hips: [0.1, 0, 0, 0, -0.11, -0.05], armL: [-0.45, 0.2, 0.05], armR: [-0.38, -0.2, -0.05], foreL: [-0.55, 0, 0], foreR: [-0.45, 0, 0], handL: [-0.2, 0, 0], handR: [-0.25, 0, 0] });
     },
     extra: (P, m, s, dt, k) => {
-      if (!k.action) P.r('jaw', 0.15 + Math.sin(m.time * 1.3) * 0.08);
-      P.r('foreL', 0, Math.sin(m.time * 0.8) * 0.1); // twitchy fingers
+      const T = m.time;
+      if (!k.action) P.r('jaw', 0.32 + Math.sin(T * 1.3) * 0.12);
+      // finger twitches and sudden head jerks
+      P.r('handL', Math.sin(T * 7.3) * 0.08 * Math.max(0, Math.sin(T * 0.9)), 0, 0);
+      P.r('handR', Math.sin(T * 6.1 + 1) * 0.08 * Math.max(0, Math.sin(T * 1.1 + 2)), 0, 0);
+      if (s.anim === 'idle' || s.anim === 'move') {
+        const ph = (T * 0.31 + m.seed * 3) % 1;
+        const j = ph < 0.06 ? Math.sin(ph / 0.06 * Math.PI) : 0;
+        const dir = Math.floor(T * 0.31 + m.seed * 3) % 2 ? 1 : -1;
+        P.r('head', -0.1 * j, 0.35 * j * dir, 0.55 * j * dir);
+        P.r('neck', 0, 0, 0.2 * j * dir);
+      }
     },
   },
 };
@@ -297,24 +336,48 @@ export const bilespitter = {
   id: 'bilespitter', height: 1.72, radius: 0.5, eyeColor: 0xc8ff40, magicColor: BILE, defaultAttack: 'spit', attackTypes: ['spit', 'swing'], orbSize: 0.08,
   build(rig) {
     const D = humanSkeleton(rig, { thigh: 0.42, shin: 0.4, spine: 0.2, chest: 0.3, neck: 0.06, shoulderW: 0.21, upper: 0.28, fore: 0.27, hipW: 0.12, jaw: [0.045, 0.03] });
-    rig.bone('belly', 'hips', 0, 0.08, 0.08, { rate: 0.6 });
+    rig.bone('belly', 'hips', 0, 0.07, 0.07, { rate: 0.6 });
     const mott = (v) => { const n = vnoise(v.x * 9, v.y * 9, v.z * 9, 4); const k = 0.8 + 0.3 * n; return n > 0.68 ? [0.55, 0.62, 0.35] : [0.66 * k, 0.66 * k, 0.45 * k]; };
-    addFleshBody(rig, D, { c: BILE_SKIN, muscle: 1.25, seed: 9, rough: 1.6, belly: 0.06, depth: 1.15 });
-    // distended belly: taut, sagging flesh sac lit from within by glowing veins and blisters
-    const sac = deform(bumpy(G.sph(0.25, 26, 18), 0.014, 6, 2), (v) => { if (v.y < 0) { v.y *= 1.18; v.z += v.y * 0.2; } if (v.z < 0) v.z *= 0.45; });
-    rig.add('belly', 'skin', sac, { z: 0.05, sy: 0.95 }, { anim: 0.3, cfn: (v) => { const n = vnoise(v.x * 9, v.y * 9, v.z * 9, 6); const k = 0.85 + n * 0.3; return n > 0.6 ? [0.42 * k, 0.5 * k, 0.2 * k] : [0.62 * k, 0.6 * k, 0.32 * k]; } });
-    rig.add('belly', 'spirit', deform(G.sph(0.262, 20, 14), (v) => { if (v.y < 0) { v.y *= 1.18; v.z += v.y * 0.2; } if (v.z < 0) v.z *= 0.45; }), { z: 0.05, sy: 0.95 }, { c: HDR(BILE, 0.12) });
+    // sickly mottled hide: jaundiced yellow-grey with bruised green patches
+    const hide = (v) => {
+      const n = vnoise(v.x * 6 + 2, v.y * 6, v.z * 6, 14), d = vnoise(v.x * 22, v.y * 22, v.z * 22, 3);
+      const k = 0.75 + d * 0.35;
+      if (n > 0.66) return [0.3 * k, 0.36 * k, 0.18 * k];
+      if (n < 0.3) return [0.55 * k, 0.45 * k, 0.32 * k];
+      return [0.6 * k, 0.56 * k, 0.34 * k];
+    };
+    addFleshBody(rig, D, { c: BILE_SKIN, cfn: hide, muscle: 1.25, seed: 9, rough: 1.6, belly: 0.09, bellyY: 0.1, depth: 1.2, veins: true, veinC: [0.3, 0.35, 0.2] });
+    // distended gut: sagging, lumpy pear of stretched hide hanging over the belt
+    const sacShape = (v) => {
+      // pear: narrow top blending into the ribcage, heavy sagging bottom pushed forward
+      const t = clamp((v.y + 0.25) / 0.5);
+      const w = 0.72 + Math.sin(t * Math.PI * 0.9) * 0.38;
+      v.x *= w * 1.05; v.z *= w;
+      if (v.y < 0) { v.y *= 1.25; v.z += -v.y * 0.25; }
+      if (v.z < 0) v.z *= 0.35;
+      v.x += Math.sin(v.y * 9) * 0.01; // asymmetry
+      v.z += Math.max(0, vnoise(v.x * 8, v.y * 8, v.z * 8, 4) - 0.55) * 0.03; // lumps
+    };
+    const sac = deform(bumpy(G.sph(0.25, 24, 18), 0.01, 7, 2), sacShape);
+    rig.add('belly', 'skin', sac, { z: 0.02 }, {
+      anim: 0.25,
+      cfn: (v) => { const c0 = hide(v); const tight = clamp((v.z - 0.12) * 5); const n = vnoise(v.x * 30, v.y * 30, v.z * 30, 8); const g = n > 0.75 ? 0.4 : 0; return [c0[0] * (1 + tight * 0.15) - g * 0.1, c0[1] * (1 + tight * 0.2) + g * 0.15, c0[2] * (1 - tight * 0.2)]; },
+    });
+    // fold of flesh where the gut meets the chest, and a deep navel
+    rig.add('belly', 'dark', xf(G.sph(0.022, 8, 6), { sx: 0.8, sz: 0.5 }), { y: -0.02, z: 0.285 });
+    // glowing bile veins: wiggly, branching, brightest where the skin is thinnest (lower front)
     const R = rng(12);
-    const veins = [];
-    for (let i = 0; i < 6; i++) {
-      const a = -1.2 + i * 0.48 + (R() - 0.5) * 0.3, pts = [];
-      for (let k = 0; k <= 5; k++) { const t = -1.0 + k * 0.38; const rr = 0.255; pts.push([Math.sin(a + (R() - 0.5) * 0.35) * Math.cos(t) * rr, Math.sin(t) * rr * 1.1, 0.05 + Math.max(0.05, Math.cos(a) * Math.cos(t)) * rr * 0.98]); }
-      veins.push(tube(pts, (u) => 0.0045 * (1 - Math.abs(u - 0.5)), 12, 3));
-      const mid = pts[2 + (i % 2)]; veins.push(tube([mid, [mid[0] + (R() - 0.5) * 0.12, mid[1] - 0.05, mid[2]], [mid[0] + (R() - 0.5) * 0.18, mid[1] - 0.1, mid[2] - 0.03]], 0.003, 6, 3));
+    const veins = [], blisters = [], blisterG = [];
+    const onSac = (x, y) => { const v = new THREE.Vector3(x, y, Math.sqrt(Math.max(0.003, 0.0625 - x * x - y * y))); sacShape(v); const n = v.clone().normalize(); v.addScaledVector(n, 0.016); return v; };
+    for (let i = 0; i < 7; i++) {
+      let x = -0.15 + (i / 6) * 0.3 + (R() - 0.5) * 0.03, y = -0.2 + R() * 0.08;
+      const pts = [onSac(x, y)];
+      for (let k = 0; k < 6; k++) { x += (R() - 0.5) * 0.05 - x * 0.08; y += 0.04 + R() * 0.02; pts.push(onSac(x, y)); if (k === 2 || (k === 4 && R() > 0.5)) { const bx = x + (R() > 0.5 ? 1 : -1) * 0.07; veins.push(tube([pts[pts.length - 1], onSac((x + bx) / 2, y + 0.03), onSac(bx, y + 0.07)], 0.0022, 6, 3)); } }
+      veins.push(tube(pts, (u) => 0.0042 * (1 - u * 0.6), 16, 3));
     }
-    rig.add('belly', 'glow', mergeRaw(veins), { sy: 0.95 }, { c: HDR(BILE, 1.0) });
-    // stretch-mark navel
-    rig.add('belly', 'dark', xf(G.sph(0.02, 6, 4), { sz: 0.4 }), { y: 0.02, z: 0.3 });
+    for (let i = 0; i < 6; i++) { const p = onSac((R() - 0.5) * 0.3, -0.15 + R() * 0.25); const r = 0.012 + R() * 0.012; blisters.push(xf(G.sph(r, 7, 5), { x: p.x, y: p.y, z: p.z - 0.003, sz: 0.6 })); blisterG.push(xf(G.sph(r * 0.55, 5, 4), { x: p.x, y: p.y, z: p.z + r * 0.25 })); }
+    rig.add('belly', 'glow', mergeRaw([...veins, ...blisterG]), { z: 0.02 }, { c: HDR(BILE, 0.9) });
+    rig.add('belly', 'slime', mergeRaw(blisters), { z: 0.02 }, { c: [0.6, 1.0, 0.35] });
     // pustules
     const pust = [], pustG = [];
     for (const [b, n, r, y0, y1] of [['chest', 9, 0.16, 0.05, 0.3], ['armL', 4, 0.06, -0.25, 0], ['armR', 4, 0.06, -0.25, 0], ['thighL', 3, 0.08, -0.3, 0], ['neck', 2, 0.06, 0, 0.08]]) {

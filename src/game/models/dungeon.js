@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { G, xf, lathe, shell, robe, panel, tube, taper, deform, bumpy, mergeRaw, chainSkin, rng, clamp, lerp, TAU, smooth, bump, easeOut } from './core.js';
+import { G, xf, lathe, shell, robe, panel, tube, taper, deform, bumpy, mergeRaw, chainSkin, rng, vnoise, clamp, lerp, TAU, smooth, bump, easeOut } from './core.js';
 import { humanSkeleton, humanoidPose, act2, ACT } from './humanoid.js';
-import { addSkull, addSkeletonBody, addBoneHand, addFleshHand, addSword, addRoundShield, addAxe, addTowerShield, addClub, pointedHood, addFleshBody, pauldron, kettleHat, HDR, belt, rivets, addBow, hood, STEEL, RUSTY, DARKSTEEL, BRASS } from './parts.js';
+import { twoSided, addSkull, addSkeletonBody, addBoneHand, addFleshHand, addSword, addRoundShield, addAxe, addTowerShield, addClub, pointedHood, addFleshBody, pauldron, kettleHat, HDR, belt, rivets, addBow, hood, STEEL, RUSTY, DARKSTEEL, BRASS } from './parts.js';
 
 const BONE_C = 0xe2d8c2;
 const RUST = RUSTY;
@@ -254,12 +254,59 @@ export function buildHeadsman(rig, o = {}) {
   const boss = !!o.boss;
   const D = humanSkeleton(rig, { thigh: 0.54, shin: 0.52, ankle: 0.08, hipW: 0.15, spine: 0.24, chest: 0.48, neck: 0.1, shoulderW: 0.32, shoulderDrop: 0.06, upper: 0.42, fore: 0.4, jaw: boss ? [0.04, 0.05] : null });
   const SK = [0.5, 0.38, 0.32];
-  addFleshBody(rig, D, { c: SK, muscle: boss ? 1.9 : 1.75, seed: 31, torsoW: 1.08, grip: { R: true, L: true }, belly: boss ? 0.04 : 0 });
-  // scars
-  rig.add('chest', 'skin', mergeRaw([tube([[0.18, 0.1, 0.19], [0.05, 0.2, 0.22], [-0.12, 0.34, 0.2]], 0.007, 10, 3), tube([[-0.15, 0.05, 0.2], [-0.05, 0.12, 0.22]], 0.006, 6, 3), tube([[0.2, 0.3, 0.16], [0.24, 0.38, 0.1]], 0.006, 6, 3)]), {}, { c: [0.7, 0.36, 0.32] });
+  const skinC = (v) => {
+    const n = vnoise(v.x * 6 + 1, v.y * 6, v.z * 6, 41), d = vnoise(v.x * 25, v.y * 25, v.z * 25, 9);
+    const k = 0.82 + d * 0.3;
+    if (n > 0.7) return [0.34 * k, 0.24 * k, 0.24 * k]; // bruises / grime
+    return [SK[0] * k * (0.95 + n * 0.1), SK[1] * k, SK[2] * k];
+  };
+  addFleshBody(rig, D, { c: SK, cfn: skinC, muscle: boss ? 1.9 : 1.75, seed: 31, torsoW: 1.08, grip: { R: true, L: true }, belly: boss ? 0.04 : 0, abs: true, veins: true, veinC: [0.42, 0.3, 0.28] });
+  // torso surface (hips space) so straps and scars hug the body
+  const W = D.shoulderW * 1.08, top = 0.05 + D.spine + D.chest;
+  const prof = [[-0.1, 0], [-0.085, W * 0.55], [-0.02, W * 0.66], [0.05 + D.spine * 0.7, W * 0.64], [0.05 + D.spine + D.chest * 0.3, W * 0.68], [0.05 + D.spine + D.chest * 0.66, W * 0.8], [0.05 + D.spine + D.chest * 0.88, W * 0.78], [top + 0.03, W * 0.42]];
+  const Rad = (y) => { for (let i = 0; i < prof.length - 1; i++) if (y <= prof[i + 1][0]) { const u = clamp((y - prof[i][0]) / (prof[i + 1][0] - prof[i][0])); return lerp(prof[i][1], prof[i + 1][1], u); } return prof[prof.length - 1][1]; };
+  const surf = (x, y, sd = 1, off = 0.014) => { const R = Rad(y); const q = clamp(Math.abs(x) / R, 0, 0.98); return new THREE.Vector3(x, y, sd * (0.66 * R * Math.sqrt(1 - q * q) + off + (sd > 0 ? Math.exp(-((y - (0.05 + D.spine + D.chest * 0.62)) ** 2) / 0.006) * 0.012 : 0))); };
+  const torsoSkin = chainSkin([['hips', 0.0], ['spine', 0.05 + D.spine * 0.45], ['chest', 0.05 + D.spine + D.chest * 0.25]], (v) => v.y);
+  const ribbon = (pts, w, sd = 1) => {
+    const pos = [], idx = [];
+    const t = new THREE.Vector3(), n = new THREE.Vector3(), side = new THREE.Vector3();
+    pts.forEach((p, i) => {
+      t.copy(pts[Math.min(i + 1, pts.length - 1)]).sub(pts[Math.max(i - 1, 0)]).normalize();
+      n.set(p.x, 0, p.z).normalize();
+      side.crossVectors(t, n).normalize().multiplyScalar(w / 2);
+      pos.push(p.x + side.x, p.y + side.y, p.z + side.z, p.x - side.x, p.y - side.y, p.z - side.z);
+      if (i) { const a = (i - 1) * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx); g.computeVertexNormals();
+    return twoSided(g);
+  };
+  const strapPath = (x0, x1, sd) => { const pts = []; for (let i = 0; i <= 12; i++) { const u = i / 12; pts.push(surf(lerp(x0, x1, u), lerp(top - 0.02, 0.03, u), sd)); } return pts; };
+  // crossed leather harness (front + back) meeting in an iron ring over the sternum
+  const straps = [ribbon(strapPath(W * 0.42, -W * 0.62, 1), 0.06), ribbon(strapPath(W * 0.42, -W * 0.62, -1), 0.06), ribbon([surf(W * 0.42, top - 0.02, 1), new THREE.Vector3(W * 0.44, top + 0.05, 0), surf(W * 0.42, top - 0.02, -1)], 0.06)];
+  rig.add('hips', 'leather', mergeRaw(straps), {}, { c: [0.32, 0.2, 0.13], skin: torsoSkin });
+  const ringP = surf(W * 0.06, 0.05 + D.spine + D.chest * 0.42, 1, 0.022);
+  rig.add('hips', 'iron', mergeRaw([xf(G.tor(0.035, 0.009, 5, 14), { x: ringP.x, y: ringP.y, z: ringP.z }), ...[0.25, 0.55, 0.8].map((u) => { const p = strapPath(W * 0.42, -W * 0.62, 1)[Math.round(u * 12)]; return xf(G.cyl(0.009, 0.009, 0.008, 6), { x: p.x, y: p.y, z: p.z + 0.008, rx: Math.PI / 2 }); })]), {}, { c: RUSTY, skin: torsoSkin });
+  // stitched scars
+  const scarG = [], stitchG = [];
+  const scar = (x0, y0, x1, y1, sd = 1) => {
+    const pts = []; for (let i = 0; i <= 6; i++) { const u = i / 6; pts.push(surf(lerp(x0, x1, u) + Math.sin(u * 9) * 0.006, lerp(y0, y1, u), sd, 0.004)); }
+    scarG.push(tube(pts, 0.0055, 12, 3));
+    for (let i = 1; i < 6; i++) { const a = pts[i - 1], b = pts[i + 1]; const d = b.clone().sub(a); stitchG.push(xf(G.box(0.032, 0.004, 0.004), { x: pts[i].x, y: pts[i].y, z: pts[i].z + sd * 0.004, rz: Math.atan2(d.y, d.x) + Math.PI / 2 })); }
+  };
+  scar(W * 0.5, 0.05 + D.spine + D.chest * 0.75, -W * 0.15, 0.05 + D.spine + D.chest * 0.2);
+  scar(-W * 0.45, 0.05 + D.spine * 0.8, -W * 0.1, 0.05 + D.spine * 0.3);
+  scar(W * 0.3, 0.05 + D.spine + D.chest * 0.5, W * 0.6, 0.05 + D.spine + D.chest * 0.2, -1);
+  scar(-W * 0.4, 0.05 + D.spine + D.chest * 0.8, W * 0.1, 0.05 + D.spine + D.chest * 0.3, -1);
+  rig.add('hips', 'skin', mergeRaw(scarG), {}, { c: [0.62, 0.3, 0.28], skin: torsoSkin });
+  rig.add('hips', 'leather', mergeRaw(stitchG), {}, { c: [0.12, 0.08, 0.06], skin: torsoSkin });
   // black hood with mantle, eye holes
   rig.add('head', 'cloth', pointedHood(0.13, { lean: 0.8 }), { y: 0.0 }, { c: [0.09, 0.08, 0.08] });
-  rig.add('chest', 'cloth', robe(0.16, 0.44, boss ? 0.42 : 0.34, { seg: 18, rows: 3, folds: 7, foldAmp: 0.1, tatter: 0.35, seed: 4 }), { y: D.chest + 0.08, sz: 0.85 }, { c: [0.09, 0.08, 0.08], anim: (v) => clamp(-v.y * 2.5) * 0.5 });
+  // short hood cowl over the shoulders, longer at the back so the chest stays bare
+  const cowl = robe(0.15, 0.36, 0.26, { seg: 18, rows: 3, folds: 7, foldAmp: 0.1, tatter: 0.3, seed: 4 });
+  deform(cowl, (v) => { if (v.z > 0) v.y = Math.max(v.y, -0.12 - Math.abs(v.x) * 0.25); else v.y *= 1.4; }, true);
+  rig.add('chest', 'cloth', cowl, { y: D.chest + 0.08, sz: 0.85 }, { c: [0.09, 0.08, 0.08], anim: (v) => clamp(-v.y * 2.5) * 0.5 });
   rig.pair('head', 'head', 'dark', xf(G.sph(0.024, 8, 6), { sx: 1.4, sz: 0.4 }), { x: 0.048, y: 0.14, z: 0.137 });
   rig.pair('head', 'head', 'glow', G.sph(0.011, 6, 5), { x: 0.046, y: 0.14, z: 0.14 }, { c: HDR(0xff3a20, boss ? 8 : 6) });
   if (boss) {
@@ -279,7 +326,6 @@ export function buildHeadsman(rig, o = {}) {
     rig.add('fore' + S, 'leather', G.cyl(0.075, 0.065, 0.22, 10), { y: -0.24 }, { c: [0.22, 0.14, 0.1] });
     rig.add('fore' + S, 'iron', mergeRaw([[0.07, 0.03], [-0.07, 0.03], [0, 0.075]].flatMap(([x, z]) => [-0.17, -0.26].map((y) => xf(G.cone(0.012, boss ? 0.05 : 0.025, 4), { x, y, z, rz: x > 0 ? -1.57 : x < 0 ? 1.57 : 0, rx: x === 0 ? 1.57 : 0 })))), {}, { c: RUSTY });
   }
-  rig.add('chest', 'leather', xf(G.box(0.06, 0.85, 0.02), { y: D.chest * 0.5, rz: 0.75 }), { z: 0.0 }, { c: [0.22, 0.14, 0.1] });
   if (boss) {
     // iron collar with chains, trophies and hooks on the belt
     rig.add('neck', 'iron', mergeRaw([xf(G.cyl(0.13, 0.15, 0.07, 14, true), {}), xf(G.tor(0.03, 0.009, 4, 8), { z: 0.15, y: -0.02 })]), { y: 0.0 }, { c: DARKSTEEL });

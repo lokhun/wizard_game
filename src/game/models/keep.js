@@ -175,45 +175,102 @@ export const grimoire = {
 
 // ---------------------------------------------------------- courtSorcerer ----
 const ARCANE = 0x6a8cff;
+// Tall pointed cowl with an open face. Bottom at y=0 (head bone), tip leaning back.
+function cowlGeo(o = {}) {
+  const prof = o.prof ?? [[-0.04, 0.17], [0.06, 0.155], [0.15, 0.145], [0.22, 0.125], [0.3, 0.085], [0.38, 0.04], [0.44, 0.005]];
+  const AS = 22, TS = prof.length - 1;
+  const gap = (y) => (y < 0.2 ? (o.gap ?? 1.15) * (1 - smooth(0.12, 0.2, y) * 0.45) : 0);
+  const pos = [], idx = [];
+  for (let i = 0; i <= TS; i++) for (let j = 0; j <= AS; j++) {
+    const [y, r] = prof[i];
+    const a = (j / AS) * TAU - Math.PI; // a=0 front
+    const back = y > 0.2 ? (y - 0.2) ** 1.5 * (o.lean ?? 0.9) : 0;
+    const fold = 1 + Math.sin(a * 5 + y * 8) * 0.03;
+    pos.push(Math.sin(a) * r * fold, y, Math.cos(a) * r * fold * 1.08 - back + (y < 0.12 && Math.abs(a) < 1.2 ? 0.02 : 0));
+  }
+  for (let i = 0; i < TS; i++) for (let j = 0; j < AS; j++) {
+    const ac = ((j + 0.5) / AS) * TAU - Math.PI, yc = (prof[i][0] + prof[i + 1][0]) / 2;
+    if (Math.abs(ac) < gap(yc) / 2) continue;
+    const a = i * (AS + 1) + j, b = a + AS + 1;
+    idx.push(a, b, a + 1, b, b + 1, a + 1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx); g.computeVertexNormals();
+  // gold trim along the face opening
+  const edge = [];
+  for (const sd of [-1, 1]) for (let i = 0; i <= TS; i++) { const [y, r] = prof[i]; const gp = gap(y); if (gp <= 0.01) break; edge.push([sd, y, r, gp]); }
+  const L = edge.filter((e) => e[0] < 0), Rr = edge.filter((e) => e[0] > 0);
+  const pt = ([sd, y, r, gp]) => [Math.sin(sd * gp / 2) * r, y, Math.cos(sd * gp / 2) * r * 1.08 + (y < 0.12 ? 0.02 : 0)];
+  const path = [...L.map(pt), [0, 0.215, 0.135], ...Rr.slice().reverse().map(pt)];
+  return { g, trim: tube(path, 0.009, 24, 4) };
+}
+
+
 export const courtSorcerer = {
-  id: 'courtSorcerer', height: 2.05, radius: 0.42, flying: true, eyeColor: 0x9ad0ff, magicColor: ARCANE, defaultAttack: 'cast', attackTypes: ['cast', 'beam', 'summon'], orbSize: 0.08, flutter: 0.035,
+  id: 'courtSorcerer', height: 2.3, radius: 0.42, flying: true, eyeColor: 0x9ad0ff, magicColor: ARCANE, defaultAttack: 'cast', attackTypes: ['cast', 'beam', 'summon'], orbSize: 0.08, flutter: 0.035,
   build(rig) {
     const D = humanSkeleton(rig, { thigh: 0.44, shin: 0.43, spine: 0.16, chest: 0.31, neck: 0.09, shoulderW: 0.19, upper: 0.3, fore: 0.28 });
-    const BLUE = [0.1, 0.1, 0.3], INNER = [0.35, 0.3, 0.22];
-    // inner robe + split outer robe falling to the floor
-    rig.add('hips', 'cloth', robe(0.18, 0.3, D.hipH + 0.06, { seg: 20, rows: 6, folds: 7, foldAmp: 0.05, tatter: 0.05, seed: 3 }), { y: 0.04 }, { c: INNER, anim: (v) => clamp(-v.y / 1.0) });
-    const outer = new THREE.CylinderGeometry(0.2, 0.36, D.hipH + 0.1, 22, 6, true, 0.45, TAU - 0.9);
-    xf(outer, { y: -(D.hipH + 0.1) / 2 });
-    deform(outer, (v) => { const a = Math.atan2(v.x, v.z); const r = Math.hypot(v.x, v.z); const k = 1 + Math.sin(a * 7) * 0.05 * (-v.y); v.x *= k; v.z *= k; void r; });
-    rig.add('hips', 'cloth', outer, { y: 0.1 }, { c: BLUE, anim: (v) => clamp(-v.y / 1.0) * 1.2, cfn: (v) => (v.y < -(D.hipH - 0.05) ? GOLDTRIM : BLUE) });
-    rig.add('chest', 'cloth', lathe([[0.16, -0.08], [0.2, 0.12], [0.22, 0.24], [0.14, 0.32], [0.07, 0.34]], 14), { sz: 0.82 }, { c: BLUE });
-    rig.add('hips', 'gold', xf(G.tor(0.19, 0.022, 5, 18), { rx: Math.PI / 2, sz: 0.8 }), { y: 0.1 }, { c: GOLDTRIM });
-    rig.add('hips', 'gold', mergeRaw([xf(G.box(0.07, 0.07, 0.02), { z: 0.16, y: 0.1 }), xf(G.box(0.05, 0.5, 0.01), { z: 0.17, y: -0.18 })]), {}, { c: GOLDTRIM });
-    // mantle + very high flared collar
-    rig.add('chest', 'cloth', robe(0.12, 0.3, 0.25, { seg: 16, rows: 2, folds: 6, foldAmp: 0.06, tatter: 0.0, seed: 6 }), { y: D.chest + 0.06, sz: 0.85 }, { c: [0.16, 0.12, 0.38], cfn: (v) => (v.y < -0.21 ? GOLDTRIM : [0.16, 0.12, 0.38]) });
-    const collar = new THREE.CylinderGeometry(0.2, 0.1, 0.32, 16, 2, true, Math.PI * 0.62, Math.PI * 0.76);
-    xf(collar, { y: 0.16 });
-    rig.add('chest', 'cloth', twoSidedCollar(collar), { y: D.chest + 0.02, z: -0.02 }, { c: [0.14, 0.1, 0.32] });
-    rig.add('chest', 'gold', xf(new THREE.TorusGeometry(0.2, 0.01, 4, 16, Math.PI * 0.76), { rx: Math.PI / 2, rz: -Math.PI * 0.88 }), { y: D.chest + 0.34, z: -0.02 }, { c: GOLDTRIM });
-    // head: hood + porcelain mask with glowing eye slits
-    const h = hood(0.13, 0.12, { open: 0.3, peak: 0.6 });
-    rig.add('head', 'cloth', h.shell, { y: 0.1, z: -0.01 }, { c: [0.08, 0.07, 0.2] });
-    rig.add('head', 'dark', G.sph(0.105, 10, 8), { y: 0.1, z: -0.0 });
-    const mask = new THREE.SphereGeometry(0.1, 14, 10, -Math.PI * 0.4, Math.PI * 0.8, Math.PI * 0.2, Math.PI * 0.62);
-    rig.add('head', 'gold', deform(mask, (v) => { v.z *= 1.05; if (Math.abs(v.x) < 0.012 && v.y < 0.02) v.z += 0.012; }), { y: 0.1, z: 0.025, ry: Math.PI / 2 * 0 }, { c: [1.3, 1.25, 1.15] });
-    rig.pair('head', 'head', 'dark', xf(G.box(0.04, 0.012, 0.02), { rz: 0.2 }), { x: 0.035, y: 0.115, z: 0.118 });
-    rig.pair('head', 'head', 'glow', xf(G.box(0.03, 0.006, 0.01), { rz: 0.2 }), { x: 0.035, y: 0.115, z: 0.124 }, { c: HDR(0x9ad0ff, 6) });
-    rig.add('head', 'gold', mergeRaw([xf(G.tor(0.11, 0.008, 4, 16), { rx: Math.PI / 2, y: 0.17, sz: 1.05 }), xf(G.oct(0.02), { y: 0.19, z: 0.11 })]), {}, { c: GOLDTRIM });
-    // bell sleeves + gloved hands
+    rig.bone('shards', 'base', 0, 1.25, 0, { rate: 0.6 });
+    for (let i = 0; i < 3; i++) rig.bone('shard' + i, 'shards', Math.cos(i / 3 * TAU) * 0.55, 0, Math.sin(i / 3 * TAU) * 0.55);
+    const BLUE = [0.07, 0.08, 0.26], MID = [0.16, 0.12, 0.42], INNER = [0.42, 0.36, 0.26], GOLDC = [1.0, 0.82, 0.5];
+    const hem = (y0, base) => (v) => (v.y < y0 ? GOLDTRIM : (v.y < y0 + 0.05 ? [base[0] * 0.5, base[1] * 0.5, base[2] * 0.5] : base));
+    // inner robe (cream), outer split robe (deep blue) with gold hem bands
+    rig.add('hips', 'cloth', robe(0.18, 0.31, D.hipH + 0.06, { seg: 22, rows: 6, folds: 8, foldAmp: 0.05, tatter: 0.0, seed: 3 }), { y: 0.04 }, { anim: (v) => clamp(-v.y / 1.0), cfn: hem(-(D.hipH - 0.04), INNER) });
+    const outer = new THREE.CylinderGeometry(0.2, 0.4, D.hipH + 0.12, 24, 6, true, 0.42, TAU - 0.84);
+    xf(outer, { y: -(D.hipH + 0.12) / 2 });
+    deform(outer, (v) => { const a = Math.atan2(v.x, v.z); const k = 1 + Math.sin(a * 8) * 0.05 * (-v.y); v.x *= k; v.z *= k; });
+    rig.add('hips', 'cloth', outer, { y: 0.1 }, { anim: (v) => clamp(-v.y / 1.0) * 1.2, cfn: (v) => { const a = Math.abs(Math.atan2(v.x, v.z)); if (a < 0.5) return GOLDTRIM; return hem(-(D.hipH - 0.02), BLUE)(v); } });
+    // front panel with glowing sigils
+    rig.add('hips', 'cloth', panel(0.15, D.hipH - 0.05, { ws: 2, hs: 6, tatter: 0, seed: 1, curve: 0.02 }), { y: 0.08, z: 0.19, rx: 0.12 }, { c: MID, anim: (v) => clamp(-v.y / 0.9) * 0.8 });
+    rig.add('hips', 'glow', mergeRaw([0, 1, 2, 3].map((i) => xf(G.tor(0.025 - i * 0.002, 0.004, 3, 10), { y: -0.08 - i * 0.18, z: 0.012 }))), { y: 0.08, z: 0.19, rx: 0.12 }, { c: HDR(ARCANE, 3), anim: (v) => clamp(-v.y / 0.9) * 0.8 });
+    // torso, sash and chained amulet
+    rig.add('chest', 'cloth', lathe([[0.16, -0.08], [0.2, 0.12], [0.22, 0.24], [0.14, 0.32], [0.07, 0.34]], 16), { sz: 0.82 }, { c: BLUE });
+    rig.add('chest', 'gold', mergeRaw([xf(G.box(0.05, 0.32, 0.01), { x: 0.06, y: 0.14, z: 0.17, rz: -0.12 }), xf(G.box(0.05, 0.32, 0.01), { x: -0.06, y: 0.14, z: 0.17, rz: 0.12 })]), {}, { c: GOLDC });
+    rig.add('hips', 'cloth', xf(G.tor(0.2, 0.03, 5, 20), { rx: Math.PI / 2, sz: 0.8 }), { y: 0.1 }, { c: [0.35, 0.06, 0.08] });
+    rig.add('hips', 'cloth', mergeRaw([panel(0.06, 0.42, { tatter: 0.15, seed: 4 }), xf(panel(0.05, 0.34, { tatter: 0.15, seed: 6 }), { x: 0.05 })]), { x: 0.13, y: 0.09, z: 0.12, ry: 0.6 }, { c: [0.35, 0.06, 0.08], anim: (v) => -v.y * 1.5 });
+    rig.add('chest', 'gold', mergeRaw([tube([[-0.08, 0.3, 0.12], [0, 0.14, 0.2], [0.08, 0.3, 0.12]], 0.004, 10, 3), xf(G.cyl(0.035, 0.035, 0.012, 10), { y: 0.13, z: 0.205, rx: Math.PI / 2 })]), {}, { c: GOLDC });
+    rig.add('chest', 'glow', G.oct(0.018), { y: 0.13, z: 0.215, sz: 0.5 }, { c: HDR(ARCANE, 4) });
+    // layered mantle with gold edge, tall flared collar with spikes
+    rig.add('chest', 'cloth', robe(0.12, 0.32, 0.27, { seg: 18, rows: 2, folds: 7, foldAmp: 0.08, tatter: 0.0, seed: 6 }), { y: D.chest + 0.06, sz: 0.85 }, { cfn: hem(-0.23, MID) });
+    const collar = new THREE.CylinderGeometry(0.26, 0.11, 0.4, 18, 2, true, Math.PI * 0.6, Math.PI * 0.8);
+    deform(collar, (v) => { v.y += 0.2; const a = Math.atan2(v.x, v.z); if (v.y > 0.35) v.y += Math.max(0, Math.cos((a - Math.PI) * 6)) * 0.03; });
+    rig.add('chest', 'cloth', twoSidedCollar(collar), { y: D.chest + 0.02, z: -0.03 }, { cfn: (v) => (v.y > 0.36 ? GOLDTRIM : [0.1, 0.07, 0.26]) });
+    // cowl and porcelain mask
+    const cw = cowlGeo({ gap: 1.2, lean: 1.1 });
+    rig.add('head', 'cloth', cw.g, { y: 0.03, z: -0.015 }, { c: [0.06, 0.06, 0.2], anim: (v) => clamp((v.y - 0.25) * 4) * 0.4 });
+    rig.add('head', 'gold', cw.trim, { y: 0.03, z: -0.015 }, { c: GOLDC });
+    rig.add('head', 'dark', G.sph(0.112, 12, 10), { y: 0.1, z: -0.01 });
+    const mask = new THREE.SphereGeometry(0.098, 18, 14, Math.PI * 0.14, Math.PI * 0.72, Math.PI * 0.18, Math.PI * 0.66);
+    deform(mask, (v) => {
+      v.z *= 1.1;
+      if (Math.abs(v.x) < 0.012 && v.y < 0.03 && v.y > -0.03) v.z += 0.014 * (1 - Math.abs(v.x) / 0.012); // nose ridge
+      const e = Math.exp(-(((Math.abs(v.x) - 0.033) ** 2) / 0.0003 + ((v.y - 0.012) ** 2) / 0.00015));
+      v.z -= e * 0.012; // eye recesses
+      if (v.y < -0.05) v.x *= 0.85; // narrow chin
+    });
+    rig.add('head', 'bone', mask, { y: 0.1, z: 0.03 }, { cfn: (v) => (Math.abs(Math.abs(v.x) - 0.033) < 0.006 && v.y < 0.0 && v.y > -0.05 && Math.abs(v.x) > 0.02 ? [0.2, 0.25, 0.6] : [1.35, 1.32, 1.25]) });
+    rig.pair('head', 'head', 'dark', xf(G.sph(0.016, 8, 6), { sx: 1.5, sy: 0.55, sz: 0.5 }), { x: 0.033, y: 0.112, z: 0.128, rz: -0.25 });
+    rig.pair('head', 'head', 'glow', xf(G.sph(0.009, 8, 6), { sx: 1.5, sy: 0.6 }), { x: 0.033, y: 0.112, z: 0.134, rz: -0.25 }, { c: HDR(0x9ad0ff, 7) });
+    rig.add('head', 'dark', G.box(0.03, 0.004, 0.01), { y: 0.058, z: 0.128 });
+    rig.add('head', 'gold', mergeRaw([tube([[-0.06, 0.16, 0.1], [-0.03, 0.142, 0.122], [0, 0.152, 0.13], [0.03, 0.142, 0.122], [0.06, 0.16, 0.1]], 0.004, 12, 3), xf(G.oct(0.014), { y: 0.165, z: 0.128 })]), {}, { c: GOLDC });
+    // bell sleeves with gold cuffs + gloved hands with rings
     for (const S of ['L', 'R']) {
       const sx = S === 'L' ? 1 : -1;
       rig.add('arm' + S, 'cloth', robe(0.06, 0.08, D.upper + 0.02, { seg: 10, rows: 2, folds: 4, tatter: 0, seed: 2 }), { y: 0.02 }, { c: BLUE });
-      rig.add('fore' + S, 'cloth', robe(0.07, 0.15, D.fore * 0.95, { seg: 14, rows: 2, folds: 5, foldAmp: 0.1, tatter: 0.0, seed: 5 + sx }), {}, { c: BLUE, anim: (v) => clamp(-v.y * 3) * 0.6, cfn: (v) => (v.y < -D.fore * 0.85 ? GOLDTRIM : BLUE) });
-      addFleshHand(rig, 'hand' + S, sx, { mat: 'leather', c: [0.25, 0.18, 0.2], m: 0.85, grip: S === 'R' });
+      rig.add('fore' + S, 'cloth', robe(0.07, 0.17, D.fore * 0.98, { seg: 16, rows: 3, folds: 6, foldAmp: 0.12, tatter: 0.0, seed: 5 + sx }), {}, { anim: (v) => clamp(-v.y * 3) * 0.7, cfn: hem(-D.fore * 0.86, BLUE) });
+      addFleshHand(rig, 'hand' + S, sx, { mat: 'leather', c: [0.16, 0.12, 0.2], m: 0.85, grip: S === 'R', fingerLen: 1.15 });
+      rig.add('hand' + S, 'glow', G.tor(0.01, 0.0035, 3, 8), { y: -0.09, z: 0.02, rx: Math.PI / 2 }, { c: HDR(ARCANE, 3) });
     }
     // chained tome at the hip
-    rig.add('hips', 'leather', G.box(0.14, 0.18, 0.05), { x: 0.2, y: -0.12, z: 0.05, rz: 0.15 }, { c: [0.3, 0.1, 0.12] });
-    const st = addCrystalStaff(rig, 'handR', { len: 1.95, color: ARCANE, k: 3.5 });
+    rig.add('hips', 'leather', G.box(0.14, 0.18, 0.05), { x: -0.2, y: -0.12, z: 0.05, rz: -0.15 }, { c: [0.3, 0.1, 0.12] });
+    rig.add('hips', 'gold', mergeRaw([xf(G.box(0.15, 0.02, 0.055), { x: -0.2, y: -0.06, z: 0.05, rz: -0.15 }), xf(G.oct(0.02), { x: -0.2, y: -0.12, z: 0.08 })]), {}, { c: GOLDC });
+    // orbiting arcane shards
+    for (let i = 0; i < 3; i++) {
+      rig.add('shard' + i, 'glow', xf(G.oct(0.03), { sy: 2.4 }), {}, { c: HDR(ARCANE, 2.5) });
+      rig.add('shard' + i, 'spirit', xf(G.oct(0.05), { sy: 2.0 }), {}, { c: HDR(ARCANE, 0.3) });
+    }
+    const st = addCrystalStaff(rig, 'handR', { len: 2.0, color: ARCANE, k: 3.5, crystalR: 0.06 });
     rig.socket('muzzle', 'handR', 0, -0.07, st.tip);
     return D;
   },
@@ -233,6 +290,14 @@ export const courtSorcerer = {
         { armR: [-1.5, 0, 0.15], foreR: [-0.15, 0, 0], handR: [-1.2, 0, 0], armL: [-1.5, 0, -0.25], foreL: [-0.1, 0, 0], chest: [0.12, 0, 0], spine: [0.06, 0, 0] },
         { hit: 0.2, recover: 0.92, recoverAmt: 0.2, strikeExtra: (P, p, m) => { P.r('armR', Math.sin(m.time * 41) * 0.012); P.r('armL', Math.sin(m.time * 37) * 0.012); } },
       ),
+    },
+    extra: (P, m, s, dt, k) => {
+      const T = m.time;
+      m.state.orb = (m.state.orb ?? 0) + dt * (k.action ? 3 : 0.9);
+      const dead = s.anim === 'death' ? s.progress : 0;
+      P.r('shards', 0, m.state.orb, 0);
+      P.p('shards', 0, Math.sin(T * 1.1) * 0.06 - dead * 1.1, 0);
+      for (let i = 0; i < 3; i++) { P.p('shard' + i, 0, Math.sin(T * 1.7 + i * 2) * 0.07, 0); P.r('shard' + i, 0, T * 2 + i, 0.2); P.s('shard' + i, Math.max(0.01, (k.action ? 1.3 : 1) * (1 - dead))); }
     },
   },
 };
