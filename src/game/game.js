@@ -677,9 +677,12 @@ export class Game {
     hz.color = color.map((c) => c * 0.55);
     if (h.vis && h.shape !== 'arc' && h.shape !== 'wave' && h.shape !== 'los') {
       const dur = h.teleDur ?? h.delay;
-      if (h.shape === 'circle') this.vfx.telegraph({ x: h.x, y: h.y ?? this.groundY(h.x, h.z), z: h.z }, { shape: 'circle', radius: h.r, dur, color });
-      else if (h.shape === 'rect') this.vfx.telegraph({ x: h.x, y: h.y ?? 0, z: h.z }, { shape: 'rect', width: h.w, length: h.len, rot: h.rot, dur, color });
-      else if (h.shape === 'cone') this.vfx.telegraph({ x: h.x, y: h.y ?? 0, z: h.z }, { shape: 'cone', radius: h.r, angle: h.angle, rot: h.rot, dur, color });
+      const color = hz.color;
+      let tele = null;
+      if (h.shape === 'circle') tele = this.vfx.telegraph({ x: h.x, y: h.y ?? this.groundY(h.x, h.z), z: h.z }, { shape: 'circle', radius: h.r, dur, color });
+      else if (h.shape === 'rect') tele = this.vfx.telegraph({ x: h.x, y: h.y ?? 0, z: h.z }, { shape: 'rect', width: h.w, length: h.len, rot: h.rot, dur, color });
+      else if (h.shape === 'cone') tele = this.vfx.telegraph({ x: h.x, y: h.y ?? 0, z: h.z }, { shape: 'cone', radius: h.r, angle: h.angle, rot: h.rot, dur, color });
+      if (tele) hz.tele = this.vfx.active[this.vfx.active.length - 1];
     }
     if (h.shape === 'los') {
       hz.beamFx = true;
@@ -695,6 +698,21 @@ export class Game {
       });
     }
     this.hazards.push(hz);
+  }
+
+  // Killing an enemy mid-windup interrupts its attack: the pending hazard is
+  // dropped and its telegraph fades. Runs on every peer (from the death event).
+  cancelHazardsFrom(id, pos) {
+    let n = 0;
+    for (let i = this.hazards.length - 1; i >= 0; i--) {
+      const h = this.hazards[i];
+      if (h.src !== id || h.t >= (h.delay ?? 0)) continue;
+      if (h.tele && this.vfx.active.includes(h.tele)) h.tele.t = Math.max(h.tele.t, h.tele.life - 0.15);
+      this.hazards.splice(i, 1);
+      n++;
+    }
+    if (n && pos) this.ui?.floatText(pos, 'INTERRUPTED', '#e8c070');
+    return n;
   }
 
   _updateHazards(dt) {

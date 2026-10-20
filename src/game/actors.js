@@ -71,6 +71,16 @@ export class Actor {
   get alive() { return !this.dead && !this.collapsed; }
 }
 
+// what an enemy's body is made of, for death debris
+function bodyOf(type) {
+  if (/skeleton|lich/i.test(type)) return 'bone';
+  if (/armor|knight|guard|gargoyle|captain/i.test(type)) return 'metal';
+  if (/slime|ooze/i.test(type)) return 'slime';
+  if (/wraith|grimoire|imp|spirit/i.test(type)) return 'spirit';
+  return 'flesh';
+}
+const CORPSE_LINGER = 7;
+const CORPSE_CAP = 16;
 const RANGED_KINDS = new Set(['shoot', 'lob', 'circle']);
 
 export class ActorManager {
@@ -256,6 +266,7 @@ export class ActorManager {
   deathFx(a, el) {
     const g = this.g;
     const c = new THREE.Vector3(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z);
+    g.cancelHazardsFrom?.(a.id, new THREE.Vector3(a.pos.x, a.pos.y + a.height + 0.4, a.pos.z));
     g.audio?.play(a.def.deathSound ?? 'enemy_death', { pos: c });
     g.audio?.play('kill', { volume: 0.4 });
     const s = Math.max(0.6, a.height / 1.8);
@@ -296,6 +307,24 @@ export class ActorManager {
         g.vfx.burst(c, { count: 16, speed: 5, life: 0.9, size: 0.12, sprite: SPR.CHUNK, gravity: 14, solid: true, color: [0.4, 0.38, 0.35] });
         g.vfx.smoke(c, { count: 4, size: 0.6, color: [0.25, 0.22, 0.2], alpha: 0.4 });
     }
+    // what the body is made of adds its own debris on top of the element effect
+    const body = bodyOf(a.type);
+    if (body === 'bone') {
+      g.vfx.burst(c, { count: 14 * s, speed: 4.5, life: 1.4, size: 0.1, sprite: SPR.CHUNK, gravity: 15, solid: true, spin: 9, upward: 0.6, color: [0.62, 0.57, 0.47], color2: [0.45, 0.4, 0.33] });
+      g.vfx.smoke(c, { count: 3, size: 0.5 * s, color: [0.35, 0.32, 0.28], alpha: 0.35, life: 1.4 });
+    } else if (body === 'metal') {
+      g.vfx.burst(c, { count: 10 * s, speed: 5, life: 1.3, size: 0.12, sprite: SPR.CHUNK, gravity: 16, solid: true, spin: 10, upward: 0.5, color: [0.34, 0.35, 0.38], color2: [0.22, 0.22, 0.24] });
+      g.vfx.burst(c, { count: 18, speed: 7, life: 0.4, size: 0.04, sprite: SPR.SPARK, stretch: 0.05, gravity: 10, color: [3, 2.2, 1.2] });
+    } else if (body === 'slime') {
+      g.vfx.burst(c, { count: 24 * s, speed: 4, life: 0.9, size: 0.14, sprite: SPR.DROP, gravity: 14, solid: true, upward: 0.8, color: [0.16, 0.3, 0.06], color2: [0.1, 0.2, 0.04] });
+      g.vfx.decal(new THREE.Vector3(a.pos.x, a.pos.y, a.pos.z), 'slime', 2.4 * s, 12);
+    } else if (body === 'spirit') {
+      g.vfx.smoke(c, { count: 8 * s, size: 0.7 * s, color: [0.18, 0.2, 0.26], alpha: 0.45, life: 2.2, speed: 1.2 });
+      g.vfx.burst(c, { count: 12, speed: 1.5, upward: 2, life: 1.6, size: 0.2, sprite: SPR.WISP, gravity: -1.5, drag: 1, color: [0.6, 0.75, 1.0] });
+    } else if (el !== 'blood' && el !== 'blade') {
+      g.vfx.burst(c, { count: 12 * s, speed: 4, life: 0.8, size: 0.06, sprite: SPR.DROP, gravity: 14, solid: true, stretch: 0.04, color: [0.32, 0.01, 0.02], color2: [0.18, 0, 0.01] });
+      if (s > 0.7) g.vfx.decal(new THREE.Vector3(a.pos.x, a.pos.y, a.pos.z), 'blood', 1.4 * s, 12);
+    }
     if (a.boss) {
       g.vfx.explosion(c, fxOf(el) ? el : 'arcane', 8);
       g.vfx.addShake(0.8);
@@ -313,17 +342,35 @@ export class ActorManager {
   update(dt) {
     const g = this.g;
     let listDirty = false;
+    // past the cap, the oldest bodies sink early
+    const ages = [];
+    for (const a of this.list) if (a.dead && !a.sinkT && !a.boss) ages.push(a.deadT);
+    this._sinkOlder = ages.length > CORPSE_CAP ? ages.sort((x, y) => y - x)[ages.length - CORPSE_CAP] : Infinity;
     for (let i = this.list.length - 1; i >= 0; i--) {
       const a = this.list[i];
       if (a.dead) {
         a.deadT += dt;
         a.animT += dt;
         a.progress = Math.min(1, a.deadT / 1.1);
-        if (a.model) {
-          a.model.update(dt, { anim: 'death', t: a.animT, speed: 0, progress: a.progress, attackType: '' });
-          if (a.deadT > 1.6) a.model.root.position.y = a.pos.y - (a.deadT - 1.6) * 0.8;
+        // the killing blow carries the body for a moment
+        const kbl = Math.hypot(a.kb.x, a.kb.z);
+        if (kbl > 0.1 && !a.boss) {
+          const r = g.collision.move(a.pos.x, a.pos.z, a.pos.y, a.kb.x * dt, a.kb.z * dt, Math.min(a.radius, 0.6));
+          a.pos.x = r.x; a.pos.z = r.z;
+          const decay = Math.exp(-dt * 5);
+          a.kb.x *= decay; a.kb.z *= decay;
+          if (a.model) { a.model.root.position.x = a.pos.x; a.model.root.position.z = a.pos.z; }
         }
-        if (a.deadT > 2.6) { this.remove(a); listDirty = false; }
+        // bodies linger so the room remembers the fight; the oldest sink first when there are many
+        const sinkAt = a.boss ? 9 : a.deadT > this._sinkOlder ? 1.8 : CORPSE_LINGER;
+        if (a.model) {
+          if (a.deadT < 1.8) a.model.update(dt, { anim: 'death', t: a.animT, speed: 0, progress: a.progress, attackType: '' });
+          if (a.deadT > sinkAt) {
+            a.sinkT = (a.sinkT ?? 0) + dt;
+            a.model.root.position.y = a.pos.y - a.sinkT * 0.7;
+          }
+        }
+        if ((a.sinkT ?? 0) > 1.4 || (!a.model && a.deadT > 2.6)) { this.remove(a); listDirty = false; }
         continue;
       }
       if (g.isHost) this._hostUpdate(a, dt);

@@ -65,22 +65,23 @@ void main(){
     edge = smoothstep(0.88, 0.97, d) * inside;
     fill = step(d, uProg) * inside;
     float ringF = smoothstep(uProg - 0.04, uProg, d) * step(d, uProg) * inside;
-    fill = fill * 0.35 + ringF * 0.9;
+    // faint interior that strengthens toward the edge; the edge and sweep carry the read
+    fill = fill * (0.05 + 0.13 * d * d) + ringF * 0.8;
   } else if (uMode == 1) { // rect, fills along +y (vUv.y)
     inside = 1.0;
     float ex = smoothstep(0.85, 0.97, abs(p.x));
     float ey = smoothstep(0.92, 0.99, abs(p.y));
     edge = max(ex, ey);
     float y = vUv.y;
-    fill = step(y, uProg) * 0.35 + smoothstep(uProg - 0.03, uProg, y) * step(y, uProg) * 0.9;
+    fill = step(y, uProg) * (0.06 + 0.1 * abs(p.x)) + smoothstep(uProg - 0.03, uProg, y) * step(y, uProg) * 0.8;
   } else { // cone sector pointing +y, half-angle uAngle
     float d = length(p);
     float a = abs(atan(p.x, p.y));
     inside = step(d, 1.0) * step(a, uAngle);
     edge = (smoothstep(0.9, 0.98, d) + smoothstep(uAngle - 0.06, uAngle, a)) * inside;
-    fill = step(d, uProg) * inside * 0.35 + smoothstep(uProg - 0.04, uProg, d) * step(d, uProg) * inside * 0.9;
+    fill = step(d, uProg) * inside * (0.05 + 0.13 * d * d) + smoothstep(uProg - 0.04, uProg, d) * step(d, uProg) * inside * 0.8;
   }
-  float pulse = 0.75 + 0.25 * sin(uTime * 14.0);
+  float pulse = 0.55 + 0.2 * sin(uTime * 14.0);
   float alpha = (edge * pulse + fill) * inside * uFade;
   if (alpha < 0.003) discard;
   gl_FragColor = vec4(uColor * alpha, 1.0);

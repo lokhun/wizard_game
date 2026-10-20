@@ -724,11 +724,11 @@ export const CLASSES = {
     stats: { aura: 1.5 },
     spells: {
       primary: {
-        name: 'Holy Lance', icon: 'sun', desc: 'Swift lances of radiant light.', mode: 'auto', rate: 0.34, style: 'flick', hand: 'right',
+        name: 'Holy Lance', icon: 'sun', desc: 'Swift lances of radiant light that pierce one foe.', mode: 'auto', rate: 0.34, style: 'flick', hand: 'right',
         cast(ctx) {
           ctx.sound('cast_holy', 0.6);
-          ctx.fan(1, 1.5, (dir) => ctx.proj({ el: 'holy', vel: dir.multiplyScalar(55), radius: 0.16, life: 1.3, core: 0.6, light: 6, trail: 1,
-            hit: { dmg: 13, el: 'holy' } }));
+          ctx.fan(1, 1.5, (dir) => ctx.proj({ el: 'holy', vel: dir.multiplyScalar(55), radius: 0.16, life: 1.3, core: 0.6, light: 6, trail: 1, pierce: 1,
+            hit: { dmg: 16, el: 'holy' } }));
           ctx.muzzle('holy');
         },
       },
@@ -743,7 +743,7 @@ export const CLASSES = {
           const c = ctx.casterPos().clone();
           const R = ctx.aoe(5.5);
           ctx.vfx.decal(c, 'glyph', R * 2.1, 6, 0xffd060);
-          ctx.zone({ pos: c, radius: R, life: 6, interval: 0.5, el: 'holy', dmg: 5, healAllies: 4,
+          ctx.zone({ pos: c, radius: R, life: 6, interval: 0.5, el: 'holy', dmg: 8, healAllies: 4,
             visual: (z) => {
               if (Math.random() < 0.7) { const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * z.radius; ctx.vfx.P.glow({ x: z.pos.x + Math.cos(a) * r, y: z.pos.y + 0.1, z: z.pos.z + Math.sin(a) * r, vy: rand(1, 2.5), r: 3, g: 2.4, b: 1, life: 1.4, size: 0.1, sprite: SPR.STAR }); }
               ctx.lightAt(v3(z.pos.x, z.pos.y + 2, z.pos.z), 0xffd870, 10, z.radius * 2);
