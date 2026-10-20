@@ -17,6 +17,13 @@ A first-person, co-op wizard roguelike for the browser. Fight your way up from t
   - Thousands of GPU particles and element-specific spell effects.
 - **Procedural audio**: all sounds and music are synthesised with Web Audio.
   - About 100 layered sound effects, ambience for each realm, and generative music that shifts between exploring, combat and boss fights.
+- **Tactical fights:**
+  - Enemy waves are built as squads: a shield wall with archers behind it, casters with bodyguards, or flanking packs.
+  - Kill an enemy mid-windup to interrupt its attack.
+  - Shield-bearers must be flanked.
+  - War-banner bearers empower everything around them.
+  - Powder kegs chain-explode.
+  - Pillars and statues break line of sight.
 - **And more:**
   - Sigils above doorways reveal the room beyond: ambush, elite, treasure, shrine, merchant or boss.
   - Barrels and crates can be destroyed.
