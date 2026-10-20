@@ -37,7 +37,7 @@ How the research in `RESEARCH.md` turned into the game.
 
 ## Scaling
 - **Enemy health per floor:** ×1 / 1.65 / 2.5 / 3.5 / 4.8. This applies to regular and elite enemies only.
-- **Boss health** is tuned per boss in `BOSS_DEFS` (5,760 / 9,360 / 13,680 / 17,640 / 27,000) and does not get the floor multiplier.
+- **Boss health** is tuned per boss in `BOSS_DEFS` (5,760 / 9,360 / 17,500 / 23,000 / 36,000; tomes stack up late, so the last three are beefier) and does not get the floor multiplier.
 - **Enemy damage per floor:** ×1 / 1.25 / 1.55 / 1.85 / 2.2.
 - **Party size:**
   - Enemy count grows by +50% per extra player.
