@@ -450,17 +450,24 @@ export function buildLevel(level, factory, lightPool) {
   if (biome.outdoor) {
     const blade = new GeoBuilder();
     const rg = new RNG(level.seed + 77);
-    for (let b = 0; b < 7; b++) {
-      const a = rg.range(0, Math.PI * 2), r = rg.range(0, 0.12);
+    // curved two-segment blades; normals lean sideways so moonlight doesn't light them like floor
+    for (let b = 0; b < 9; b++) {
+      const a = rg.range(0, Math.PI * 2), r = rg.range(0, 0.14);
       const bx = Math.cos(a) * r, bz = Math.sin(a) * r;
-      const h = rg.range(0.28, 0.6), w = rg.range(0.025, 0.045);
-      const lean = rg.range(-0.12, 0.12), dir = rg.range(0, Math.PI * 2);
+      const h = rg.range(0.26, 0.58), w = rg.range(0.022, 0.04);
+      const lean = rg.range(0.06, 0.2), dir = rg.range(0, Math.PI * 2);
       const dx = Math.cos(dir), dz = Math.sin(dir);
-      const c0 = [0.12, 0.15, 0.06], c1 = [0.42, 0.46, 0.2];
-      blade.vert(bx - dz * w, 0, bz + dx * w, 0, 1, 0, 0, 0, c0);
-      blade.vert(bx + dz * w, 0, bz - dx * w, 0, 1, 0, 1, 0, c0);
-      const t = blade.vert(bx + dx * lean, h, bz + dz * lean, 0, 1, 0, 0.5, 1, c1);
-      blade.tri(t - 2, t - 1, t);
+      const nx = dx * 0.75, ny = 0.66, nz = dz * 0.75;
+      const dry = rg.next() < 0.3;
+      const c0 = [0.035, 0.045, 0.02], c1 = dry ? [0.2, 0.17, 0.08] : [0.11, 0.14, 0.05], c2 = dry ? [0.3, 0.26, 0.12] : [0.17, 0.21, 0.08];
+      const mx = bx + dx * lean * 0.3, mz = bz + dz * lean * 0.3, mw = w * 0.7;
+      const v0 = blade.vert(bx - dz * w, 0, bz + dx * w, nx, ny, nz, 0, 0, c0);
+      blade.vert(bx + dz * w, 0, bz - dx * w, nx, ny, nz, 1, 0, c0);
+      blade.vert(mx - dz * mw, h * 0.55, mz + dx * mw, nx, ny, nz, 0, 0.55, c1);
+      blade.vert(mx + dz * mw, h * 0.55, mz - dx * mw, nx, ny, nz, 1, 0.55, c1);
+      blade.vert(bx + dx * lean, h, bz + dz * lean, nx, ny, nz, 0.5, 1, c2);
+      blade.tri(v0, v0 + 1, v0 + 3); blade.tri(v0, v0 + 3, v0 + 2);
+      blade.tri(v0 + 2, v0 + 3, v0 + 4);
     }
     const geo = blade.build();
     grassMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide });
@@ -492,6 +499,7 @@ export function buildLevel(level, factory, lightPool) {
       sc.set(k, k * rg.range(0.8, 1.3), k);
       m4.compose(new THREE.Vector3(px, level.floorAt(px, pz), pz), qq, sc);
       inst.setMatrixAt(i, m4);
+      inst.setColorAt(i, sc.set(rg.range(0.75, 1.15), rg.range(0.8, 1.1), rg.range(0.7, 1.0)));
     });
     inst.receiveShadow = true;
     group.add(inst);
