@@ -34,7 +34,7 @@ const HOLDS = {
   wand: { pole: true, tilt: -1.2, lean: 0.3, roll: 0.0, pos: [-0.01, 0.03, -0.02] },
   dagger: { pole: true, tilt: -0.45, lean: 0.3, roll: 0.0, pos: [-0.03, 0.07, -0.02] },
   // leaned out and back so the blade rests beside the crosshair, not across it
-  sword: { pole: true, tilt: -0.72, lean: 0.12, roll: 0.0, pos: [0.012, -0.012, 0] },
+  sword: { pole: true, tilt: -0.7, lean: 0.18, roll: 0.0, pos: [0.008, -0.01, 0] },
   claw: { rot: [1.15, 0.45, 0.15], order: 'YXZ', pos: [-0.04, 0.09, -0.05] },
   fist: { rot: [0.6, 0.8, 0.0], pos: [-0.04, 0.06, -0.04] },
 };

@@ -89,13 +89,13 @@ function coneChannel({ el, range, angle, dmg, interval = 0.12, st, sound, max = 
       S.cone.update(tmp2, d, range * 0.95, Math.tan(angle) * range * 0.8, 0.9 + 0.1 * Math.sin(ctx.time * 31));
       // flame tongues seeded all along the cone (not piled up where drag stops
       // them), widening and cooling from a hot orange throat to sooty red
-      const n = emitN(S, 'eF', 140, dt);
+      const n = emitN(S, 'eF', 160, dt);
       for (let i = 0; i < n; i++) {
         const t = 0.1 + Math.pow(Math.random(), 0.9) * 0.88;
         const w = Math.tan(angle) * t;
         const sx = d.x + rand(-1, 1) * w * 0.8, sy = d.y + rand(-1, 1) * w * 0.5, sz = d.z + rand(-1, 1) * w * 0.8;
         const L = t * range;
-        const c0 = t < 0.3 ? fx.core : fx.mid, k0 = t < 0.3 ? 0.32 : 0.7;
+        const c0 = t < 0.3 ? fx.core : fx.mid, k0 = t < 0.3 ? 0.42 : 0.7;
         // the stream must read from the hand outward, so it skips the near-lens fade
         ctx.vfx.P.glowAmbient({ x: o.x + sx * L, y: o.y + sy * L, z: o.z + sz * L, vx: sx * range * 0.9, vy: sy * range * 0.9 + 0.6, vz: sz * range * 0.9,
           r: c0[0] * k0, g: c0[1] * k0, b: c0[2] * k0, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2],

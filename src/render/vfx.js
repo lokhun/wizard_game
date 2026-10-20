@@ -355,7 +355,7 @@ const DECAL_LOOK = {
   scorch: { rough: 0.95 },
   crack: { rough: 0.95 },
   blood: { rough: 0.22, normal: true, metal: 0.0 },
-  slime: { rough: 0.18, normal: true, metal: 0.0, emissive: 0x0b1404 },
+  slime: { rough: 0.18, normal: true, metal: 0.0, emissive: 0x111e06 },
   glyph: { additive: true },
   frost: { additive: true },
 };
@@ -401,7 +401,7 @@ function decalTextures() {
     }),
     // wet pools: dark, desaturated, with noisy ragged edges; lit (see decal())
     blood: mk((g) => puddle(g, [46, 4, 6], 0.92, 34, 100, 3)),
-    slime: mk((g) => puddle(g, [38, 46, 14], 0.88, 30, 96, 7)),
+    slime: mk((g) => puddle(g, [46, 56, 16], 0.9, 30, 96, 7)),
     crack: mk((g) => {
       g.strokeStyle = 'rgba(15,10,6,0.85)'; g.lineCap = 'round';
       for (let i = 0; i < 9; i++) {
