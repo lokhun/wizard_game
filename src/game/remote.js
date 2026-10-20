@@ -73,7 +73,7 @@ export class RemotePlayer {
     if (sp.mode === 'channel') {
       if (msg.chan === 1) {
         if (this.channel) { this.channel.sp.channel.end(this.channel.ctx, this.channel.S); this.channel = null; }
-        const ctx = makeCtx(this.game, this, { local: false, slot: msg.slot, origin, dir, aimPoint: aim, stats: {} });
+        const ctx = makeCtx(this.game, this, { local: false, slot: msg.slot, origin, dir, aimPoint: aim, stats: { aug: new Set(msg.au ?? []) } });
         const S = {};
         sp.channel.start(ctx, S);
         this.channel = { sp, ctx, S };
@@ -83,7 +83,7 @@ export class RemotePlayer {
       }
       return;
     }
-    const ctx = makeCtx(this.game, this, { local: false, slot: msg.slot, origin, dir, aimPoint: aim, stats: {}, charges: msg.ch });
+    const ctx = makeCtx(this.game, this, { local: false, slot: msg.slot, origin, dir, aimPoint: aim, stats: { aug: new Set(msg.au ?? []) }, charges: msg.ch });
     try { sp.cast(ctx); } catch (e) { console.warn('remote cast failed', e); }
   }
 

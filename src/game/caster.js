@@ -131,9 +131,11 @@ export function makeCtx(game, caster, o) {
       if (!local) return [];
       return rt.damageArea(pos, r, { ...H, src: caster.id });
     },
-    chain(first, firstPos, H, n, range, falloff) {
-      const hitSet = new Set([first.id]);
-      ctx.hit(first, H, firstPos);
+    // exclude: an existing hit set to share (augment forks); skipFirst: don't re-hit `first`
+    chain(first, firstPos, H, n, range, falloff, exclude, skipFirst) {
+      const hitSet = exclude ?? new Set();
+      hitSet.add(first.id);
+      if (!skipFirst) ctx.hit(first, H, firstPos);
       let cur = first, curPos = firstPos, dmg = H.dmg;
       for (let i = 0; i < n; i++) {
         const next = rt.nearest(curPos, range, hitSet);
@@ -150,6 +152,7 @@ export function makeCtx(game, caster, o) {
         cur = next; curPos = np;
       }
       void cur;
+      return hitSet;
     },
     zone(z) {
       const zone = { ...z, pos: z.pos.clone(), local };

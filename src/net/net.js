@@ -176,7 +176,7 @@ export class Net {
     else if (this.hostConn?.open) this.hostConn.send({ ...msg, relay: 1 });
   }
   sendCast(c) {
-    const msg = { t: 'cast', pid: c.pid, slot: c.slot, chan: c.chan, ch: c.ch,
+    const msg = { t: 'cast', pid: c.pid, slot: c.slot, chan: c.chan, ch: c.ch, au: c.au?.length ? c.au : undefined,
       o: c.o ? [r2(c.o.x), r2(c.o.y), r2(c.o.z)] : null, d: c.d ? [r3(c.d.x), r3(c.d.y), r3(c.d.z)] : null, ap: c.ap ? [r2(c.ap.x), r2(c.ap.y), r2(c.ap.z)] : null };
     this.broadcastOrSend(msg);
   }

@@ -1521,7 +1521,7 @@ function makeShopStock(game, p) {
   items.push({ name: 'Healing Draught', desc: 'Restore 50% health.', icon: 'heart', price: 30 + f * 10, apply: (pl) => { pl.heal(pl.maxHp * 0.5); game.healPulse = 1; } });
   items.push({ name: 'Elixir of Vigor', desc: '+25 max health.', icon: 'heart', price: 60 + f * 15, apply: (pl) => { pl.upgrades.push({ def: TOMES.find((t) => t.id === 'vitality'), rarity: 0, mult: 1.25 }); pl.recomputeStats(); } });
   const tomes = rollTomes(p, 3, 1);
-  for (const t of tomes) items.push({ name: t.def.name, desc: t.def.desc(t.mult), icon: t.def.icon, rarity: t.rarity, price: [50, 90, 150, 240][t.rarity] + f * 15, apply: () => game.grantTome(t) });
+  for (const t of tomes) items.push({ name: t.def.name, desc: (t.def.aug ? `Augment · ${t.def.spellName}. ` : '') + t.def.desc(t.mult), icon: t.def.icon, rarity: t.rarity, price: [50, 90, 150, 240][t.rarity] + f * 15, apply: () => game.grantTome(t) });
   const rel = rollRelics(p, 1);
   for (const r of rel) items.push({ name: r.def.name, desc: r.def.desc, icon: r.def.icon, price: 180 + f * 25, relic: true, apply: () => game.grantRelic(r) });
   return items;

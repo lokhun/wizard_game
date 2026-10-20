@@ -228,6 +228,7 @@ export class LocalPlayer {
     g.audio?.play('crit');
     g.vfx.impact(this.eye.clone().add(this.forward().multiplyScalar(0.8)), 'blade', 1.2);
     this.addCharge(2, 5);
+    this.parries = (this.parries ?? 0) + 1; // read by the Riposte augment
     this.parryT = Math.max(this.parryT, 0.15);
     void fromPos;
   }
@@ -356,11 +357,11 @@ export class LocalPlayer {
       const S = {};
       this.channel = { slot, S, ctx, t: 0, max: sp.channel.max ?? 3 };
       sp.channel.start(ctx, S);
-      this.game.net?.sendCast({ pid: this.id, slot, o: origin, d: dir, ap: aim.point, chan: 1 });
+      this.game.net?.sendCast({ pid: this.id, slot, o: origin, d: dir, ap: aim.point, chan: 1, au: this.stats.augSlot?.[slot] });
     } else {
       const edgeBefore = this.edge;
       sp.cast(ctx);
-      this.game.net?.sendCast({ pid: this.id, slot, o: origin, d: dir, ap: aim.point, ch: edgeBefore });
+      this.game.net?.sendCast({ pid: this.id, slot, o: origin, d: dir, ap: aim.point, ch: edgeBefore, au: this.stats.augSlot?.[slot] });
     }
     this.game.onLocalCast?.(slot);
     return true;

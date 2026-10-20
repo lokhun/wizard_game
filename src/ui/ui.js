@@ -412,7 +412,9 @@ export class UI {
     const fightRoom = game.director.active?.room ?? room;
     const foes = game.actors.list.reduce((n, a) => n + (fightsHere(a, fightRoom) ? 1 : 0), 0);
     const locked = game.director.active || (room && !room.cleared && foes > 0);
-    if (locked) obj = game.actors.list.some((a) => a.boss && !a.dead) ? 'Defeat the guardian' : `Survive the ambush — ${foes} foe${foes === 1 ? '' : 's'} remain`;
+    const tr = fightRoom?.type === ROOM.TRIAL && fightRoom.trialWon === null && fightRoom.trialEnd ? Math.max(0, Math.ceil(fightRoom.trialEnd - game.time)) : null;
+    if (locked && tr !== null) obj = `Trial — ${tr}s left · ${foes} foe${foes === 1 ? '' : 's'} remain`;
+    else if (locked) obj = game.actors.list.some((a) => a.boss && !a.dead) ? 'Defeat the guardian' : `Survive the ambush — ${foes} foe${foes === 1 ? '' : 's'} remain`;
     else if (room?.type === ROOM.BOSS && room.cleared) obj = 'Step through the portal to ascend';
     else obj = 'Find the way to the guardian\'s lair';
     if (obj !== this._obj) { this._obj = obj; h.obj.textContent = obj; }
@@ -470,7 +472,7 @@ export class UI {
       g.strokeStyle = r.visited ? 'rgba(226,196,138,0.8)' : 'rgba(226,196,138,0.3)';
       g.lineWidth = 1.5;
       g.strokeRect(x, y, w, hh);
-      const icon = r.type === ROOM.BOSS ? '☠' : r.type === ROOM.SHOP ? '⚖' : r.type === ROOM.SHRINE ? '✚' : r.type === ROOM.TREASURE ? '♦' : r.type === ROOM.ELITE ? '★' : '';
+      const icon = r.type === ROOM.BOSS ? '☠' : r.type === ROOM.SHOP ? '⚖' : r.type === ROOM.SHRINE ? '✚' : r.type === ROOM.TREASURE ? '♦' : r.type === ROOM.ELITE ? '★' : r.type === ROOM.TRIAL ? '⧗' : '';
       if (icon) {
         g.save();
         g.translate(x + w / 2, y + hh / 2);
@@ -770,9 +772,12 @@ export class UI {
     const col = this.game ? hex(this.game.player.meta.color) : '#fff';
     this._choiceModal('Arcane Tomes', 'Choose one tome to bind to your soul', choices, (c, i) => {
       const r = RARITY[c.rarity];
-      return `<div class="tome card" data-i="${i}" style="--rc:${r.color}">
+      // spell augments: tagged with the spell they change, in the class colour
+      const ac = c.def.aug ? hex(CLASS_META[c.def.cls]?.color ?? 0xffffff) : null;
+      return `<div class="tome card${ac ? ' augment' : ''}" data-i="${i}" style="--rc:${r.color}${ac ? `;--ac:${ac};--ac-dim:${ac}99;--ac-glow:${ac}26` : ''}">
         <div class="rar" style="color:${r.color}">${r.name}</div>
-        <div class="ticon" style="box-shadow:0 0 30px ${r.color}55">${iconSVG(c.def.icon, c.def.el ? hex(ELEMENT_COLORS[c.def.el] ?? 0xffffff) : r.color === '#c8c0b0' ? col : r.color, 54)}</div>
+        ${ac ? `<div class="augtag">Augment · ${esc(c.def.spellName)}</div>` : ''}
+        <div class="ticon" style="box-shadow:0 0 30px ${ac ?? r.color}55">${iconSVG(c.def.icon, ac ?? (c.def.el ? hex(ELEMENT_COLORS[c.def.el] ?? 0xffffff) : r.color === '#c8c0b0' ? col : r.color), 54)}</div>
         <div class="tname">${c.def.name}</div>
         <div class="tdesc">${c.def.desc(c.mult)}</div>
         <div class="tkey">[${i + 1}]</div>

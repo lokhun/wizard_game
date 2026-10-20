@@ -1,3 +1,5 @@
+import { CLASSES } from './classes.js';
+
 // ---------------------------------------------------------------------------
 // Arcane Tomes (per-player upgrades picked 1-of-3 after rooms) and Relics.
 // Rarity scales numbers (x1 / 1.3 / 1.6 / 2.0). Tomes with an element tag
@@ -12,6 +14,7 @@ export const RARITY = [
 ];
 
 const pct = (x) => `${Math.round(x * 100)}%`;
+const num = (x) => Math.round(x);
 
 export const TOMES = [
   // ---------------- offence
@@ -55,6 +58,80 @@ export const TOMES = [
   { id: 'echo', name: 'Arcane Echo', icon: 'multi', max: 1, minRarity: 2, desc: () => `Abilities have a 25% chance to instantly recharge.`, apply: (s) => { s.echo = 0.25; } },
 ];
 
+// ---------------- spell augments (class-only; change how one spell behaves)
+// Each augment is Rare or better, max 1, and only rolls for its class. Its id
+// lands in stats.aug (a Set) and stats.augSlot[slot] (sent with casts so
+// teammates replay the same visuals); stats.augM[id] holds the rarity mult.
+// The behaviour itself lives in that spell's code in classes.js.
+export const AUGMENTS = [
+  // pyromancer
+  { id: 'pyro_fireball', cls: 'pyromancer', slot: 'ability1', name: 'Cinder Schism', desc: (m) => `Fireball bursts into 3 cinders that scatter, explode for ${num(24 * m)} and leave burning ground.` },
+  { id: 'pyro_breath', cls: 'pyromancer', slot: 'secondary', name: "Wyrm's Last Gasp", desc: () => `Releasing Dragon's Breath exhales a fireball that swells the longer you breathed.` },
+  { id: 'pyro_meteor', cls: 'pyromancer', slot: 'ultimate', name: "Heaven's Forge", desc: () => `Meteor Storm hunts Burning foes, and every impact leaves a pool of molten slag.` },
+  // cryomancer
+  { id: 'cryo_nova', cls: 'cryomancer', slot: 'ability1', name: 'Crown of Rime', desc: (m) => `Frost Nova raises ice spikes beneath foes and around you. After 1.5s they shatter for ${num(30 * m)}, Shattering the Frozen.` },
+  { id: 'cryo_spike', cls: 'cryomancer', slot: 'ability2', name: 'Splintering Lance', desc: () => `When Glacial Spike breaks, it bursts into a ring of 8 piercing ice shards.` },
+  { id: 'cryo_blizzard', cls: 'cryomancer', slot: 'ultimate', name: 'Hail of the Long Night', desc: (m) => `Great icicles plunge from the Blizzard onto Frozen and Chilled foes for ${num(50 * m)}.` },
+  // stormcaller
+  { id: 'storm_fork', cls: 'stormcaller', slot: 'primary', name: 'Forked Tongue', desc: () => `Chain Lightning splits at its first target into two separate chains, each dealing 80% damage.` },
+  { id: 'storm_ball', cls: 'stormcaller', slot: 'secondary', name: 'Storm Anchor', desc: () => `Ball Lightning halts where you aim and lashes up to 3 foes with every pulse.` },
+  { id: 'storm_blink', cls: 'stormcaller', slot: 'ability2', name: 'Path of the Conduit', desc: () => `Static Blink leaves a wall of lightning along its path for 3s that Shocks all who cross it.` },
+  // arcanist
+  { id: 'arc_blink', cls: 'arcanist', slot: 'ability1', name: 'Mirror Mantle', desc: () => `Blink leaves a mirror image behind that fires Arcane Missiles for 3s, then bursts.` },
+  { id: 'arc_orb', cls: 'arcanist', slot: 'secondary', name: 'Wandering Moon', desc: () => `Arcane Orb returns to your hand, piercing everything again. Catching it refunds 2s of its cooldown.` },
+  { id: 'arc_sing', cls: 'arcanist', slot: 'ultimate', name: 'Hungering Star', desc: () => `While Singularity pulls, it lashes every foe it holds with seeking missiles.` },
+  // necromancer
+  { id: 'necro_raise', cls: 'necromancer', slot: 'ability1', name: 'Corpse Pyre', desc: (m) => `Raised skeletons burst in necrotic flame for ${num(45 * m)} when they fall or expire.` },
+  { id: 'necro_spear', cls: 'necromancer', slot: 'ability2', name: 'Ossuary Wake', desc: () => `Bone spikes erupt along Bone Spear's path, rooting foes. Their necrotic sting Blights the Bleeding.` },
+  { id: 'necro_drain', cls: 'necromancer', slot: 'secondary', name: 'Twin Siphon', desc: () => `Life Drain forks to a second nearby foe, siphoning life from both.` },
+  // blood mage
+  { id: 'blood_scythe', cls: 'bloodmage', slot: 'secondary', name: 'Sated Reaper', desc: () => `Crimson Scythe costs no health above 80%, and looses a crescent of blood that carves through a line.` },
+  { id: 'blood_pact', cls: 'bloodmage', slot: 'ability1', name: 'Tithe of Lances', desc: () => `The blood you sacrifice to Blood Pact erupts as homing lances, 1 per 5 health paid.` },
+  { id: 'blood_nova', cls: 'bloodmage', slot: 'ultimate', name: 'Crimson Moonpool', desc: () => `Sanguine Nova leaves a pool of blood for 5s that makes foes Bleed and heals allies standing in it.` },
+  // chronomancer
+  { id: 'chrono_bomb', cls: 'chronomancer', slot: 'secondary', name: 'Recurrence', desc: () => `Time Bomb detonates again 1.2s later. The echo triggers Paradox on foes the first blast Slowed.` },
+  { id: 'chrono_rewind', cls: 'chronomancer', slot: 'ability1', name: 'The Forsaken Moment', desc: (m) => `The self you leave behind when you Rewind detonates in shattered time for ${num(50 * m)}, Slowing and stunning.` },
+  { id: 'chrono_stasis', cls: 'chronomancer', slot: 'ability2', name: 'Event Horizon', desc: (m) => `When Stasis Field ends it collapses inward, dragging foes to its heart for ${num(60 * m)} damage.` },
+  // warlock
+  { id: 'warlock_blast', cls: 'warlock', slot: 'primary', name: 'Witch-Splinters', desc: () => `Eldritch Blast bolts that strike a Hexed foe splinter into 2 seeking bolts.` },
+  { id: 'warlock_hex', cls: 'warlock', slot: 'secondary', name: 'Spreading Malediction', desc: () => `Hex splits on impact into 3 curses that seek out other foes.` },
+  { id: 'warlock_rift', cls: 'warlock', slot: 'ability1', name: 'Maw of the Deep', desc: (m) => `When Void Rift closes, tentacles burst from it to crush up to 4 foes inside for ${num(40 * m)}.` },
+  // lightbinder
+  { id: 'light_lance', cls: 'lightbinder', slot: 'primary', name: 'Dawnspear', desc: () => `Every 4th Holy Lance is a great spear of dawn that pierces everything and Judges foes.` },
+  { id: 'light_sanct', cls: 'lightbinder', slot: 'ability1', name: 'Wandering Sanctum', desc: () => `Sanctuary no longer stays put: it is carried with you as a moving halo.` },
+  { id: 'light_aegis', cls: 'lightbinder', slot: 'ability2', name: 'Wrath of the Aegis', desc: (m) => `Divine Aegis erupts in a stunning shockwave for ${num(30 * m)}, and again when the ward fades.` },
+  // geomancer
+  { id: 'geo_shot', cls: 'geomancer', slot: 'primary', name: 'Skipping Stones', desc: () => `Stone Shot skips along the ground twice, splashing on every bounce.` },
+  { id: 'geo_spike', cls: 'geomancer', slot: 'secondary', name: 'Hunting Fault', desc: () => `Earthspike Line becomes a snaking fault that runs twice as far and veers toward foes.` },
+  { id: 'geo_mountain', cls: 'geomancer', slot: 'ultimate', name: 'Rolling Doom', desc: () => `The boulder of Mountain's Fall rolls on after landing, crushing all in its path.` },
+  // thornweaver
+  { id: 'druid_spore', cls: 'druid', slot: 'secondary', name: 'Creeping Miasma', desc: () => `Spore Bloom's cloud drifts after foes, then bursts for damage per Poison stack.` },
+  { id: 'druid_entangle', cls: 'druid', slot: 'ability1', name: 'Briar Thicket', desc: () => `Entangle leaves a briar thicket for 5s that keeps rooting and Poisoning foes inside.` },
+  { id: 'druid_wolves', cls: 'druid', slot: 'ability2', name: 'Plaguehound Pack', desc: () => `Spirit Wolves trail venomous miasma wherever they run.` },
+  // spellblade
+  { id: 'blade_rush', cls: 'spellblade', slot: 'ability2', name: 'Phantom Rush', desc: () => `An afterimage follows your Blade Rush, repeating every cut 0.4s later. Its hits build Edge.` },
+  { id: 'blade_blades', cls: 'spellblade', slot: 'secondary', name: 'Recalling Steel', desc: () => `Spectral Blades fly back to you, cutting again. Blades that hit on the return build Edge.` },
+  { id: 'blade_parry', cls: 'spellblade', slot: 'ability1', name: 'Riposte', desc: () => `When the Parry ward drops you whirl in a counter-cut, far stronger if you parried anything.` },
+  // tempest
+  { id: 'wind_gale', cls: 'tempest', slot: 'secondary', name: 'Ill Wind', desc: () => `Gale carries plague and flame: Burn and Poison on any foe in the gust spread to all it strikes.` },
+  { id: 'wind_tornado', cls: 'tempest', slot: 'ability1', name: 'Hunting Cyclone', desc: () => `Tornado hunts the nearest foe, and bursts outward when it dies down.` },
+  { id: 'wind_updraft', cls: 'tempest', slot: 'ability2', name: 'Stormfall', desc: () => `Landing after Updraft crashes down in a shockwave that hurls and stuns. The higher the fall, the harder.` },
+].map((a) => ({
+  ...a, aug: true, max: 1, minRarity: 1,
+  get spellName() { return CLASSES[a.cls].spells[a.slot].name; },
+  get icon() { return CLASSES[a.cls].spells[a.slot].icon; },
+  apply: (s, m) => {
+    s.aug ??= new Set(); s.aug.add(a.id);
+    s.augM ??= {}; s.augM[a.id] = m;
+    s.augSlot ??= {}; (s.augSlot[a.slot] ??= []).push(a.id);
+  },
+}));
+TOMES.push(...AUGMENTS);
+
+// chance that any one of the three choices is an augment (when one can roll):
+// 1 - (1 - 0.21)^3 ~ 0.5, so about every other pick offers one
+const AUG_CHANCE = 0.21;
+
 export const RELICS = [
   { id: 'emberheart', name: 'Ember Heart', icon: 'flame', desc: 'Burning enemies take +30% damage from you.', apply: (s) => { s.vs.burn = (s.vs.burn ?? 0) + 0.3; } },
   { id: 'frosttear', name: 'Frozen Tear', icon: 'snow', desc: 'Chilled and Frozen enemies take +30% damage from you.', apply: (s) => { s.vs.chill = (s.vs.chill ?? 0) + 0.3; s.vs.frozen = (s.vs.frozen ?? 0) + 0.3; } },
@@ -76,13 +153,23 @@ export const RELICS = [
 export function rollTomes(player, n = 3, minRarity = 0, rng = Math.random) {
   const counts = {};
   for (const u of player.upgrades) counts[u.def.id] = (counts[u.def.id] ?? 0) + 1;
-  const pool = TOMES.filter((t) => (counts[t.id] ?? 0) < t.max);
+  const pool = TOMES.filter((t) => (counts[t.id] ?? 0) < t.max && !t.cls);
+  const augPool = AUGMENTS.filter((t) => t.cls === player.classId && !counts[t.id]);
   const out = [];
   const used = new Set();
   // weight elemental tomes toward the player's element
   const el = player.meta.element;
   for (let i = 0; i < n && pool.length; i++) {
     let rar = rollRarity(rng, minRarity);
+    // class augments: their own roll, so they show up at a steady rate whatever the rarity
+    const augs = augPool.filter((t) => !used.has(t.id));
+    if (augs.length && rng() < AUG_CHANCE) {
+      const pick = augs[Math.floor(rng() * augs.length)];
+      used.add(pick.id);
+      rar = Math.max(rar, pick.minRarity);
+      out.push({ def: pick, rarity: rar, mult: RARITY[rar].mult });
+      continue;
+    }
     const cands = pool.filter((t) => !used.has(t.id) && (t.minRarity ?? 0) <= rar && (!t.el || t.el === el || rng() < 0.25) && !(t.el && player.stats.infuse && t.el !== el && rng() < 0.5));
     if (!cands.length) continue;
     let tot = 0;
