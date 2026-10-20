@@ -732,6 +732,8 @@ export class EnemyInstance {
     }
     this._dirty = true;
   }
+  // a boss moment from the game (phase change, submerge, enrage...): types may react visually
+  bossFx(kind, extra) { this.spec.onFx?.(this, kind, extra ?? {}); }
   // called by poses during death / spawn; reset to 1 every frame otherwise
   setOpacity(o) { this._opTarget = o; }
   // grows the muzzle orb toward k (0..1)

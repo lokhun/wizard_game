@@ -1426,6 +1426,8 @@ export class Game {
   // ======================================================================
   bossFx(kind, a, extra) {
     if (!a) return;
+    // the boss model reacts to its own moments (phase change, submerge, enrage...): visual only
+    a.model?.bossFx?.(kind, extra ?? {});
     switch (kind) {
       case 'submerge':
         this.vfx.burst(new THREE.Vector3(a.pos.x, a.pos.y + 0.5, a.pos.z), { element: 'enemyGreen', count: 60, speed: 6, upward: 1, life: 1, size: 0.3, sprite: SPR.BUBBLE, gravity: 6 });

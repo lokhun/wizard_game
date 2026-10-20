@@ -142,6 +142,8 @@ export class BossBrain {
       this.events.length = 0;
       this.moveVel = null;
       this.busy = 0;
+      // visual only: every peer's model plays its phase-change moment (see Game.bossFx)
+      this.fx('phase', { n: this.phase });
       phases[this.phase].enter?.(this);
     }
     // timed events
