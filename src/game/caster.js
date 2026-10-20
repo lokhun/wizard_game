@@ -13,7 +13,7 @@ import { soundEl } from './spells.js';
 const UP = new THREE.Vector3(0, 1, 0);
 
 // shared geometry for ground eruptions
-let spikeGeo, thornGeo, tentacleGeo, spikeMat, thornMat, tentacleMat, slashGeo;
+let spikeGeo, thornGeo, tentacleGeo, spikeMat, thornMat, tentacleMat;
 function ensureGeo() {
   if (spikeGeo) return;
   spikeGeo = new THREE.ConeGeometry(0.45, 2.4, 6, 1);
@@ -35,8 +35,6 @@ function ensureGeo() {
   }
   tentacleGeo.computeVertexNormals();
   tentacleMat = new THREE.MeshStandardMaterial({ color: 0x2a1030, roughness: 0.35, metalness: 0.1, emissive: 0x3a0870, emissiveIntensity: 0.25 });
-  slashGeo = new THREE.RingGeometry(0.75, 1.0, 32, 1, -Math.PI * 0.55, Math.PI * 1.1);
-  slashGeo.rotateX(-Math.PI / 2);
 }
 
 export function makeCtx(game, caster, o) {
@@ -213,21 +211,6 @@ export function makeCtx(game, caster, o) {
     summon(type, pos, life) { if (local) game.requestSummon(type, pos, life, caster.id); },
 
     // ---- visual helpers
-    slashFx(o, d, el, range, side = 1) {
-      const fx = fxOf(el);
-      const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(...fx.mid), transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
-      const m = new THREE.Mesh(slashGeo, mat);
-      m.position.copy(o);
-      m.scale.setScalar(range);
-      m.rotation.set(side * 0.25, Math.atan2(d.x, d.z) + Math.PI / 2, side > 0 ? 0.15 : -0.15, 'YXZ');
-      game.scene.add(m);
-      vfx._track(m, 0.18, (k) => { mat.opacity = 1 - k; m.rotation.y -= side * 0.08; m.scale.setScalar(range * (0.9 + k * 0.2)); }, () => { game.scene.remove(m); mat.dispose(); });
-      for (let i = 0; i < 16; i++) {
-        const a = Math.atan2(d.x, d.z) + (i / 15 - 0.5) * 2.0 * side;
-        const r = range * rand(0.6, 1);
-        vfx.P.glow({ x: o.x + Math.sin(a) * r, y: o.y + rand(-0.3, 0.3), z: o.z + Math.cos(a) * r, vx: Math.cos(a) * 3 * side, vz: -Math.sin(a) * 3 * side, r: fx.core[0], g: fx.core[1], b: fx.core[2], life: 0.25, size: 0.1, stretch: 0.03, sprite: SPR.SPARK, drag: 4 });
-      }
-    },
     spike(pos, scale = 1) { erupt(game, pos, spikeGeo, spikeMat, scale * rand(0.8, 1.2), 1.4, true); },
     thorn(pos) {
       for (let i = 0; i < 3; i++) erupt(game, new THREE.Vector3(pos.x + rand(-0.3, 0.3), pos.y, pos.z + rand(-0.3, 0.3)), thornGeo, thornMat, rand(0.7, 1.3), 2.2, false, rand(-0.5, 0.5));
