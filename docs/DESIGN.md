@@ -66,6 +66,10 @@ The target pace is quicker than Dark and Darker, nowhere near a boomer shooter, 
 - **Readable arrivals:**
   - Enemies spawn across the room from where the party entered, at least 8–11 m away. The backline spawns at the far edges.
   - Spawns are staggered with a summoning glyph.
+- **Sentry rooms:**
+  - About half the fight rooms have their first squad already gathered around a lit camp brazier, visible from the doorway.
+  - Scout, then choose your opening. Hitting an unaware sentry deals ×1.5.
+  - Sentries wake when they see you within 11 m, when you get close, when you hit them, or 8 s after the doors lock. A woken sentry alerts others within 13 m.
 - **Fairness rules:**
   - At most 3 melee attackers press one player; the rest circle.
   - At most 2–3 shooters wind up on one player at once.
@@ -81,7 +85,7 @@ The target pace is quicker than Dark and Darker, nowhere near a boomer shooter, 
   - Sewer and throne rooms have mid-room pillars or statues to break line of sight.
   - Shots fly over low clutter.
   - Water slows and makes you Wet, which conducts lightning.
-  - **Powder kegs** (about 1 in 5 barrels) explode when broken, chain into each other and hurt anyone close.
+  - **Powder kegs**: 1–2 out on the floor of every fight room, plus about 1 in 5 wall barrels. They explode when broken, chain into each other and hurt anyone close.
 - **Sustain:**
   - Clearing a room restores 15% health. Health orbs drop from about 10% of kills and pull in from 5 m.
   - Bosses are a test of the build and of dodging, not of attrition.
