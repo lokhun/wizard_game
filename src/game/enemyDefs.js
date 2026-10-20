@@ -192,6 +192,25 @@ export const ENEMY_DEFS = {
     armor: 0.3, frontShield: 0.4,
   },
 
+  plagueDoctor: {
+    name: 'Plague Surgeon', hp: 95, speed: 3.3, dmg: 11, cost: 6, ai: 'support', range: [7, 13], poise: 30, gold: 6, sound: 'enemy_cast', deathSound: 'enemy_death',
+    attacks: [
+      // flasks of rot that leave a lingering poison pool: keep moving
+      { id: 'lob', kind: 'lob', windup: 0.75, recover: 1.1, anim: 'lob', el: 'enemyGreen', speed: 12, pool: { radius: 2.6, dur: 5, dps: 8 }, cd: 2.4 },
+      // the censer's smoke mends nearby prisoners
+      { id: 'cense', kind: 'heal', windup: 1.1, recover: 0.9, anim: 'cense', amount: 40, radius: 9, cd: 7 },
+      { id: 'saw', kind: 'melee', range: 2.0, arc: 1.3, windup: 0.4, recover: 0.6, anim: 'saw', st: { bleed: [3, 4] } },
+    ],
+  },
+  grimWarden: {
+    name: 'Grim Warden', hp: 700, speed: 2.6, dmg: 34, cost: 12, ai: 'melee', poise: 400, gold: 16, sound: 'armor_clank', deathSound: 'skeleton_death', hitSound: 'enemy_hit_armor', undead: true,
+    attacks: [
+      // a slow, enormous overhead: the ground cracks in a long line ahead of it
+      { id: 'overhead', kind: 'circle', radius: 3.0, ahead: 2.8, windup: 1.25, recover: 1.2, anim: 'overhead', el: 'physical', st: { stun: 0.6 }, dmgMult: 1.4 },
+      { id: 'sweep', kind: 'melee', range: 3.6, arc: 2.4, windup: 0.85, recover: 0.9, anim: 'sweep', kb: 16, cd: 3 },
+    ],
+    armor: 0.25,
+  },
   gildedSentinel: {
     name: 'Gilded Sentinel', hp: 420, speed: 3.0, dmg: 24, cost: 8, ai: 'melee', poise: 260, gold: 10, sound: 'armor_clank', deathSound: 'skeleton_death', hitSound: 'enemy_hit_armor', undead: true,
     attacks: [
