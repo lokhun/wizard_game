@@ -58,6 +58,11 @@ export class Game {
     this.scene.add(this.hemi);
     this.moon = new THREE.DirectionalLight(0x9fb4ff, 0);
     this.moon.position.set(30, 60, -80);
+    this.moon.shadow.mapSize.set(2048, 2048);
+    const sc = this.moon.shadow.camera;
+    sc.left = -36; sc.right = 36; sc.top = 36; sc.bottom = -36; sc.near = 1; sc.far = 220;
+    this.moon.shadow.bias = -0.0008;
+    this.moon.shadow.normalBias = 0.04;
     this.scene.add(this.moon);
     this.scene.add(this.moon.target);
     // the wizard's own glow so you can see in the dark
@@ -91,8 +96,8 @@ export class Game {
     this.ended = false;
     for (const p of players) if (p.id !== localId) this.addRemote(p);
     this._setViewModel(classId);
-    this.loadFloor(floor);
     this.ui?.onRunStart(this);
+    this.loadFloor(floor);
   }
 
   _setViewModel(classId) {
@@ -160,6 +165,10 @@ export class Game {
     this.hemi.intensity = b.ambient.intensity * 3;
     this.baseHemi = this.hemi.intensity;
     this.moon.intensity = b.moon ? b.moon.intensity * 1.6 : 0;
+    const shadows = !!b.moon && this.renderer.renderer.shadowMap.enabled;
+    this.moon.castShadow = shadows;
+    this.built.group.traverse((o) => { if (o.isMesh && !o.material.transparent && o.name?.startsWith('lvl_')) { o.castShadow = shadows; o.receiveShadow = shadows; } });
+    this.shadowsOn = shadows;
     if (b.moon) this.moon.color.set(b.moon.color);
     this.renderer.setGrade(b.grade);
     this.viewHemi.color.set(b.ambient.sky);
@@ -171,16 +180,75 @@ export class Game {
       if (p.type === 'merchant') this.interactables.push({ kind: 'shop', pos: new THREE.Vector3(p.x, 1.2, p.z), r: 3.2, label: 'Trade with the Merchant', id: 'shop' + p.x, stock: null });
     }
     // place players
+    this.player.rerolls = 1;
     const s = level.spawn;
     this.player.spawnAt(s.x, s.z, 0);
     this.player.downed = false;
     if (this.player.dead) { this.player.dead = false; this.player.hp = Math.round(this.player.maxHp * 0.5); }
     for (const r of this.remotes.values()) { r.pos.set(s.x, 0, s.z); r.net.x = s.x; r.net.z = s.z; }
     level.startRoom.visited = true;
+    this._buildDoorSigns();
     this.audio?.setAmbience(b.id);
     this.audio?.setMusic(index === 0 ? 'explore' : 'explore');
     this.audio?.play('floor_enter');
     this.ui?.onFloor(this, b, index);
+  }
+
+  // floating sigils above doorways show what lies beyond (boss, shop, treasure...)
+  _buildDoorSigns() {
+    for (const s of this.doorSigns ?? []) this.scene.remove(s.sprite);
+    this.doorSigns = [];
+    const L = this.level;
+    const glyph = { boss: ['☠', '#ff5040'], shop: ['⚖', '#f0c050'], shrine: ['✚', '#ffe080'], treasure: ['♦', '#ffb030'], elite: ['★', '#ff9040'], combat: ['⚔', '#d8c8a8'], start: null };
+    for (const door of L.doors) {
+      const other = L.rooms[door.other];
+      const g = glyph[other.type];
+      if (!g) continue;
+      const tex = signTexture(g[0], g[1]);
+      const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 });
+      const sp = new THREE.Sprite(mat);
+      const doorH = this.biome.outdoor ? 6 : this.biome.ceilCorr;
+      sp.position.set(door.x - door.nx * 1.2, Math.min(doorH + 0.9, (L.rooms[door.room].ceil ?? 8) - 0.6), door.z - door.ny * 1.2);
+      sp.scale.setScalar(1.1);
+      sp.renderOrder = 30;
+      this.scene.add(sp);
+      this.doorSigns.push({ sprite: sp, room: L.rooms[door.room], other, door });
+    }
+  }
+  _updateDoorSigns(dt) {
+    for (const s of this.doorSigns ?? []) {
+      const show = s.room.visited && !s.other.visited;
+      const m = s.sprite.material;
+      m.opacity += ((show ? 0.9 : 0) - m.opacity) * Math.min(1, dt * 3);
+      s.sprite.visible = m.opacity > 0.02;
+      s.sprite.position.y += Math.sin(this.time * 2 + s.door.id) * 0.002;
+    }
+  }
+
+  _ambient(dt) {
+    const cam = this.renderer.camera.position;
+    const id = this.biome.id;
+    const P = this.particles;
+    const rnd = (r) => (Math.random() - 0.5) * r;
+    // dust motes everywhere (catch the torchlight)
+    if (Math.random() < dt * 14) P.glow({ x: cam.x + rnd(16), y: cam.y + rnd(4), z: cam.z + rnd(16), vx: rnd(0.15), vy: rnd(0.08), vz: rnd(0.15), r: 0.5, g: 0.42, b: 0.32, life: 6, size: 0.025, sprite: SPR.GLOW, drag: 0.2 });
+    if (id === 'sewers' && Math.random() < dt * 4) {
+      const x = cam.x + rnd(14), z = cam.z + rnd(14);
+      const c = this.level.ceilAt(x, z);
+      if (c < 50) P.solid({ x, y: c - 0.1, z, vy: -1, r: 0.35, g: 0.45, b: 0.4, a: 0.7, life: 1.2, size: 0.04, sprite: SPR.DROP, gravity: 12, stretch: 0.02 });
+    }
+    if (id === 'courtyard' && Math.random() < dt * 6) {
+      P.glow({ x: cam.x + rnd(20), y: cam.y + rnd(2) - 0.5, z: cam.z + rnd(20), vx: rnd(0.6), vy: rnd(0.3), vz: rnd(0.6), r: 1.6, g: 2.2, b: 0.6, life: 4, size: 0.04, sprite: SPR.GLOW, drag: 0.1 });
+    }
+    if (id === 'courtyard' && Math.random() < dt * 3) {
+      P.solid({ x: cam.x + rnd(24), y: cam.y + 6, z: cam.z + rnd(24), vx: 1.2, vy: -0.6, vz: rnd(0.5), r: 0.25, g: 0.2, b: 0.12, a: 0.8, life: 7, size: 0.06, sprite: SPR.FEATHER, spin: 2 });
+    }
+    if (id === 'throne' && Math.random() < dt * 10) {
+      P.glow({ x: cam.x + rnd(20), y: cam.y + 4 + rnd(2), z: cam.z + rnd(20), vx: rnd(0.3), vy: -0.4, vz: rnd(0.3), r: 1.2, g: 0.5, b: 1.6, r2: 0.2, g2: 0.05, b2: 0.3, life: 8, size: 0.04, sprite: SPR.EMBER, drag: 0.2 });
+    }
+    if (id === 'keep' && Math.random() < dt * 2) {
+      P.glow({ x: cam.x + rnd(14), y: cam.y + rnd(2), z: cam.z + rnd(14), vy: 0.1, r: 0.6, g: 0.5, b: 1.2, life: 5, size: 0.08, sprite: SPR.RUNE, spin: 0.5, drag: 0.2 });
+    }
   }
 
   // ======================================================================
@@ -210,6 +278,8 @@ export class Game {
       this._updateDrops(dt);
     }
     for (const it of this.interactables) it.update?.(dt, this.time);
+    this._updateDoorSigns(realDt);
+    this._ambient(realDt);
 
     // camera & lighting
     const cam = this.renderer.camera;
@@ -230,8 +300,10 @@ export class Game {
     this._viewModel(realDt);
     this._postFx(realDt);
     // moon follows the player so its (unused) shadow frustum would be centred
-    this.moon.target.position.set(cx, 0, cz);
-    this.moon.position.set(cx + 30, 60, cz - 80);
+    const snap = 72 / 2048 * 4;
+    const mx = Math.round(cx / snap) * snap, mz = Math.round(cz / snap) * snap;
+    this.moon.target.position.set(mx, 0, mz);
+    this.moon.position.set(mx + 30, 70, mz - 60);
     // audio listener
     this.audio?.setListener(cam.position, p.forward());
     this.audio?.setIntensity?.(p.alive && !p.downed ? clamp(1 - p.hp / p.maxHp - 0.4, 0, 1) * 1.6 : 1);
@@ -955,14 +1027,18 @@ export class Game {
     const p = this.player;
     switch (it.kind) {
       case 'pedestal': {
-        const choices = rollTomes(p, 3, it.minRarity ?? 0);
         this.audio?.play('tome_open');
-        this.ui?.chooseTome(choices, (c) => {
-          if (!c) return;
-          this.grantTome(c);
-          it.usedBy.add(p.id);
-          it.onUsed?.(p.id);
-        });
+        const offer = () => {
+          const choices = rollTomes(p, 3, it.minRarity ?? 0);
+          const reroll = p.rerolls > 0 ? { left: p.rerolls, fn: () => { p.rerolls--; offer(); } } : null;
+          this.ui?.chooseTome(choices, (c) => {
+            if (!c) return;
+            this.grantTome(c);
+            it.usedBy.add(p.id);
+            it.onUsed?.(p.id);
+          }, reroll);
+        };
+        offer();
         break;
       }
       case 'chest': {
@@ -1064,7 +1140,6 @@ export class Game {
             this.lights.request(m, 0xff6020, 30, 16);
           });
         }
-        this.audio?.play('loop_beam_fire') ;
         this.audio?.play('cast_fire_big', { pos: a.pos });
         break;
       }
@@ -1093,6 +1168,28 @@ export class Game {
 }
 
 // ---------------------------------------------------------------------------
+const signCache = new Map();
+function signTexture(ch, color) {
+  const key = ch + color;
+  if (signCache.has(key)) return signCache.get(key);
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(64, 64, 10, 64, 64, 62);
+  gr.addColorStop(0, 'rgba(0,0,0,0.75)'); gr.addColorStop(0.75, 'rgba(0,0,0,0.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  g.strokeStyle = color; g.lineWidth = 3; g.globalAlpha = 0.8;
+  g.beginPath(); g.arc(64, 64, 48, 0, Math.PI * 2); g.stroke();
+  g.globalAlpha = 1;
+  g.font = '64px serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.shadowColor = color; g.shadowBlur = 16;
+  g.fillStyle = color; g.fillText(ch, 64, 68);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  signCache.set(key, t);
+  return t;
+}
+
 function makeDropMesh(type) {
   if (type === 'gold') {
     const m = new THREE.Mesh(COIN_GEO, COIN_MAT);

@@ -117,6 +117,7 @@ export class ActorManager {
     a.model.root.rotation.y = a.yaw;
     if (a.def.tint) a.model.setTint?.(a.def.tint, 0.5);
     if (a.elite && !a.def.elite) a.model.setTint?.(0xffaa30, 0.25);
+    if (g.shadowsOn) a.model.root.traverse((o) => { if (o.isMesh && !o.material?.transparent) o.castShadow = true; });
     g.scene.add(a.model.root);
     if (a.boss) a.brain = new BossBrain(g, a);
     this.list.push(a);
@@ -125,9 +126,10 @@ export class ActorManager {
     const spawnFx = opts.spawnFx ?? (a.faction === 'enemy' && !a.boss);
     if (spawnFx) {
       const gy = a.pos.y;
-      g.vfx.decal(new THREE.Vector3(x, gy, z), 'glyph', 2.2 * a.scale + 0.8, 1.6, a.faction === 'ally' ? 0x60ff80 : 0xff3020);
-      g.vfx.burst(new THREE.Vector3(x, gy + 0.2, z), { element: a.faction === 'ally' ? 'necrotic' : 'enemy', count: 24, speed: 2, upward: 2, life: 0.9, size: 0.12, drag: 1.5 });
-      g.lights.flash(new THREE.Vector3(x, gy + 0.6, z), a.faction === 'ally' ? 0x60ff80 : 0xff3020, 10, 6, 0.8);
+      g.vfx.decal(new THREE.Vector3(x, gy, z), 'glyph', 2.2 * a.scale + 0.8, 1.6, a.faction === 'ally' ? 0x206030 : 0x5a0c06);
+      g.vfx.burst(new THREE.Vector3(x, gy + 0.2, z), { element: a.faction === 'ally' ? 'necrotic' : 'enemy', count: 24, speed: 2, upward: 2, life: 0.9, size: 0.08, drag: 1.5, color: a.faction === 'ally' ? undefined : [1.6, 0.15, 0.05] });
+      g.vfx.smoke(new THREE.Vector3(x, gy + 0.3, z), { count: 5, size: 0.7, color: [0.05, 0.01, 0.01], alpha: 0.6, life: 1.4, rise: 1.5 });
+      g.lights.flash(new THREE.Vector3(x, gy + 0.6, z), a.faction === 'ally' ? 0x60ff80 : 0xff3020, 6, 5, 0.8);
       g.audio?.play('summon', { pos: a.pos, volume: 0.5 });
     }
     a.state = 'spawn';

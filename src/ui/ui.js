@@ -696,11 +696,15 @@ export class UI {
     if (relock && !this.modalOpen && this.game && !this.game.ended && !this.pauseEl) this.input.lock();
   }
 
-  _choiceModal(title, sub, items, render, onPick, allowSkip = true) {
+  _choiceModal(title, sub, items, render, onPick, allowSkip = true, reroll = null) {
     const m = this._modal(`
       <h2>${title}</h2><div class="msub">${sub}</div>
       <div class="choices">${items.map((it, i) => render(it, i)).join('')}</div>
-      ${allowSkip ? '<button class="btn small" id="bSkip" style="margin-top:26px">Skip</button>' : ''}`);
+      <div style="display:flex;gap:14px;margin-top:26px">
+      ${reroll ? `<button class="btn small" id="bReroll">Reroll (${reroll.left})</button>` : ''}
+      ${allowSkip ? '<button class="btn small" id="bSkip">Skip</button>' : ''}</div>`);
+    const rr = m.querySelector('#bReroll');
+    if (rr) rr.onclick = () => { this._closeModal(m, false); this.audio?.play('tome_open'); reroll.fn(); };
     m.querySelectorAll('[data-i]').forEach((el) => {
       el.onclick = () => { this._closeModal(m); onPick(items[+el.dataset.i]); };
     });
@@ -715,7 +719,7 @@ export class UI {
     return m;
   }
 
-  chooseTome(choices, cb) {
+  chooseTome(choices, cb, reroll) {
     const col = this.game ? hex(this.game.player.meta.color) : '#fff';
     this._choiceModal('Arcane Tomes', 'Choose one tome to bind to your soul', choices, (c, i) => {
       const r = RARITY[c.rarity];
@@ -726,7 +730,7 @@ export class UI {
         <div class="tdesc">${c.def.desc(c.mult)}</div>
         <div class="tkey">[${i + 1}]</div>
       </div>`;
-    }, cb);
+    }, cb, true, reroll);
   }
   chooseRelic(relics, cb) {
     this._choiceModal('Relics', 'A cursed treasure — claim one', relics, (r, i) => `

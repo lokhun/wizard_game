@@ -205,11 +205,11 @@ export const ENEMY_DEFS = {
 
 // Bosses (behaviour scripted in bosses.js)
 export const BOSS_DEFS = {
-  motherOfFilth: { name: 'Mother of Filth', title: 'Queen of the Drowned Sewers', hp: 3200, dmg: 18, poise: 9999, gold: 60, model: 'motherOfFilth', speed: 2.2, sound: 'slime_squish', deathSound: 'boss_roar', resist: { poison: 0.3 } },
-  executioner: { name: 'The Executioner', title: 'Headsman of the Oubliette', hp: 5200, dmg: 30, poise: 9999, gold: 80, model: 'executioner', speed: 4.2, sound: 'beast_growl', deathSound: 'boss_roar', hitSound: 'enemy_hit' },
-  stoneWyvern: { name: 'Gravemaw', title: 'Stone Wyvern of the Bailey', hp: 7600, dmg: 34, poise: 9999, gold: 100, model: 'stoneWyvern', speed: 5, sound: 'stone_grind', deathSound: 'boss_roar', hitSound: 'enemy_hit_armor', resist: { earth: 0.5, poison: 0.5 } },
-  courtArchmage: { name: 'Archmage Veyrin', title: 'The Court Archmage', hp: 9800, dmg: 34, poise: 9999, gold: 120, model: 'courtArchmage', speed: 4, sound: 'enemy_cast', deathSound: 'boss_roar', flying: true },
-  hollowKing: { name: 'The Hollow King', title: 'Last Lord of the Ashen Keep', hp: 15000, dmg: 40, poise: 9999, gold: 0, model: 'hollowKing', speed: 4.4, sound: 'boss_roar', deathSound: 'boss_roar', hitSound: 'enemy_hit_armor', undead: true },
+  motherOfFilth: { name: 'Mother of Filth', title: 'Queen of the Drowned Sewers', hp: 5760, dmg: 18, poise: 9999, gold: 60, model: 'motherOfFilth', speed: 2.2, sound: 'slime_squish', deathSound: 'boss_roar', resist: { poison: 0.3 } },
+  executioner: { name: 'The Executioner', title: 'Headsman of the Oubliette', hp: 9360, dmg: 30, poise: 9999, gold: 80, model: 'executioner', speed: 4.2, sound: 'beast_growl', deathSound: 'boss_roar', hitSound: 'enemy_hit' },
+  stoneWyvern: { name: 'Gravemaw', title: 'Stone Wyvern of the Bailey', hp: 13680, dmg: 34, poise: 9999, gold: 100, model: 'stoneWyvern', speed: 5, sound: 'stone_grind', deathSound: 'boss_roar', hitSound: 'enemy_hit_armor', resist: { earth: 0.5, poison: 0.5 } },
+  courtArchmage: { name: 'Archmage Veyrin', title: 'The Court Archmage', hp: 17640, dmg: 34, poise: 9999, gold: 120, model: 'courtArchmage', speed: 4, sound: 'enemy_cast', deathSound: 'boss_roar', flying: true },
+  hollowKing: { name: 'The Hollow King', title: 'Last Lord of the Ashen Keep', hp: 27000, dmg: 40, poise: 9999, gold: 0, model: 'hollowKing', speed: 4.4, sound: 'boss_roar', deathSound: 'boss_roar', hitSound: 'enemy_hit_armor', undead: true },
 };
 
 export const FLOOR_HP = [1, 1.65, 2.5, 3.5, 4.8];

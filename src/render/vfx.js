@@ -561,7 +561,7 @@ export class VFX {
 
   impact(pos, element, scale = 1) {
     const fx = fxOf(element);
-    this.P.glow({ x: pos.x, y: pos.y, z: pos.z, r: fx.core[0], g: fx.core[1], b: fx.core[2], life: 0.15, size: 0.9 * scale, size2: 0.3, sprite: SPR.GLOW });
+    this.P.glow({ x: pos.x, y: pos.y, z: pos.z, r: fx.mid[0] * 0.6, g: fx.mid[1] * 0.6, b: fx.mid[2] * 0.6, life: 0.14, size: 0.8 * scale, size2: 0.3, sprite: SPR.GLOW });
     this.burst(pos, { element, count: Math.round(14 * scale), speed: 5 * scale, life: 0.4, size: 0.1 * scale, sprite: fx.spark, gravity: element === 'fire' || element === 'earth' ? 6 : 1, stretch: 0.04 });
     this.flash(pos, fx.light, 12 * scale, 6 * scale, 0.15);
     switch (element) {
@@ -592,7 +592,7 @@ export class VFX {
   explosion(pos, element, radius = 3, o = {}) {
     const fx = fxOf(element);
     const s = radius / 3;
-    this.P.glow({ x: pos.x, y: pos.y, z: pos.z, r: fx.core[0], g: fx.core[1], b: fx.core[2], life: 0.25, size: radius * 1.4, size2: radius * 0.5, sprite: SPR.GLOW });
+    this.P.glow({ x: pos.x, y: pos.y, z: pos.z, r: fx.mid[0] * 0.5, g: fx.mid[1] * 0.5, b: fx.mid[2] * 0.5, life: 0.22, size: radius * 1.1, size2: radius * 0.4, sprite: SPR.GLOW });
     this.flash(pos, fx.light, 60 * s, radius * 4, 0.35);
     this.ring({ x: pos.x, y: (o.groundY ?? pos.y - 0.5), z: pos.z }, radius * 1.15, fx.mid, 0.45, 0.25);
     this.shell(pos, { element, radius: radius * 1.1, from: radius * 0.2, life: 0.3, alpha: 0.8 });
@@ -600,7 +600,7 @@ export class VFX {
     const ground = { x: pos.x, y: o.groundY ?? pos.y - 0.5, z: pos.z };
     switch (element) {
       case 'fire': case 'enemyFire':
-        this.burst(pos, { element, count: Math.round(28 * s), speed: 5 * s, life: 0.7, size: 0.7 * s, size2: 0.1, sprite: SPR.FLAME, drag: 3, upward: 0.2 });
+        this.burst(pos, { element, count: Math.round(28 * s), speed: 5 * s, life: 0.7, size: 0.7 * s, size2: 0.1, sprite: SPR.FLAME, drag: 3, upward: 0.2, color: fx.mid, color2: fx.end });
         this.burst(pos, { element, count: Math.round(30 * s), speed: 9 * s, life: 1.4, size: 0.06, sprite: SPR.EMBER, gravity: 5, drag: 1.2, upward: 0.4, color: [4, 1.5, 0.3] });
         this.smoke(pos, { count: Math.round(10 * s), size: 1.0 * s, life: 2.2, spread: radius * 0.4, speed: 2 });
         this.decal(ground, 'scorch', radius * 1.6, 12);
@@ -684,7 +684,7 @@ export class VFX {
       const px = pos.x - vel.x * dt * t, py = pos.y - vel.y * dt * t, pz = pos.z - vel.z * dt * t;
       switch (element) {
         case 'fire': case 'enemyFire':
-          this.P.glow({ x: px + rand(-0.05, 0.05), y: py + rand(-0.05, 0.05), z: pz + rand(-0.05, 0.05), vx: rand(-0.5, 0.5), vy: rand(0.2, 1.2), vz: rand(-0.5, 0.5), r: fx.core[0], g: fx.core[1], b: fx.core[2], r2: fx.end[0], g2: fx.end[1], b2: fx.end[2], life: rand(0.2, 0.45), size: 0.3 * intensity, size2: 0.04, sprite: SPR.FLAME, drag: 2 });
+          this.P.glow({ x: px + rand(-0.05, 0.05), y: py + rand(-0.05, 0.05), z: pz + rand(-0.05, 0.05), vx: rand(-0.5, 0.5), vy: rand(0.2, 1.2), vz: rand(-0.5, 0.5), r: fx.mid[0] * 0.8, g: fx.mid[1] * 0.8, b: fx.mid[2] * 0.8, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2], life: rand(0.2, 0.45), size: 0.24 * intensity, size2: 0.04, sprite: SPR.FLAME, drag: 2 });
           if (Math.random() < 0.3) this.P.glow({ x: px, y: py, z: pz, vx: rand(-1.5, 1.5), vy: rand(0, 2), vz: rand(-1.5, 1.5), r: 4, g: 1.6, b: 0.3, life: rand(0.4, 0.9), size: 0.04, sprite: SPR.EMBER, gravity: 2 });
           if (Math.random() < 0.12) this.P.solid({ x: px, y: py, z: pz, vy: 0.6, r: 0.06, g: 0.05, b: 0.04, a: 0.4, life: 1.2, size: 0.25, size2: 0.7, sprite: SPR.SMOKE, drag: 1 });
           break;

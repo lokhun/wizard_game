@@ -80,7 +80,9 @@ export class Renderer {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.shadowMap.enabled = false;
+    // shadow maps are only used by the courtyard moon (outdoor realm)
+    this.renderer.shadowMap.enabled = quality === 'high' || quality === 'ultra';
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.info.autoReset = true;
 
     this.scene = new THREE.Scene();
@@ -155,7 +157,11 @@ export class Renderer {
 
   render(time) {
     this.grade.uniforms.uTime.value = time;
+    const info = this.renderer.info;
+    info.autoReset = false;
+    info.reset();
     this.composer.render();
+    this.lastStats = { calls: info.render.calls, tris: info.render.triangles, geos: info.memory.geometries, tex: info.memory.textures, programs: info.programs?.length };
   }
 }
 

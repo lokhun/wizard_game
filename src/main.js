@@ -78,7 +78,10 @@ async function boot() {
   else if (q.get('autostart')) { if (CLASS_IDS.includes(q.get('autostart'))) selectedClass = q.get('autostart'); startSolo(); }
   else showMenu();
   // test hook: pretend the pointer is locked so automated tests can drive input
-  if (q.get('test')) { input.locked = true; Object.defineProperty(input, 'locked', { get: () => true, set: () => {} }); window.__input = input; }
+  if (q.get('test')) { input.locked = true; Object.defineProperty(input, 'locked', { get: () => true, set: () => {} }); window.__input = input;
+    // advance the simulation without rendering (fast, deterministic tests)
+    window.__sim = (sec, step = 1 / 30, each) => { for (let t = 0; t < sec; t += step) { each?.(t); game.update(step); input.endFrame(); } };
+  }
   requestAnimationFrame(loop);
 }
 
@@ -104,7 +107,17 @@ function startBackdrop(floor) {
   game.ui?.hideHud();
   audio?.setMusic('menu');
   const room = game.level.rooms[Math.min(1, game.level.rooms.length - 1)];
-  game.backdrop = { room, t: Math.random() * 100 };
+  // showcase spot: the start room (small and uncluttered), camera on a clear side
+  const sr = game.level.startRoom;
+  const free = (x, z) => !game.collision.cellBlocked(Math.floor(x / 2), Math.floor(z / 2), 0.5) && !game.collision.pushOut(x, z, 0.6);
+  let show = { x: sr.cx, z: sr.cz, dir: 0 };
+  outer: for (const [ox, oz] of [[0, 0], [1.5, 0], [-1.5, 0], [0, 1.5], [0, -1.5], [2, 2], [-2, -2]]) {
+    for (const dir of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+      const x = sr.cx + ox, z = sr.cz + oz;
+      if (free(x, z) && free(x + Math.sin(dir) * 3.6, z + Math.cos(dir) * 3.6) && free(x + Math.sin(dir) * 1.8, z + Math.cos(dir) * 1.8)) { show = { x, z, dir }; break outer; }
+    }
+  }
+  game.backdrop = { room, t: Math.random() * 100, show };
   placeMenuAvatar();
 }
 
@@ -124,20 +137,25 @@ function updateBackdrop(dt) {
   const gy = game.groundY(r.cx, r.cz);
   if (mode === 'select' && menuAvatar) {
     // showcase the chosen wizard
-    const ax = r.cx, az = r.cz;
-    const angle = 0.6 + Math.sin(b.t * 0.15) * 0.25;
-    const camPos = new THREE.Vector3(ax + Math.sin(angle) * 3.6, gy + 1.75, az + Math.cos(angle) * 3.6);
+    const ax = b.show.x, az = b.show.z;
+    const ag = game.groundY(ax, az);
+    const angle = b.show.dir + Math.sin(b.t * 0.15) * 0.18;
+    const camPos = new THREE.Vector3(ax + Math.sin(angle) * 3.4, ag + 1.6, az + Math.cos(angle) * 3.4);
+    if (!b.snapped) { cam.position.copy(camPos); b.snapped = true; }
     cam.position.lerp(camPos, 1 - Math.exp(-dt * 3));
-    const look = new THREE.Vector3(ax - 0.9, gy + 1.2, az);
+    // look slightly right of the wizard so they stand left of the detail panel
+    const side = new THREE.Vector3(Math.cos(angle), 0, -Math.sin(angle));
+    const look = new THREE.Vector3(ax, ag + 1.15, az).addScaledVector(side, 1.0);
     cam.lookAt(look);
-    menuAvatar.root.position.set(ax, gy, az);
-    menuAvatar.root.rotation.y = angle + Math.sin(b.t * 0.3) * 0.2;
+    menuAvatar.root.position.set(ax, ag, az);
+    menuAvatar.root.rotation.y = angle + Math.sin(b.t * 0.3) * 0.25;
     menuAvatar.update(dt, { anim: Math.floor(b.t / 5) % 3 === 2 ? 'cast' : 'idle', t: b.t, speed: 0, pitch: 0, castProgress: (b.t % 5) / 5, strafe: 0 });
-    game.lights.request(new THREE.Vector3(ax + 1.5, gy + 2.5, az + 1.5), 0xffa060, 18, 9);
-    game.lights.request(new THREE.Vector3(ax - 2, gy + 1.5, az - 1), CLASS_META[selectedClass].color, 10, 7);
+    const fwd = new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle));
+    game.lights.request(new THREE.Vector3(ax, ag + 2.6, az).addScaledVector(fwd, 1.6).addScaledVector(side, -1.2), 0xffa060, 16, 9);
+    game.lights.request(new THREE.Vector3(ax, ag + 1.6, az).addScaledVector(fwd, -1.4).addScaledVector(side, 1.0), CLASS_META[selectedClass].color, 14, 6);
     if (Math.random() < dt * 20) {
       const c = new THREE.Color(CLASS_META[selectedClass].color);
-      game.vfx.P.glow({ x: ax + (Math.random() - 0.5) * 3, y: gy + Math.random() * 0.3, z: az + (Math.random() - 0.5) * 3, vy: 0.4 + Math.random() * 0.6, r: c.r * 3, g: c.g * 3, b: c.b * 3, life: 2.5, size: 0.04, sprite: 0 });
+      game.vfx.P.glow({ x: ax + (Math.random() - 0.5) * 3, y: ag + Math.random() * 0.3, z: az + (Math.random() - 0.5) * 3, vy: 0.4 + Math.random() * 0.6, r: c.r * 3, g: c.g * 3, b: c.b * 3, life: 2.5, size: 0.04, sprite: 0 });
     }
   } else {
     const a = b.t * 0.05;
