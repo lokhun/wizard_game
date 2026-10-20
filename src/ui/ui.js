@@ -525,6 +525,8 @@ export class UI {
       if (!a._los) continue;
       const s = this._project({ x: a.pos.x, y: a.pos.y + a.height + 0.35, z: a.pos.z });
       if (!s) continue;
+      // keep labels off the minimap corner
+      if (s.x > innerWidth - 250 && s.y < 250) continue;
       const w = a.elite ? 70 : 46, hgt = a.elite ? 6 : 4;
       const alpha = Math.min(1, (30 - d) / 8);
       g.globalAlpha = alpha;
