@@ -898,6 +898,9 @@ export class Game {
   }
   _updatePools(dt) {
     const p = this.player;
+    // overlapping pools don't stack: the strongest one you stand in ticks every 0.5 s
+    this._poolT = (this._poolT ?? 0) + dt;
+    let worst = 0, worstEl = null;
     for (let i = this.pools.length - 1; i >= 0; i--) {
       const pl = this.pools[i];
       pl.t -= dt;
@@ -907,11 +910,11 @@ export class Game {
         const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * pl.r;
         this.vfx.P.glow({ x: pl.x + Math.cos(a) * r, y: pl.y + 0.05, z: pl.z + Math.sin(a) * r, vy: 0.5, r: fx.mid[0] * 0.6, g: fx.mid[1] * 0.6, b: fx.mid[2] * 0.6, life: 1, size: 0.2, sprite: SPR.BUBBLE });
       }
-      pl.acc += dt;
-      if (pl.acc >= 0.5) {
-        pl.acc = 0;
-        if (p.alive && !p.downed && Math.hypot(p.pos.x - pl.x, p.pos.z - pl.z) < pl.r && p.pos.y - pl.y < 1) p.takeDamage(pl.dps * 0.5, pl.el, null);
-      }
+      if (Math.hypot(p.pos.x - pl.x, p.pos.z - pl.z) < pl.r && p.pos.y - pl.y < 1 && pl.dps > worst) { worst = pl.dps; worstEl = pl.el; }
+    }
+    if (this._poolT >= 0.5) {
+      if (worst > 0 && p.alive && !p.downed) { p.takeDamage(worst * 0.5, worstEl, null); this._poolT = 0; }
+      else this._poolT = 0.5;
     }
   }
 
