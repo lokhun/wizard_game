@@ -475,9 +475,12 @@ function decorateRoom(level, room, rng) {
     setRect(level, x, py0, w, 3, (i) => { level.kind[i] = K_ALT; });
     setRect(level, px0, y, 3, h, (i) => { level.kind[i] = K_ALT; });
     if (!isBoss) {
-      const centerPiece = rng.pick(['well', 'statue', 'fountain', 'deadTree']);
-      addPillar(level, cx * T, cy * T, centerPiece === 'fountain' ? 2.2 : centerPiece === 'deadTree' ? 0.7 : 1.1, centerPiece);
-      room.layout = centerPiece;
+      // fights get a centrepiece to circle around; other rooms keep the middle for their feature
+      if (room.type === ROOM.COMBAT || room.type === ROOM.ELITE) {
+        const centerPiece = rng.pick(['well', 'statue', 'fountain', 'deadTree']);
+        addPillar(level, cx * T, cy * T, centerPiece === 'fountain' ? 2.2 : centerPiece === 'deadTree' ? 0.7 : 1.1, centerPiece);
+        room.layout = centerPiece;
+      }
       for (let i = 0; i < rng.int(3, 6); i++) {
         const s = randFloorSpot(2); if (!s) continue;
         const ii = level.idx(Math.floor(s[0] / T), Math.floor(s[1] / T));

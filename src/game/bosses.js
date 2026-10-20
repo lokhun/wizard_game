@@ -515,7 +515,7 @@ SCRIPTS.hollowKing = {
     B.anim('idle', 'seated', 1);
   },
   idleType: (B) => (B.data.seated ? 'seated' : ''),
-  modifyDamage(B, dmg) { return B.data.seated ? dmg * 0.35 : dmg; },
+  modifyDamage(B, dmg) { return B.data.seated ? dmg * 0.6 : dmg; },
   phases: [
     {
       at: 1,
