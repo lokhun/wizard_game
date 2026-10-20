@@ -600,6 +600,17 @@ function decorateRoom(level, room, rng) {
     wallTorches(level, room, rng, 4);
   }
 
+  // ---------------- boss arenas get braziers so the fight is well lit
+  if (isBoss && !b.outdoor && b.id !== 'throne') {
+    for (const [px, py] of [[x + 2, y + 2], [x + w - 3, y + 2], [x + 2, y + h - 3], [x + w - 3, y + h - 3], [x + Math.floor(w / 2), y + 1]]) {
+      const i = level.idx(px, py);
+      if (level.cells[i] !== FLOOR || level.kind[i] === K_WATER) continue;
+      const [wx, wz] = level.center(px, py);
+      addPillar(level, wx, wz, 0.45, 'brazierTall');
+      level.torches.push({ x: wx, y: level.hgt[i] + 2.4, z: wz, type: 'brazier', intensity: 30, range: 18, color: b.id === 'sewers' ? 0x9adf60 : undefined });
+    }
+  }
+
   // ---------------- raised daises for verticality (indoor combat rooms)
   if ((b.id === 'dungeon' || b.id === 'keep') && (room.type === ROOM.COMBAT || room.type === ROOM.ELITE) && w >= 10 && h >= 10 && rng.chance(0.4) && room.layout !== 'library') {
     const side = rng.int(0, 3);
