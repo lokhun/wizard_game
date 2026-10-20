@@ -69,6 +69,8 @@ const GradeShader = {
 
 const BLOOM_THRESHOLD = 1.05;
 const BLOOM_SCALE = 0.6;
+// asymptotic cap for point lights lighting the first-person hands
+const VIEW_LIGHT_MAX = 2.5;
 
 export class Renderer {
   constructor(canvas, quality = 'high') {
@@ -192,7 +194,27 @@ class ViewModelPass {
     renderer.autoClear = false;
     renderer.setRenderTarget(this.renderToScreen ? null : readBuffer);
     renderer.clearDepth();
+    // The hands sit centimetres from the point lights mirrored into this
+    // scene (spell flashes, torches), which used to blow the focus and
+    // sleeves out to white. Soft-clamp their intensity for this pass only.
+    const L = this._lights ?? (this._lights = []);
+    const kids = this.scene.children, seen = this._kids ?? (this._kids = []);
+    let same = seen.length === kids.length;
+    for (let i = 0; same && i < kids.length; i++) same = seen[i] === kids[i];
+    if (!same) {
+      seen.length = 0;
+      for (let i = 0; i < kids.length; i++) seen.push(kids[i]);
+      L.length = 0;
+      this.scene.traverse((o) => { if (o.isPointLight) L.push(o); });
+    }
+    const saved = this._saved ?? (this._saved = []);
+    for (let i = 0; i < L.length; i++) {
+      const I = L[i].intensity;
+      saved[i] = I;
+      L[i].intensity = I * VIEW_LIGHT_MAX / (VIEW_LIGHT_MAX + I);
+    }
     renderer.render(this.scene, this.camera);
+    for (let i = 0; i < L.length; i++) L[i].intensity = saved[i];
     renderer.autoClear = oldAuto;
   }
   dispose() {}

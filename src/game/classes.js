@@ -79,7 +79,7 @@ function coneChannel({ el, range, angle, dmg, interval = 0.12, st, sound, max = 
     start(ctx, S) {
       S.acc = 0; S.snd = ctx.loop(sound);
       // roaring volume behind the particles: scrolling-noise flame cone
-      S.cone = ctx.vfx.cone({ element: el, speed: 4.5 });
+      S.cone = ctx.vfx.cone({ element: el, speed: 4.5, alpha: 1.5 });
     },
     update(ctx, S, dt) {
       const o = ctx.origin, d = ctx.dir;
@@ -87,13 +87,19 @@ function coneChannel({ el, range, angle, dmg, interval = 0.12, st, sound, max = 
       // the cone starts just past the focus so its throat isn't on the lens
       tmp2.copy(o).addScaledVector(d, 0.35);
       S.cone.update(tmp2, d, range * 0.95, Math.tan(angle) * range * 0.8, 0.9 + 0.1 * Math.sin(ctx.time * 31));
-      // stream of flame tongues: hot at the throat, deep red and sooty at the end
-      const n = emitN(S, 'eF', 120, dt);
+      // flame tongues seeded all along the cone (not piled up where drag stops
+      // them), widening and cooling from a hot orange throat to sooty red
+      const n = emitN(S, 'eF', 140, dt);
       for (let i = 0; i < n; i++) {
-        const sx = d.x + rand(-1, 1) * angle * 0.5, sy = d.y + rand(-1, 1) * angle * 0.35, sz = d.z + rand(-1, 1) * angle * 0.5;
-        const sp = range * rand(1.3, 1.8);
-        const f0 = rand(0.3, 0.7);
-        ctx.vfx.P.glow({ x: o.x + d.x * f0, y: o.y + d.y * f0, z: o.z + d.z * f0, vx: sx * sp, vy: sy * sp, vz: sz * sp, r: fx.core[0] * 0.55, g: fx.core[1] * 0.55, b: fx.core[2] * 0.55, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2], life: rand(0.35, 0.55), size: 0.12, size2: 1.25, sprite: SPR.FLAME, drag: 2.2, spin: rand(-3, 3) });
+        const t = 0.1 + Math.pow(Math.random(), 0.9) * 0.88;
+        const w = Math.tan(angle) * t;
+        const sx = d.x + rand(-1, 1) * w * 0.8, sy = d.y + rand(-1, 1) * w * 0.5, sz = d.z + rand(-1, 1) * w * 0.8;
+        const L = t * range;
+        const c0 = t < 0.3 ? fx.core : fx.mid, k0 = t < 0.3 ? 0.32 : 0.7;
+        // the stream must read from the hand outward, so it skips the near-lens fade
+        ctx.vfx.P.glowAmbient({ x: o.x + sx * L, y: o.y + sy * L, z: o.z + sz * L, vx: sx * range * 0.9, vy: sy * range * 0.9 + 0.6, vz: sz * range * 0.9,
+          r: c0[0] * k0, g: c0[1] * k0, b: c0[2] * k0, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2],
+          life: rand(0.18, 0.32), size: 0.2 + t * 1.3, size2: 0.35 + t * 1.6, sprite: SPR.FLAME, drag: 1.5, spin: rand(-2, 2) });
       }
       const ne = emitN(S, 'eE', 30, dt);
       for (let i = 0; i < ne; i++) {
@@ -567,8 +573,8 @@ export const CLASSES = {
           ctx.sound('cast_blade'); ctx.sound('cast_blood');
           const o = ctx.casterPos().clone().add(v3(0, 1.2, 0));
           const d = ctx.flatDir();
-          ctx.vfx.slash(o, d, 'blood', 4.2, 1, { life: 0.3, tilt: 0.35 });
-          ctx.vfx.slash(o.clone().add(v3(0, -0.15, 0)), d, 'blood', 3.4, 1, { life: 0.34, tilt: 0.3, alpha: 0.5, sparks: 0 });
+          ctx.vfx.slash(o, d, 'blood', 4.2, 1, { life: 0.3, tilt: 0.22 });
+          ctx.vfx.slash(o.clone().add(v3(0, -0.15, 0)), d, 'blood', 3.4, 1, { life: 0.34, tilt: 0.16, alpha: 0.5, sparks: 0 });
           for (const a of ctx.rt.inCone(o, d, ctx.aoe(4.4), 1.0)) ctx.hit(a, { dmg: 32, el: 'blood', st: { bleed: [4, 5] }, kb: 6 }, v3(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z));
         },
       },
@@ -1003,7 +1009,7 @@ export const CLASSES = {
           const side = ctx.counter('slash') % 2 ? 1 : -1;
           // bright leading edge + a fainter inner echo so the cut has weight
           ctx.vfx.slash(o, d, 'blade', 3.6, side, { life: 0.24 });
-          ctx.vfx.slash(o, d, 'blade', 2.8, side, { life: 0.28, alpha: 0.4, sparks: 0, tilt: 0.42 });
+          ctx.vfx.slash(o, d, 'blade', 2.8, side, { life: 0.28, alpha: 0.4, sparks: 0, tilt: 0.2 });
           let hitAny = false;
           for (const a of ctx.rt.inCone(o, d, 3.8, 1.0)) {
             ctx.hit(a, { dmg: 24, el: 'blade', kb: 5 }, v3(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z));
@@ -1045,7 +1051,7 @@ export const CLASSES = {
             ctx.after(i * 0.025, () => {
               const c = v3(a.x + d.x * i * 1.35, a.y + 1, a.z + d.z * i * 1.35);
               ctx.vfx.burst(c, { element: 'blade', count: 4, speed: 3, life: 0.3, size: 0.05, stretch: 0.03 });
-              if (i % 3 === 1) ctx.vfx.slash(c, d, 'blade', 2.2, i % 2 ? 1 : -1, { life: 0.22, tilt: 0.7, sparks: 3 });
+              if (i % 3 === 1) ctx.vfx.slash(c, d, 'blade', 2.2, i % 2 ? 1 : -1, { life: 0.22, tilt: 0.4, sparks: 3 });
               for (const t of ctx.rt.inRadius(c, 1.8)) {
                 if (hits.has(t.id)) continue;
                 hits.add(t.id);
@@ -1088,7 +1094,7 @@ export const CLASSES = {
         name: 'Wind Blade', icon: 'crescent', desc: 'Piercing crescents of cutting wind.', mode: 'auto', rate: 0.4, style: 'flick', hand: 'right',
         cast(ctx) {
           ctx.sound('cast_wind', 0.7);
-          ctx.fan(1, 2, (dir) => ctx.proj({ el: 'wind', vel: dir.multiplyScalar(38), radius: 0.4, life: 1.2, core: 0.3, mesh: 'crescent', light: 3, trail: 1.6, pierce: 2,
+          ctx.fan(1, 2, (dir) => ctx.proj({ el: 'wind', vel: dir.multiplyScalar(38), radius: 0.4, life: 1.2, core: 0.3, mesh: 'crescent', meshScale: 1.25, light: 3, trail: 1.6, pierce: 2,
             hit: { dmg: 13, el: 'wind', kb: 3 } }));
           ctx.muzzle('wind');
         },
@@ -1133,7 +1139,7 @@ export const CLASSES = {
               const nw = emitN(p.data, 'eW', 150, dt);
               for (let i = 0; i < nw; i++) {
                 const h = Math.random() * 5, a = Math.random() * Math.PI * 2, r = 0.35 + Math.pow(h / 5, 1.6) * 1.8;
-                ctx.vfx.P.glow({ x: p.pos.x + Math.cos(a) * r, y: p.pos.y + h, z: p.pos.z + Math.sin(a) * r, vx: -Math.sin(a) * 9 * r, vy: 2, vz: Math.cos(a) * 9 * r, r: 0.5, g: 0.62, b: 0.6, life: 0.3, size: 0.32, sprite: SPR.WISP, stretch: 0.03, drag: 1 });
+                ctx.vfx.P.glow({ x: p.pos.x + Math.cos(a) * r, y: p.pos.y + h, z: p.pos.z + Math.sin(a) * r, vx: -Math.sin(a) * 9 * r, vy: 2, vz: Math.cos(a) * 9 * r, r: 0.5, g: 0.62, b: 0.6, life: 0.3, size: 0.18, sprite: SPR.WISP, stretch: 0.06, drag: 1 });
               }
               // debris: grit and stones whipped around and flung out
               const nd = emitN(p.data, 'eD', 45, dt);
@@ -1173,7 +1179,7 @@ export const CLASSES = {
           const RR = ctx.aoe(10);
           // the eye wall: a slow, wide funnel around the caster (it fades where
           // it nears the camera), plus a ring of debris and wind streaks
-          const wall = ctx.vfx.funnel({ r0: RR * 0.7, r1: RR * 1.05, height: 8, snake: 0.4, spin: 1.2, twist: 2, color: [0.16, 0.18, 0.18], hi: [0.55, 0.64, 0.62], alpha: 0.55 });
+          const wall = ctx.vfx.funnel({ r0: Math.min(3.5, RR * 0.4), r1: RR * 0.75, height: 7, snake: 0.4, spin: 1.2, twist: 2, color: [0.16, 0.18, 0.18], hi: [0.55, 0.64, 0.62], alpha: 0.55 });
           const base = v3();
           ctx.zone({ follow: true, pos: ctx.casterPos().clone(), radius: RR, life: 6, interval: 0.2, el: 'wind', dmg: 9, pull: 6,
             visual: (z, dt) => {
@@ -1184,7 +1190,7 @@ export const CLASSES = {
               const nw = emitN(z, 'eW', 300, dt);
               for (let i = 0; i < nw; i++) {
                 const a = Math.random() * Math.PI * 2, r = z.radius * rand(0.35, 1);
-                ctx.vfx.P.glow({ x: p.x + Math.cos(a) * r, y: p.y + rand(0, 4.5), z: p.z + Math.sin(a) * r, vx: -Math.sin(a) * 16, vy: 1, vz: Math.cos(a) * 16, r: 0.5, g: 0.65, b: 0.64, life: 0.35, size: 0.3, sprite: SPR.WISP, stretch: 0.035 });
+                ctx.vfx.P.glow({ x: p.x + Math.cos(a) * r, y: p.y + rand(0, 4.5), z: p.z + Math.sin(a) * r, vx: -Math.sin(a) * 16, vy: 1, vz: Math.cos(a) * 16, r: 0.5, g: 0.65, b: 0.64, life: 0.35, size: 0.16, sprite: SPR.WISP, stretch: 0.07 });
               }
               const nd = emitN(z, 'eD', 70, dt);
               for (let i = 0; i < nd; i++) {

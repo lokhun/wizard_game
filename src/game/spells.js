@@ -100,7 +100,7 @@ export class SpellRuntime {
     cres.rotateZ(-Math.PI * 0.45);
     cres.rotateX(Math.PI / 2);
     cres.rotateY(-Math.PI / 2);
-    M.crescent = { geo: cres, mat: nearFade(new THREE.MeshBasicMaterial({ color: new THREE.Color(0.75, 1.15, 1.1), transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })) };
+    M.crescent = { geo: cres, mat: nearFade(new THREE.MeshBasicMaterial({ color: new THREE.Color(0.95, 1.4, 1.35), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })) };
     const orb = new THREE.SphereGeometry(0.25, 16, 12);
     M.orb = { geo: orb, mat: null }; // per element basic material
     const flask = new THREE.SphereGeometry(0.12, 10, 8);

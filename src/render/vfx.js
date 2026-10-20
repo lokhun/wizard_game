@@ -267,13 +267,14 @@ void main(){
   float u = vUv.x;
   float n = fbm(vec2(u * 9.0 + along * 2.0, along * 4.0 - uTime * uSpeed));
   float n2 = fbm(vec2(u * 17.0 - along * 3.0, along * 7.0 - uTime * uSpeed * 1.7));
-  float tongues = smoothstep(0.3, 0.85, n * 0.65 + n2 * 0.55 - along * 0.35);
+  float tongues = smoothstep(0.22, 0.72, n * 0.6 + n2 * 0.5 - along * 0.2);
   float body = pow(vFacing, 0.7);
-  float ends = smoothstep(0.0, 0.12, along) * (1.0 - smoothstep(0.75, 1.0, along));
+  // strongest through the first half; the mouth dissolves instead of drawing a rim
+  float ends = smoothstep(0.0, 0.1, along) * (1.0 - smoothstep(0.35, 0.95, along));
   float k = tongues * body * ends * uAlpha;
   vec3 c = mix(uHot, uMid, smoothstep(0.05, 0.45, along));
   c = mix(c, uCool, smoothstep(0.45, 0.95, along));
-  c *= k * smoothstep(0.5, 2.5, vDepth);
+  c *= k * smoothstep(0.3, 1.5, vDepth);
   gl_FragColor = vec4(c, 1.0);
 }`;
 
@@ -496,11 +497,12 @@ export class VFX {
       return m;
     });
     // sword slashes
-    const slashGeo = new THREE.RingGeometry(0.55, 1.0, 48, 3, Math.PI / 2 - Math.PI * 0.6, Math.PI * 1.2);
+    // arc centred on local +Z (forward once yawed to the swing direction)
+    const slashGeo = new THREE.RingGeometry(0.55, 1.0, 40, 3, -Math.PI / 2 - Math.PI * 0.4, Math.PI * 0.8);
     slashGeo.rotateX(-Math.PI / 2);
     this.slashPool = this._pool(8, () => new THREE.Mesh(slashGeo, new THREE.ShaderMaterial({
       vertexShader: SLASH_VERT, fragmentShader: SLASH_FRAG,
-      uniforms: { uColor: { value: new THREE.Color() }, uCore: { value: new THREE.Color() }, uProg: { value: 0 }, uSide: { value: 1 }, uAlpha: { value: 1 }, uSeed: { value: 0 }, uR0: { value: 0.55 }, uArc: { value: Math.PI * 1.2 } },
+      uniforms: { uColor: { value: new THREE.Color() }, uCore: { value: new THREE.Color() }, uProg: { value: 0 }, uSide: { value: 1 }, uAlpha: { value: 1 }, uSeed: { value: 0 }, uR0: { value: 0.55 }, uArc: { value: Math.PI * 0.8 } },
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     })));
     // tornado / hurricane funnels
@@ -842,7 +844,7 @@ export class VFX {
     m.scale.setScalar(range);
     const yaw = Math.atan2(d.x, d.z);
     // a diagonal cut reads far better from eye height than a flat one
-    const tilt = opts.tilt ?? 0.5;
+    const tilt = opts.tilt ?? 0.28;
     m.rotation.set(side * tilt, yaw, side * 0.18, 'YXZ');
     const life = opts.life ?? 0.24;
     this._track(m, life, (k) => {
@@ -853,7 +855,7 @@ export class VFX {
     // a few hot sparks thrown off the blade's path (not confetti)
     const n = opts.sparks ?? 8;
     for (let i = 0; i < n; i++) {
-      const a = yaw + (i / Math.max(1, n - 1) - 0.5) * 2.0 * side;
+      const a = yaw + (i / Math.max(1, n - 1) - 0.5) * 2.2 * side;
       const r = range * rand(0.75, 1);
       this.P.glow({ x: o.x + Math.sin(a) * r, y: o.y + rand(-0.25, 0.25) - side * Math.sin(a - yaw) * tilt * r * 0.5, z: o.z + Math.cos(a) * r,
         vx: Math.cos(a) * 3 * side, vy: rand(-0.5, 1), vz: -Math.sin(a) * 3 * side,
@@ -1027,8 +1029,8 @@ export class VFX {
     switch (element) {
       case 'fire': case 'enemyFire': {
         // a churning ball of flame inside dark smoke, not a white sun
-        this.burst(pos, { element, count: Math.round(22 * s), speed: 4.5 * s, life: 0.7, size: 0.75 * s, size2: 0.15, sprite: SPR.FLAME, drag: 3, upward: 0.25, color: scaleC(fx.mid, 1.05 * dim, _sc), color2: fx.end, spin: 1.5 });
-        this.burst(pos, { element, count: Math.round(10 * s), speed: 2.5 * s, life: 0.45, size: 0.6 * s, size2: 0.12, sprite: SPR.FLAME, drag: 3, upward: 0.4, color: scaleC(fx.core, 0.7 * dim, _sc2), color2: fx.mid });
+        this.burst(pos, { element, count: Math.round(28 * s), speed: 4.5 * s, life: 0.7, size: 0.55 * s, size2: 0.12, sprite: SPR.FLAME, drag: 3, upward: 0.25, color: scaleC(fx.mid, 1.05 * dim, _sc), color2: fx.end, spin: 1.5 });
+        this.burst(pos, { element, count: Math.round(12 * s), speed: 2.5 * s, life: 0.45, size: 0.45 * s, size2: 0.1, sprite: SPR.FLAME, drag: 3, upward: 0.4, color: scaleC(fx.core, 0.7 * dim, _sc2), color2: fx.mid });
         this.burst(pos, { element, count: Math.round(14 * s), speed: 8 * s, life: 1.2, size: 0.03, size2: 0.01, sprite: SPR.EMBER, gravity: 5, drag: 1.2, upward: 0.4, stretch: 0.01, color: [1.5, 0.45, 0.06], color2: [0.45, 0.04, 0.0] });
         this.smoke(pos, { count: Math.round(8 * s), size: 1.0 * s, life: 2.2, spread: radius * 0.35, speed: 2, color: [0.045, 0.035, 0.03], alpha: 0.6 });
         this.decal(ground, 'scorch', radius * 1.5, 12);
