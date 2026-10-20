@@ -497,6 +497,43 @@ export function buildLevel(level, factory, lightPool) {
     group.add(inst);
   }
 
+  // ---------------- light shafts (keep halls, throne room): soft additive beams
+  if (biome.id === 'keep' || biome.id === 'throne') {
+    const shaftGeo = new GeoBuilder();
+    const rs = new RNG(level.seed + 31);
+    for (const room of level.rooms) {
+      if (room.type === 'start' || (biome.id === 'keep' && room.layout !== 'hall' && room.layout !== 'library')) continue;
+      const n = room.type === 'boss' ? 4 : 2;
+      for (let k = 0; k < n; k++) {
+        // beam enters high on the north wall and slants down into the room
+        const x = (room.x + 2 + rs.next() * (room.w - 4)) * T;
+        const z0 = room.y * T + 0.2, top = room.ceil - 0.6;
+        const len = Math.min(room.h * T * 0.8, top * 1.4);
+        const w = rs.range(1.2, 2.2);
+        const z1 = z0 + len * 0.6, bottom = 0.05;
+        shaftGeo.quad([x - w / 2, top, z0], [x + w / 2, top, z0], [x + w / 2 + 0.3, bottom, z1], [x - w / 2 - 0.3, bottom, z1], [0, 0, 1], [[0, 1], [1, 1], [1, 0], [0, 0]]);
+        shaftGeo.quad([x, top, z0 - w / 2 + 0.01], [x, top, z0 + w / 2], [x + 0.2, bottom, z1 + w / 2], [x + 0.2, bottom, z1 - w / 2], [1, 0, 0], [[0, 1], [1, 1], [1, 0], [0, 0]]);
+      }
+    }
+    if (shaftGeo.count) {
+      const c = document.createElement('canvas');
+      c.width = 64; c.height = 128;
+      const gx = c.getContext('2d');
+      const grd = gx.createLinearGradient(0, 0, 0, 128);
+      grd.addColorStop(0, 'rgba(255,255,255,0.9)'); grd.addColorStop(0.6, 'rgba(255,255,255,0.35)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
+      gx.fillStyle = grd; gx.fillRect(0, 0, 64, 128);
+      const side = gx.createLinearGradient(0, 0, 64, 0);
+      side.addColorStop(0, 'rgba(0,0,0,1)'); side.addColorStop(0.3, 'rgba(0,0,0,0)'); side.addColorStop(0.7, 'rgba(0,0,0,0)'); side.addColorStop(1, 'rgba(0,0,0,1)');
+      gx.globalCompositeOperation = 'destination-out'; gx.fillStyle = side; gx.fillRect(0, 0, 64, 128);
+      const tex = new THREE.CanvasTexture(c);
+      const col = biome.id === 'throne' ? new THREE.Color(0.22, 0.12, 0.32) : new THREE.Color(0.2, 0.16, 0.11);
+      const shaftMat = new THREE.MeshBasicMaterial({ map: tex, color: col, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: true });
+      const sm = new THREE.Mesh(shaftGeo.build(), shaftMat);
+      sm.renderOrder = 6;
+      group.add(sm);
+    }
+  }
+
   // ---------------- outdoor sky & distant keep
   let sky = null;
   if (biome.outdoor) {
