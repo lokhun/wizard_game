@@ -126,7 +126,8 @@ export function tube(points, r, tubSeg = 12, radSeg = 6, closed = false) {
   }
   for (let i = 0; i < tubSeg; i++) for (let j = 0; j < radSeg; j++) {
     const a = i * (radSeg + 1) + j, b = (i + 1) * (radSeg + 1) + j;
-    idx.push(a, b, a + 1, b, b + 1, a + 1);
+    // wound so faces agree with the outward normals (T x B = -N, so a -> a+1 -> b)
+    idx.push(a, a + 1, b, b, a + 1, b + 1);
   }
   // end caps
   if (!closed) {
@@ -137,7 +138,7 @@ export function tube(points, r, tubSeg = 12, radSeg = 6, closed = false) {
       pos.push(P.x, P.y, P.z); nrm.push(T.x * dir, T.y * dir, T.z * dir); uv.push(0, 0);
       for (let j = 0; j < radSeg; j++) {
         const a = i * (radSeg + 1) + j;
-        if (dir < 0) idx.push(c, a, a + 1); else idx.push(c, a + 1, a);
+        if (dir < 0) idx.push(c, a + 1, a); else idx.push(c, a, a + 1);
       }
     }
   }
