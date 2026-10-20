@@ -794,9 +794,25 @@ export class UI {
 
   showPause({ onResume, onSettings, onQuit, coop, code }) {
     if (this.pauseEl) return;
+    const p = this.game?.player;
+    let build = '';
+    if (p) {
+      const counts = new Map();
+      for (const u of p.upgrades) { const k = u.def.id; const e = counts.get(k) ?? { def: u.def, n: 0, best: 0 }; e.n++; e.best = Math.max(e.best, u.rarity); counts.set(k, e); }
+      const tomes = [...counts.values()].map((e) => `<span title="${esc(e.def.desc(1))}" style="display:inline-flex;align-items:center;gap:4px;margin:2px 8px 2px 0;color:${RARITY[e.best].color}">${iconSVG(e.def.icon, RARITY[e.best].color, 18, { glow: false })}${esc(e.def.name)}${e.n > 1 ? ' ×' + e.n : ''}</span>`).join('');
+      const relics = p.relics.map((r) => `<span style="display:inline-flex;align-items:center;gap:4px;margin:2px 8px 2px 0;color:#ffb030">${iconSVG(r.def.icon, '#ffb030', 18, { glow: false })}${esc(r.def.name)}</span>`).join('');
+      const st = p.stats;
+      build = `<div class="panel" style="padding:12px 16px;max-width:620px;font-size:14px;text-align:left;margin-bottom:6px">
+        <div class="subtitle" style="margin-bottom:6px">Your build</div>
+        <div>${tomes || '<span style="color:var(--text-dim)">No tomes bound yet.</span>'}</div>
+        ${relics ? `<div style="margin-top:6px">${relics}</div>` : ''}
+        <div style="margin-top:8px;color:var(--text-dim);font-size:13px">Damage ×${st.dmgMult.toFixed(2)} · Crit ${Math.round(st.critChance * 100)}% (×${st.critMult.toFixed(2)}) · Cooldowns −${Math.round(st.cdr * 100)}% · Armor ${Math.round(st.armor * 100)}% · Speed ${st.moveSpeed.toFixed(1)}</div>
+      </div>`;
+    }
     const m = this._modal(`
       <div class="panel pause-box">
         <div class="title" style="font-size:34px">Paused</div>
+        ${build}
         ${coop ? `<div class="subtitle">The world does not wait in co-op${code ? ` · Code ${code}` : ''}</div>` : ''}
         <button class="btn primary" id="bRes">Resume</button>
         <button class="btn" id="bHelp">How to Play</button>
