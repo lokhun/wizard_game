@@ -82,10 +82,11 @@ export function buildLevel(level, factory, lightPool) {
     for (let s = 0; s < hs.length - 1; s++) {
       const ya = hs[s], yb = hs[s + 1];
       const ca = shade(ya), cb = shade(yb);
+      // wound b -> a so the front face points along n, into the walkable cell
       b.quad(
-        [ax, ya, az], [bx, ya, bz], [bx, yb, bz], [ax, yb, az], n,
-        [[uOff * 0.5, ya * 0.5], [(uOff + len) * 0.5, ya * 0.5], [(uOff + len) * 0.5, yb * 0.5], [uOff * 0.5, yb * 0.5]],
-        [ca * aoA, ca * aoB, cb * aoB, cb * aoA],
+        [bx, ya, bz], [ax, ya, az], [ax, yb, az], [bx, yb, bz], n,
+        [[(uOff + len) * 0.5, ya * 0.5], [uOff * 0.5, ya * 0.5], [uOff * 0.5, yb * 0.5], [(uOff + len) * 0.5, yb * 0.5]],
+        [ca * aoB, ca * aoA, cb * aoA, cb * aoB],
       );
     }
   };
@@ -160,8 +161,8 @@ export function buildLevel(level, factory, lightPool) {
         else if (d.dx === -1) { ax = cx0; az = cz0; bx = cx0; bz = cz0 + T; u = az; }
         else if (d.dy === 1) { ax = cx0; az = cz0 + T; bx = cx0 + T; bz = cz0 + T; u = ax; }
         else { ax = cx0 + T; az = cz0; bx = cx0; bz = cz0; u = -ax; }
-        B('wall').quad([ax, cn, az], [bx, cn, bz], [bx, h1, bz], [ax, h1, az], d.n,
-          [[u * 0.5, cn * 0.5], [(u + T) * 0.5, cn * 0.5], [(u + T) * 0.5, h1 * 0.5], [u * 0.5, h1 * 0.5]], [0.7, 0.7, 0.75, 0.75]);
+        B('wall').quad([bx, cn, bz], [ax, cn, az], [ax, h1, az], [bx, h1, bz], d.n,
+          [[(u + T) * 0.5, cn * 0.5], [u * 0.5, cn * 0.5], [u * 0.5, h1 * 0.5], [(u + T) * 0.5, h1 * 0.5]], [0.7, 0.7, 0.75, 0.75]);
       }
     }
     // ceiling

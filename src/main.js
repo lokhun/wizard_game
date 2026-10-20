@@ -242,7 +242,8 @@ function refreshLobby() {
 function currentAscension() { return Math.min(settings.ascension ?? 0, readStats().wins ?? 0); }
 
 function startSolo() {
-  beginRun({ seed: Math.floor(Math.random() * 1e9), localId: 'solo', isHost: true, net: null, players: [], ascension: currentAscension() });
+  const fixedSeed = +new URLSearchParams(location.search).get('seed'); // test hook: reproducible floors
+  beginRun({ seed: fixedSeed || Math.floor(Math.random() * 1e9), localId: 'solo', isHost: true, net: null, players: [], ascension: currentAscension() });
 }
 
 function beginRun(opts) {
