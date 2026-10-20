@@ -210,7 +210,12 @@ export class Game {
         this.lights.addTorch(new THREE.Vector3(p.x + 1.2, this.groundY(p.x, p.z) + 2.2, p.z + 0.8), { color: 0xffb060, intensity: 14, range: 8, flicker: 0.3 });
         this.interactables.push({
           kind: 'shop', pos: new THREE.Vector3(p.x, 1.2, p.z), r: 3.4, label: 'Trade with the Merchant', id: 'shop' + p.x, stock: null,
-          update: (dt, t) => npc.update(dt, { anim: 'idle', t, speed: 0, pitch: Math.sin(t * 0.5) * 0.1, castProgress: 0, strafe: 0 }),
+          update: (dt, t) => {
+            // the merchant is ~50 draw calls: only draw and animate when you could see him
+            const near = this.renderer.camera.position.distanceToSquared(npc.root.position) < 30 * 30;
+            npc.root.visible = near;
+            if (near) npc.update(dt, { anim: 'idle', t, speed: 0, pitch: Math.sin(t * 0.5) * 0.1, castProgress: 0, strafe: 0 });
+          },
           dispose: () => { this.scene.remove(npc.root); npc.dispose?.(); },
         });
       }
