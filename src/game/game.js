@@ -13,7 +13,7 @@ import { Director } from './director.js';
 import { LocalPlayer } from './player.js';
 import { RemotePlayer } from './remote.js';
 import { resolveHit, ST, REACTIONS } from '../game/combat.js';
-import { getViewModel, preloadEnemies } from './models.js';
+import { getViewModel, preloadEnemies, getEnemyModel } from './models.js';
 import { rollTomes, rollRelics, RARITY, TOMES } from './upgrades.js';
 import { makeChest, makePedestal, makePortal } from './interactables.js';
 import { CLASS_META } from './classMeta.js';
@@ -208,6 +208,42 @@ export class Game {
     this.audio?.play('floor_enter');
     this.ui?.onFloor(this, b, index);
     if (index === 0 && !this.menuMode) this._tutorialTips();
+    this._prewarm(level);
+  }
+
+  // Compile shaders for everything that will appear on this floor (enemy
+  // models, projectile meshes, effect pools) so first appearances don't hitch.
+  _prewarm(level) {
+    const tmp = [];
+    try {
+      const b = level.biome;
+      const types = [...new Set([...b.enemies, ...b.elites, b.boss].map((t) => ENEMY_DEFS[t]?.model ?? BOSS_DEFS[t]?.model ?? t))];
+      const cam = this.renderer.camera;
+      const front = cam.position.clone().add(new THREE.Vector3(0, 0, -3).applyQuaternion(cam.quaternion));
+      for (const t of types) {
+        const m = getEnemyModelSafe(t, this);
+        if (!m) continue;
+        m.root.position.copy(front);
+        this.scene.add(m.root);
+        tmp.push(() => { this.scene.remove(m.root); m.dispose?.(); });
+      }
+      for (const key of Object.keys(this.spells.meshCache)) {
+        const def = this.spells.meshCache[key];
+        const mesh = new THREE.Mesh(def.geo, def.mat ?? this.spells._orbMat('arcane'));
+        mesh.position.copy(front);
+        this.scene.add(mesh);
+        tmp.push(() => this.scene.remove(mesh));
+      }
+      for (const pool of [this.vfx.ringPool, this.vfx.telePool, this.vfx.beamPool, this.vfx.shellPool, this.vfx.decalPool, this.vfx.boltPool]) {
+        const it = pool.items[0];
+        if (it.visible) continue;
+        it.visible = true;
+        tmp.push(() => { it.visible = false; });
+      }
+      this.renderer.renderer.compile(this.scene, cam);
+      this.renderer.renderer.compile(this.renderer.viewScene, this.renderer.viewCamera);
+    } catch (e) { console.warn('prewarm failed', e); }
+    for (const f of tmp) f();
   }
 
   _tutorialTips() {
@@ -1257,6 +1293,8 @@ export class Game {
 }
 
 // ---------------------------------------------------------------------------
+function getEnemyModelSafe(t, game) { try { return getEnemyModel(t, game); } catch { return null; } }
+
 const signCache = new Map();
 function signTexture(ch, color) {
   const key = ch + color;
