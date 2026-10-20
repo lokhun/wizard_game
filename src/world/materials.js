@@ -3,6 +3,30 @@ import { makeSurfaceMaterial } from '../render/textures.js';
 
 // Water surface: dark, glossy, with two scrolling normal layers so torch
 // highlights shimmer across it.
+// A tiny fake environment for wet surfaces: a dark vault with a few warm,
+// torch-like hotspots, so moving normals shimmer instead of reading as flat.
+let _wetEnv = null;
+function wetEnv() {
+  if (_wetEnv) return _wetEnv;
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 128;
+  const g = c.getContext('2d');
+  const bg = g.createLinearGradient(0, 0, 0, 128);
+  bg.addColorStop(0, '#0c0d0e'); bg.addColorStop(0.5, '#1a1714'); bg.addColorStop(1, '#050505');
+  g.fillStyle = bg; g.fillRect(0, 0, 256, 128);
+  for (let i = 0; i < 9; i++) {
+    const x = (i / 9) * 256 + 10, y = 50 + Math.sin(i * 2.3) * 10, r = 6 + (i % 3) * 3;
+    const hg = g.createRadialGradient(x, y, 0, x, y, r * 3);
+    hg.addColorStop(0, 'rgba(255,190,110,0.95)'); hg.addColorStop(0.3, 'rgba(200,110,40,0.45)'); hg.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = hg; g.fillRect(x - r * 3, y - r * 3, r * 6, r * 6);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.mapping = THREE.EquirectangularReflectionMapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  _wetEnv = t;
+  return t;
+}
+
 export function makeWaterMaterial(factory, tint = 0x0d1a12) {
   const t = factory.get('rock', 512, 7);
   const n2 = t.normalMap.clone();
@@ -14,7 +38,9 @@ export function makeWaterMaterial(factory, tint = 0x0d1a12) {
     emissive: 0x0b2416,
     emissiveIntensity: 0.6,
     normalMap: t.normalMap,
-    normalScale: new THREE.Vector2(0.35, 0.35),
+    normalScale: new THREE.Vector2(0.45, 0.45),
+    envMap: wetEnv(),
+    envMapIntensity: 0.9,
     transparent: true,
     opacity: 0.88,
     depthWrite: false,
