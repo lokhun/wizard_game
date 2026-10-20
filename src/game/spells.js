@@ -1,0 +1,477 @@
+import * as THREE from 'three';
+import { fxOf } from '../render/vfx.js';
+import { SPR } from '../render/particles.js';
+import { rand } from '../core/rng.js';
+import { segPointDist2 } from '../core/math.js';
+
+// ---------------------------------------------------------------------------
+// Spell runtime: projectiles, zones, delayed actions and channel beams.
+// The same spell code runs on the caster's machine (local=true: deals damage)
+// and on co-op peers (local=false: visuals only), so everyone sees every spell.
+// ---------------------------------------------------------------------------
+
+const _v = new THREE.Vector3();
+const _v2 = new THREE.Vector3();
+
+function glowTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.2, 'rgba(255,255,255,0.85)');
+  gr.addColorStop(0.5, 'rgba(255,255,255,0.2)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+
+export class SpellRuntime {
+  constructor(game) {
+    this.g = game;
+    this.projectiles = [];
+    this.zones = [];
+    this.timers = [];
+    this.nextId = 1;
+    this.glowTex = glowTexture();
+    this.spriteMats = new Map();
+    this.meshCache = {};
+    this._buildMeshes();
+  }
+
+  _buildMeshes() {
+    const M = this.meshCache;
+    const shard = new THREE.OctahedronGeometry(0.12, 0);
+    shard.scale(0.7, 0.7, 3.2);
+    M.shard = { geo: shard, mat: new THREE.MeshStandardMaterial({ color: 0xbfefff, emissive: 0x4ab8ff, emissiveIntensity: 1.6, roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.9 }) };
+    const big = new THREE.OctahedronGeometry(0.3, 0);
+    big.scale(0.8, 0.8, 4);
+    M.bigShard = { geo: big, mat: M.shard.mat };
+    const rock = new THREE.DodecahedronGeometry(0.22, 0);
+    M.rock = { geo: rock, mat: new THREE.MeshStandardMaterial({ color: 0x6a5a48, roughness: 0.95, emissive: 0x401800, emissiveIntensity: 0.4, flatShading: true }) };
+    const meteor = new THREE.DodecahedronGeometry(0.9, 1);
+    M.meteor = { geo: meteor, mat: new THREE.MeshStandardMaterial({ color: 0x2a1a10, roughness: 1, emissive: 0xff5010, emissiveIntensity: 1.5, flatShading: true }) };
+    const boulder = new THREE.DodecahedronGeometry(2.2, 1);
+    M.boulder = { geo: boulder, mat: new THREE.MeshStandardMaterial({ color: 0x5a4a38, roughness: 1, emissive: 0x803000, emissiveIntensity: 0.6, flatShading: true }) };
+    const spear = new THREE.ConeGeometry(0.07, 1.4, 6);
+    spear.rotateX(Math.PI / 2);
+    M.spear = { geo: spear, mat: new THREE.MeshStandardMaterial({ color: 0xe8e0c8, roughness: 0.6, emissive: 0x204010, emissiveIntensity: 0.6 }) };
+    const blade = new THREE.BoxGeometry(0.06, 0.012, 1.1);
+    blade.translate(0, 0, 0.2);
+    M.blade = { geo: blade, mat: new THREE.MeshBasicMaterial({ color: new THREE.Color(1.2, 2.8, 4.5), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }) };
+    const arrow = new THREE.CylinderGeometry(0.015, 0.015, 0.8, 4);
+    arrow.rotateX(Math.PI / 2);
+    M.arrow = { geo: arrow, mat: new THREE.MeshStandardMaterial({ color: 0x4a3018, roughness: 0.8 }) };
+    const cres = new THREE.TorusGeometry(0.6, 0.05, 4, 16, Math.PI * 0.8);
+    cres.rotateX(Math.PI / 2);
+    cres.rotateY(Math.PI / 2 + Math.PI * 0.1);
+    M.crescent = { geo: cres, mat: new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 2.6, 2.5), transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }) };
+    const orb = new THREE.SphereGeometry(0.25, 16, 12);
+    M.orb = { geo: orb, mat: null }; // per element basic material
+    const flask = new THREE.SphereGeometry(0.12, 10, 8);
+    M.flask = { geo: flask, mat: new THREE.MeshStandardMaterial({ color: 0x80c020, emissive: 0x406010, emissiveIntensity: 1.2, roughness: 0.1, transparent: true, opacity: 0.85 }) };
+    this.orbMats = new Map();
+  }
+
+  _spriteMat(el) {
+    if (this.spriteMats.has(el)) return this.spriteMats.get(el);
+    const fx = fxOf(el);
+    const m = new THREE.SpriteMaterial({ map: this.glowTex, color: new THREE.Color(fx.core[0] * 0.6, fx.core[1] * 0.6, fx.core[2] * 0.6), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
+    this.spriteMats.set(el, m);
+    return m;
+  }
+  _orbMat(el) {
+    if (this.orbMats.has(el)) return this.orbMats.get(el);
+    const fx = fxOf(el);
+    const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(fx.core[0] * 0.7, fx.core[1] * 0.7, fx.core[2] * 0.7) });
+    this.orbMats.set(el, m);
+    return m;
+  }
+
+  // -------------------------------------------------------------- projectiles
+  // p: { local, faction:'player'|'enemy', owner, el, pos, vel, radius, life, gravity, pierce, bounce,
+  //      homing, hit:{dmg, st, kb, tag}, aoe:{radius,dmg,st}, onHit, onExpire, onTick, mesh, core, trail, light, spin }
+  spawn(p) {
+    const proj = {
+      id: this.nextId++,
+      local: p.local ?? true,
+      faction: p.faction ?? 'player',
+      owner: p.owner ?? 0,
+      el: p.el ?? 'arcane',
+      pos: p.pos.clone(),
+      prev: p.pos.clone(),
+      vel: p.vel.clone(),
+      radius: p.radius ?? 0.25,
+      life: p.life ?? 3,
+      age: 0,
+      gravity: p.gravity ?? 0,
+      drag: p.drag ?? 0,
+      pierce: p.pierce ?? 0,
+      bounce: p.bounce ?? 0,
+      homing: p.homing ?? 0,
+      homingRange: p.homingRange ?? 18,
+      hit: p.hit ?? null,
+      aoe: p.aoe ?? null,
+      onHit: p.onHit,
+      onExpire: p.onExpire,
+      onTick: p.onTick,
+      onWall: p.onWall,
+      hitIds: new Set(),
+      trail: p.trail ?? 1,
+      lightI: p.light ?? 6,
+      sticky: p.sticky ?? false,
+      stuck: false,
+      dead: false,
+      data: p.data ?? {},
+      hitPlayers: p.hitPlayers ?? true,
+      noWall: p.noWall ?? false,
+    };
+    const fx = fxOf(proj.el);
+    proj.lightColor = fx.light;
+    // visual
+    const group = new THREE.Group();
+    group.position.copy(proj.pos);
+    const coreSize = p.core ?? 0.6;
+    if (coreSize > 0) {
+      const s = new THREE.Sprite(this._spriteMat(proj.el));
+      s.scale.setScalar(coreSize);
+      group.add(s);
+      proj.sprite = s;
+    }
+    if (p.mesh) {
+      const def = this.meshCache[p.mesh];
+      const mesh = new THREE.Mesh(def.geo, def.mat ?? this._orbMat(proj.el));
+      if (p.meshScale) mesh.scale.setScalar(p.meshScale);
+      group.add(mesh);
+      proj.mesh = mesh;
+      proj.spin = p.spin ?? (p.mesh === 'rock' || p.mesh === 'meteor' || p.mesh === 'boulder' ? 6 : 0);
+    }
+    this.g.scene.add(group);
+    proj.group = group;
+    this.projectiles.push(proj);
+    return proj;
+  }
+
+  kill(proj, pos, hitActor = null) {
+    if (proj.dead) return;
+    proj.dead = true;
+    if (proj.aoe) this.explode(proj, pos ?? proj.pos);
+    proj.onExpire?.(proj, pos ?? proj.pos, hitActor);
+  }
+
+  explode(proj, pos) {
+    const a = proj.aoe;
+    if (a.vfx !== false) this.g.vfx.explosion(pos, a.el ?? proj.el, a.radius, { groundY: this.g.groundY(pos.x, pos.z) });
+    if (a.sound !== false) this.g.audio?.play(a.radius > 3 ? 'explosion_big' : 'explosion', { pos });
+    if (proj.local) {
+      if (proj.faction === 'player') {
+        this.damageArea(pos, a.radius, { dmg: a.dmg, el: a.el ?? proj.el, st: a.st, kb: a.kb ?? 4, tag: a.tag, src: proj.owner }, proj.hitIds, a.excludeDirect ? proj.hitIds : null);
+      }
+    }
+    if (proj.faction === 'enemy') this.g.enemyAreaHit?.(pos, a.radius, a.dmg, a.el ?? proj.el, a.st);
+  }
+
+  // damage all hostile actors in radius (from a local player)
+  damageArea(pos, radius, H, _hitIds, exclude) {
+    const hits = [];
+    for (const a of this.g.actors.hostiles()) {
+      if (exclude && exclude.has(a.id)) continue;
+      const dx = a.pos.x - pos.x, dz = a.pos.z - pos.z;
+      const dy = (a.pos.y + a.height * 0.5) - pos.y;
+      const r = radius + a.radius;
+      if (dx * dx + dz * dz > r * r || Math.abs(dy) > radius + a.height * 0.6) continue;
+      const d = Math.sqrt(dx * dx + dz * dz);
+      const fall = H.falloff ? Math.max(0.4, 1 - d / r) : 1;
+      this.g.hitActor(a, { ...H, dmg: H.dmg * fall, kbDir: d > 0.01 ? [dx / d, dz / d] : [0, 1] }, _v.set(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z));
+      hits.push(a);
+    }
+    return hits;
+  }
+
+  update(dt) {
+    const g = this.g;
+    const col = g.collision;
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i];
+      if (p.dead) { this._remove(i); continue; }
+      p.age += dt;
+      if (p.age >= p.life) { this.kill(p, p.pos); this._remove(i); continue; }
+      p.onTick?.(p, dt);
+      if (p.dead) { this._remove(i); continue; }
+      if (p.stuck) {
+        p.group.position.copy(p.pos);
+        this._visual(p, dt);
+        continue;
+      }
+      // homing
+      if (p.homing > 0 && p.faction === 'player') {
+        let best = null, bd = p.homingRange * p.homingRange;
+        const sp = p.vel.length();
+        _v.copy(p.vel).normalize();
+        for (const a of g.actors.hostiles()) {
+          if (p.hitIds.has(a.id)) continue;
+          _v2.set(a.pos.x - p.pos.x, a.pos.y + a.height * 0.55 - p.pos.y, a.pos.z - p.pos.z);
+          const d2 = _v2.lengthSq();
+          if (d2 > bd) continue;
+          if (_v2.normalize().dot(_v) < 0.2) continue;
+          bd = d2; best = a;
+        }
+        if (best) {
+          _v2.set(best.pos.x - p.pos.x, best.pos.y + best.height * 0.55 - p.pos.y, best.pos.z - p.pos.z).normalize().multiplyScalar(sp);
+          p.vel.lerp(_v2, Math.min(1, p.homing * dt));
+          p.vel.setLength(sp);
+        }
+      } else if (p.homing > 0 && p.faction === 'enemy' && g.player && !g.player.dead) {
+        const sp = p.vel.length();
+        _v2.set(g.player.pos.x - p.pos.x, g.player.pos.y + 1.2 - p.pos.y, g.player.pos.z - p.pos.z).normalize().multiplyScalar(sp);
+        p.vel.lerp(_v2, Math.min(1, p.homing * dt));
+        p.vel.setLength(sp);
+      }
+      if (p.gravity) p.vel.y -= p.gravity * dt;
+      if (p.drag) p.vel.multiplyScalar(Math.exp(-p.drag * dt));
+      p.prev.copy(p.pos);
+      // substeps against walls
+      const dist = p.vel.length() * dt;
+      const steps = Math.max(1, Math.ceil(dist / 0.3));
+      let wallHit = false;
+      for (let s = 0; s < steps; s++) {
+        p.pos.addScaledVector(p.vel, dt / steps);
+        if (!p.noWall && col.pointSolid(p.pos.x, p.pos.y, p.pos.z)) {
+          if (p.bounce > 0) {
+            p.bounce--;
+            // determine reflection normal by probing axes
+            const px = p.pos.x - p.vel.x * dt / steps, pz = p.pos.z - p.vel.z * dt / steps, py = p.pos.y - p.vel.y * dt / steps;
+            if (col.pointSolid(p.pos.x, py, pz)) p.vel.x *= -1;
+            if (col.pointSolid(px, py, p.pos.z)) p.vel.z *= -1;
+            if (col.pointSolid(px, p.pos.y, pz)) p.vel.y *= -0.6;
+            p.pos.set(px, py, pz);
+            g.vfx.impact(p.pos, p.el, 0.5);
+            p.hitIds.clear();
+            continue;
+          }
+          if (p.sticky) {
+            p.pos.set(p.pos.x - p.vel.x * dt / steps, Math.max(g.groundY(p.pos.x, p.pos.z) + 0.15, p.pos.y - p.vel.y * dt / steps), p.pos.z - p.vel.z * dt / steps);
+            p.stuck = true; p.vel.set(0, 0, 0);
+            break;
+          }
+          wallHit = true;
+          break;
+        }
+      }
+      if (wallHit) {
+        // step back slightly so effects spawn in front of the wall
+        p.pos.addScaledVector(p.vel, -0.02 / Math.max(0.01, p.vel.length()));
+        if (p.onWall) p.onWall(p, p.pos);
+        if (!p.aoe) g.vfx.impact(p.pos, p.el, 0.8);
+        g.audio?.play('impact_' + soundEl(p.el), { pos: p.pos, volume: 0.6 });
+        this.kill(p, p.pos);
+        this._remove(i);
+        continue;
+      }
+      // actor collisions
+      if (p.faction === 'player') {
+        for (const a of g.actors.hostiles()) {
+          if (p.hitIds.has(a.id)) continue;
+          const r = p.radius + a.radius;
+          const ay0 = a.pos.y, ay1 = a.pos.y + a.height;
+          // closest distance between projectile path and actor axis (approx by sampling the axis)
+          const midY = Math.max(ay0, Math.min(ay1, p.pos.y));
+          const d2 = segPointDist2(p.prev.x, p.prev.y, p.prev.z, p.pos.x, p.pos.y, p.pos.z, a.pos.x, midY, a.pos.z);
+          if (d2 > r * r) continue;
+          if (p.pos.y < ay0 - p.radius - 0.2 || p.pos.y > ay1 + p.radius + 0.2) continue;
+          p.hitIds.add(a.id);
+          const hp = _v.set(a.pos.x, Math.max(ay0 + 0.3, Math.min(ay1 - 0.2, p.pos.y)), a.pos.z);
+          if (p.hit && p.local) {
+            const vlen = p.vel.length() || 1;
+            g.hitActor(a, { ...p.hit, src: p.owner, kbDir: [p.vel.x / vlen, p.vel.z / vlen] }, hp);
+          }
+          p.onHit?.(p, a, hp);
+          if (!p.aoe || p.pierce > 0) g.vfx.impact(hp, p.el, 0.7);
+          if (p.pierce > 0) { p.pierce--; continue; }
+          this.kill(p, hp, a);
+          break;
+        }
+        if (p.dead) { this._remove(i); continue; }
+      } else if (p.faction === 'enemy' && p.hitPlayers) {
+        // enemy projectiles: each peer checks only its own player
+        const pl = g.player;
+        if (pl && pl.alive && !pl.downed) {
+          const d2 = segPointDist2(p.prev.x, p.prev.y, p.prev.z, p.pos.x, p.pos.y, p.pos.z, pl.pos.x, Math.max(pl.pos.y + 0.3, Math.min(pl.pos.y + 1.6, p.pos.y)), pl.pos.z);
+          const r = p.radius + 0.4;
+          if (d2 < r * r) {
+            if (pl.tryParry?.(p)) { this._remove(i); continue; }
+            if (p.hit) pl.takeDamage(p.hit.dmg, p.el, p.pos, p.hit);
+            p.onHit?.(p, null, p.pos);
+            g.vfx.impact(p.pos, p.el, 0.8);
+            this.kill(p, p.pos);
+            this._remove(i);
+            continue;
+          }
+        }
+        // host: enemy projectiles vs allied minions
+        if (g.isHost) {
+          for (const a of g.actors.allies()) {
+            const r = p.radius + a.radius;
+            const dx = a.pos.x - p.pos.x, dz = a.pos.z - p.pos.z;
+            if (dx * dx + dz * dz < r * r && p.pos.y > a.pos.y && p.pos.y < a.pos.y + a.height) {
+              if (p.hit) g.actors.damage(a, { dmg: p.hit.dmg, el: p.el });
+              g.vfx.impact(p.pos, p.el, 0.7);
+              this.kill(p, p.pos);
+              break;
+            }
+          }
+          if (p.dead) { this._remove(i); continue; }
+        }
+      }
+      // floor hit for arcing projectiles
+      const gy = g.groundY(p.pos.x, p.pos.z);
+      if (p.pos.y < gy + 0.05 && !p.noWall) {
+        p.pos.y = gy + 0.05;
+        if (p.sticky) { p.stuck = true; p.vel.set(0, 0, 0); }
+        else if (p.bounce > 0) { p.bounce--; p.vel.y = Math.abs(p.vel.y) * 0.5; }
+        else {
+          p.onWall?.(p, p.pos);
+          if (!p.aoe) g.vfx.impact(p.pos, p.el, 0.8);
+          this.kill(p, p.pos);
+          this._remove(i);
+          continue;
+        }
+      }
+      p.group.position.copy(p.pos);
+      this._visual(p, dt);
+    }
+    // zones
+    for (let i = this.zones.length - 1; i >= 0; i--) {
+      const z = this.zones[i];
+      z.age += dt;
+      z.acc += dt;
+      z.visual?.(z, dt);
+      while (z.acc >= z.interval) {
+        z.acc -= z.interval;
+        z.onTick?.(z);
+      }
+      if (z.age >= z.life) {
+        z.onEnd?.(z);
+        this.zones.splice(i, 1);
+      }
+    }
+    // timers
+    for (let i = this.timers.length - 1; i >= 0; i--) {
+      const t = this.timers[i];
+      t.t -= dt;
+      if (t.t <= 0) {
+        this.timers.splice(i, 1);
+        t.fn();
+      }
+    }
+  }
+
+  _visual(p, dt) {
+    const g = this.g;
+    if (p.trail > 0) g.vfx.trail(p.pos, p.vel, p.el, p.trail, dt);
+    if (p.mesh) {
+      if (p.spin) { p.mesh.rotation.x += p.spin * dt; p.mesh.rotation.y += p.spin * 0.7 * dt; }
+      else if (p.vel.lengthSq() > 0.01) p.mesh.lookAt(_v.copy(p.pos).add(p.vel));
+    }
+    if (p.sprite) p.sprite.material.rotation += dt;
+    if (p.lightI > 0) g.lights.request(p.pos, p.lightColor, p.lightI, 7);
+  }
+
+  _remove(i) {
+    const p = this.projectiles[i];
+    this.g.scene.remove(p.group);
+    this.projectiles.splice(i, 1);
+  }
+
+  // -------------------------------------------------------------- zones & timers
+  zone(z) {
+    const zone = { age: 0, acc: 0, interval: 0.25, life: 3, ...z };
+    this.zones.push(zone);
+    return zone;
+  }
+  after(t, fn) { this.timers.push({ t, fn }); }
+
+  clear() {
+    for (let i = this.projectiles.length - 1; i >= 0; i--) this._remove(i);
+    this.zones.length = 0;
+    this.timers.length = 0;
+  }
+
+  // -------------------------------------------------------------- queries
+  // hostile actors hit by a ray, sorted by distance (stops at walls)
+  rayActors(origin, dir, maxDist, radius = 0.2) {
+    const g = this.g;
+    const wall = g.collision.raycast(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, maxDist, 0.2);
+    const out = [];
+    for (const a of g.actors.hostiles()) {
+      // closest approach of ray to actor axis
+      const ox = a.pos.x - origin.x, oz = a.pos.z - origin.z;
+      const t = ox * dir.x + oz * dir.z;
+      const hl = Math.hypot(dir.x, dir.z) || 1e-6;
+      const tt = t / (hl * hl);
+      if (tt < 0 || tt > wall) continue;
+      const px = origin.x + dir.x * tt, py = origin.y + dir.y * tt, pz = origin.z + dir.z * tt;
+      const dx = a.pos.x - px, dz = a.pos.z - pz;
+      const r = a.radius + radius;
+      if (dx * dx + dz * dz > r * r) continue;
+      if (py < a.pos.y - radius || py > a.pos.y + a.height + radius) continue;
+      out.push({ actor: a, t: tt, point: new THREE.Vector3(px, py, pz) });
+    }
+    out.sort((a, b) => a.t - b.t);
+    return { hits: out, wall };
+  }
+
+  nearest(pos, maxDist, exclude, filter) {
+    let best = null, bd = maxDist * maxDist;
+    for (const a of this.g.actors.hostiles()) {
+      if (exclude && exclude.has(a.id)) continue;
+      if (filter && !filter(a)) continue;
+      const dx = a.pos.x - pos.x, dz = a.pos.z - pos.z, dy = a.pos.y + a.height * 0.5 - pos.y;
+      const d2 = dx * dx + dz * dz + dy * dy;
+      if (d2 < bd) { bd = d2; best = a; }
+    }
+    return best;
+  }
+
+  inRadius(pos, r) {
+    const out = [];
+    for (const a of this.g.actors.hostiles()) {
+      const dx = a.pos.x - pos.x, dz = a.pos.z - pos.z;
+      const rr = r + a.radius;
+      if (dx * dx + dz * dz <= rr * rr) out.push(a);
+    }
+    return out;
+  }
+
+  inCone(origin, dir, range, halfAngle) {
+    const out = [];
+    const cosA = Math.cos(halfAngle);
+    const hl = Math.hypot(dir.x, dir.z) || 1;
+    const fx = dir.x / hl, fz = dir.z / hl;
+    for (const a of this.g.actors.hostiles()) {
+      const dx = a.pos.x - origin.x, dz = a.pos.z - origin.z;
+      const d = Math.hypot(dx, dz);
+      if (d - a.radius > range) continue;
+      if (d < a.radius + 0.5) { out.push(a); continue; }
+      if ((dx * fx + dz * fz) / d < cosA) continue;
+      if (!this.g.collision.los(origin.x, origin.y, origin.z, a.pos.x, a.pos.y + a.height * 0.5, a.pos.z)) continue;
+      out.push(a);
+    }
+    return out;
+  }
+}
+
+// map element ids to sound families
+export function soundEl(el) {
+  switch (el) {
+    case 'necrotic': return 'shadow';
+    case 'enemy': case 'enemyPurple': return 'shadow';
+    case 'enemyGreen': return 'poison';
+    case 'enemyFire': return 'fire';
+    case 'physical': return 'earth';
+    default: return el;
+  }
+}
+
+export { SPR, rand };

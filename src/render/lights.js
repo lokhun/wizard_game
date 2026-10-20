@@ -1,0 +1,113 @@
+import * as THREE from 'three';
+
+// Fixed-size pool of point lights. Changing the number of lights in three.js
+// forces shader recompiles, so we keep the count constant and move lights to
+// wherever they matter most each frame.
+//
+// Torches: static sources; the N nearest to the camera get a light, with a
+// distance-based fade so lights never pop in or out.
+// FX: transient requests (projectiles, explosions) submitted every frame.
+
+export class LightPool {
+  constructor(scene, { torchCount = 10, fxCount = 8 } = {}) {
+    this.scene = scene;
+    this.torchLights = [];
+    this.fxLights = [];
+    for (let i = 0; i < torchCount; i++) {
+      const l = new THREE.PointLight(0xff9a40, 0, 14, 1.6);
+      l.userData.slot = i;
+      scene.add(l);
+      this.torchLights.push(l);
+    }
+    for (let i = 0; i < fxCount; i++) {
+      const l = new THREE.PointLight(0xffffff, 0, 10, 1.8);
+      scene.add(l);
+      this.fxLights.push(l);
+    }
+    this.torches = []; // {pos, color, intensity, range, seed, flicker, enabled}
+    this.requests = [];
+    this.flashes = []; // timed lights {pos,color,intensity,range,life,t}
+  }
+
+  clearTorches() { this.torches.length = 0; }
+
+  addTorch(pos, opts = {}) {
+    const t = {
+      pos: pos.clone(),
+      color: new THREE.Color(opts.color ?? 0xff8a35),
+      intensity: opts.intensity ?? 9,
+      range: opts.range ?? 13,
+      seed: Math.random() * 100,
+      flicker: opts.flicker ?? 1,
+      enabled: true,
+      d2: 0,
+    };
+    this.torches.push(t);
+    return t;
+  }
+
+  // request a light for this frame only
+  request(pos, color, intensity, range = 8) {
+    this.requests.push({ x: pos.x, y: pos.y, z: pos.z, color, intensity, range });
+  }
+
+  // a timed flash (explosions, impacts)
+  flash(pos, color, intensity, range = 8, life = 0.25) {
+    this.flashes.push({ x: pos.x, y: pos.y, z: pos.z, color: new THREE.Color(color), intensity, range, life, t: 0 });
+  }
+
+  update(dt, time, cam) {
+    const cx = cam.x, cy = cam.y, cz = cam.z;
+    // --- torches
+    const ts = this.torches;
+    for (const t of ts) {
+      const dx = t.pos.x - cx, dy = t.pos.y - cy, dz = t.pos.z - cz;
+      t.d2 = t.enabled ? dx * dx + dy * dy + dz * dz : 1e12;
+    }
+    // partial selection: sort is fine for a few hundred torches
+    const sorted = ts.slice().sort((a, b) => a.d2 - b.d2);
+    const n = this.torchLights.length;
+    const cutoff = sorted.length > n ? Math.sqrt(sorted[n].d2) : 1e6;
+    for (let i = 0; i < n; i++) {
+      const l = this.torchLights[i];
+      const t = sorted[i];
+      if (!t || t.d2 > 1e11) { l.intensity = 0; continue; }
+
+      const d = Math.sqrt(t.d2);
+      // fade the furthest assigned lights toward the cutoff so swaps are invisible
+      const fade = cutoff >= 1e6 ? 1 : Math.min(1, Math.max(0, (cutoff - d) / (cutoff * 0.3)));
+      const s = t.seed + time;
+      const flick = 1 - t.flicker * (0.12 * (Math.sin(s * 9.1) * 0.5 + 0.5) * (Math.sin(s * 3.7 + 1.3) * 0.5 + 0.5) + 0.06 * Math.sin(s * 23.0));
+      l.position.set(t.pos.x + Math.sin(s * 5.3) * 0.03 * t.flicker, t.pos.y + Math.sin(s * 7.1) * 0.03 * t.flicker, t.pos.z);
+      l.color.copy(t.color);
+      l.intensity = t.intensity * flick * fade;
+      l.distance = t.range;
+    }
+
+    // --- fx: merge flashes into requests
+    for (let i = this.flashes.length - 1; i >= 0; i--) {
+      const f = this.flashes[i];
+      f.t += dt;
+      if (f.t >= f.life) { this.flashes.splice(i, 1); continue; }
+      const k = 1 - f.t / f.life;
+      this.requests.push({ x: f.x, y: f.y, z: f.z, color: f.color, intensity: f.intensity * k * k, range: f.range });
+    }
+    const reqs = this.requests;
+    for (const r of reqs) {
+      const dx = r.x - cx, dy = r.y - cy, dz = r.z - cz;
+      r.score = r.intensity / (1 + (dx * dx + dy * dy + dz * dz) * 0.02);
+    }
+    reqs.sort((a, b) => b.score - a.score);
+    for (let i = 0; i < this.fxLights.length; i++) {
+      const l = this.fxLights[i];
+      const r = reqs[i];
+      if (!r) { l.intensity = 0; continue; }
+
+      l.position.set(r.x, r.y, r.z);
+      if (r.color.isColor) l.color.copy(r.color); else l.color.setHex(r.color);
+      l.intensity = r.intensity;
+      l.distance = r.range;
+    }
+    reqs.length = 0;
+  }
+}
