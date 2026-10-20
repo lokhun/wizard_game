@@ -64,6 +64,8 @@ export function makeCtx(game, caster, o) {
     groundAt(x, z) { return game.groundY(x, z); },
     aoe(r) { return r * (stats.aoeMult ?? 1); },
     counter(name) { const n = counters[name] ?? 0; counters[name] = n + 1; return n; },
+    // swap the caster's first-person cast animation (e.g. backhand vs forehand)
+    animStyle(style) { if (caster.castAnim) caster.castAnim.style = style; },
     kick(shake, fov) { if (local) { vfx.addShake(shake); vfx.addFovKick(fov); } },
     hitstop(t) { if (local) vfx.hitstop = Math.max(vfx.hitstop, t); },
 

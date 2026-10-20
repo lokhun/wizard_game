@@ -1628,7 +1628,9 @@ export const CLASSES = {
           ctx.sound('cast_blade', 0.8);
           const o = ctx.casterPos().clone().add(v3(0, 1.3, 0));
           const d = ctx.flatDir();
-          const side = ctx.counter('slash') % 2 ? 1 : -1;
+          // alternate forehand (+1, right to left) and backhand; the hands follow the cut
+          const side = ctx.counter('slash') % 2 ? -1 : 1;
+          ctx.animStyle(side > 0 ? 'swing' : 'swing2');
           // bright leading edge + a fainter inner echo so the cut has weight
           ctx.vfx.slash(o, d, 'blade', 3.6, side, { life: 0.24 });
           ctx.vfx.slash(o, d, 'blade', 2.8, side, { life: 0.28, alpha: 0.4, sparks: 0, tilt: 0.2 });

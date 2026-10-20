@@ -85,25 +85,26 @@ export function fingerSeg(L, r0, r1, rad = 8, flat = 0.85, tip = false) {
   // anatomical profile along the bone: rounded joint, knuckle swell, waist,
   // a slight swell before the next joint, then a rounded end (a fuller pad on the last segment)
   const prof = [];
-  const n = rad >= 8 ? 5 : 3;
+  const n = rad >= 8 ? 5 : rad >= 6 ? 3 : 1; // rad < 6: low-poly avatar fingers
   const rj = r0 * 1.0;
   for (let i = 0; i <= n; i++) {
     const a = -Math.PI / 2 + (i / n) * Math.PI / 2;
     prof.push([rj * Math.cos(a), rj * 0.9 * Math.sin(a)]);
   }
-  prof.push([r0 * 1.04, L * 0.12]);
+  if (n > 1) prof.push([r0 * 1.04, L * 0.12]);
   prof.push([r0 * 0.97, L * 0.28]);
-  prof.push([(r0 + r1) * 0.455, L * 0.55]);
-  if (tip) {
+  if (n > 1) prof.push([(r0 + r1) * 0.455, L * 0.55]);
+  if (n === 1) { prof.push([r1 * 1.0, L * 0.86]); prof.push([0, L + r1 * 0.7]); }
+  else if (tip) {
     prof.push([r1 * 1.02, L * 0.8]);
     prof.push([r1 * 0.98, L * 0.92]);
     for (let i = 1; i <= n; i++) { const a = (i / n) * Math.PI / 2; prof.push([r1 * 0.98 * Math.cos(a), L * 0.92 + r1 * 1.05 * Math.sin(a)]); }
-  } else {
+  } else if (n > 1) {
     prof.push([r1 * 0.98, L * 0.82]);
     prof.push([r1 * 1.0, L * 0.95]);
     for (let i = 1; i <= n; i++) { const a = (i / n) * Math.PI / 2; prof.push([r1 * 1.0 * Math.cos(a), L * 0.95 + r1 * 0.85 * Math.sin(a)]); }
   }
-  const g = lathe(prof, Math.max(rad, 10));
+  const g = lathe(prof, rad >= 6 ? Math.max(rad, 10) : 6);
   g.rotateX(-Math.PI / 2); // +Y -> -Z
   // cross-section: flatter back (+Y), fuller fleshy pad underneath (-Y), wider than deep
   const p = g.getAttribute('position');

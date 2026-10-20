@@ -88,6 +88,8 @@ The target pace is quicker than Dark and Darker, nowhere near a boomer shooter, 
 - **Positional enemies:**
   - Shield-bearers (Jailer, Royal Guard, Gilded Sentinel) turn frontal hits ("BLOCKED — flank it").
   - The Hollow Bannerman empowers foes within 9 m (+30% damage, +15% speed) until it dies.
+  - The Plague Surgeon (Oubliette) hangs back lobbing rot flasks that leave poison pools and mends nearby prisoners with its censer: kill it first.
+  - The Grim Warden (Hall of Whispers) is a slow, heavily armoured maul-wielder whose huge overhead cracks the floor ahead of it; step aside and punish the recovery.
 - **The environment:**
   - Sewer and throne rooms have mid-room pillars or statues to break line of sight.
   - Shots fly over low clutter.
@@ -125,4 +127,6 @@ The target pace is quicker than Dark and Darker, nowhere near a boomer shooter, 
 - **Characters:** every enemy, boss and wizard is built from primitives at load time:
   - Skinned or rigid parts, with procedural poses for idle, move, wind-up, attack, hurt and death.
   - Wizards get a first-person viewmodel (class focus plus articulated hands) and a third-person avatar.
+  - First person: every cast blooms a class-specific rune circle at the staff tip or casting hand; charging holds a smaller one. Blades leave a streaked trail, and chained Spellblade cuts alternate forehand and backhand to match the world slash. Standing still a while plays small idle fidgets (a palm-up finger flex, a staff turn, a regrip).
+  - Third person (what co-op partners see): layered per-class costumes with faces, world-space cloth chains for skirts, capes, scarves and trinkets, and full idle, strafing walk, cast, downed and dead animation. Each avatar bakes into one skinned mesh per material (15–23 draw calls).
 - **Particles:** a GPU particle system where motion is evaluated in the vertex shader (2 layers, 32k particles). It drives flames, sparks, smoke, runes, snow and blood.

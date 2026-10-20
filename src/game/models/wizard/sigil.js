@@ -127,7 +127,11 @@ export class SigilPool {
   }
 
   // anything to draw this frame?
-  busy(charge) { return charge > 0.02 || this.chargeK > 0.02 || this.items.some((it) => it.m.visible); }
+  busy(charge) {
+    if (charge > 0.02 || this.chargeK > 0.02) return true;
+    for (const it of this.items) if (it.m.visible) return true;
+    return false;
+  }
 
   dispose() {
     for (const it of this.items) { it.m.material.dispose(); it.m.removeFromParent(); }

@@ -6,6 +6,7 @@ import { buildFocus } from './foci.js';
 import { lathe, torus, mergeGeos, xf, mulberry, V, uvs } from './shapes.js';
 import { wob } from './fx.js';
 import { SigilPool } from './sigil.js';
+import { BladeTrail } from './trail.js';
 
 // ---------------------------------------------------------------------------
 // First-person viewmodel: two hands with robe sleeves, the class focus and
@@ -78,7 +79,11 @@ const STYLES = {
   slam: { keys: [[0, [0, 0, 0, 0, 0, 0]], [0.15, [0.01, 0.13, 0.03, 0.65, 0, -0.05]], [0.23, [-0.02, -0.07, -0.1, -0.8, 0, 0.12]], [0.3, [-0.015, -0.055, -0.08, -0.65, 0, 0.1]], [0.48, [0, 0, 0, 0, 0, 0]]], fingers: [[0, 'claw'], [0.15, 'fist'], [0.23, 'spread'], [0.45, null]] },
   raise: { keys: [[0, [0, 0, 0, 0, 0, 0]], [0.3, [-0.04, 0.13, -0.08, 0.12, 0, 0.1]], [1.1, [-0.04, 0.145, -0.09, 0.16, 0, 0.1]], [1.5, [0, 0, 0, 0, 0, 0]]], fingers: [[0, 'open'], [0.3, 'spread'], [1.2, 'spread'], [1.5, null]] },
   channel: { keys: [[0, [0, 0, 0, 0, 0, 0]], [0.15, [0.02, 0.05, -0.12, -0.1, 0.0, -0.06]]], hold: true, fingers: [[0, 'spread'], [0.2, 'spread']] },
-  swing: { keys: [[0, [0, 0, 0, 0, 0, 0]], [0.08, [0.05, 0.11, 0.04, 0.45, -0.25, -0.5]], [0.14, [-0.12, 0.02, -0.12, -0.2, 0.15, 0.45]], [0.2, [-0.28, -0.04, -0.1, -0.3, 0.35, 1.1]], [0.26, [-0.26, -0.05, -0.08, -0.28, 0.3, 1.0]], [0.48, [0, 0, 0, 0, 0, 0]]], fingers: [[0, 'claw'], [0.07, 'fist'], [0.17, 'spread'], [0.4, null]] },
+  // forehand: cocked high and outward, cut down across the view; the follow-through
+  // stays on screen so the blade is always readable
+  swing: { keys: [[0, [0, 0, 0, 0, 0, 0]], [0.05, [0.045, 0.1, 0.035, 0.42, -0.22, -0.48]], [0.1, [-0.07, 0.03, -0.12, -0.15, 0.12, 0.35]], [0.16, [-0.17, -0.03, -0.1, -0.28, 0.28, 0.85]], [0.26, [-0.16, -0.04, -0.08, -0.26, 0.26, 0.8]], [0.5, [0, 0, 0, 0, 0, 0]]], fingers: [[0, 'claw'], [0.05, 'fist'], [0.14, 'spread'], [0.4, null]] },
+  // backhand, for a quick follow-up: from low across the body, rising back out
+  swing2: { keys: [[0, [0, 0, 0, 0, 0, 0]], [0.05, [-0.12, -0.02, -0.02, -0.25, 0.22, 0.75]], [0.1, [-0.04, 0.03, -0.13, 0.05, 0.0, 0.1]], [0.16, [0.05, 0.08, -0.08, 0.35, -0.22, -0.5]], [0.26, [0.045, 0.075, -0.06, 0.32, -0.2, -0.46]], [0.5, [0, 0, 0, 0, 0, 0]]], fingers: [[0, 'claw'], [0.05, 'fist'], [0.14, 'spread'], [0.4, null]] },
   throw: { keys: [[0, [0, 0, 0, 0, 0, 0]], [0.07, [0.02, 0.05, 0.07, 0.4, 0, -0.1]], [0.16, [-0.13, 0.06, -0.23, -0.45, 0, 0.2]], [0.22, [-0.11, 0.05, -0.2, -0.35, 0, 0.15]], [0.42, [0, 0, 0, 0, 0, 0]]], fingers: [[0, 'open'], [0.06, 'fist'], [0.15, 'spread'], [0.4, null]] },
   snap: { keys: [[0, [0, 0, 0, 0, 0, 0]], [0.08, [-0.03, 0.07, -0.05, -0.1, 0, 0.3]], [0.12, [-0.035, 0.065, -0.07, -0.25, 0, 0.32]], [0.36, [0, 0, 0, 0, 0, 0]]], fingers: [[0, 'open'], [0.06, 'snapPre'], [0.1, 'snapPost'], [0.3, null]] },
 };
@@ -96,7 +101,7 @@ const FIDGETS = {
   regrip: { hand: 'right', keys: [[0, ZERO6], [0.3, [0.01, -0.035, 0.02, -0.12, 0, 0.06]], [0.55, [0.012, -0.03, 0.02, -0.1, 0, 0.05]], [1.0, ZERO6]] },
 };
 const FIDGET_ORDER = ['palm', 'twirl', 'regrip', 'palm', 'regrip'];
-const STIFF = { swing: 2400, flick: 1500, thrust: 1100, slam: 1300, throw: 1300, snap: 1200 };
+const STIFF = { swing: 2400, swing2: 2400, flick: 1500, thrust: 1100, slam: 1300, throw: 1300, snap: 1200 };
 
 function sampleKeys(keys, t, out) {
   if (t <= keys[0][0]) { for (let i = 0; i < 6; i++) out[i] = keys[0][1][i]; return out; }
@@ -331,6 +336,10 @@ export function createViewModel(classId, ctx) {
   const lightOffset = F.hold === 'staff' ? V(-0.26, -0.1, 0.2) : V(-0.14, -0.18, 0.26);
   const lightBase = 0.8;
 
+  // blade trail between the lower blade and the tip while a sword or dagger cuts
+  const trail = F.hold === 'sword' || F.hold === 'dagger' ? new BladeTrail(root, new THREE.Color(meta.color).lerp(new THREE.Color(0xffffff), 0.25)) : null;
+  const _ta = V(), _tb = V();
+
   // rune circles that bloom where each spell leaves the focus or hand
   const sigils = new SigilPool(root, classId, new THREE.Color(meta.color).lerp(new THREE.Color(0xffffff), 0.15), (anchor, out) => {
     anchor.getWorldPosition(out);
@@ -425,7 +434,7 @@ export function createViewModel(classId, ctx) {
       if (hand === 'right' || hand === 'both') castR = style;
       if (hand === 'left' || hand === 'both') castL = style;
       // blades cut, they don't conjure: no circle on a sword swing
-      if (isNew && style !== 'swing') {
+      if (isNew && style !== 'swing' && style !== 'swing2') {
         const big = style === 'raise' || style === 'slam';
         const o = { size: big ? 0.18 : style === 'channel' ? 0.1 : 0.12, dur: big ? 0.7 : 0.5, peak: big ? 0.7 : 0.6 };
         if (castR) sigils.burst(muzzle, o);
@@ -575,6 +584,15 @@ export function createViewModel(classId, ctx) {
     light.intensity = lightBase * (0.85 + 0.15 * wob(t * 6, 3)) * (1 + chargeK * 1.2 + power * 0.6 + flare * 1.4);
     // world matrices were refreshed after posing (accelerations above), so
     // circles sit exactly on the tip
+    if (trail) {
+      const cutting = (castR === 'swing' || castR === 'swing2' || (castR === 'thrust' && F.hold === 'dagger')) && castT > 0.03 && castT < 0.2;
+      if (cutting || trail.mesh.visible) {
+        muzzle.getWorldPosition(_tb); root.worldToLocal(_tb);
+        handR.palmCenter.getWorldPosition(_ta); root.worldToLocal(_ta);
+        _ta.lerp(_tb, 0.4);
+        trail.update(dt, cutting, _ta, _tb);
+      }
+    }
     const sigCharge = s.downed ? 0 : chargeK;
     if (sigils.busy(sigCharge)) sigils.update(dt, muzzle, sigCharge);
   }
@@ -588,6 +606,7 @@ export function createViewModel(classId, ctx) {
     dispose() {
       glows.dispose();
       sigils.dispose();
+      trail?.dispose();
       root.traverse((o) => {
         if (o.isMesh || o.isSprite) {
           if (o.geometry && !o.geometry.userData?.shared) o.geometry.dispose?.();

@@ -178,7 +178,7 @@ export function buildHand(opts) {
     style = 'glove', glove, skin, armor, nail, cuff, claws = false, rings = [], detail = 1,
     cuffFlare = true, segMats = null,
   } = opts;
-  const rad = detail >= 1 ? 10 : 6;
+  const rad = detail >= 1 ? 10 : detail > 0.3 ? 6 : 4; // detail <= 0.3: avatar hands
   const group = new THREE.Group();
   group.name = 'hand';
   const matFor = (fi, si) => {
@@ -198,7 +198,7 @@ export function buildHand(opts) {
   // --- palm ---------------------------------------------------------------
   // palm: superellipsoid slab, tapered toward the wrist, arched back,
   // with soft thenar / hypothenar pads merged in
-  const palm = new THREE.SphereGeometry(1, detail >= 1 ? 24 : 14, detail >= 1 ? 16 : 10);
+  const palm = new THREE.SphereGeometry(1, detail >= 1 ? 24 : detail > 0.3 ? 14 : 10, detail >= 1 ? 16 : detail > 0.3 ? 10 : 8);
   const pp = palm.getAttribute('position');
   const se = (v, e) => Math.sign(v) * Math.pow(Math.abs(v), e);
   for (let i = 0; i < pp.count; i++) {

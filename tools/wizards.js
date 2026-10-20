@@ -146,6 +146,16 @@ function setupAvatar(grid) {
     controls = new OrbitControls(camera, canvas);
     controls.target.set(0, 1.0, 0);
   }
+  // close-ups: cam=x,y,z&look=x,y,z&fov=..; fill=1 adds a soft key light for inspection
+  if (P.has('cam')) {
+    const c = P.get('cam').split(',').map(Number), l = (P.get('look') ?? '0,1,0').split(',').map(Number);
+    camera.position.set(...c); controls.target.set(...l); camera.fov = num('fov', camera.fov); camera.updateProjectionMatrix();
+  }
+  if (P.get('fill') === '1') {
+    const d = new THREE.DirectionalLight(0xfff0e0, 1.6); d.position.set(1.5, 3, 4); scene.add(d);
+    const d2 = new THREE.DirectionalLight(0x8090c0, 0.5); d2.position.set(-3, 2, -2); scene.add(d2);
+  }
+  if (P.has('rot')) for (const a of avatars) a.root.rotation.y = num('rot', 0);
   controls.update();
   composer = makeComposer(scene, camera);
 }
@@ -156,6 +166,24 @@ function loadAvatar() {
   scene.add(avatars[0].root);
   if (P.get('stats') === '1') logTris(avatars[0].root);
 }
+window.__avatars = () => avatars;
+// debug: per-avatar triangles and draw calls (one per visible mesh / sprite)
+window.__avStats = () => avatars.map((a) => {
+  let tris = 0, calls = 0;
+  const mats = {};
+  a.root.traverseVisible((o) => {
+    if (!o.isMesh && !o.isSprite) return;
+    calls++;
+    const g = o.geometry;
+    const n = o.isSprite ? 2 : (g.index ? g.index.count : g.getAttribute('position').count) / 3;
+    tris += n;
+    let pp = o, key = 'body';
+    while (pp && pp !== a.root) { if (pp.name) { key = pp.name; break; } pp = pp.parent; }
+    mats[key] = mats[key] ?? [0, 0];
+    mats[key][0]++; mats[key][1] += Math.round(n);
+  });
+  return { id: a.root.name, tris: Math.round(tris), calls, mats, labels: a.stats?.labels };
+});
 // debug: triangle count per named part
 function logTris(rootObj) {
   const tally = {};

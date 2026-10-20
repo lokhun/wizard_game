@@ -79,6 +79,20 @@ function mantleGeo(rTop = 0.085, rBot = 0.29, h = 0.19, seed = 1, jag = 0.03) {
   return g;
 }
 
+// skull cap of hair with a hairline: the front edge rises above the brow
+function hairCap(r, thetaLen) {
+  const g = new THREE.SphereGeometry(r, 18, 10, 0, TAU, 0, thetaLen);
+  const p = g.getAttribute('position');
+  for (let i = 0; i < p.count; i++) {
+    const z = p.getZ(i), y = p.getY(i), x = p.getX(i);
+    const front = Math.max(0, z / r - 0.2) / 0.8;
+    const line = r * (0.42 - 0.18 * Math.min(1, Math.abs(x) / (r * 0.7)));
+    if (front > 0 && y < line) p.setY(i, line + (y - line) * (1 - front) * 0.4);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
 function starGeo(r) {
   const s = new THREE.Shape();
   for (let i = 0; i <= 10; i++) {
@@ -136,18 +150,22 @@ function pointedHat(kit, mat, o) {
   return { G, bend, H };
 }
 
-export function buildHat(classId, kit, meta, glows) {
+// opts.mantle = false: skip the shoulder mantle (avatars build their own
+// shoulders); hood shells are listed in res.drape so the avatar can skin
+// their lower edge to the chest.
+export function buildHat(classId, kit, meta, glows, opts = {}) {
   const G = new THREE.Group();
   const robe = kit.clothDS(meta.robe);
   const trim = kit.cloth(meta.trim);
-  const res = { group: G, shoulders: null, update: null, face: 'shadow' };
+  const res = { group: G, shoulders: null, update: null, face: 'shadow', drape: [], hood: false };
   const hood = (o = {}) => {
     const h = hoodGeo(o);
-    add(G, h.shell, o.mat ?? robe, { y: o.y ?? 0.01, z: o.z ?? -0.012 });
-    add(G, h.rim, o.rimMat ?? trim, { y: o.y ?? 0.01, z: o.z ?? -0.012 });
+    res.drape.push(add(G, h.shell, o.mat ?? robe, { y: o.y ?? 0.01, z: o.z ?? -0.012 }));
+    res.drape.push(add(G, h.rim, o.rimMat ?? trim, { y: o.y ?? 0.01, z: o.z ?? -0.012 }));
+    res.hood = true;
     return h;
   };
-  const mantle = (mat, o = {}) => add(G, mantleGeo(o.rTop, o.rBot, o.h, o.seed, o.jag), mat, { y: o.y ?? -0.1, z: -0.01 });
+  const mantle = (mat, o = {}) => (opts.mantle === false ? null : add(G, mantleGeo(o.rTop, o.rBot, o.h, o.seed, o.jag), mat, { y: o.y ?? -0.1, z: -0.01 }));
 
   switch (classId) {
     case 'pyromancer': {
@@ -180,6 +198,7 @@ export function buildHat(classId, kit, meta, glows) {
       const ring = new THREE.TorusGeometry(0.105, 0.03, 10, 30);
       xf(ring, { sx: 0.95, sy: 1.25, sz: 0.6 });
       noisify(ring, 0.008, 70, 4, 2);
+      { const u = ring.getAttribute('uv'); for (let i = 0; i < u.count; i++) u.setXY(i, u.getX(i) * 2, u.getY(i) * 0.4); }
       add(G, ring, kit.fur(0xe8e8e8), { y: -0.01, z: 0.075, rx: -0.1 });
       mantle(kit.fur(0xd8d8d8), { rBot: 0.25, h: 0.12, y: -0.11, jag: 0.02, seed: 3 });
       break;
@@ -241,7 +260,7 @@ export function buildHat(classId, kit, meta, glows) {
     }
     case 'chronomancer': {
       // hair cap + gold circlet + floating clock hands
-      add(G, new THREE.SphereGeometry(0.103, 18, 10, 0, TAU, 0, 1.7), kit.cloth(0x2a2420), { y: 0.005, z: -0.008, sx: 1, sy: 1.02, sz: 1.06 });
+      add(G, hairCap(0.103, 1.7), kit.cloth(0x2a2420), { y: 0.005, z: -0.008, sx: 1, sy: 1.02, sz: 1.06 });
       add(G, xf(torus(0.104, 0.006, 6, 32), { rx: Math.PI / 2 + 0.18, y: 0.035 }), kit.gold());
       const gm = glows.add(kit.glow(meta.color, 3), 1);
       add(G, new THREE.OctahedronGeometry(0.01), gm, { y: 0.04, z: 0.105 });
@@ -308,7 +327,7 @@ export function buildHat(classId, kit, meta, glows) {
     }
     case 'druid': {
       // wooden circlet with antlers and leaves; hair cap
-      add(G, new THREE.SphereGeometry(0.104, 18, 10, 0, TAU, 0, 1.75), kit.cloth(0x2a2016), { y: 0.0, z: -0.01, sz: 1.06 });
+      add(G, hairCap(0.104, 1.75), kit.cloth(0x2a2016), { y: 0.0, z: -0.01, sz: 1.06 });
       const wood = kit.wood(0x6a5038, 0.9);
       add(G, xf(torus(0.106, 0.008, 6, 30), { rx: Math.PI / 2 + 0.15, y: 0.04 }), wood);
       const rnd = mulberry(12);
@@ -332,7 +351,8 @@ export function buildHat(classId, kit, meta, glows) {
     }
     case 'spellblade': {
       const h = hoodGeo({ peak: 0.03, gap: 2.6, r: 0.142, thetaLen: 2.35 });
-      add(G, h.shell, robe, { y: 0.0, z: -0.02 });
+      res.drape.push(add(G, h.shell, robe, { y: 0.0, z: -0.02 }));
+      res.hood = true;
       const steel = kit.metal(0xa8b0bc, 0.7);
       const helm = new THREE.SphereGeometry(0.118, 24, 12, 0, TAU, 0, 1.55);
       add(G, helm, steel, { y: 0.012, sz: 1.08 });
