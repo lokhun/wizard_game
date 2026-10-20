@@ -39,6 +39,7 @@ export function handleGameMessage(game, msg, from) {
     case 'nextfloor': if (game.isHost && (msg.f === undefined || msg.f === game.floorIndex)) game.goNextFloor(); break;
     // ------------------------------------------------ shared events
     case 'pick': game.removeDrop(msg.id); break;
+    case 'bat': { const a = game.actors.byId.get(msg.id); if (a) { a.brainAttackType = msg.a; a.attackType = msg.a; } break; }
     case 'brk': game.breakProp(msg.i, false); break;
     case 'chest': {
       const it = game.interactables.find((i) => i.id === msg.id);

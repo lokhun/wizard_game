@@ -56,6 +56,7 @@ export class BossBrain {
   at(t, fn) { this.events.push({ t, fn }); }
   anim(anim, attackType, dur) {
     const a = this.a;
+    if ((attackType ?? '') !== this._lastAT) { this._lastAT = attackType ?? ''; this.g.net?.broadcast({ t: 'bat', id: a.id, a: this._lastAT }); }
     a.anim = anim; a.animT = 0; a.attackType = attackType ?? ''; a.progress = 0;
     this.animDur = dur; this.animT = 0;
   }

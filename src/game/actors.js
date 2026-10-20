@@ -418,7 +418,7 @@ export class ActorManager {
       a.mask = arr[i + 8];
       const atk = arr[i + 9];
       a.attackDef = atk >= 0 ? a.def.attacks?.[atk] : null;
-      a.attackType = a.attackDef?.anim ?? a.brainAttackType ?? '';
+      a.attackType = a.boss ? (a.brainAttackType ?? '') : (a.attackDef?.anim ?? '');
       if (a.attackDef) a.netDur = a.anim === 'windup' ? a.attackDef.windup : 0.4;
       a.stacks.poison = arr[i + 10];
       a.stacks.chill = arr[i + 11];
