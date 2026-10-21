@@ -1466,11 +1466,8 @@ export class Game {
       }
       case 'shrine': {
         this.audio?.play('shrine', { pos: it.pos });
-        this.ui?.chooseBlessing([
-          { name: 'Blessing of Mending', desc: 'Restore all health.', icon: 'heart', apply: () => { p.heal(p.maxHp); this.healPulse = 1; } },
-          { name: 'Blessing of Fortitude', desc: '+30 max health.', icon: 'shield', apply: () => { p.upgrades.push({ def: TOMES.find((t) => t.id === 'vitality'), rarity: 1, mult: 1.5 }); p.recomputeStats(); } },
-          { name: 'Pact of Blood', desc: 'Lose 30% of current health. Gain an Epic tome.', icon: 'drop', apply: () => { p.payHp(p.hp * 0.3); const c = rollTomes(p, 3, 2); this.ui?.chooseTome(c, (x) => x && this.grantTome(x)); } },
-        ], () => { it.usedBy = it.usedBy ?? new Set(); it.usedBy.add(p.id); });
+        const sh = this._shrineOffers(p);
+        this.ui?.chooseBlessing(sh.offers, () => { it.usedBy = it.usedBy ?? new Set(); it.usedBy.add(p.id); }, sh.title, sh.sub);
         break;
       }
       case 'shop': {
@@ -1482,6 +1479,41 @@ export class Game {
         this.goNextFloor();
         break;
       default: break;
+    }
+  }
+
+  // Each realm's shrine answers differently: two dependable blessings and a
+  // bargain in the realm's character.
+  _shrineOffers(p) {
+    const mend = { name: 'Blessing of Mending', desc: 'Restore all health.', icon: 'heart', apply: () => { p.heal(p.maxHp); this.healPulse = 1; } };
+    const fort = { name: 'Blessing of Fortitude', desc: '+30 max health.', icon: 'shield', apply: () => { p.upgrades.push({ def: TOMES.find((t) => t.id === 'vitality'), rarity: 1, mult: 1.5 }); p.recomputeStats(); } };
+    const tome = (min) => this.ui?.chooseTome(rollTomes(p, 3, min), (x) => x && this.grantTome(x));
+    switch (this.biome.id) {
+      case 'dungeon': return { title: "The Gaoler's Bargain", sub: 'Rusted keys hang from the altar', offers: [mend, fort,
+        { name: 'Chains of Fate', desc: 'Lose 15 max health for good. Choose a relic.', icon: 'skull', apply: () => {
+          p.upgrades.push({ def: TOMES.find((t) => t.id === 'vitality'), rarity: 0, mult: -0.75 }); p.recomputeStats();
+          const r = rollRelics(p, 3); if (r.length) this.ui?.chooseRelic(r, (x) => x && this.grantRelic(x));
+        } }] };
+      case 'courtyard': {
+        const dash = TOMES.find((t) => t.id === 'dash');
+        const have = p.upgrades.filter((u) => u.def === dash).length;
+        return { title: 'Cairn of the Fallen Guard', sub: 'Their oath can pass to you', offers: [mend, fort,
+          have < (dash?.max ?? 2)
+            ? { name: 'Oath of the Vanguard', desc: '+1 dash charge and dashes recharge 20% faster.', icon: 'dash', apply: () => { p.upgrades.push({ def: dash, rarity: 1, mult: 1 }); p.recomputeStats(); } }
+            : { name: 'Pact of Blood', desc: 'Lose 30% of current health. Choose an Epic tome.', icon: 'drop', apply: () => { p.payHp(p.hp * 0.3); tome(2); } }] };
+      }
+      case 'keep': {
+        const offers = [mend, { name: "Archivist's Insight", desc: '+2 tome rerolls.', icon: 'eye', apply: () => { p.rerolls = (p.rerolls ?? 0) + 2; } }];
+        const last = [...p.upgrades].reverse().find((u) => u.def?.id !== 'vitality');
+        offers.push(last
+          ? { name: 'Transmutation', desc: `Give up ${last.def.name}. Choose an Epic tome.`, icon: 'hex', apply: () => { p.upgrades.splice(p.upgrades.lastIndexOf(last), 1); p.recomputeStats(); tome(2); } }
+          : fort);
+        return { title: "The Archivist's Lectern", sub: 'Knowledge, for a price', offers };
+      }
+      case 'throne': return { title: 'Altar of the Hollow Crown', sub: 'The crown asks much and gives more', offers: [mend, fort,
+        { name: "The Crown's Price", desc: 'Lose 40% of current health. Choose a Legendary tome.', icon: 'crown', apply: () => { p.payHp(p.hp * 0.4); tome(3); } }] };
+      default: return { title: 'The Drowned Idol', sub: 'Accept one blessing', offers: [mend, fort,
+        { name: 'Pact of Blood', desc: 'Lose 30% of current health. Choose an Epic tome.', icon: 'drop', apply: () => { p.payHp(p.hp * 0.3); tome(2); } }] };
     }
   }
 

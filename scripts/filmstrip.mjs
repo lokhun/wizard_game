@@ -8,7 +8,7 @@ const [query, setup, out, frames = '6', step = '0.2'] = process.argv.slice(2);
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));
-await page.goto('http://localhost:' + (process.env.PORT ?? 5190) + '/' + query);
+await page.goto('http://localhost:' + (process.env.PORT ?? 5190) + '/' + query, { timeout: 180000 });
 await page.waitForTimeout(3000);
 console.log('[setup]', JSON.stringify(await page.evaluate(fs.readFileSync(setup, 'utf8'))));
 // hold the world still between steps so each frame shows exactly step seconds

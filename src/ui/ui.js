@@ -796,8 +796,8 @@ export class UI {
         <div class="tkey">[${i + 1}]</div>
       </div>`, cb);
   }
-  chooseBlessing(list, cb) {
-    this._choiceModal('The Shrine Answers', 'Accept one blessing', list, (b, i) => `
+  chooseBlessing(list, cb, title = 'The Shrine Answers', sub = 'Accept one blessing') {
+    this._choiceModal(title, sub, list, (b, i) => `
       <div class="tome card" data-i="${i}" style="--rc:#ffe080">
         <div class="rar" style="color:#ffe080">Blessing</div>
         <div class="ticon">${iconSVG(b.icon, '#ffe080', 54)}</div>
