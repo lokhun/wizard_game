@@ -67,7 +67,7 @@ export function clampHDR(c, max = 1.5, out = [0, 0, 0]) {
   return out;
 }
 
-const _sc = [0, 0, 0], _sc2 = [0, 0, 0];
+const _sc = [0, 0, 0], _sc2 = [0, 0, 0], _rc = [0, 0, 0];
 const _flameC = new THREE.Color();
 const scaleC = (c, k, out) => { out[0] = c[0] * k; out[1] = c[1] * k; out[2] = c[2] * k; return out; };
 
@@ -79,10 +79,60 @@ float vn(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 *
 float fbm(vec2 p){ float a = 0.5, s = 0.0; for (int i = 0; i < 4; i++) { s += a * vn(p); p = p * 2.03 + 17.1; a *= 0.5; } return s; }
 `;
 
+// Spell orbs (fireball, ball lightning, arcane orb...): a churning ball of
+// element-coloured energy - hot heart, turbulent mid tones, a darker limb and a
+// thin bright rim - instead of a flat unlit disc. One program for every
+// element: the colours are uniforms, the clock a shared uniform object.
+const ORB_VERT = /* glsl */ `
+varying vec3 vN; varying vec3 vV; varying vec3 vP; varying float vDepth;
+void main(){
+  vP = normalize(position);
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  vN = normalize(normalMatrix * normal);
+  vV = normalize(-mv.xyz);
+  vDepth = -mv.z;
+  gl_Position = projectionMatrix * mv;
+}`;
+const ORB_FRAG = /* glsl */ `
+uniform vec3 uCore; uniform vec3 uMid; uniform vec3 uEdge; uniform float uTime; uniform float uSpeed; uniform float uRim;
+varying vec3 vN; varying vec3 vV; varying vec3 vP; varying float vDepth;
+${NOISE_GLSL}
+void main(){
+  float f = abs(dot(vN, vV));
+  float t = uTime * uSpeed;
+  // two sheared noise layers swirling round the ball read as churning plasma
+  float ca = cos(t * 1.3), sa = sin(t * 1.3);
+  vec3 q = vec3(ca * vP.x - sa * vP.z, vP.y, sa * vP.x + ca * vP.z);
+  float n = fbm(vec2(q.x * 2.2 + q.z * 1.1, q.y * 2.6 - t * 1.7) + 3.0);
+  float n2 = fbm(vec2(q.z * 3.4 - q.x * 0.8 + n * 1.5, q.y * 3.8 + t * 0.9));
+  float heat = f * 0.75 + (n * 0.6 + n2 * 0.45) - 0.35;
+  vec3 c = mix(uEdge, uMid, smoothstep(0.05, 0.5, heat));
+  c = mix(c, uCore, smoothstep(0.7, 1.15, heat));
+  // thin hot rim so the silhouette stays crisp against dark stone
+  c += uMid * pow(1.0 - f, 4.0) * uRim;
+  // a soft limb (fire) or a crisp one (energy)
+  c *= mix(smoothstep(0.0, 0.5, f), 1.0, min(uRim, 1.0));
+  // close to the lens it dims instead of filling the screen
+  c *= mix(0.3, 1.0, smoothstep(0.6, 3.5, vDepth));
+  gl_FragColor = vec4(c, 1.0);
+}`;
+
+export function orbMaterial(fx, time, rim = 0.8) {
+  const core = clampHDR(fx.core, 1.4), mid = clampHDR([fx.mid[0] * 0.9, fx.mid[1] * 0.9, fx.mid[2] * 0.9], 1.2);
+  return new THREE.ShaderMaterial({
+    vertexShader: ORB_VERT, fragmentShader: ORB_FRAG,
+    uniforms: { uCore: { value: new THREE.Color(...core) }, uMid: { value: new THREE.Color(...mid) }, uEdge: { value: new THREE.Color(fx.end[0] * 0.8, fx.end[1] * 0.8, fx.end[2] * 0.8) }, uTime: time, uSpeed: { value: 1 }, uRim: { value: rim } },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+  });
+}
+
 // ---------------------------------------------------------------- shaders
+const RING_VERT = /* glsl */ `
+varying vec2 vUv; varying float vDepth;
+void main(){ vUv = uv; vec4 mv = modelViewMatrix * vec4(position, 1.0); vDepth = -mv.z; gl_Position = projectionMatrix * mv; }`;
 const RING_FRAG = /* glsl */ `
 uniform vec3 uColor; uniform float uProg; uniform float uWidth; uniform float uTime;
-varying vec2 vUv;
+varying vec2 vUv; varying float vDepth;
 void main(){
   vec2 p = vUv * 2.0 - 1.0;
   float d = length(p);
@@ -93,6 +143,8 @@ void main(){
   float n = 0.7 + 0.3 * sin(a * 12.0 + uTime * 6.0) * sin(a * 7.0 - uTime * 4.0);
   float fill = (1.0 - smoothstep(0.0, r, d)) * 0.15 * (1.0 - uProg);
   float alpha = (ring * n + fill) * (1.0 - uProg);
+  // a wave sweeping under your own feet must not flash the whole screen
+  alpha *= mix(0.25, 1.0, smoothstep(0.8, 5.0, vDepth));
   if (alpha < 0.003) discard;
   gl_FragColor = vec4(uColor * alpha, 1.0);
 }`;
@@ -458,7 +510,7 @@ export class VFX {
 
     // ground rings
     this.ringPool = this._pool(24, () => new THREE.Mesh(plane, new THREE.ShaderMaterial({
-      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }',
+      vertexShader: RING_VERT,
       fragmentShader: RING_FRAG,
       uniforms: { uColor: { value: new THREE.Color() }, uProg: { value: 0 }, uWidth: { value: 0.15 }, uTime: { value: 0 } },
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -474,7 +526,7 @@ export class VFX {
     const beamGeo = new THREE.CylinderGeometry(1, 1, 1, 12, 1, true);
     beamGeo.translate(0, 0.5, 0);
     this.beamGeo = beamGeo;
-    this.beamPool = this._pool(10, () => new THREE.Mesh(beamGeo, new THREE.ShaderMaterial({
+    this.beamPool = this._pool(16, () => new THREE.Mesh(beamGeo, new THREE.ShaderMaterial({
       vertexShader: BEAM_VERT, fragmentShader: BEAM_FRAG,
       uniforms: { uColor: { value: new THREE.Color() }, uCore: { value: new THREE.Color() }, uTime: { value: 0 }, uLen: { value: 1 }, uAlpha: { value: 1 }, uNoise: { value: 1 } },
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
@@ -495,7 +547,9 @@ export class VFX {
     this.flatNormal.needsUpdate = true;
     this.decalPool = this._pool(80, () => {
       const lit = new THREE.MeshStandardMaterial({ transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, roughness: 0.9, metalness: 0, map: this.decalTex.scorch, normalMap: this.flatNormal });
-      const glow = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, blending: THREE.AdditiveBlending, fog: true });
+      // mapped from the start: a map assigned later would not change the
+      // compiled program, and the decal drew as a solid coloured quad
+      const glow = new THREE.MeshBasicMaterial({ map: this.decalTex.glyph, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, blending: THREE.AdditiveBlending, fog: true });
       const m = new THREE.Mesh(plane, lit);
       m.userData.lit = lit; m.userData.glow = glow;
       m.receiveShadow = true;
@@ -680,7 +734,8 @@ export class VFX {
     const m = this.ringPool.get();
     m.position.set(pos.x, (pos.y ?? 0) + 0.06, pos.z);
     m.scale.setScalar(radius);
-    m.material.uniforms.uColor.value.setRGB(...(Array.isArray(color) ? color : C(color, 2.5)));
+    // element core colours are HDR; a ring that wide must stay below bloom
+    m.material.uniforms.uColor.value.setRGB(...clampHDR(Array.isArray(color) ? color : C(color, 2.5), 1.1, _rc));
     m.material.uniforms.uWidth.value = width;
     this._track(m, life, (k) => { m.material.uniforms.uProg.value = k; m.material.uniforms.uTime.value = this.time; });
   }
@@ -999,6 +1054,21 @@ export class VFX {
     return m;
   }
 
+  // A shockwave rolling out along the floor: a ring of dust (or mist) puffs
+  // shoved outward that slow and spread as they reach `radius`, so a nova reads
+  // on the ground from any angle. o: { color:[r,g,b], alpha, count, glow:[r,g,b] }
+  dustWave(pos, radius, o = {}) {
+    const n = o.count ?? Math.round(14 + radius * 2.5);
+    const c = o.color ?? [0.22, 0.2, 0.18];
+    const g = o.glow;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + rand(-0.12, 0.12), sp = radius * rand(2.4, 3.0);
+      const ca = Math.cos(a), sa = Math.sin(a);
+      this.P.solid({ x: pos.x + ca * 0.5, y: pos.y + 0.2, z: pos.z + sa * 0.5, vx: ca * sp, vy: rand(0.1, 0.5), vz: sa * sp, r: c[0], g: c[1], b: c[2], a: o.alpha ?? 0.35, life: rand(1.0, 1.5), size: 0.6, size2: 1.6 + radius * 0.2, sprite: SPR.SMOKE, drag: 3, spin: rand(-1, 1) });
+      if (g && i % 2 === 0) this.P.glow({ x: pos.x + ca * 0.3, y: pos.y + 0.15, z: pos.z + sa * 0.3, vx: ca * sp * 1.05, vy: rand(0.2, 1), vz: sa * sp * 1.05, r: g[0], g: g[1], b: g[2], life: rand(0.35, 0.55), size: 0.07, stretch: 0.03, drag: 3, sprite: SPR.SPARK });
+    }
+  }
+
   // ------------------------------------------------------------ composite effects
   muzzle(pos, dir, element, scale = 1) {
     const fx = fxOf(element);
@@ -1012,7 +1082,15 @@ export class VFX {
   impact(pos, element, scale = 1) {
     const fx = fxOf(element);
     const hot = element === 'fire' || element === 'enemyFire';
-    this.P.glow({ x: pos.x, y: pos.y, z: pos.z, r: fx.mid[0] * 0.45, g: fx.mid[1] * 0.45, b: fx.mid[2] * 0.45, life: 0.12, size: 0.7 * scale, size2: 0.25, sprite: SPR.GLOW });
+    const x = pos.x, y = pos.y, z = pos.z;
+    this.P.glow({ x, y, z, r: fx.mid[0] * 0.45, g: fx.mid[1] * 0.45, b: fx.mid[2] * 0.45, life: 0.12, size: 0.7 * scale, size2: 0.25, sprite: SPR.GLOW });
+    // the hit itself: a crisp star that pops open and is gone in a blink, and a
+    // thin shock ring around it - both still read at range, where sparks are
+    // sub-pixel, and neither lingers long enough to hide the target
+    const matter = hot || element === 'earth' || element === 'blood' || element === 'poison' || element === 'enemyGreen' || element === 'physical';
+    this.P.glow({ x, y, z, r: fx.core[0] * 0.55, g: fx.core[1] * 0.55, b: fx.core[2] * 0.55, life: 0.11, size: 0.5 * scale, size2: 1.15 * scale, sprite: matter ? SPR.GLOW : SPR.STAR });
+    if (!matter) this.P.glow({ x, y, z, r: fx.mid[0] * 0.5, g: fx.mid[1] * 0.5, b: fx.mid[2] * 0.5, r2: fx.end[0] * 0.5, g2: fx.end[1] * 0.5, b2: fx.end[2] * 0.5, life: 0.2, size: 0.2 * scale, size2: 1.5 * scale, sprite: SPR.RING });
+    else if (hot) this.P.glow({ x, y, z, vy: 1.2, r: fx.mid[0] * 0.45, g: fx.mid[1] * 0.45, b: fx.mid[2] * 0.45, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2], life: 0.35, size: 0.35 * scale, size2: 0.9 * scale, sprite: SPR.SMOKE, spin: 2 });
     // few small sparks, cooling over their life (orange -> deep red for fire)
     this.burst(pos, { element, count: Math.round(7 * scale), speed: 5 * scale, life: 0.35, size: 0.04 * scale, sprite: SPR.SPARK, gravity: hot || element === 'earth' ? 7 : 1, stretch: 0.015,
       color: scaleC(fx.mid, 1.1, _sc), color2: fx.end });
@@ -1039,6 +1117,44 @@ export class VFX {
         this.burst(pos, { element, count: 4, speed: 1.5, life: 0.8, size: 0.13, sprite: SPR.BUBBLE, upward: 0.4, gravity: -1, color: scaleC(fx.mid, 0.6, _sc) });
         this.burst(pos, { count: 5, speed: 3, life: 0.6, size: 0.06, sprite: SPR.DROP, gravity: 10, solid: true, color: [0.12, 0.17, 0.04], color2: [0.07, 0.1, 0.02], stretch: 0.03 });
         break;
+      case 'arcane':
+        this.burst(pos, { element, count: Math.round(3 * scale), speed: 2.2, life: 0.55, size: 0.2 * scale, size2: 0.05, sprite: SPR.RUNE, drag: 3, spin: 3, color: scaleC(fx.mid, 0.75, _sc) });
+        this.burst(pos, { element, count: Math.round(5 * scale), speed: 4, life: 0.45, size: 0.09, sprite: SPR.STAR, drag: 3, spin: 4, color: scaleC(fx.core, 0.6, _sc) });
+        break;
+      case 'holy':
+        // a burst of short radiant rays, then motes drifting up
+        for (let i = 0; i < 6; i++) {
+          const a = rand(0, Math.PI * 2), e = rand(-0.5, 0.8), s = 9 * scale;
+          this.P.glow({ x, y, z, vx: Math.cos(a) * s, vy: e * s, vz: Math.sin(a) * s, r: fx.core[0] * 0.5, g: fx.core[1] * 0.5, b: fx.core[2] * 0.5, r2: fx.mid[0] * 0.3, g2: fx.mid[1] * 0.3, b2: fx.mid[2] * 0.3, life: 0.2, size: 0.06, stretch: 0.045, drag: 6, sprite: SPR.GLOW });
+        }
+        this.burst(pos, { element, count: Math.round(4 * scale), speed: 1.2, life: 0.9, size: 0.07, sprite: SPR.STAR, gravity: -1.5, upward: 0.6, drag: 1.5, color: scaleC(fx.core, 0.55, _sc) });
+        break;
+      case 'necrotic':
+        this.burst(pos, { element, count: Math.round(4 * scale), speed: 1.6, life: 0.7, size: 0.26 * scale, size2: 0.05, sprite: SPR.WISP, upward: 0.8, gravity: -1.5, drag: 2, spin: 2, color: scaleC(fx.mid, 0.6, _sc), color2: fx.end });
+        this.smoke(pos, { count: 1, size: 0.45 * scale, color: [0.02, 0.05, 0.02], alpha: 0.55, life: 0.9 });
+        break;
+      case 'lightning':
+        // crackling forks thrown off the struck point
+        for (let i = 0; i < 3; i++) this.P.glow({ x: x + rand(-0.15, 0.15), y: y + rand(-0.15, 0.15), z: z + rand(-0.15, 0.15), r: fx.core[0] * 0.65, g: fx.core[1] * 0.65, b: fx.core[2] * 0.65, life: rand(0.06, 0.13), size: rand(0.45, 0.75) * scale, sprite: SPR.BOLT, rot: rand(0, 6.28) });
+        break;
+      case 'time':
+        this.P.glow({ x, y, z, r: fx.core[0] * 0.4, g: fx.core[1] * 0.4, b: fx.core[2] * 0.4, life: 0.35, size: 1.4 * scale, size2: 0.3, sprite: SPR.RING });
+        this.burst(pos, { element, count: Math.round(4 * scale), speed: 2, life: 0.6, size: 0.08, sprite: SPR.STAR, drag: 3, color: scaleC(fx.core, 0.5, _sc), color2: fx.end });
+        break;
+      case 'wind':
+        // a little cyclone of pale streaks spun off the hit
+        for (let i = 0; i < Math.round(6 * scale); i++) {
+          const a = (i / 6) * Math.PI * 2 + rand(-0.3, 0.3), s = rand(4, 7);
+          this.P.glow({ x: x + Math.cos(a) * 0.2, y: y + rand(-0.3, 0.3), z: z + Math.sin(a) * 0.2, vx: -Math.sin(a) * s + Math.cos(a) * 2, vy: rand(0, 1.5), vz: Math.cos(a) * s + Math.sin(a) * 2, r: 0.55, g: 0.72, b: 0.7, life: 0.3, size: 0.16, size2: 0.03, sprite: SPR.WISP, stretch: 0.05, drag: 3 });
+        }
+        break;
+      case 'blade':
+        // a sharp glint: a few long, very fast streaks in a star
+        for (let i = 0; i < 4; i++) {
+          const a = rand(0, Math.PI * 2), e = rand(-0.6, 0.6), s = 14;
+          this.P.glow({ x, y, z, vx: Math.cos(a) * s, vy: e * s, vz: Math.sin(a) * s, r: fx.core[0] * 0.6, g: fx.core[1] * 0.6, b: fx.core[2] * 0.6, r2: fx.mid[0] * 0.3, g2: fx.mid[1] * 0.3, b2: fx.mid[2] * 0.3, life: 0.14, size: 0.04, stretch: 0.05, drag: 8, sprite: SPR.SPARK });
+        }
+        break;
       default: break;
     }
   }
@@ -1054,6 +1170,12 @@ export class VFX {
     const dim = cover > 0.45 ? Math.max(0.3, Math.pow(0.45 / cover, 0.7)) : 1;
     const gk = 0.55 * dim;
     this.P.glow({ x: pos.x, y: pos.y, z: pos.z, r: fx.mid[0] * gk, g: fx.mid[1] * gk, b: fx.mid[2] * gk, life: 0.2, size: radius * 0.85, size2: radius * 0.35, sprite: SPR.GLOW });
+    // the moment of release: a white-hot heart for a blink, and a shock ring
+    // standing up in the air (the ground ring alone only reads from above)
+    const ck = 0.5 * dim, rk = 0.42 * dim;
+    this.P.glow({ x: pos.x, y: pos.y, z: pos.z, r: fx.core[0] * ck, g: fx.core[1] * ck, b: fx.core[2] * ck, life: 0.09, size: radius * 0.55, size2: radius * 0.9, sprite: SPR.GLOW });
+    const matter = element === 'fire' || element === 'enemyFire' || element === 'earth' || element === 'blood' || element === 'poison' || element === 'enemyGreen' || element === 'physical';
+    if (!matter) this.P.glow({ x: pos.x, y: pos.y, z: pos.z, r: fx.core[0] * rk, g: fx.core[1] * rk, b: fx.core[2] * rk, r2: fx.mid[0] * rk * 0.5, g2: fx.mid[1] * rk * 0.5, b2: fx.mid[2] * rk * 0.5, life: 0.3, size: radius * 0.4, size2: radius * 2.4, sprite: SPR.RING });
     this.flash(pos, fx.light, Math.min(50 * s, 60) * dim, Math.min(radius * 4, 16), 0.35);
     this.ring({ x: pos.x, y: (o.groundY ?? pos.y - 0.5), z: pos.z }, radius * 1.1, scaleC(fx.mid, 0.4 * Math.max(0.5, dim), _sc2), 0.45, 0.16);
     // shock shell only for the "energy" elements (fire/earth/blood/poison are matter)
@@ -1065,6 +1187,14 @@ export class VFX {
       case 'fire': case 'enemyFire': {
         // a churning ball of flame inside dark smoke, not a white sun
         this.burst(pos, { element, count: Math.round(28 * s), speed: 4.5 * s, life: 0.7, size: 0.55 * s, size2: 0.12, sprite: SPR.FLAME, drag: 3, upward: 0.25, color: scaleC(fx.mid, 1.05 * dim, _sc), color2: fx.end, spin: 1.5 });
+        // the body of the blast: big billowing tongues that swell outward, then a
+        // column of flame rolling up out of it into the smoke
+        // (glowing smoke-textured puffs: billowing and ragged, never neat cones)
+        this.burst(pos, { element, count: Math.round(12 * s), speed: 2.6 * s, life: 0.55, size: 0.8 * s, size2: 1.7 * s, sprite: SPR.SMOKE, drag: 4, jitter: 0.25 * radius, color: scaleC(fx.mid, 0.6 * dim, _sc), color2: fx.end, spin: 1.5 });
+        for (let i = 0; i < Math.round(7 * s); i++) {
+          this.P.glow({ x: pos.x + rand(-0.3, 0.3) * radius, y: pos.y + rand(0, 0.4), z: pos.z + rand(-0.3, 0.3) * radius, vx: rand(-0.6, 0.6), vy: rand(3, 6) * Math.sqrt(s), vz: rand(-0.6, 0.6),
+            r: fx.mid[0] * 0.7 * dim, g: fx.mid[1] * 0.7 * dim, b: fx.mid[2] * 0.7 * dim, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2], life: rand(0.6, 0.9), size: 0.7 * s, size2: 0.25 * s, sprite: SPR.FLAME, drag: 1.6, delay: rand(0, 0.12), spin: 2 });
+        }
         this.burst(pos, { element, count: Math.round(12 * s), speed: 2.5 * s, life: 0.45, size: 0.45 * s, size2: 0.1, sprite: SPR.FLAME, drag: 3, upward: 0.4, color: scaleC(fx.core, 0.7 * dim, _sc2), color2: fx.mid });
         this.burst(pos, { element, count: Math.round(14 * s), speed: 8 * s, life: 1.2, size: 0.03, size2: 0.01, sprite: SPR.EMBER, gravity: 5, drag: 1.2, upward: 0.4, stretch: 0.01, color: [1.5, 0.45, 0.06], color2: [0.45, 0.04, 0.0] });
         this.smoke(pos, { count: Math.round(8 * s), size: 1.0 * s, life: 2.2, spread: radius * 0.35, speed: 2, color: [0.045, 0.035, 0.03], alpha: 0.6 });
@@ -1100,6 +1230,10 @@ export class VFX {
       case 'shadow': case 'enemyPurple':
         this.smoke(pos, { count: Math.round(10 * s), size: 1.1 * s, color: [0.03, 0.0, 0.05], alpha: 0.75, life: 1.8, spread: radius * 0.4, speed: 3 });
         this.burst(pos, { element, count: 14, speed: 7, life: 0.8, size: 0.28, sprite: SPR.WISP, drag: 3, spin: 2, color: scaleC(fx.mid, 0.8 * dim, _sc) });
+        // void fire: violet tongues licking up out of the dark, so the blast
+        // still reads against black stone
+        this.burst(pos, { element, count: Math.round(12 * s), speed: 2.5 * s, life: 0.6, size: 0.5 * s, size2: 0.1, sprite: SPR.FLAME, drag: 3, upward: 0.8, jitter: 0.3 * radius, color: scaleC(fx.mid, 0.7 * dim, _sc), color2: fx.end, spin: 2 });
+        this.burst(pos, { element, count: Math.round(8 * s), speed: 3 * s, life: 0.5, size: 0.6 * s, size2: 1.2 * s, sprite: SPR.SMOKE, drag: 4, color: scaleC(fx.mid, 0.45 * dim, _sc), color2: fx.end, spin: 1.5 });
         break;
       case 'poison': case 'enemyGreen':
         // dark, low bile mist (half the old puffs) instead of bright green discs
@@ -1152,7 +1286,9 @@ export class VFX {
       const px = pos.x - vel.x * dt * t, py = pos.y - vel.y * dt * t, pz = pos.z - vel.z * dt * t;
       switch (element) {
         case 'fire': case 'enemyFire':
-          this.P.glow({ x: px + rand(-0.05, 0.05), y: py + rand(-0.05, 0.05), z: pz + rand(-0.05, 0.05), vx: rand(-0.5, 0.5), vy: rand(0.2, 1.2), vz: rand(-0.5, 0.5), r: fx.mid[0] * 0.7, g: fx.mid[1] * 0.7, b: fx.mid[2] * 0.7, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2], life: rand(0.2, 0.42), size: 0.22 * intensity, size2: 0.04, sprite: SPR.FLAME, drag: 2 });
+          // ragged fire puffs trailing off (most), hot tongues (some)
+          if (Math.random() < 0.6) this.P.glow({ x: px + rand(-0.06, 0.06), y: py + rand(-0.06, 0.06), z: pz + rand(-0.06, 0.06), vx: rand(-0.5, 0.5), vy: rand(0.3, 1.2), vz: rand(-0.5, 0.5), r: fx.mid[0] * 0.55, g: fx.mid[1] * 0.55, b: fx.mid[2] * 0.55, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2], life: rand(0.22, 0.45), size: 0.2 * intensity, size2: 0.32 * intensity, sprite: SPR.SMOKE, drag: 2, spin: rand(-3, 3) });
+          else this.P.glow({ x: px + rand(-0.05, 0.05), y: py + rand(-0.05, 0.05), z: pz + rand(-0.05, 0.05), vx: rand(-0.5, 0.5), vy: rand(0.2, 1.2), vz: rand(-0.5, 0.5), r: fx.mid[0] * 0.7, g: fx.mid[1] * 0.7, b: fx.mid[2] * 0.7, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2], life: rand(0.15, 0.32), size: 0.18 * intensity, size2: 0.04, sprite: SPR.FLAME, drag: 2 });
           if (Math.random() < 0.18) this.P.glow({ x: px, y: py, z: pz, vx: rand(-1.5, 1.5), vy: rand(0, 2), vz: rand(-1.5, 1.5), r: 1.5, g: 0.45, b: 0.06, r2: 0.4, g2: 0.03, b2: 0, life: rand(0.4, 0.9), size: 0.025, sprite: SPR.EMBER, gravity: 2 });
           if (Math.random() < 0.14) this.P.solid({ x: px, y: py, z: pz, vy: 0.6, r: 0.05, g: 0.04, b: 0.035, a: 0.45, life: 1.2, size: 0.25 * Math.max(1, intensity * 0.6), size2: 0.8 * Math.max(1, intensity * 0.6), sprite: SPR.SMOKE, drag: 1 });
           break;

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { fxOf, nearFade, clampHDR } from '../render/vfx.js';
+import { FX, fxOf, nearFade, clampHDR, orbMaterial } from '../render/vfx.js';
 import { SPR } from '../render/particles.js';
 import { rand } from '../core/rng.js';
 import { segPointDist2 } from '../core/math.js';
@@ -87,6 +87,9 @@ export class SpellRuntime {
     this.tracerGeo = new THREE.PlaneGeometry(1, 1).translate(-0.5, 0, 0);
     this.tracerTex = streakTexture();
     this.tracerMats = new Map();
+    this.orbTime = { value: 0 };
+    // every element's materials exist up front: nothing is created at cast time
+    for (const el of Object.keys(FX)) { this._spriteMat(el); this._orbMat(el); this._tracerMat(el); }
   }
 
   // one of each projectile visual (core sprite, orb, tracer, every mesh), for
@@ -119,7 +122,7 @@ export class SpellRuntime {
     M.rock = { geo: rock, mat: new THREE.MeshStandardMaterial({ color: 0x6a5a48, roughness: 0.95, emissive: 0x401800, emissiveIntensity: 0.4, flatShading: true }) };
     const meteor = new THREE.DodecahedronGeometry(0.9, 1);
     // charred rock glowing from within: dark faces, hot cracks via the emissive map
-    M.meteor = { geo: meteor, mat: new THREE.MeshStandardMaterial({ color: 0x1a1210, roughness: 1, emissive: 0xff4808, emissiveIntensity: 1.1, emissiveMap: magmaTexture(), flatShading: true }) };
+    M.meteor = { geo: meteor, mat: new THREE.MeshStandardMaterial({ color: 0x1a1210, roughness: 1, emissive: 0xff5010, emissiveIntensity: 2.2, emissiveMap: magmaTexture(), flatShading: true }) };
     const boulder = new THREE.DodecahedronGeometry(2.2, 1);
     M.boulder = { geo: boulder, mat: new THREE.MeshStandardMaterial({ color: 0x5a4a38, roughness: 1, emissive: 0x803000, emissiveIntensity: 0.6, flatShading: true }) };
     const spear = new THREE.ConeGeometry(0.07, 1.4, 6);
@@ -167,10 +170,8 @@ export class SpellRuntime {
   }
   _orbMat(el) {
     if (this.orbMats.has(el)) return this.orbMats.get(el);
-    const fx = fxOf(el);
-    // solid orb body: element mid tone with a hotter rim of core sprite around it
-    const c = clampHDR([fx.mid[0] * 0.15 + fx.core[0] * 0.55, fx.mid[1] * 0.15 + fx.core[1] * 0.55, fx.mid[2] * 0.15 + fx.core[2] * 0.55], 1.3);
-    const m = nearFade(new THREE.MeshBasicMaterial({ color: new THREE.Color(c[0], c[1], c[2]) }));
+    // churning element-coloured ball (shared program, see orbMaterial)
+    const m = orbMaterial(fxOf(el), this.orbTime, el === 'fire' || el === 'enemyFire' ? 0 : 0.8);
     this.orbMats.set(el, m);
     return m;
   }
@@ -231,6 +232,7 @@ export class SpellRuntime {
       const def = this.meshCache[p.mesh];
       const mesh = new THREE.Mesh(def.geo, def.mat ?? this._orbMat(proj.el));
       if (p.meshScale) mesh.scale.setScalar(p.meshScale);
+      if (p.mesh === 'orb') { proj.orbS = p.meshScale ?? 1; mesh.scale.setScalar(proj.orbS * 0.3); }
       group.add(mesh);
       proj.mesh = mesh;
       proj.spin = p.spin ?? (p.mesh === 'rock' || p.mesh === 'meteor' || p.mesh === 'boulder' ? 6 : 0);
@@ -291,6 +293,7 @@ export class SpellRuntime {
   update(dt) {
     const g = this.g;
     const col = g.collision;
+    this.orbTime.value = g.time;
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
       if (p.dead) { this._remove(i); continue; }
@@ -478,6 +481,10 @@ export class SpellRuntime {
     const g = this.g;
     if (p.trail > 0) g.vfx.trail(p.pos, p.vel, p.el, p.trail, dt);
     if (p.mesh) {
+      // spell orbs swell out of the hand over their first instant instead of
+      // appearing full size right in front of the lens
+      if (p.orbS && p.age < 0.14) p.mesh.scale.setScalar(p.orbS * (0.3 + 0.7 * p.age / 0.14));
+      else if (p.orbS) { p.mesh.scale.setScalar(p.orbS); p.orbS = 0; }
       if (p.spin) { p.mesh.rotation.x += p.spin * dt; p.mesh.rotation.y += p.spin * 0.7 * dt; }
       else if (p.vel.lengthSq() > 0.01) p.mesh.lookAt(_v.copy(p.pos).add(p.vel));
     }
