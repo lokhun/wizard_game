@@ -3,7 +3,7 @@ import { G, xf, taper, lathe, shell, tube, deform, bumpy, shaggy, robe, panel, m
 import { humanSkeleton, humanoidPose, act2, ACT } from './humanoid.js';
 import { quadSkeleton, quadPose } from './quad.js';
 import { glowLevel } from './bossKit.js';
-import { addFleshBody, addFleshHand, hood, belt, HDR, RUSTY, DARKSTEEL, STEEL, axeHeadGeo, rivets } from './parts.js';
+import { addFleshBody, addFleshHand, hood, belt, HDR, RUSTY, DARKSTEEL, STEEL, axeHeadGeo, rivets, boneShade } from './parts.js';
 import { skullGeo } from '../../world/props.js';
 
 const FUR = [0.34, 0.27, 0.21];
@@ -158,10 +158,17 @@ export const slime = {
       anim: (v) => smooth(0.05, 0.4, v.y),
       cfn: (v) => { const k = 0.45 + v.y * 0.7; return [0.22 * k, 0.75 * k, 0.12 * k]; },
     });
+    // murky inner core, drips oozing down the flanks
+    rig.add('body', 'slime', deform(G.sph(0.3, 14, 10), (v) => { v.y = v.y * 0.75 + 0.33; }), {}, { c: [0.06, 0.2, 0.04], anim: 0.6 });
+    const drips = [];
+    for (let i = 0; i < 9; i++) { const a = (i / 9) * TAU + 0.3, r = 0.5 + (i % 3) * 0.03, y0 = 0.25 + (i % 4) * 0.06; drips.push(tube([[Math.sin(a) * r * 0.92, y0, Math.cos(a) * r * 0.92], [Math.sin(a) * r * 1.0, y0 - 0.1, Math.cos(a) * r * 1.0], [Math.sin(a) * r * 1.02, y0 - 0.17 - (i % 2) * 0.05, Math.cos(a) * r * 1.02]], (u) => 0.03 * (1 - u * 0.5), 4, 5)); }
+    rig.add('body', 'slime', mergeRaw(drips), {}, { c: [0.25, 0.85, 0.15], anim: (v) => clamp(0.4 - v.y) * 1.5 });
     // glowing nucleus
     rig.add('body', 'spirit', G.sph(0.16, 14, 10), { y: 0.42 }, { c: HDR(0x5aff2a, 0.22) });
     // floating debris: skull, bones, rusty blade, coins
-    rig.add('deb0', 'bone', skullGeo(), { s: 1.6, ry: 0.4 }, { c: [1.3, 1.25, 1.1] });
+    rig.add('deb0', 'bone', skullGeo(), { s: 1.6, ry: 0.4 }, { cfn: boneShade([1.0, 1.08, 0.85], 3, 1.4) });
+    // a drowned man's rusty kettle hat still on the skull
+    rig.add('deb0', 'iron', mergeRaw([lathe([[0.1, 0], [0.1, 0.05], [0.085, 0.1], [0.045, 0.13], [0.001, 0.135]], 10), xf(lathe([[0.15, -0.012], [0.15, 0.0], [0.095, 0.02]], 12), {})]), { y: 0.06, ry: 0.4, rz: 0.35, s: 1.25 }, { c: RUSTY });
     rig.add('deb0', 'glow', G.sph(0.014, 5, 4), { x: 0.04, y: 0.0, z: 0.105, s: 1.6 }, { c: HDR(0x8aff3a, 4) });
     rig.add('deb0', 'glow', G.sph(0.014, 5, 4), { x: -0.04, y: 0.0, z: 0.105, s: 1.6 }, { c: HDR(0x8aff3a, 4) });
     rig.add('deb1', 'bone', mergeRaw([xf(G.cyl(0.018, 0.018, 0.34, 6), {}), xf(G.sph(0.03, 6, 5), { y: 0.17, sx: 1.4 }), xf(G.sph(0.028, 6, 5), { y: -0.17, sx: 1.4 })]), { rz: 1.1, rx: 0.4 }, { c: 0xc8bba0 });
@@ -406,14 +413,14 @@ export const bilespitter = {
   build(rig) {
     const D = humanSkeleton(rig, { thigh: 0.42, shin: 0.4, spine: 0.2, chest: 0.3, neck: 0.06, shoulderW: 0.23, upper: 0.29, fore: 0.28, hipW: 0.135, jaw: [0.045, 0.03] });
     rig.bone('belly', 'hips', 0, 0.07, 0.07, { rate: 0.6 });
-    const mott = (v) => { const n = vnoise(v.x * 9, v.y * 9, v.z * 9, 4); const k = 0.8 + 0.3 * n; return n > 0.68 ? [0.55, 0.62, 0.35] : [0.66 * k, 0.66 * k, 0.45 * k]; };
+    const mott = (v) => { const n = vnoise(v.x * 9, v.y * 9, v.z * 9, 4); const k = 0.8 + 0.3 * n; return n > 0.68 ? [0.42, 0.55, 0.3] : [0.55 * k, 0.58 * k, 0.38 * k]; };
     // sickly mottled hide: jaundiced yellow-grey with bruised green patches
     const hide = (v) => {
       const n = vnoise(v.x * 6 + 2, v.y * 6, v.z * 6, 14), d = vnoise(v.x * 22, v.y * 22, v.z * 22, 3);
       const k = 0.75 + d * 0.35;
-      if (n > 0.66) return [0.3 * k, 0.36 * k, 0.18 * k];
-      if (n < 0.3) return [0.55 * k, 0.45 * k, 0.32 * k];
-      return [0.6 * k, 0.56 * k, 0.34 * k];
+      if (n > 0.64) return [0.24 * k, 0.34 * k, 0.15 * k];
+      if (n < 0.3) return [0.5 * k, 0.4 * k, 0.3 * k];
+      return [0.47 * k, 0.52 * k, 0.32 * k];
     };
     addFleshBody(rig, D, { c: BILE_SKIN, cfn: hide, muscle: 1.75, seed: 9, rough: 1.6, belly: 0.12, bellyY: 0.1, depth: 1.28, torsoW: 1.15, hunch: 0.07, veins: true, veinC: [0.3, 0.35, 0.2], hand: { m: 1.1 } });
     // fat: a hump across the upper back, rolls over the hips, a sagging double chin
@@ -465,7 +472,7 @@ export const bilespitter = {
     for (const [b, g] of pust) rig.add(b, 'skin', g, {}, { c: [0.75, 0.75, 0.38] });
     for (const [b, g] of pustG) rig.add(b, 'glow', g, {}, { c: HDR(BILE, 2.2) });
     // swollen bald head with wide maw
-    rig.add('head', 'skin', bumpy(xf(G.sph(0.11, 16, 12), { sx: 1.05, sy: 0.95, sz: 1.0 }), 0.012, 8, 4), { y: 0.11, z: 0.0 }, { cfn: mott });
+    rig.add('head', 'skin', bumpy(xf(G.sph(0.11, 16, 12), { sx: 1.05, sy: 0.95, sz: 1.0 }), 0.014, 8, 4), { y: 0.11, z: 0.0 }, { cfn: mott });
     rig.add('head', 'skin', bumpy(G.sph(0.06, 10, 8), 0.01, 10, 3), { x: -0.06, y: 0.17, z: 0.03 }, { c: [0.75, 0.72, 0.42] });
     rig.add('head', 'dark', G.box(0.08, 0.04, 0.04), { y: 0.065, z: 0.08 });
     rig.pair('head', 'head', 'dark', G.sph(0.016, 6, 5), { x: 0.035, y: 0.125, z: 0.085 });
@@ -476,11 +483,11 @@ export const bilespitter = {
     rig.add('jaw', 'slime', tube([[0.02, 0, 0.1], [0.025, -0.08, 0.11], [0.02, -0.16, 0.1]], (u) => 0.008 * (1 - u * 0.5), 6, 4), {}, { c: [0.5, 1.2, 0.3], anim: 1 });
     // filthy butcher's apron under the gut, rope belt, ragged breeches held up by braces, wrist wraps
     const stain = (base) => (v) => { const n = vnoise(v.x * 8 + 1, v.y * 8, 2, 31), k = 0.75 + 0.4 * vnoise(v.x * 30, v.y * 30, 0, 5), g = smooth(0.55, 0.75, n); return [lerp(base[0], 0.32, g) * k, lerp(base[1], 0.4, g) * k, lerp(base[2], 0.12, g) * k]; };
-    rig.add('hips', 'leather', panel(0.38, 0.52, { ws: 5, hs: 6, tatter: 0.2, seed: 6, curve: 0.14, taperBot: 0.85 }), { y: -0.04, z: 0.17, rx: 0.08 }, { cfn: stain([0.75, 0.6, 0.45]), anim: (v) => clamp(-v.y / 0.5) * 0.8, skin: (v) => { const t = clamp((-v.y - 0.08) / 0.4) * 0.6, l = clamp(0.5 + v.x * 4); return [['hips', 1 - t], ['thighL', t * l], ['thighR', t * (1 - l)]]; } });
+    rig.add('hips', 'leather', panel(0.42, 0.5, { ws: 5, hs: 6, tatter: 0.2, seed: 6, curve: 0.16, taperBot: 0.9 }), { y: -0.1, z: 0.3, rx: -0.05 }, { cfn: stain([0.75, 0.6, 0.45]), anim: (v) => clamp(-v.y / 0.5) * 0.8, skin: (v) => { const t = clamp((-v.y - 0.08) / 0.4) * 0.6, l = clamp(0.5 + v.x * 4); return [['hips', 1 - t], ['thighL', t * l], ['thighR', t * (1 - l)]]; } });
     rig.add('hips', 'leather', xf(G.tor(0.2, 0.017, 5, 18), { rx: Math.PI / 2, sz: 0.85 }), { y: -0.01 }, { c: 0x3a2c1e });
     for (const S of ['L', 'R']) {
       const sx = S === 'L' ? 1 : -1;
-      rig.add('thigh' + S, 'cloth', robe(0.13, 0.11, D.thigh * 0.8, { seg: 10, rows: 2, folds: 5, foldAmp: 0.08, tatter: 0.35, seed: 3 + sx }), { y: 0.04 }, { cfn: stain([0.32, 0.28, 0.22]) });
+      rig.add('thigh' + S, 'cloth', robe(0.165, 0.135, D.thigh * 0.8, { seg: 10, rows: 2, folds: 5, foldAmp: 0.08, tatter: 0.35, seed: 3 + sx }), { y: 0.04 }, { cfn: stain([0.32, 0.28, 0.22]) });
       rig.add('chest', 'leather', tube([[sx * 0.1, -0.12, 0.27], [sx * 0.13, D.chest * 0.5, 0.21], [sx * 0.13, D.chest + 0.02, 0.06], [sx * 0.11, D.chest * 0.7, -0.17], [sx * 0.08, -0.12, -0.2]], 0.011, 14, 4), {}, { c: [0.35, 0.26, 0.18] });
     }
     rig.add('foreL', 'cloth', G.cyl(0.058, 0.052, 0.12, 8, true), { y: -0.2 }, { c: 0x6a5a40 });
@@ -527,73 +534,100 @@ function tailSway(P, m, n, w = 0) {
 }
 
 const SHAMAN_GLOW = 0x6aff3a;
+// A hunched rat-priest in a patched, rag-hung robe under a ragged hood, a mantle of matted hide, a
+// necklace of little skulls, bottles and bones swinging from a rope belt, and a crooked bone staff
+// topped with a skull and a green witch-light that flares as it casts.
+const SH_CAST = act2(
+  { armR: [-0.35, 0, -0.3], foreR: [-1.7, 0, 0], handR: [0.35, 0, 0], armL: [-1.25, 0, 0.7], foreL: [-0.8, 0, 0], handL: [-0.5, 0, 0], chest: [-0.2, -0.35, 0], head: [-0.15, 0.25, 0], spine: [-0.08, 0, 0], jaw: [0.45, 0, 0] },
+  { armR: [-1.4, 0, 0.2], foreR: [-0.45, 0, 0], handR: [0.15, 0, 0], armL: [-0.45, 0, 0.35], foreL: [-0.6, 0, 0], chest: [0.2, 0.2, 0], spine: [0.12, 0, 0], head: [-0.1, -0.15, 0], hips: [0, 0, 0, 0, -0.03, 0.08], jaw: [0.2, 0, 0] },
+  { hit: 0.3, recover: 0.85, recoverAmt: 0.25, tremble: 0.035, windupExtra: (P, p, m) => P.r('jaw', 0.25 * p + Math.sin(m.time * 25) * 0.12 * p) },
+);
+const SH_SUMMON = act2(
+  { armR: [-0.7, 0, -0.2], foreR: [-1.2, 0, 0], handR: [0.4, 0, 0], armL: [-0.6, 0, 0.4], foreL: [-1.3, 0, 0], chest: [0.3, 0, 0], spine: [0.15, 0, 0], head: [0.3, 0, 0], hips: [0, 0, 0, 0, -0.08, 0] },
+  { armR: [-2.7, 0, -0.2], foreR: [-0.1, 0, 0], handR: [0.2, 0, 0], armL: [-2.5, 0, 0.5], foreL: [-0.3, 0, 0], chest: [-0.35, 0, 0], spine: [-0.1, 0, 0], head: [-0.55, 0, 0], jaw: [0.8, 0, 0] },
+  { hit: 0.4, recover: 0.85, tremble: 0.04 },
+);
 export const ratShaman = {
-  id: 'ratShaman', height: 1.6, radius: 0.4, eyeColor: SHAMAN_GLOW, magicColor: SHAMAN_GLOW, defaultAttack: 'cast', attackTypes: ['cast', 'summon', 'swing'], orbSize: 0.075, flutter: 0.035,
+  id: 'ratShaman', height: 1.6, radius: 0.4, eyeColor: SHAMAN_GLOW, magicColor: SHAMAN_GLOW, defaultAttack: 'cast', attackTypes: ['cast', 'summon', 'swing'], orbSize: 0.075, flutter: 0.045,
   build(rig) {
     const D = humanSkeleton(rig, { thigh: 0.4, shin: 0.4, spine: 0.15, chest: 0.28, neck: 0.08, shoulderW: 0.17, upper: 0.27, fore: 0.26, jaw: [-0.014, 0.1] });
-    const ROBE = 0x3d3a2a;
-    // robe skirt + torso
-    rig.add('hips', 'cloth', robe(0.17, 0.32, D.hipH - 0.08, { seg: 20, rows: 6, folds: 6, foldAmp: 0.1, tatter: 0.22, seed: 3 }), { y: 0.02 }, { c: ROBE, anim: (v) => clamp(-v.y / 0.7) });
-    rig.add('hips', 'cloth', lathe([[0.17, 0.0], [0.16, 0.12], [0.17, 0.2]], 14), {}, { c: ROBE });
-    rig.add('chest', 'cloth', lathe([[0.15, -0.05], [0.18, 0.12], [0.2, 0.22], [0.12, 0.3], [0.06, 0.32]], 14), { sz: 0.8 }, { c: ROBE });
-    // ragged mantle
-    rig.add('chest', 'cloth', robe(0.1, 0.27, 0.3, { seg: 16, rows: 3, folds: 5, foldAmp: 0.12, tatter: 0.35, seed: 9 }), { y: D.chest + 0.02, sz: 0.85 }, { c: 0x2e2c22, anim: (v) => clamp(-v.y * 2.5) * 0.6 });
-    // hood
-    const h = hood(0.14, 0.12, { open: 0.24, peak: 1.0 });
-    rig.add('head', 'cloth', h.shell, { y: 0.06, z: -0.0, rx: -0.15 }, { c: 0x34301f });
+    const ROBE = [0.21, 0.19, 0.13];
+    // patched robe: grimy base with darker and greener patches stitched on
+    const patch = (base, sd = 1) => (v) => {
+      const n = vnoise(v.x * 5 + sd, v.y * 5, v.z * 5, 41 + sd), k = 0.72 + 0.4 * vnoise(v.x * 20, v.y * 20, v.z * 20, 3);
+      const c = n > 0.66 ? [0.17, 0.2, 0.12] : n < 0.3 ? [0.28, 0.21, 0.13] : base;
+      return [c[0] * k, c[1] * k, c[2] * k];
+    };
+    rig.add('hips', 'cloth', robe(0.17, 0.33, D.hipH - 0.08, { seg: 20, rows: 6, folds: 7, foldAmp: 0.12, tatter: 0.35, seed: 3 }), { y: 0.02 }, { cfn: patch(ROBE, 1), anim: (v) => clamp(-v.y / 0.7) * 1.1 });
+    rig.add('hips', 'cloth', lathe([[0.17, 0.0], [0.16, 0.12], [0.17, 0.2]], 14), {}, { cfn: patch(ROBE, 2) });
+    rig.add('chest', 'cloth', lathe([[0.15, -0.05], [0.18, 0.12], [0.2, 0.22], [0.12, 0.3], [0.06, 0.32]], 14), { sz: 0.8 }, { cfn: patch(ROBE, 3) });
+    // hanging rag strips round the robe
+    const rags = [];
+    for (let i = 0; i < 6; i++) { const a = (i / 6) * TAU + 0.3; rags.push(xf(panel(0.06, 0.32 + (i % 3) * 0.08, { ws: 1, hs: 4, tatter: 0.5, seed: 50 + i, curve: 0 }), { x: Math.sin(a) * 0.19, z: Math.cos(a) * 0.17, ry: a })); }
+    rig.add('hips', 'cloth', mergeRaw(rags), { y: 0.1 }, { c: [0.2, 0.17, 0.11], anim: (v) => clamp(-v.y * 2.5) * 1.4 });
+    // matted hide mantle over the hunched shoulders
+    rig.add('chest', 'fur', shaggy(robe(0.11, 0.28, 0.26, { seg: 14, rows: 3, folds: 6, foldAmp: 0.12, tatter: 0.4, seed: 9 }), 0.025, 12, 5, [0, -1, 0], 0.5), { y: D.chest + 0.04, sz: 0.85 }, { c: [0.33, 0.27, 0.2], anim: (v) => clamp(-v.y * 2.5) * 0.4 });
+    // ragged hood
+    const h = hood(0.15, 0.14, { open: 0.22, peak: 1.3 });
+    rig.add('head', 'cloth', h.shell, { y: 0.06, z: -0.01, rx: -0.15 }, { cfn: patch([0.19, 0.17, 0.11], 4) });
     // rat head poking out
-    ratHead(rig, { s: 1.35, mat: 'fur', eye: SHAMAN_GLOW, notch: true, muzzle: false });
+    ratHead(rig, { s: 1.35, mat: 'fur', eye: SHAMAN_GLOW, notch: true, muzzle: false, lo: true });
+    // necklace of tiny skulls and teeth
+    const nk = [];
+    for (let i = 0; i < 9; i++) { const a = (i / 8 - 0.5) * 2.2; nk.push(xf(G.cone(0.008, 0.035, 3), { x: Math.sin(a) * 0.13, y: D.chest - 0.06 - Math.cos(a) * 0.04, z: Math.cos(a) * 0.11, rx: Math.PI })); }
+    for (const a of [-0.6, 0, 0.6]) nk.push(xf(G.sph(0.022, 6, 4), { x: Math.sin(a) * 0.13, y: D.chest - 0.1 - Math.cos(a) * 0.03, z: Math.cos(a) * 0.125, sz: 1.2 }));
+    rig.add('chest', 'bone', mergeRaw(nk), {}, { cfn: boneShade([1.0, 0.97, 0.85], 6) });
     // sleeves + clawed pink hands
     for (const S of ['L', 'R']) {
       const sx = S === 'L' ? 1 : -1;
-      rig.add('arm' + S, 'cloth', robe(0.06, 0.075, D.upper + 0.02, { seg: 10, rows: 2, folds: 4, tatter: 0.0, seed: 2 }), {}, { c: ROBE });
-      rig.add('fore' + S, 'cloth', robe(0.065, 0.1, D.fore * 0.85, { seg: 10, rows: 2, folds: 4, tatter: 0.35, seed: 5 + sx }), {}, { c: ROBE, anim: (v) => clamp(-v.y * 3) * 0.5 });
+      rig.add('arm' + S, 'cloth', robe(0.06, 0.075, D.upper + 0.02, { seg: 10, rows: 2, folds: 4, tatter: 0.0, seed: 2 }), {}, { cfn: patch(ROBE, 5 + sx) });
+      rig.add('fore' + S, 'cloth', robe(0.065, 0.11, D.fore * 0.85, { seg: 10, rows: 2, folds: 4, tatter: 0.4, seed: 5 + sx }), {}, { cfn: patch(ROBE, 7 + sx), anim: (v) => clamp(-v.y * 3) * 0.6 });
       addFleshHand(rig, 'hand' + S, sx, { mat: 'skin', c: [0.95, 0.62, 0.58], m: 0.85, claws: 0.035, clawC: 0x2a2018, grip: S === 'R' });
       rig.add('foot' + S, 'skin', xf(G.sph(0.04, 8, 6), { y: -0.04, z: 0.05, sx: 0.9, sy: 0.5, sz: 2.0 }), {}, { c: [0.9, 0.58, 0.55] });
-      for (let i = 0; i < 3; i++) rig.add('foot' + S, 'bone', G.cone(0.006, 0.035, 4), { x: (i - 1) * 0.02, y: -0.06, z: 0.13, rx: Math.PI / 2 + 0.4 }, { c: 0x2a2018 });
+      rig.add('foot' + S, 'bone', mergeRaw([0, 1, 2].map((i) => xf(G.cone(0.006, 0.035, 3), { x: (i - 1) * 0.02, y: -0.06, z: 0.13, rx: Math.PI / 2 + 0.4 }))), {}, { c: 0x2a2018 });
       rig.add('shin' + S, 'skin', taper(0.035, 0.025, D.shin, 6, 2), {}, { c: [0.75, 0.5, 0.45] });
     }
-    // rope belt with pouches and bone charms
-    rig.add('hips', 'leather', xf(G.tor(0.17, 0.013, 5, 18), { rx: Math.PI / 2, sz: 0.8 }), { y: 0.12 }, { c: 0x6a5434 });
-    rig.add('hips', 'leather', xf(G.sph(0.05, 8, 6), { sy: 1.2 }), { x: 0.13, y: 0.06, z: 0.08 }, { c: 0x4a3420 });
-    rig.add('hips', 'bone', mergeRaw([0, 1, 2].map((i) => xf(G.cyl(0.006, 0.006, 0.09, 4), { x: -0.08 + i * 0.03, y: 0.06, z: 0.13, rz: (i - 1) * 0.2 }))), {}, { c: 0xd8ccb0 });
-    rig.add('chest', 'bone', mergeRaw(Array.from({ length: 9 }, (_, i) => { const a = (i / 8 - 0.5) * 2.2; return xf(G.cone(0.008, 0.035, 4), { x: Math.sin(a) * 0.13, y: D.chest - 0.06 - Math.cos(a) * 0.04, z: Math.cos(a) * 0.11, rx: Math.PI }); })), {}, { c: 0xe0d4b8 });
+    // rope belt with pouches, a bone charm and two glowing bottles
+    rig.add('hips', 'leather', xf(G.tor(0.17, 0.014, 5, 18), { rx: Math.PI / 2, sz: 0.8 }), { y: 0.12 }, { c: 0x6a5434 });
+    rig.add('hips', 'leather', mergeRaw([xf(G.sph(0.05, 8, 6), { x: 0.13, y: 0.06, z: 0.08, sy: 1.2 }), xf(G.sph(0.04, 7, 5), { x: -0.14, y: 0.07, z: 0.07, sy: 1.25 })]), {}, { c: 0x4a3420 });
+    rig.add('hips', 'bone', mergeRaw([0, 1, 2].map((i) => xf(G.cyl(0.006, 0.006, 0.09, 4), { x: -0.06 + i * 0.03, y: 0.06, z: 0.135, rz: (i - 1) * 0.2 }))), {}, { c: 0xd8ccb0 });
+    rig.add('hips', 'glow', mergeRaw([xf(G.sph(0.018, 6, 4), { x: 0.06, y: 0.04, z: 0.135, sy: 1.4 }), xf(G.sph(0.015, 6, 4), { x: -0.17, y: 0.05, z: 0.05, sy: 1.4 })]), {}, { c: HDR(SHAMAN_GLOW, 1.4), anim: 0.6 });
     ratTail(rig, 'hips', 6, 0.1, 0.03);
-    // bone staff with skull and floating crystal
-    const staffL = 1.55, grip = 0.5;
+    // crooked bone staff: a skull on top in a cage of bone prongs holding the witch-light, fetishes dangling
+    const staffL = 1.6, grip = 0.5;
     const R = rng(4);
-    const sp = []; for (let i = 0; i <= 8; i++) { const t = i / 8; sp.push([(R() - 0.5) * 0.03, (R() - 0.5) * 0.02, (t - grip) * staffL]); }
+    const sp = []; for (let i = 0; i <= 8; i++) { const t = i / 8; sp.push([(R() - 0.5) * 0.04, (R() - 0.5) * 0.03, (t - grip) * staffL]); }
     const st0 = { y: -0.07 };
-    rig.add('handR', 'bone', tube(sp, (u) => 0.02 * (1.1 - u * 0.3), 16, 6), st0, { c: 0xbdb096 });
+    rig.add('handR', 'bone', tube(sp, (u) => 0.021 * (1.1 - u * 0.3), 12, 5), st0, { cfn: boneShade([0.9, 0.82, 0.66], 2) });
     const tip = (1 - grip) * staffL;
-    rig.add('handR', 'bone', skullGeo(), { ...st0, z: tip - 0.02, rx: -Math.PI / 2, s: 0.9 }, { c: 0xd8ccb0 });
-    rig.add('handR', 'bone', mergeRaw([0, 1, 2, 3].map((i) => xf(G.cone(0.01, 0.12, 4), { x: Math.cos(i * 1.57) * 0.05, y: Math.sin(i * 1.57) * 0.05, z: tip + 0.1, rx: Math.PI / 2, rz: 0 }))), st0, { c: 0xbdb096 });
+    rig.add('handR', 'bone', skullGeo(), { ...st0, z: tip - 0.02, rx: -Math.PI / 2, s: 0.95 }, { cfn: boneShade([1.1, 1.05, 0.95], 5) });
+    rig.add('handR', 'bone', mergeRaw([0, 1, 2, 3].map((i) => tube([[Math.cos(i * 1.57) * 0.03, Math.sin(i * 1.57) * 0.03, tip + 0.04], [Math.cos(i * 1.57) * 0.07, Math.sin(i * 1.57) * 0.07, tip + 0.13], [Math.cos(i * 1.57) * 0.025, Math.sin(i * 1.57) * 0.025, tip + 0.24]], (u) => 0.009 * (1 - u * 0.6), 6, 3))), st0, { c: [0.85, 0.78, 0.62] });
     rig.add('handR', 'leather', mergeRaw([xf(G.cyl(0.026, 0.026, 0.1, 6), { rx: Math.PI / 2, z: -0.0 }), xf(G.tor(0.024, 0.006, 4, 8), { z: tip - 0.12 })]), st0, { c: 0x4a3420 });
-    rig.add('handR', 'glow', G.oct(0.04), { ...st0, z: tip + 0.17, sz: 1.6 }, { c: HDR(SHAMAN_GLOW, 3.5) });
+    rig.add('handR', 'glow', G.oct(0.042), { ...st0, z: tip + 0.14, sz: 1.6 }, { c: HDR(SHAMAN_GLOW, 3.5) });
     rig.add('handR', 'glow', mergeRaw([xf(G.sph(0.012, 5, 4), { x: 0.035, z: tip - 0.02, y: 0.01 }), xf(G.sph(0.012, 5, 4), { x: -0.035, z: tip - 0.02, y: 0.01 })]), { ...st0 }, { c: HDR(SHAMAN_GLOW, 4) });
-    // dangling fetish
-    rig.add('handR', 'leather', tube([[0.03, 0, tip - 0.12], [0.05, -0.05, tip - 0.14], [0.05, -0.12, tip - 0.15]], 0.004, 6, 3), st0, { c: 0x3a2a1a, anim: 1 });
-    rig.socket('muzzle', 'handR', 0, -0.07, tip + 0.17);
+    // dangling fetishes: cords with a feather and a tooth
+    rig.add('handR', 'leather', mergeRaw([tube([[0.03, 0, tip - 0.12], [0.05, -0.05, tip - 0.14], [0.05, -0.14, tip - 0.15]], 0.004, 5, 3), tube([[-0.03, 0, tip - 0.12], [-0.045, -0.06, tip - 0.13], [-0.04, -0.12, tip - 0.13]], 0.004, 5, 3)]), st0, { c: 0x3a2a1a, anim: 1 });
+    rig.add('handR', 'cloth', xf(G.box(0.004, 0.08, 0.02), { x: 0.05, y: -0.18, z: tip - 0.15 }), st0, { c: [0.35, 0.32, 0.28], anim: 1 });
+    rig.socket('muzzle', 'handR', 0, -0.07, tip + 0.14);
     return D;
   },
   pose: humanoidPose,
   anim: {
     death: 'fall', spawn: 'rise', armSwing: 0.2, knee: 0.9, stride: 0.5, caster: true, idleOrb: 0.15,
     rest: { armR: [-0.35, 0, -0.05], foreR: [-1.05, 0, 0], handR: [0.2, 0, 0], armL: [-0.2, 0, 0.1], foreL: [-0.8, 0, 0] },
-    stance: (P) => P.apply({ spine: [0.25, 0, 0], chest: [0.25, 0, 0], neck: [-0.25, 0, 0], head: [-0.25, 0, 0], thighL: [-0.2, 0, 0], thighR: [-0.2, 0, 0], shinL: [0.35, 0, 0], shinR: [0.35, 0, 0], footL: [-0.15, 0, 0], footR: [-0.15, 0, 0], hips: [0, 0, 0, 0, -0.04, 0] }),
-    actions: {
-      cast: act2(
-        { armR: [-0.3, 0, -0.3], foreR: [-1.6, 0, 0], handR: [0.3, 0, 0], armL: [-1.0, 0, 0.6], foreL: [-0.9, 0, 0], chest: [-0.15, -0.3, 0], head: [-0.05, 0.2, 0], spine: [-0.05, 0, 0] },
-        { armR: [-1.35, 0, 0.2], foreR: [-0.5, 0, 0], handR: [0.2, 0, 0], armL: [-0.5, 0, 0.3], foreL: [-0.6, 0, 0], chest: [0.15, 0.2, 0], spine: [0.1, 0, 0], head: [-0.1, -0.15, 0], hips: [0, 0, 0, 0, -0.03, 0.08] },
-        { hit: 0.3, recover: 0.85, recoverAmt: 0.25, windupExtra: (P, p, m) => P.r('jaw', 0.4 * p + Math.sin(m.time * 25) * 0.1 * p) },
-      ),
-      summon: act2(
-        { armR: [-0.7, 0, -0.2], foreR: [-1.2, 0, 0], handR: [0.4, 0, 0], armL: [-0.6, 0, 0.4], foreL: [-1.3, 0, 0], chest: [0.2, 0, 0], head: [0.2, 0, 0] },
-        { armR: [-2.6, 0, -0.2], foreR: [-0.1, 0, 0], handR: [0.2, 0, 0], armL: [-2.4, 0, 0.5], foreL: [-0.3, 0, 0], chest: [-0.3, 0, 0], head: [-0.5, 0, 0], jaw: [0.6, 0, 0] },
-        { hit: 0.4, recover: 0.85 },
-      ),
+    stance: (P) => P.apply({ spine: [0.32, 0, 0], chest: [0.3, 0, 0], neck: [-0.3, 0, 0], head: [-0.3, 0, 0], thighL: [-0.22, 0, 0], thighR: [-0.22, 0, 0], shinL: [0.38, 0, 0], shinR: [0.38, 0, 0], footL: [-0.15, 0, 0], footR: [-0.15, 0, 0], hips: [0, 0, 0, 0, -0.05, 0] }),
+    actions: { cast: SH_CAST, summon: SH_SUMMON },
+    extra: (P, m, s, dt, k) => {
+      tailSway(P, m, 6, k.w);
+      const T = m.time;
+      if (!k.action) {
+        P.r('jaw', Math.max(0, Math.sin(T * 11)) * 0.05);
+        // muttering over the staff: the free hand paws the air, the head bobs and twitches
+        P.r('armL', Math.sin(T * 1.9) * 0.12, 0, 0); P.r('handL', Math.sin(T * 3.1) * 0.3, 0, 0);
+        P.r('head', Math.sin(T * 2.3) * 0.05, Math.sin(T * 0.7 + m.seed * 4) * 0.2, 0);
+      }
+      glowLevel(m, s.anim === 'windup' || s.anim === 'cast' ? 1 + 0.6 * smooth(0, 1, s.progress) : 1);
     },
-    extra: (P, m, s, dt, k) => { tailSway(P, m, 6, k.w); if (!k.action) P.r('jaw', Math.max(0, Math.sin(m.time * 11)) * 0.05); },
   },
 };
 

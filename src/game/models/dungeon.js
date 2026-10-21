@@ -8,7 +8,7 @@ const BONE_C = BONE_PALE;
 const RUST = RUSTY;
 
 // rusted iron: bare metal mottled with orange-brown rust blooms (iron albedo is dark: tints sit above 1)
-const IRON_BARE = [1.55, 1.5, 1.48], IRON_RUST = [2.05, 1.12, 0.66];
+const IRON_BARE = [1.5, 1.46, 1.45], IRON_RUST = [1.75, 1.05, 0.72];
 function rustFn(seed = 0, amt = 1) {
   return (v) => {
     const n = vnoise(v.x * 11 + seed, v.y * 8, v.z * 11, 33 + seed), st = vnoise(v.x * 30, v.y * 3, v.z * 30, 7 + seed), d = 0.78 + 0.36 * vnoise(v.x * 45, v.y * 45, v.z * 45, 5);
@@ -423,7 +423,7 @@ function cellDoor(rig, bone, t, w = 0.64, h = 1.0) {
   for (let i = 0; i < 5; i++) fr.push(xf(G.cone(0.022, 0.09, 4), { x: (i - 2) * w / 5.4, y: h / 2 + 0.07 }));
   fr.push(xf(G.box(0.15, 0.17, 0.07), { x: w * 0.22, y: 0.02, z: 0.045 }));
   rig.add(bone, 'iron', mergeRaw(fr), t, IR);
-  rig.add(bone, 'iron', rivets([-1, -0.5, 0, 0.5, 1].flatMap((x) => [[x * w * 0.44, -h * 0.24, 0.047], [x * w * 0.44, h * 0.24, 0.047]]), 0.012), t, { c: [2.0, 1.25, 0.8] });
+  rig.add(bone, 'iron', rivets([-1, -0.5, 0, 0.5, 1].flatMap((x) => [[x * w * 0.44, -h * 0.24, 0.047], [x * w * 0.44, h * 0.24, 0.047]]), 0.012), t, { c: [1.6, 1.15, 0.85] });
   rig.add(bone, 'dark', mergeRaw([xf(G.cyl(0.012, 0.012, 0.02, 6), { rx: Math.PI / 2, x: w * 0.22, y: 0.04, z: 0.08 }), xf(G.box(0.01, 0.035, 0.02), { x: w * 0.22, y: 0.012, z: 0.08 })]), t);
 }
 const JL_SKIN = [0.42, 0.3, 0.26];
@@ -452,11 +452,11 @@ export const jailer = {
     addFleshBody(rig, D, { c: JL_SKIN, cfn: jlSkin, muscle: 2.05, belly: 0.15, bellyY: 0.15, depth: 1.25, seed: 21, torsoW: 1.14, hunch: 0.05, veins: true, veinC: [0.36, 0.24, 0.24], grip: { R: true, L: true } });
     const LEA = [0.62, 0.45, 0.33];
     // leather apron, braces and belt
-    rig.add('chest', 'leather', panel(0.54, 1.18, { ws: 6, hs: 8, tatter: 0.1, seed: 3, curve: 0.2, taperBot: 0.85 }), { y: D.chest * 0.75, z: 0.215, rx: 0.08 }, {
+    rig.add('chest', 'leather', deform(panel(0.56, 1.2, { ws: 6, hs: 8, tatter: 0.1, seed: 3, curve: 0.24, taperBot: 0.85 }), (v) => { v.z += clamp(-v.y, 0, 0.5) * 0.17; }), { y: D.chest * 0.78, z: 0.29 }, {
       cfn: (v) => { const n = vnoise(v.x * 7, v.y * 6, 1, 23), k = 0.75 + 0.35 * vnoise(v.x * 25, v.y * 25, 0, 2), b = smooth(0.58, 0.78, n); return [lerp(0.78, 0.4, b) * k, lerp(0.58, 0.12, b) * k, lerp(0.44, 0.1, b) * k]; },
       skin: chainSkin([['thighL', -0.95], ['hips', -0.55], ['chest', 0.0]], (v) => v.y), anim: (v) => clamp((-v.y - 0.6) * 0.8) * 0.5,
     });
-    rig.add('chest', 'leather', mergeRaw([xf(G.box(0.06, 0.66, 0.022), { x: 0.17, y: D.chest * 0.65, z: 0.2, rx: -0.4, rz: 0.1 }), xf(G.box(0.06, 0.66, 0.022), { x: -0.17, y: D.chest * 0.65, z: 0.2, rx: -0.4, rz: -0.1 })]), {}, { c: [0.45, 0.3, 0.2] });
+    rig.add('chest', 'leather', mergeRaw([xf(G.box(0.06, 0.5, 0.022), { x: 0.17, y: D.chest * 0.78, z: 0.25, rx: -0.55, rz: 0.1 }), xf(G.box(0.06, 0.5, 0.022), { x: -0.17, y: D.chest * 0.78, z: 0.25, rx: -0.55, rz: -0.1 })]), {}, { c: [0.45, 0.3, 0.2] });
     rig.add('hips', 'leather', xf(G.cyl(0.31, 0.31, 0.09, 18, true), { sz: 0.86 }), { y: 0.02 }, { c: [0.4, 0.28, 0.18] });
     rig.add('hips', 'iron', G.box(0.11, 0.1, 0.03), { y: 0.02, z: 0.275 }, { cfn: rustFn(2) });
     // heavy leather shoulder mantle under the mask
@@ -631,7 +631,15 @@ export const executionerGuard = {
   id: 'executionerGuard', height: 2.5, radius: 0.65, eyeColor: 0xff3a20, elite: true, defaultAttack: 'slam', attackTypes: ['slam', 'sweep'],
   build(rig) { return buildHeadsman(rig, {}); },
   pose: humanoidPose,
-  anim: HEADSMAN_ANIM,
+  anim: {
+    ...HEADSMAN_ANIM,
+    stagger: { spine: [-0.2, 0.1, 0.06], chest: [-0.18, 0.15, 0], head: [-0.3, -0.2, 0.1], armL: [0.2, 0, 0.4], foreL: [-0.5, 0, 0], hips: [0, 0, 0, 0, -0.05, -0.1], thighL: [-0.3, 0, 0], shinL: [0.4, 0, 0] },
+    extra: (P, m, s, dt, k) => {
+      // eyes burn hotter through the wind-up; a slow, heavy breath heaves the shoulders
+      glowLevel(m, s.anim === 'windup' ? 1 + 1.1 * smooth(0, 1, s.progress) : s.anim === 'death' ? 1 - 0.9 * smooth(0.3, 0.9, s.progress) : 1);
+      P.r('chest', Math.max(0, Math.sin(m.time * 1.3 + m.seed * 3)) * 0.04 * (k.action ? 0.3 : 1), 0, 0);
+    },
+  },
 };
 export { HEADSMAN_ANIM };
 
