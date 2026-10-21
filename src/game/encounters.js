@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { ROOM, T } from '../world/levelgen.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getSharedMaterials } from '../world/materials.js';
 import { SPR } from '../render/particles.js';
 import { getAvatar, getEnemyModel } from './models.js';
@@ -175,8 +176,8 @@ export class Encounters {
       }
       if (near && Math.random() < dt * 0.06) g.audio?.play('ghost_wail', { pos: new THREE.Vector3(rx(), 2, rz()), volume: 0.3 });
     } else if (room.mod === 'surge') {
-      if (near && Math.random() < dt * (active ? 22 : 8)) P.glow({ x: rx(), y: 0.1, z: rz(), vx: rand(-0.2, 0.2), vy: rand(0.6, 1.6), vz: rand(-0.2, 0.2), r: 1.4, g: 0.6, b: 2.6, life: rand(1.5, 2.5), size: rand(0.08, 0.2), sprite: Math.random() < 0.3 ? SPR.RUNE : SPR.SPARK, drag: 0.2, spin: 1 });
-      if (active && Math.random() < dt * 1.6) g.vfx.decal(new THREE.Vector3(rx(), g.groundY(0, 0), rz()), 'glyph', rand(1.6, 2.6), 1.6, 0x7040ff);
+      if (near) for (let n = Math.floor(dt * (active ? 45 : 14) + Math.random()); n > 0; n--) P.glow({ x: rx(), y: rand(0.05, 0.4), z: rz(), vx: rand(-0.25, 0.25), vy: rand(0.6, 1.8), vz: rand(-0.25, 0.25), r: 1.5, g: 0.7, b: 3, r2: 0.4, g2: 0.1, b2: 1.2, life: rand(1.6, 2.8), size: rand(0.1, 0.26), sprite: Math.random() < 0.35 ? SPR.RUNE : SPR.SPARK, drag: 0.2, spin: 1 });
+      if (active && Math.random() < dt * 2.5) g.vfx.decal(new THREE.Vector3(rx(), g.groundY(0, 0), rz()), 'glyph', rand(1.6, 2.6), 1.6, 0x7040ff);
       if (active && inRoom) {
         // everyone's spells come back faster while the surge lasts (re-armed, not re-added, each frame)
         const p = g.player, b = p.buffs.find((x) => x.id === 'surge');
@@ -492,9 +493,18 @@ export class Encounters {
       const horn = this._mesh(new THREE.ConeGeometry(0.07, 0.42, 6), m.bone, root);
       horn.position.set(sx * 0.78, 1.32, sz * 0.48); horn.rotation.set(sz * 0.35, 0, -sx * 0.35);
     }
-    const runes = new THREE.Group(); root.add(runes);
-    for (let i = 0; i < 7; i++) { const r = this._mesh(new THREE.PlaneGeometry(0.07, 0.2), RUNE_MAT, runes); r.position.set(-0.6 + i * 0.2, 0.65 + (i % 2) * 0.08, 0.478); r.rotation.z = (i % 3 - 1) * 0.4; }
-    for (let i = 0; i < 7; i++) { const r = this._mesh(new THREE.PlaneGeometry(0.07, 0.2), RUNE_MAT, runes); r.position.set(-0.6 + i * 0.2, 0.65 + (i % 2) * 0.08, -0.478); r.rotation.set(0, Math.PI, (i % 3 - 1) * 0.4); }
+    // runes cut into the front and back: each a few thin glowing strokes
+    const R = new RNG(this.level.seed + room.id), strokes = [];
+    for (const side of [1, -1]) for (let i = 0; i < 6; i++) {
+      const cx = -0.55 + i * 0.22, cy = 0.62 + (i % 2) * 0.06;
+      for (let k = 0; k < 3; k++) {
+        const st = new THREE.PlaneGeometry(0.014, R.range(0.08, 0.16)).rotateZ(R.range(-0.9, 0.9)).translate(R.range(-0.035, 0.035), R.range(-0.04, 0.04), 0);
+        if (side < 0) st.rotateY(Math.PI);
+        strokes.push(st.translate(cx * side, cy, 0.478 * side));
+      }
+    }
+    this._mesh(mergeGeometries(strokes), RUNE_MAT, root);
+    for (const st of strokes) st.dispose();
     // candles on the corners, their flames drawn by the realm's flame emitters
     for (const [x, z] of [[0.72, 0.42], [-0.72, 0.42], [0.72, -0.42], [-0.72, -0.42]]) {
       const cd = this._mesh(new THREE.CylinderGeometry(0.035, 0.04, 0.22, 8), m.candle, root); cd.position.set(x, 1.24, z);
@@ -507,7 +517,8 @@ export class Encounters {
       kind: 'altar', id: 'altar' + room.id, pos: new THREE.Vector3(at.x, gy + 1.2, at.z), r: 3, label: 'Kneel at the Blood Altar', usedBy: new Set(),
       update: (dt, t) => {
         // the blood stirs; runes pulse
-        RUNE_MAT.color.setRGB(1.6 + Math.sin(t * 2.1) * 0.8, 0.18, 0.14);
+        const k = 0.75 + Math.sin(t * 2.1) * 0.25;
+        RUNE_MAT.color.setRGB(1.5 * k, 0.12 * k, 0.08 * k);
         if (Math.random() < dt * 3) g.vfx.P.glow({ x: at.x + rand(-0.3, 0.3), y: gy + 1.3, z: at.z + rand(-0.3, 0.3), vy: rand(0.2, 0.6), r: 1.6, g: 0.1, b: 0.08, life: 1.2, size: 0.05, sprite: SPR.BUBBLE });
       },
     });
@@ -520,13 +531,16 @@ export class Encounters {
     const npc = getAvatar('warlock', g);
     npc.root.position.set(at.x, gy, at.z - 1.15);
     npc.root.rotation.y = 0;
-    npc.setTint?.(0x2a1a30, 0.55);
+    npc.setTint?.(0x5a3a50, 0.35);
     this.group.add(npc.root);
     this.disposers.push(() => npc.dispose?.());
     const ty = gy + 0.86; // table top (props.js table)
     for (let i = 0; i < 3; i++) { const d = this._mesh(new THREE.BoxGeometry(0.09, 0.09, 0.09), m.bone); d.position.set(at.x - 0.25 + i * 0.16, ty + 0.045, at.z + 0.25 + (i % 2) * 0.1); d.rotation.set(i, i * 0.7, 0); }
     for (let i = 0; i < 9; i++) { const c = this._mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.02, 10), m.gold); c.position.set(at.x + 0.35 + rand(-0.12, 0.12), ty + 0.01 + (i % 4) * 0.02, at.z + 0.1 + rand(-0.1, 0.1)); }
-    g.lights.addTorch(new THREE.Vector3(at.x + 0.6, gy + 1.8, at.z + 0.4), { color: 0xffc070, intensity: 10, range: 7, flicker: 0.4 });
+    // a candle on the table lights the gambler's face from below
+    g.lights.addTorch(new THREE.Vector3(at.x + 0.4, gy + 1.3, at.z - 0.2), { color: 0xffc070, intensity: 12, range: 6, flicker: 0.4 });
+    const cd = this._mesh(new THREE.CylinderGeometry(0.035, 0.04, 0.2, 8), m.candle); cd.position.set(at.x + 0.4, ty + 0.1, at.z - 0.2);
+    g.built.flames.push({ x: at.x + 0.4, y: ty + 0.22, z: at.z - 0.2, size: 0.25, kind: 'candle' });
     g.interactables.push({
       kind: 'gambler', id: 'gambler' + room.id, pos: new THREE.Vector3(at.x, gy + 1.1, at.z), r: 3.2, label: 'Wager with the Gambler', wagers: 0,
       update: (dt, t) => {
