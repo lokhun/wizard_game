@@ -97,7 +97,7 @@ async function boot() {
   else if (q.get('autostart')) { if (CLASS_IDS.includes(q.get('autostart'))) selectedClass = q.get('autostart'); startSolo(); }
   else showMenu();
   // test hook: pretend the pointer is locked so automated tests can drive input
-  if (q.get('test')) { input.locked = true; Object.defineProperty(input, 'locked', { get: () => true, set: () => {} }); window.__input = input;
+  if (q.get('test')) { input.locked = true; Object.defineProperty(input, 'locked', { get: () => true, set: () => {} }); window.__input = input; window.__THREE = THREE; // test scripts (scripts/glare.js) need math classes
     // advance the simulation without rendering (fast, deterministic tests)
     window.__sim = (sec, step = 1 / 30, each) => { for (let t = 0; t < sec; t += step) { each?.(t); game.update(step); input.endFrame(); } };
   }

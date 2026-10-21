@@ -74,6 +74,27 @@
     }
     blame.sort((a, b) => b.d - a.d);
     hit.blame = blame.slice(0, 5);
+    // and what the eye is looking at: rays through a grid of screen points
+    const seen = new Map();
+    const cam = g.renderer.camera;
+    const picks = [];
+    const Ray = window.__THREE?.Raycaster;
+    if (Ray) {
+      const r = new Ray(), v = new window.__THREE.Vector2();
+      for (let iy = 0; iy < 5; iy++) for (let ix = 0; ix < 8; ix++) {
+        v.set(-0.875 + ix * 0.25, -0.8 + iy * 0.4);
+        r.setFromCamera(v, cam);
+        const h = r.intersectObjects(g.scene.children, true).find((x) => x.object.visible && !x.object.isPoints && x.object !== g.vfx.P.add.mesh && x.object !== g.vfx.P.alpha.mesh);
+        if (!h) continue;
+        const o = h.object, m = Array.isArray(o.material) ? o.material[0] : o.material;
+        const key = o.uuid;
+        if (seen.has(key)) { seen.get(key).n++; continue; }
+        const chain = []; for (let q = o; q && chain.length < 4; q = q.parent) chain.push(q.name || q.type);
+        const e = { n: 1, d: +h.distance.toFixed(1), mat: m?.type + ':' + (m?.name || ''), col: m?.color?.toArray().map((x) => +x.toFixed(2)), em: m?.emissive ? m.emissive.toArray().map((x) => +(x * (m.emissiveIntensity ?? 1)).toFixed(2)) : undefined, blend: m?.blending, chain: chain.join('<') };
+        seen.set(key, e); picks.push(e);
+      }
+    }
+    hit.picks = picks.sort((a, b) => b.n - a.n).slice(0, 8);
     // pin the offending frame over the page for the closing screenshot
     g.renderer.render(performance.now() / 1000);
     const shot = document.createElement('canvas');
