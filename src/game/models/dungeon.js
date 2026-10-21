@@ -1,166 +1,393 @@
 import * as THREE from 'three';
 import { G, xf, lathe, shell, robe, panel, tube, taper, extrude, deform, bumpy, mergeRaw, chainSkin, rng, vnoise, clamp, lerp, TAU, smooth, bump, easeOut, easeIn } from './core.js';
 import { humanSkeleton, humanoidPose, act2, ACT } from './humanoid.js';
-import { twoSided, addSkull, addSkeletonBody, addBoneHand, addFleshHand, addSword, addRoundShield, addAxe, addTowerShield, addClub, pointedHood, addFleshBody, pauldron, kettleHat, HDR, belt, rivets, addBow, hood, STEEL, RUSTY, DARKSTEEL, BRASS } from './parts.js';
+import { glowLevel } from './bossKit.js';
+import { twoSided, addSkull, addSkeletonBody, addBoneHand, addFleshHand, addSword, swordGeo, addRoundShield, addAxe, addTowerShield, addClub, pointedHood, addFleshBody, pauldron, kettleHat, HDR, belt, rivets, addBow, hood, BONE_PALE, boneShade, thinBone, STEEL, RUSTY, DARKSTEEL, BRASS } from './parts.js';
 
-const BONE_C = 0xe2d8c2;
+const BONE_C = BONE_PALE;
 const RUST = RUSTY;
 
-// rusty nasal helm
-function nasalHelm(r = 0.118) {
+// rusted iron: bare metal mottled with orange-brown rust blooms (iron albedo is dark: tints sit above 1)
+const IRON_BARE = [1.5, 1.46, 1.45], IRON_RUST = [1.75, 1.05, 0.72];
+function rustFn(seed = 0, amt = 1) {
+  return (v) => {
+    const n = vnoise(v.x * 11 + seed, v.y * 8, v.z * 11, 33 + seed), st = vnoise(v.x * 30, v.y * 3, v.z * 30, 7 + seed), d = 0.78 + 0.36 * vnoise(v.x * 45, v.y * 45, v.z * 45, 5);
+    const r = smooth(0.38, 0.72, n * 0.8 + st * 0.3) * amt;
+    return [lerp(IRON_BARE[0], IRON_RUST[0], r) * d, lerp(IRON_BARE[1], IRON_RUST[1], r) * d, lerp(IRON_BARE[2], IRON_RUST[2], r) * d];
+  };
+}
+// faded, grimy cloth: base colour darkened toward a ragged hem and in blotches
+function ragFn(c, hemY = -1, seed = 1) {
+  return (v) => {
+    const n = vnoise(v.x * 9 + seed, v.y * 9, v.z * 9, 11 + seed), k = (0.72 + 0.4 * n) * (1 - smooth(hemY + 0.12, hemY, v.y) * 0.45);
+    return [c[0] * k, c[1] * k, c[2] * k];
+  };
+}
+
+// segmented rusty spangenhelm: domed bowl, brow band, four riveted ribs, nasal; dented on one side
+function spangenhelm() {
+  const r = 0.112;
+  const dome = lathe([[r, 0], [r * 1.012, 0.035], [r * 0.94, 0.08], [r * 0.72, 0.124], [r * 0.38, 0.152], [0.001, 0.166]], 12);
+  deform(dome, (v) => { v.z *= 1.1; v.x *= 0.97; const dn = Math.exp(-((v.x - 0.07) ** 2 + (v.y - 0.09) ** 2 + (v.z - 0.03) ** 2) / 0.0012) * 0.016; v.x -= dn; });
+  const ribs = [];
+  for (let i = 0; i < 4; i++) {
+    const a = Math.PI / 4 + i * Math.PI / 2, pts = [];
+    for (let k = 0; k <= 4; k++) { const t = k / 4, ph = t * Math.PI / 2 * 0.96; pts.push([Math.sin(a) * Math.cos(ph) * (r + 0.004) * 0.97, 0.012 + Math.sin(ph) * 0.15, Math.cos(a) * Math.cos(ph) * (r + 0.004) * 1.1]); }
+    ribs.push(tube(pts, 0.007, 6, 3));
+  }
   return mergeRaw([
-    lathe([[r, 0], [r * 1.02, 0.05], [r * 0.95, 0.1], [r * 0.7, 0.15], [r * 0.25, 0.175], [0.001, 0.18]], 14),
-    xf(G.tor(r * 1.01, 0.008, 4, 18), { rx: Math.PI / 2, y: 0.005 }),
-    xf(G.box(0.022, 0.09, 0.012), { z: r + 0.004, y: -0.03 }),
-    xf(G.box(0.012, 0.16, 0.01), { z: 0, y: 0.1, rx: -0.15, sz: 1 }),
+    dome,
+    xf(G.tor(r * 1.02, 0.01, 4, 16), { rx: Math.PI / 2, y: 0.012, sx: 0.97, sy: 1.1 }),
+    ...ribs,
+    xf(G.box(0.024, 0.085, 0.012), { z: r * 1.1 + 0.006, y: -0.028 }),
+    xf(G.oct(0.016), { y: 0.168 }),
+    ...[0, 1, 2, 3, 4, 5, 6, 7].map((i) => { const a = (i / 8) * TAU + 0.2; return xf(G.oct(0.007), { x: Math.sin(a) * r * 1.0, y: 0.014, z: Math.cos(a) * r * 1.13 }); }),
   ]);
 }
 
+// Round shield, face toward +Z in shield space: planked, a faded painted cross, an iron boss and a
+// broken, rimless bite out of one edge; an old arrow still stuck in it.
+function skelShield(rig, bone, t, o = {}) {
+  const r = o.r ?? 0.3, a0 = 2.35;
+  const bite = (a) => { const d = Math.atan2(Math.sin(a - a0), Math.cos(a - a0)); return 0.2 * Math.exp(-((d / 0.24) ** 2)) * (0.75 + 0.25 * Math.sin(a * 37)); };
+  const face = xf(G.cyl(r, r, 0.03, 22), { rx: Math.PI / 2 });
+  deform(face, (v) => {
+    const a = Math.atan2(v.y, v.x), rr = Math.hypot(v.x, v.y);
+    if (rr > 1e-4) { const k = 1 - bite(a) * (rr / r) ** 3; v.x *= k; v.y *= k; }
+    v.z += (1 - (v.x * v.x + v.y * v.y) / (r * r)) * 0.03 * Math.sign(v.z + 1e-4);
+  });
+  const paint = (v) => {
+    const plank = Math.floor((v.x / r + 1) * 3.5), pk = 0.82 + (plank % 2) * 0.16 + vnoise(plank * 3.1, v.y * 5, 0, 4) * 0.12;
+    const scr = vnoise(v.x * 40, v.y * 40, 0, 9), worn = smooth(0.45, 0.75, vnoise(v.x * 7 + 3, v.y * 7, 1, 3) + scr * 0.25);
+    let c = (Math.abs(v.x + v.y * 0.15) < r * 0.13 || Math.abs(v.y - 0.02) < r * 0.13) ? [1.35, 0.98, 0.5] : [1.05, 0.3, 0.22];
+    if (v.z < 0) c = [0.62, 0.5, 0.4];
+    return [lerp(c[0], 0.95, worn) * pk, lerp(c[1], 0.78, worn) * pk, lerp(c[2], 0.62, worn) * pk];
+  };
+  rig.add(bone, 'wood', face, t, { cfn: paint });
+  const IR = { cfn: rustFn(3) };
+  rig.add(bone, 'iron', xf(G.tor(r, 0.016, 4, 22, TAU - 0.95), { rz: a0 + 0.475 }), t, IR);
+  rig.add(bone, 'iron', mergeRaw([
+    xf(G.sph(0.068, 9, 4, 0, TAU, 0, Math.PI / 2), { rx: Math.PI / 2, z: 0.03 }),
+    xf(G.cyl(0.09, 0.09, 0.012, 10), { rx: Math.PI / 2, z: 0.032 }),
+    ...[0, 1, 2, 3, 4, 5, 6, 7].map((i) => { const a = (i / 8) * TAU + 0.4; return Math.abs(Math.atan2(Math.sin(a - a0), Math.cos(a - a0))) < 0.45 ? null : xf(G.oct(0.011), { x: Math.cos(a) * r * 0.86, y: Math.sin(a) * r * 0.86, z: 0.032 }); }).filter(Boolean),
+  ]), t, IR);
+  if (o.arrow !== false) {
+    const ar = { x: -0.09, y: 0.1, z: 0.02, rx: -0.45, ry: 0.3 };
+    rig.add(bone, 'wood', xf(xf(G.cyl(0.0055, 0.0055, 0.4, 4), { rx: Math.PI / 2, z: 0.15 }), ar), t, { c: [0.85, 0.7, 0.5] });
+    rig.add(bone, 'cloth', xf(mergeRaw([xf(G.box(0.003, 0.03, 0.07), { z: 0.31 }), xf(G.box(0.03, 0.003, 0.07), { z: 0.31 })]), ar), t, { c: [0.55, 0.5, 0.42] });
+  }
+}
+
+function skelSword(rig, bone, o = {}) {
+  const sw = swordGeo({ len: o.len ?? 0.8, w: o.w ?? 0.072, notch: 0.45, seed: o.seed ?? 3, guardW: 0.2, grip: 0.13 });
+  const t = { y: -0.07 };
+  rig.add(bone, 'iron', sw.blade, t, { cfn: rustFn(7, 0.75) });
+  rig.add(bone, 'iron', mergeRaw([sw.guard, sw.pommel]), t, { cfn: rustFn(2, 1.2) });
+  rig.add(bone, 'leather', sw.grip, t, { c: [0.45, 0.32, 0.24] });
+}
+
+// ------------------------------------------------- skeleton animation ----
+// Shared by the warrior and archer: rattling idle, a jaw that chatters, sudden head twitches;
+// a stagger that shakes every bone; a death where the body comes apart into a heap on the floor
+// (skull bouncing off on its own), and a spawn that either claws up out of the floor or, after a
+// collapse, snaps the heap back together piece by piece.
+const SK_STAGGER = { spine: [-0.3, 0.18, 0.1], chest: [-0.28, 0.25, 0.05], neck: [-0.2, 0, 0], head: [-0.45, -0.4, 0.25], armL: [0.45, 0, 0.75], armR: [0.4, 0, -0.65], foreL: [-0.4, 0, 0], foreR: [-0.7, 0, 0], hips: [0, 0, 0, 0, -0.05, -0.12], thighL: [-0.35, 0, 0], shinL: [0.45, 0, 0], thighR: [0.15, 0, 0], jaw: [0.65, 0, 0] };
+// mirror a pose dict left <-> right (swap L/R bones, negate yaw, roll and x offset)
+function mirrorPose(src) {
+  const out = {};
+  for (const k in src) {
+    const n = /[a-z]L$/.test(k) ? k.slice(0, -1) + 'R' : /[a-z]R$/.test(k) ? k.slice(0, -1) + 'L' : k;
+    out[n] = src[k].map((x, i) => (i === 1 || i === 2 || i === 3 ? -x : x));
+  }
+  return out;
+}
+// The heap, in groups so death / reassembly can stage them: pelvis on the floor, legs splayed out flat,
+// the ribcage tipped onto its side, arms fallen off the shoulders, the skull rolled away, jaw loose.
+// Built for falling to the right (sd = 1) and mirrored for the left. (Skeleton hip height: 0.96.)
+const SK_HIP = 0.96;
+const SK_PILE_R = {
+  hips: { hips: [-0.1, 0.3, 0, 0, -(SK_HIP - 0.13), -0.04] },
+  legs: { thighL: [-1.52, 0, 0.35], shinL: [0.05, 0, 0], footL: [0.9, 0, 0], thighR: [-1.5, 0, -0.5], shinR: [-0.06, 0, 0], footR: [0.7, 0, 0] },
+  torso: { spine: [-0.25, 0, 0.9, 0, -0.06, 0], chest: [0.15, 0.2, 0.5, 0, -0.04, 0], neck: [0.2, 0, 0.3] },
+  arms: { armL: [-1.3, 0, -0.35, -0.36, -0.05, 0.18], foreL: [-0.5, 0, 0], handL: [0.4, 0, 0], armR: [-0.5, 0, 0.25], foreR: [-0.3, 0, 0], handR: [0.3, 0, 0] },
+  head: { head: [0.5, 0.3, 1.0, -0.12, 0.1, 0.25], jaw: [0.7, 0, 0.2, 0, -0.02, 0.01] },
+};
+const SK_PILE = { 1: SK_PILE_R, [-1]: Object.fromEntries(Object.entries(SK_PILE_R).map(([k, v]) => [k, mirrorPose(v)])) };
+const SK_HIT_R = { head: [-0.5, 0.2, 0], jaw: [0.6, 0, 0], chest: [-0.25, 0.2, 0], armL: [-0.6, 0, 0.6], armR: [-0.5, 0, -0.5], foreL: [-0.5, 0, 0], foreR: [-0.6, 0, 0] };
+const SK_HIT = { 1: SK_HIT_R, [-1]: mirrorPose(SK_HIT_R) };
+// knees buckled into a crouch: the bridge between standing and the heap (both ways)
+const SK_CROUCH = { hips: [0.3, 0, 0, 0, -0.43, -0.05], thighL: [-1.3, 0, 0.2], thighR: [-1.25, 0, -0.2], shinL: [2.0, 0, 0], shinR: [2.0, 0, 0], footL: [-0.6, 0, 0], footR: [-0.6, 0, 0], spine: [0.25, 0, 0], head: [0.2, 0, 0] };
+// ... then sat down hard, knees up, on the way to the heap
+const SK_SIT = { hips: [-0.05, 0, 0, 0, -(SK_HIP - 0.27), -0.08], thighL: [-2.1, 0, 0.25], thighR: [-2.05, 0, -0.3], shinL: [1.7, 0, 0], shinR: [1.75, 0, 0], footL: [-0.3, 0, 0], footR: [-0.3, 0, 0] };
+const SK_RISE = { armL: [-2.6, 0, 0.3], armR: [-2.4, 0, -0.3], foreL: [-0.4, 0, 0], foreR: [-0.6, 0, 0], spine: [0.3, 0, 0], head: [-0.4, 0, 0], jaw: [0.5, 0, 0] };
+function skDeath(P, p, m) {
+  const sd = m.seed > 0.5 ? 1 : -1, H = SK_PILE[sd];
+  // the blow: head snaps back and arms fling; then the joints let go and everything drops (gravity: ease-in)
+  P.apply(SK_HIT[sd], bump(0, 0.22, p));
+  const a = easeIn(smooth(0.05, 0.3, p)), b = smooth(0.26, 0.44, p), k = smooth(0.42, 0.62, p);
+  P.apply(SK_CROUCH, a * (1 - b)); P.apply(SK_SIT, b * (1 - k));
+  P.apply(H.hips, k); P.apply(H.legs, k); P.apply(H.torso, smooth(0.28, 0.62, p)); P.apply(H.arms, smooth(0.32, 0.6, p)); P.apply(H.head, smooth(0.3, 0.66, p));
+  // the skull lands last, bounces once and rocks to a stop; the eyes gutter out
+  P.p('head', 0, (bump(0.62, 0.8, p) * 0.08 + bump(0.8, 0.9, p) * 0.025), 0);
+  P.r('head', 0, 0, Math.sin(p * 18) * 0.15 * bump(0.6, 1, p));
+  P.r('jaw', bump(0.65, 0.85, p) * 0.3);
+  glowLevel(m, 1 - smooth(0.35, 0.75, p) * 0.97);
+  return p < 0.6 ? 20 : 14;
+}
+function skSpawn(P, p, m) {
+  const sd = m.seed > 0.5 ? 1 : -1, T = m.time;
+  if (m.state.prevAnim === 'death') {
+    // reassemble: legs pull straight, the pelvis hauls up, the ribcage rights itself, arms snap on,
+    // and the skull hops back onto the neck; each piece arrives with a jerk, the eyes rekindle last
+    const H = SK_PILE[sd];
+    const kp = 1 - smooth(0.0, 0.22, p), ks = 1 - smooth(0.18, 0.42, p), kc = 1 - smooth(0.42, 0.72, p);
+    P.apply(H.legs, kp); P.apply(H.hips, kp); P.apply(SK_SIT, (1 - kp) * ks); P.apply(SK_CROUCH, (1 - ks) * kc); P.apply(H.torso, 1 - smooth(0.25, 0.6, p));
+    P.apply(H.arms, 1 - smooth(0.45, 0.72, p)); P.apply(H.head, 1 - smooth(0.62, 0.86, p));
+    P.p('head', 0, bump(0.6, 0.8, p) * 0.12, 0);
+    const rat = bump(0, 0.9, p) * 0.06;
+    P.r('chest', Math.sin(T * 41) * rat, Math.sin(T * 37) * rat, 0); P.r('armL', Math.sin(T * 47) * rat * 2); P.r('armR', Math.sin(T * 43) * rat * 2);
+    P.r('head', 0, Math.sin(p * 30) * 0.25 * bump(0.82, 1, p), 0); P.r('jaw', bump(0.8, 1, p) * 0.5);
+    glowLevel(m, 0.03 + smooth(0.8, 0.95, p) * 0.97);
+    return 18;
+  }
+  // claw up out of the floor
+  glowLevel(m, 1);
+  const u = easeOut(p), k = 1 - smooth(0.6, 1, p);
+  P.p('base', 0, -(1 - u) * m.spec.height * 1.05, 0);
+  P.apply(SK_RISE, k);
+  P.r('armL', Math.sin(T * 9) * 0.25 * k); P.r('armR', Math.sin(T * 9 + 2) * 0.25 * k);
+  P.r('base', Math.sin(T * 6) * 0.05 * k, 0, Math.sin(T * 5) * 0.06 * k);
+  return 22;
+}
+// idle / walk life: chattering jaw, bony twitches, a loose skull that lags each step, a faint rattle
+function skExtra(P, m, s, dt, k) {
+  const T = m.time, an = s.anim;
+  if (an === 'death' || an === 'spawn') return;
+  // the eye-lights flare through a wind-up (the tell before the blow)
+  glowLevel(m, an === 'windup' ? 1 + 0.9 * smooth(0, 1, s.progress) : 1);
+  if (an === 'stagger') {
+    const kk = s.t < 0.07 ? s.t / 0.07 : Math.exp(-(s.t - 0.07) * 4.5);
+    const r = kk * 0.14;
+    P.r('head', Math.sin(T * 43) * r, Math.sin(T * 37) * r * 1.5, Math.sin(T * 31) * r);
+    P.r('jaw', Math.max(0, Math.sin(T * 29)) * kk * 0.5);
+    P.r('armL', Math.sin(T * 39) * r); P.r('armR', Math.sin(T * 35 + 1) * r); P.r('foreL', Math.sin(T * 33) * r); P.r('foreR', Math.sin(T * 45) * r);
+    return;
+  }
+  if (!k.action) {
+    // jaw: slack, with bursts of chatter
+    const burst = smooth(0.7, 0.85, Math.sin(T * 0.53 + m.seed * 11));
+    P.r('jaw', 0.1 + Math.max(0, Math.sin(T * 0.9)) * 0.1 + Math.max(0, Math.sin(T * 34)) * 0.22 * burst);
+    // sudden head twitches
+    const ph = (T * 0.27 + m.seed * 3) % 1, j = ph < 0.05 ? Math.sin(ph / 0.05 * Math.PI) : 0, dir = Math.floor(T * 0.27 + m.seed * 3) % 2 ? 1 : -1;
+    P.r('head', -0.06 * j, 0.25 * j * dir, 0.4 * j * dir * (1 - k.w));
+  }
+  // walking: the skull nods a beat behind the step, shoulders roll, a faint rattle
+  const w = k.w;
+  P.r('head', Math.sin(k.ph * 2 - 0.9) * 0.07 * w, 0, Math.sin(k.ph - 0.6) * 0.06 * w);
+  P.r('chest', 0, 0, Math.sin(k.ph) * 0.05 * w);
+  P.r('jaw', Math.max(0, Math.sin(k.ph * 2 + 0.6)) * 0.12 * w);
+  const rt = 0.012 * w;
+  P.r('foreL', Math.sin(T * 47) * rt); P.r('foreR', Math.sin(T * 43) * rt); P.r('handL', Math.sin(T * 51) * rt * 2); P.r('handR', Math.sin(T * 53) * rt * 2);
+}
+const SK_BASE = { death: skDeath, spawn: skSpawn, stagger: SK_STAGGER };
+
 function skeletonBase(rig, o = {}) {
   const D = humanSkeleton(rig, { thigh: 0.43, shin: 0.42, spine: 0.14, chest: 0.3, neck: 0.08, shoulderW: 0.18, upper: 0.3, fore: 0.27, jaw: [0.045, 0.03], ...o.dims });
-  addSkeletonBody(rig, D, { c: o.boneC ?? BONE_C, grip: { R: true, L: o.gripL } });
-  addSkull(rig, 'head', 'jaw', { eye: o.eye ?? 0x5fd8ff, eyeK: 7, c: o.boneC ?? BONE_C });
+  addSkeletonBody(rig, D, { c: o.boneC ?? BONE_C, grip: { R: true, L: o.gripL }, seed: o.seed ?? 3, th: 1.12 });
+  addSkull(rig, 'head', 'jaw', { eye: o.eye ?? 0x5fd8ff, eyeK: 8, eyeR: 1.35, c: o.boneC ?? BONE_C, cfn: boneShade(o.boneC ?? BONE_C, 9), s: 1.06 });
   return D;
 }
 
 // ------------------------------------------------------------ skeleton ----
+// A dead man-at-arms: rusty spangenhelm with a mail aventail, a torn mail mantle over the
+// shoulders, a crimson rag of a surcoat, belt and baldric, a notched sword and a broken shield.
+const SK_SWING = act2(
+  { armR: [-2.7, 0.35, -0.75], foreR: [-1.35, 0, 0], handR: [-0.35, 0, 0], armL: [-0.72, -0.8, 0.38], foreL: [-1.2, 0, 0], chest: [-0.12, -0.65, 0], spine: [-0.06, -0.28, 0], neck: [0, 0.2, 0], head: [0.15, 0.45, 0], jaw: [0.55, 0, 0], hips: [0, -0.1, 0, 0, -0.07, -0.06], thighL: [-0.5, 0, 0.06], shinL: [0.45, 0, 0], thighR: [0.3, 0, -0.06], shinR: [0.35, 0, 0], footR: [-0.2, 0, 0] },
+  { armR: [-0.45, -0.45, 0.65], foreR: [-0.12, 0, 0], handR: [0.65, 0, 0], armL: [0.1, -0.3, 0.55], foreL: [-0.7, 0, 0], chest: [0.38, 0.7, 0], spine: [0.22, 0.3, 0], neck: [0, -0.15, 0], head: [-0.2, -0.45, 0], jaw: [0.25, 0, 0], hips: [0, 0.15, 0, 0, -0.12, 0.2], thighL: [0.35, 0, 0], shinL: [0.35, 0, 0], thighR: [-0.6, 0, 0], shinR: [0.55, 0, 0] },
+  { hit: 0.26, tremble: 0.035, recover: 0.6, strikeExtra: (P, p) => { const o = bump(0.18, 0.5, p) * 0.25; P.r('handR', o); P.r('foreR', -o * 0.5); } },
+);
 export const skeleton = {
-  id: 'skeleton', height: 1.8, radius: 0.4, eyeColor: 0x5fd8ff, defaultAttack: 'swing', attackTypes: ['swing', 'thrust'],
+  id: 'skeleton', height: 1.8, radius: 0.4, eyeColor: 0x5fd8ff, defaultAttack: 'swing', attackTypes: ['swing', 'thrust'], flutter: 0.035,
   build(rig) {
     const D = skeletonBase(rig);
-    rig.add('head', 'iron', nasalHelm(), { y: 0.115, z: 0.005 }, { c: RUST });
-    rig.add('armL', 'iron', pauldron(0.095, 3), { x: 0.025, y: -0.03, rz: 0.55, sy: 0.7 }, { c: RUST });
-    rig.add('armL', 'leather', G.tor(0.06, 0.009, 4, 12), { y: -0.07, rx: Math.PI / 2 }, { c: 0x4a3020 });
-    // harness strap across ribs
-    rig.add('chest', 'leather', xf(G.tor(0.17, 0.012, 4, 20), { rx: Math.PI / 2, sz: 0.6 }), { y: 0.17, rz: 0.55, z: -0.005 }, { c: 0x4a3020 });
-    rig.add('chest', 'iron', G.cyl(0.02, 0.02, 0.012, 8), { x: 0.06, y: 0.12, z: 0.1, rx: Math.PI / 2 }, { c: RUST });
-    // belt + tattered loincloth
-    rig.add('hips', 'leather', belt(0.14, 0.05, 0.75), { y: 0.02 }, { c: 0x3e2a1c });
-    rig.add('hips', 'iron', G.box(0.05, 0.045, 0.015), { y: 0.02, z: 0.11 }, { c: RUST });
-    rig.add('hips', 'cloth', panel(0.2, 0.38, { tatter: 0.35, seed: 4, curve: 0.05 }), { y: 0.0, z: 0.105 }, { c: 0x5a2420, anim: (v) => -v.y * 0.8 });
-    rig.add('hips', 'cloth', panel(0.24, 0.42, { tatter: 0.4, seed: 9, curve: -0.05 }), { y: 0.0, z: -0.09 }, { c: 0x4a201c, anim: (v) => -v.y * 0.8 });
-    // bracer on sword arm
-    rig.add('foreR', 'leather', G.cyl(0.034, 0.03, 0.13, 8), { y: -0.17 }, { c: 0x4a3020 });
-    addSword(rig, 'handR', { len: 0.78, notch: 0.35, bladeC: [2.1, 1.9, 1.7], seed: 3 });
-    addRoundShield(rig, 'foreL', { r: 0.3, y: -0.14, x: 0.07 });
+    const IRON = { cfn: rustFn(1) }, LEA = [0.62, 0.46, 0.36], CRIM = [0.42, 0.075, 0.06];
+    // helm + mail aventail hanging round the back and sides of the skull
+    rig.add('head', 'iron', spangenhelm(), { y: 0.118, z: 0.006 }, IRON);
+    rig.add('head', 'mail', coatSkirt(0.118, 0.15, 0.15, { seg: 16, rows: 2, gapTop: 1.7, gapBot: 2.1, folds: 7, foldAmp: 0.06, tatter: 0.35, seed: 4 }), { y: 0.135, z: 0.0, sz: 1.08 }, { c: [0.62, 0.5, 0.42], anim: (v) => clamp(-v.y * 5) * 0.5 });
+    // torn mail mantle over the shoulders, a mail sleeve on the sword arm
+    rig.add('chest', 'mail', robe(0.12, 0.27, 0.21, { seg: 18, rows: 3, folds: 7, foldAmp: 0.08, tatter: 0.55, seed: 6 }), { y: D.chest + 0.05, z: -0.005, sz: 0.82 }, { c: [0.6, 0.48, 0.4], anim: (v) => clamp(-v.y * 4) * 0.4 });
+    rig.add('armR', 'mail', robe(0.046, 0.052, 0.16, { seg: 9, rows: 1, folds: 4, foldAmp: 0.06, tatter: 0.5, seed: 3 }), { y: 0.03 }, { c: [0.6, 0.48, 0.4] });
+    // crimson surcoat remnant: one torn strip hanging from the left shoulder over the ribs
+    rig.add('chest', 'cloth', panel(0.11, 0.6, { ws: 2, hs: 6, tatter: 0.5, seed: 7, curve: 0.02, taperBot: 0.7 }), { x: 0.065, y: D.chest - 0.01, z: 0.125, rz: 0.12, rx: 0.06 }, {
+      cfn: ragFn(CRIM, -0.6, 2), anim: (v) => clamp(-v.y / 0.6) * 1.1,
+      skin: chainSkin([['hips', -D.spine - 0.4], ['spine', -D.spine * 0.5], ['chest', 0.0]], (v) => v.y),
+    });
+    // belt with a rusty buckle, pouch, crimson loin flaps front and back
+    rig.add('hips', 'leather', xf(G.cyl(0.146, 0.14, 0.045, 14, true), { sz: 0.76 }), { y: 0.035 }, { c: LEA });
+    rig.add('hips', 'iron', mergeRaw([xf(G.box(0.05, 0.045, 0.012), {}), xf(G.box(0.008, 0.045, 0.016), { x: 0.012 })]), { y: 0.035, z: 0.113 }, IRON);
+    rig.add('hips', 'leather', mergeRaw([xf(G.box(0.07, 0.08, 0.04), { x: -0.12, y: -0.01, z: 0.07, ry: -0.7 }), xf(G.box(0.075, 0.025, 0.045), { x: -0.12, y: 0.03, z: 0.071, ry: -0.7 })]), {}, { c: [0.5, 0.36, 0.26] });
+    rig.add('hips', 'cloth', panel(0.2, 0.42, { ws: 4, hs: 5, tatter: 0.45, seed: 4, curve: 0.05 }), { y: 0.02, z: 0.112 }, { cfn: ragFn(CRIM, -0.42, 5), anim: (v) => -v.y * 1.6 });
+    rig.add('hips', 'cloth', panel(0.25, 0.48, { ws: 4, hs: 5, tatter: 0.5, seed: 9, curve: -0.05 }), { y: 0.02, z: -0.1, ry: Math.PI }, { cfn: ragFn([0.34, 0.07, 0.06], -0.48, 8), anim: (v) => -v.y * 1.6 });
+    // baldric across the ribcage, front and back
+    const bal = tube([[-0.135, D.chest + 0.01, 0.02], [-0.085, D.chest * 0.8, 0.112], [0.0, D.chest * 0.5, 0.124], [0.09, D.chest * 0.18, 0.118], [0.15, -0.02, 0.06]], 0.011, 14, 4);
+    const balB = tube([[-0.135, D.chest + 0.01, 0.02], [-0.09, D.chest * 0.8, -0.118], [0.0, D.chest * 0.45, -0.13], [0.15, -0.02, -0.04]], 0.011, 10, 4);
+    rig.add('chest', 'leather', mergeRaw([bal, balB]), {}, { c: [0.45, 0.32, 0.24] });
+    rig.add('chest', 'iron', xf(G.tor(0.016, 0.005, 3, 8), {}), { x: 0.0, y: D.chest * 0.5, z: 0.13 }, IRON);
+    // shield arm: rusty pauldron and a strapped vambrace; sword arm: leather bracer
+    rig.add('armL', 'iron', pauldron(0.085, 2), { x: 0.02, y: -0.02, rz: 0.55, sy: 0.75 }, IRON);
+    rig.add('armL', 'leather', xf(G.tor(0.052, 0.008, 3, 10), { rx: Math.PI / 2 }), { y: -0.08 }, { c: LEA });
+    rig.add('foreL', 'leather', mergeRaw([xf(G.cyl(0.036, 0.031, 0.14, 8, true), { y: -0.17 }), xf(G.tor(0.037, 0.006, 3, 8), { rx: Math.PI / 2, y: -0.12 }), xf(G.tor(0.033, 0.006, 3, 8), { rx: Math.PI / 2, y: -0.21 })]), {}, { c: LEA });
+    rig.add('foreR', 'leather', mergeRaw([xf(G.cyl(0.034, 0.03, 0.12, 8, true), { y: -0.18 }), xf(G.tor(0.035, 0.006, 3, 8), { rx: Math.PI / 2, y: -0.15 })]), {}, { c: [0.42, 0.3, 0.22] });
+    // a knee cop on the left, a dented greave on the right shin, rag wraps round the right foot
+    rig.add('shinL', 'iron', mergeRaw([xf(G.sph(0.05, 8, 5, 0, TAU, 0, Math.PI * 0.55), { rx: Math.PI / 2 + 0.25, z: 0.03 })]), { y: 0.0 }, IRON);
+    rig.add('shinR', 'iron', new THREE.CylinderGeometry(0.046, 0.04, 0.22, 8, 1, true, -Math.PI * 0.55, Math.PI * 1.1), { y: -0.2, z: 0.008 }, IRON);
+    rig.add('footR', 'cloth', mergeRaw([xf(G.cyl(0.042, 0.046, 0.035, 8, true), { y: -0.035, z: 0.0, rx: 0.3 }), xf(G.cyl(0.04, 0.042, 0.03, 8, true), { y: -0.05, z: 0.06, rx: 1.3, sx: 1.1, sz: 0.7 })]), {}, { c: [0.32, 0.28, 0.22] });
+    skelSword(rig, 'handR', { len: 0.8, seed: 3 });
+    skelShield(rig, 'foreL', { x: 0.075, y: -0.14, z: 0, ry: Math.PI / 2 }, { r: 0.3 });
     rig.socket('muzzle', 'handR', 0, -0.07, 0.45);
     return D;
   },
   pose: humanoidPose,
   anim: {
-    death: 'collapse', spawn: 'rise', armSwing: 0.35, knee: 0.8,
-    rest: { armR: [-0.25, 0, -0.05], foreR: [-0.7, 0, 0], handR: [0.55, 0, 0], armL: [-0.25, -0.85, 0.2], foreL: [-1.3, 0, 0] },
-    stance: (P) => { P.r('spine', 0.08); P.r('neck', 0.05); P.r('head', -0.1); P.r('shinL', 0.1); P.r('shinR', 0.1); P.r('thighL', -0.06); P.r('thighR', -0.06); },
-    extra: (P, m, s, dt, k) => { if (!k.action) P.r('jaw', 0.08 + Math.max(0, Math.sin(m.time * 0.9)) * 0.12); },
+    ...SK_BASE, armSwing: 0.35, knee: 0.85, stride: 0.5, breath: 1.4,
+    rest: { armR: [-0.22, 0, -0.06], foreR: [-0.6, 0, 0], handR: [0.5, 0, 0], armL: [-0.3, -0.85, 0.22], foreL: [-1.3, 0, 0] },
+    stance: (P) => { P.r('spine', 0.1); P.r('chest', 0.06); P.r('neck', 0.08); P.r('head', -0.14); P.r('shinL', 0.14); P.r('shinR', 0.12); P.r('thighL', -0.09, 0, 0.03); P.r('thighR', -0.05, 0, -0.03); },
+    actions: { swing: SK_SWING },
+    extra: skExtra,
   },
 };
 
-
-
 // ------------------------------------------------------- skeletonArcher ----
+// A dead bowman: deep ragged hood and a long cloak, quiver on the back, bracers and belt; the bow
+// draws to the cheek (string skinned to the nock bone) with the arrow shown only while drawing.
 export const skeletonArcher = {
-  id: 'skeletonArcher', height: 1.8, radius: 0.4, eyeColor: 0x5fd8ff, defaultAttack: 'shoot', attackTypes: ['shoot', 'swing'], flutter: 0.035,
+  id: 'skeletonArcher', height: 1.8, radius: 0.4, eyeColor: 0x5fd8ff, defaultAttack: 'shoot', attackTypes: ['shoot', 'swing'], flutter: 0.04,
   build(rig) {
-    const D = skeletonBase(rig, { gripL: true });
+    const D = skeletonBase(rig, { gripL: true, seed: 5 });
     rig.bone('nock', 'handL', 0, -0.06, 0);
     rig.bone('arrow', 'nock', 0, 0, 0);
-    // ragged hood and shoulder cape
-    const h = hood(0.135, 0.2, { open: 0.26, peak: 0.9 });
-    rig.add('head', 'cloth', h.shell, { y: 0.11, z: -0.01 }, { c: [0.24, 0.26, 0.2] });
-    rig.add('chest', 'cloth', robe(0.13, 0.25, 0.32, { seg: 16, rows: 3, folds: 6, foldAmp: 0.12, tatter: 0.4, seed: 5 }), { y: D.chest + 0.03, sz: 0.8 }, { c: [0.22, 0.24, 0.18], anim: (v) => clamp(-v.y * 3) * 0.7 });
-    rig.add('chest', 'cloth', panel(0.36, 0.75, { tatter: 0.45, seed: 12, curve: 0.08 }), { y: D.chest - 0.02, z: -0.12, ry: Math.PI }, { c: [0.2, 0.22, 0.17], anim: (v) => -v.y * 0.9 });
-    // leather jerkin pieces
-    rig.add('chest', 'leather', xf(G.cyl(0.15, 0.13, 0.16, 12, true), { sz: 0.75 }), { y: 0.07 }, { c: 0x5a3a24 });
-    rig.add('hips', 'leather', belt(0.14, 0.05, 0.75), { y: 0.02 }, { c: 0x3e2a1c });
-    rig.add('hips', 'cloth', panel(0.22, 0.34, { tatter: 0.45, seed: 2 }), { y: 0.0, z: 0.105 }, { c: [0.25, 0.22, 0.16], anim: (v) => -v.y * 0.8 });
-    rig.add('foreL', 'leather', G.cyl(0.034, 0.03, 0.15, 8), { y: -0.16 }, { c: 0x4a3020 });
-    // quiver with arrows on the back
-    const qt = { x: -0.06, y: 0.12, z: -0.12, rz: -0.35, rx: 0.15 };
-    rig.add('chest', 'leather', mergeRaw([xf(G.cyl(0.055, 0.045, 0.48, 10, false), { y: 0.0 }), xf(G.tor(0.056, 0.008, 4, 12), { y: 0.22, rx: Math.PI / 2 })]), qt, { c: 0x4a2c1a });
+    const HOOD = [0.2, 0.22, 0.17], CLOAK = [0.15, 0.165, 0.13], LEA = [0.55, 0.4, 0.3];
+    // deep hood with a peak, its cowl spilling onto the shoulders
+    const h = hood(0.15, 0.22, { open: 0.24, peak: 1.4 });
+    rig.add('head', 'cloth', h.shell, { y: 0.1, z: -0.018, rx: -0.08 }, { cfn: ragFn(HOOD, -2, 3) });
+    rig.add('head', 'dark', xf(G.sph(0.1, 8, 6), { sz: 0.6 }), { y: 0.17, z: -0.05 });
+    rig.add('chest', 'cloth', robe(0.12, 0.27, 0.3, { seg: 18, rows: 3, folds: 7, foldAmp: 0.12, tatter: 0.5, seed: 5 }), { y: D.chest + 0.05, sz: 0.82 }, { cfn: ragFn(HOOD, -0.25, 4), anim: (v) => clamp(-v.y * 3) * 0.7 });
+    // long cloak down the back, skinned through the spine so it bends with the body
+    const cloak = panel(0.42, 1.05, { ws: 6, hs: 8, tatter: 0.45, seed: 12, curve: 0.1, taperBot: 1.3 });
+    rig.add('chest', 'cloth', cloak, { y: D.chest + 0.0, z: -0.14, ry: Math.PI, rx: 0.06 }, {
+      cfn: ragFn(CLOAK, -0.9, 6), anim: (v) => clamp(-v.y / 0.95) * 1.5,
+      skin: chainSkin([['hips', -D.spine - 0.55], ['spine', -D.spine * 0.5], ['chest', 0.0]], (v) => v.y),
+    });
+    // belt, a short rag at the front, bracers on both forearms
+    rig.add('hips', 'leather', xf(G.cyl(0.146, 0.14, 0.04, 14, true), { sz: 0.76 }), { y: 0.035 }, { c: LEA });
+    rig.add('hips', 'cloth', panel(0.18, 0.3, { tatter: 0.5, seed: 2 }), { y: 0.02, z: 0.112 }, { cfn: ragFn([0.26, 0.22, 0.15], -0.3, 7), anim: (v) => -v.y * 1.5 });
+    rig.add('hips', 'leather', mergeRaw([xf(G.box(0.065, 0.075, 0.035), { x: 0.12, y: -0.01, z: 0.07, ry: 0.7 })]), {}, { c: [0.48, 0.34, 0.25] });
+    for (const S of ['L', 'R']) rig.add('fore' + S, 'leather', mergeRaw([xf(G.cyl(0.036, 0.03, 0.15, 8, true), { y: -0.17 }), xf(G.tor(0.036, 0.006, 3, 8), { rx: Math.PI / 2, y: -0.13 })]), {}, { c: LEA });
+    // quiver strap across the ribs and the quiver of arrows on the back
+    const qt = { x: -0.06, y: 0.12, z: -0.16, rz: -0.35, rx: 0.15 };
+    rig.add('chest', 'leather', mergeRaw([xf(G.cyl(0.055, 0.045, 0.48, 10, false), { y: 0.0 }), xf(G.tor(0.056, 0.008, 4, 12), { y: 0.22, rx: Math.PI / 2 }), xf(G.tor(0.05, 0.007, 4, 12), { y: -0.18, rx: Math.PI / 2 })]), qt, { c: [0.42, 0.27, 0.18] });
     const arrows = [], fl = [];
     for (let i = 0; i < 6; i++) { const a = i * 1.1, r = 0.025; arrows.push(xf(G.cyl(0.004, 0.004, 0.2, 3), { x: Math.cos(a) * r, z: Math.sin(a) * r, y: 0.32 })); fl.push(xf(G.box(0.003, 0.06, 0.025), { x: Math.cos(a) * r, z: Math.sin(a) * r, y: 0.4, ry: a })); }
     rig.add('chest', 'wood', mergeRaw(arrows), qt, { c: [0.8, 0.65, 0.45] });
-    rig.add('chest', 'cloth', mergeRaw(fl), qt, { c: [0.7, 0.15, 0.1] });
-    rig.add('chest', 'leather', xf(G.tor(0.2, 0.01, 4, 20), { rx: Math.PI / 2, sz: 0.65 }), { y: 0.17, rz: -0.6 }, { c: 0x3a2418 });
+    rig.add('chest', 'cloth', mergeRaw(fl), qt, { c: [0.55, 0.12, 0.08] });
+    rig.add('chest', 'leather', mergeRaw([tube([[0.13, D.chest + 0.02, 0.03], [0.07, D.chest * 0.75, 0.115], [-0.02, D.chest * 0.42, 0.125], [-0.11, D.chest * 0.12, 0.105], [-0.15, -0.02, 0.04]], 0.01, 12, 4), tube([[0.13, D.chest + 0.02, 0.03], [0.08, D.chest * 0.75, -0.12], [-0.15, -0.02, -0.06]], 0.01, 8, 4)]), {}, { c: [0.4, 0.28, 0.2] });
     // bow + nocked arrow (arrow only shown while drawing)
     addBow(rig, 'handL', 'nock', { len: 1.25 });
     rig.add('arrow', 'wood', xf(G.cyl(0.005, 0.005, 0.72, 4), { y: -0.36 }), {}, { c: [0.8, 0.65, 0.45] });
     rig.add('arrow', 'iron', xf(G.cone(0.014, 0.05, 4), { y: -0.74, rx: Math.PI }), {}, { c: STEEL });
-    rig.add('arrow', 'cloth', xf(G.box(0.003, 0.07, 0.03), { y: -0.04 }), {}, { c: [0.7, 0.15, 0.1] });
+    rig.add('arrow', 'cloth', xf(G.box(0.003, 0.07, 0.03), { y: -0.04 }), {}, { c: [0.55, 0.12, 0.08] });
     rig.socket('muzzle', 'nock', 0, -0.72, 0);
     return D;
   },
   pose: humanoidPose,
   anim: {
-    death: 'collapse', spawn: 'rise', armSwing: 0.3,
+    ...SK_BASE, armSwing: 0.3, knee: 0.85, stride: 0.5,
     rest: { armL: [-0.35, 0, 0.05], foreL: [-0.5, 0, 0], handL: [0.3, 0, 0], armR: [-0.1, 0, -0.05], foreR: [-0.3, 0, 0] },
-    stance: (P) => { P.r('spine', 0.06); P.r('head', -0.08); P.r('shinL', 0.1); P.r('shinR', 0.1); P.r('thighL', -0.06); P.r('thighR', -0.06); },
+    stance: (P) => { P.r('spine', 0.08); P.r('head', -0.1); P.r('shinL', 0.12); P.r('shinR', 0.12); P.r('thighL', -0.07); P.r('thighR', -0.07); },
     actions: {
       shoot: (P, ph, p, m) => {
-        const AIM = { armL: [-1.5, 0.75, 0], foreL: [0, 0, 0], handL: [0, 0, 0], armR: [-1.5, 0.55, 0], foreR: [-2.7, 0, 0], handR: [0, 0, 0], chest: [0, -0.75, 0], spine: [0, -0.15, 0], head: [0.05, 0.8, 0], neck: [0, 0.1, 0], thighL: [-0.15, 0, 0.1], thighR: [0.1, 0, -0.1] };
+        const AIM = { armL: [-1.5, 0.75, 0], foreL: [0, 0, 0], handL: [0, 0, 0], armR: [-1.5, 0.55, 0], foreR: [-2.7, 0, 0], handR: [0, 0, 0], chest: [0, -0.75, 0], spine: [0, -0.15, 0], head: [0.05, 0.8, 0], neck: [0, 0.1, 0], thighL: [-0.15, 0, 0.1], thighR: [0.1, 0, -0.1], jaw: [0.15, 0, 0] };
         if (ph === 'windup') {
           const d = smooth(0.15, 0.85, p);
           P.blend({ armL: [-0.9, 0.4, 0], foreL: [-0.3, 0, 0], armR: [-0.9, 0.5, 0], foreR: [-1.6, 0, 0], chest: [0, -0.4, 0], head: [0, 0.4, 0] }, AIM, smooth(0, 0.4, p));
+          // lean back into the draw, the string arm creaking as it holds
+          P.r('spine', -0.08 * d); P.r('chest', -0.05 * d);
           P.p('nock', 0, 0.42 * d, 0);
           P.s('arrow', 1);
-          P.r('armL', Math.sin(m.time * 33) * 0.01 * d);
+          P.r('armL', Math.sin(m.time * 33) * 0.012 * d); P.r('armR', 0, Math.sin(m.time * 29) * 0.01 * d, 0);
           return 12;
         }
-        const rel = smooth(0, 0.1, p);
-        P.apply(AIM, 1 - smooth(0.5, 1, p));
-        P.r('foreR', 1.0 * rel * (1 - smooth(0.5, 1, p))); P.r('armR', 0, 0.4 * rel * (1 - smooth(0.5, 1, p)), 0);
+        const rel = smooth(0, 0.1, p), back = 1 - smooth(0.5, 1, p);
+        P.apply(AIM, back);
+        P.r('foreR', 1.0 * rel * back); P.r('armR', 0, 0.4 * rel * back, 0);
+        P.r('chest', 0.08 * bump(0, 0.3, p)); P.r('armL', 0.12 * bump(0, 0.25, p));
         P.p('nock', 0, 0.42 * (1 - rel), 0);
         P.s('arrow', rel > 0.5 ? 0.001 : 1);
         return 30;
       },
     },
-    extra: (P, m, s, dt, k) => { if (!(k.action && s.attackType === 'shoot')) P.s('arrow', 0.001); if (!k.action) P.r('jaw', 0.06 + Math.max(0, Math.sin(m.time * 0.9)) * 0.1); },
+    extra: (P, m, s, dt, k) => { if (!(k.action && s.attackType === 'shoot')) P.s('arrow', 0.001); skExtra(P, m, s, dt, k); },
   },
 };
 
 // ----------------------------------------------------------------- wraith ----
+// A hanged prisoner's ghost: a towering peaked hood over a void with two cold eyes, a long shroud
+// that thins into trailing wisps, bone forearms reaching out of ragged sleeves, the broken shackle
+// still on one wrist. Eyes and wisps flare as it winds up.
 const WRAITH_EYE = 0x9ff4ff;
+const WR_CLAW = act2(
+  { armR: [-2.6, 0, -0.75], armL: [-2.4, 0, 0.75], foreR: [-0.8, 0, 0], foreL: [-0.8, 0, 0], handR: [-0.5, 0, 0], handL: [-0.5, 0, 0], chest: [-0.4, 0, 0], spine: [-0.18, 0, 0], neck: [-0.1, 0, 0], head: [-0.25, 0, 0], base: [0, 0, 0, 0, 0.18, -0.15] },
+  { armR: [-0.75, 0, 0.55], armL: [-1.15, 0, -0.45], foreR: [-0.2, 0, 0], foreL: [-0.3, 0, 0], handR: [0.45, 0, 0], handL: [0.45, 0, 0], chest: [0.5, 0, 0], spine: [0.32, 0, 0], head: [0.25, 0, 0], base: [0, 0, 0, 0, -0.15, 0.45] },
+  { hit: 0.25, tremble: 0.03 },
+);
+const WR_CAST = act2(
+  { armR: [-0.4, 0, -0.5], foreR: [-1.6, 0, 0], armL: [-0.4, 0, 0.5], foreL: [-1.6, 0, 0], chest: [-0.25, 0, 0], head: [-0.3, 0, 0], base: [0, 0, 0, 0, 0.12, 0] },
+  { armR: [-1.65, 0, 0.1], foreR: [0, 0, 0], handR: [-0.5, 0, 0], armL: [-0.6, 0, 0.4], foreL: [-0.5, 0, 0], chest: [0.25, 0, 0], head: [0.12, 0, 0] },
+  { hit: 0.25, recover: 0.85 },
+);
 export const wraith = {
-  id: 'wraith', height: 2.2, radius: 0.45, flying: true, eyeColor: WRAITH_EYE, magicColor: 0x7fe8ff, defaultAttack: 'claw', attackTypes: ['claw', 'cast'], flutter: 0.06, orbSize: 0.07,
+  id: 'wraith', height: 2.2, radius: 0.45, flying: true, eyeColor: WRAITH_EYE, magicColor: 0x7fe8ff, defaultAttack: 'claw', attackTypes: ['claw', 'cast'], flutter: 0.07, orbSize: 0.07,
   build(rig) {
     const D = humanSkeleton(rig, { thigh: 0.42, shin: 0.4, spine: 0.18, chest: 0.32, neck: 0.1, shoulderW: 0.2, upper: 0.32, fore: 0.3 });
-    const GH = [0.32, 0.42, 0.45];
+    const GH = [0.3, 0.4, 0.44];
+    const fade = (c, y0, y1) => (v) => { const k = 1 - smooth(y0, y1, -v.y) * 0.6; return [c[0] * k, c[1] * k, c[2] * k]; };
     // main shroud: hangs from the shoulders down past the (missing) legs, skinned chest > spine > hips
-    const len = 1.35;
-    const sh = robe(0.2, 0.42, len, { seg: 24, rows: 10, folds: 8, foldAmp: 0.16, tatter: 0.45, seed: 7 });
-    deform(sh, (v) => { v.z *= 0.85; if (v.y < -0.6) v.z -= (-v.y - 0.6) * 0.35; }, true);
+    const len = 1.45;
+    const sh = robe(0.2, 0.46, len, { seg: 24, rows: 10, folds: 9, foldAmp: 0.18, tatter: 0.6, seed: 7 });
+    deform(sh, (v) => { v.z *= 0.85; if (v.y < -0.6) v.z -= (-v.y - 0.6) * 0.4; }, true);
     const topY = 0.05 + D.spine + D.chest + 0.02; // in hips space
     rig.add('hips', 'ghost', sh, { y: topY }, {
-      c: GH,
-      anim: (v) => clamp((-v.y - 0.15) / len) ** 1.3 * 2.2,
+      cfn: fade(GH, 0.6, len),
+      anim: (v) => clamp((-v.y - 0.15) / len) ** 1.3 * 2.4,
       skin: chainSkin([['hips', topY - len * 0.9], ['spine', 0.15], ['chest', topY - 0.25]], (v) => v.y + topY),
     });
     // inner dark layer so the shroud never looks hollow
     rig.add('chest', 'dark', xf(G.cyl(0.16, 0.22, 0.5, 10, false), { y: 0.1 }), {}, {});
-    // ragged mantle over shoulders
-    rig.add('chest', 'ghost', robe(0.12, 0.34, 0.42, { seg: 18, rows: 4, folds: 7, foldAmp: 0.18, tatter: 0.5, seed: 3 }), { y: D.chest + 0.05, sz: 0.85 }, { c: [0.26, 0.34, 0.38], anim: (v) => clamp(-v.y * 2.5) * 1.5 });
-    // deep hood with void and piercing eyes
-    const h = hood(0.16, 0.2, { open: 0.24, peak: 1.6 });
-    rig.add('head', 'ghost', h.shell, { y: 0.1, z: -0.01 }, { c: [0.22, 0.28, 0.32] });
-    rig.add('head', 'dark', xf(G.sph(0.12, 12, 10), { sz: 0.9 }), { y: 0.09, z: -0.005 });
-    rig.pair('head', 'head', 'glow', xf(G.sph(0.016, 8, 6), { sx: 1.6, sy: 0.6 }), { x: 0.04, y: 0.1, z: 0.105, rz: -0.25 }, { c: HDR(WRAITH_EYE, 9) });
-    rig.add('head', 'spirit', G.sph(0.06, 10, 8), { y: 0.1, z: 0.08, sx: 1.8, sy: 0.7, sz: 0.4 }, { c: HDR(WRAITH_EYE, 0.25) });
+    // ragged mantle over shoulders, a second torn layer under it
+    rig.add('chest', 'ghost', robe(0.12, 0.36, 0.46, { seg: 18, rows: 4, folds: 7, foldAmp: 0.2, tatter: 0.6, seed: 3 }), { y: D.chest + 0.06, sz: 0.85 }, { c: [0.26, 0.34, 0.38], anim: (v) => clamp(-v.y * 2.5) * 1.6 });
+    rig.add('chest', 'ghost', robe(0.16, 0.42, 0.72, { seg: 16, rows: 4, folds: 6, foldAmp: 0.2, tatter: 0.7, seed: 12 }), { y: D.chest - 0.05, sz: 0.85 }, { cfn: fade([0.2, 0.27, 0.3], 0.2, 0.75), anim: (v) => clamp(-v.y * 2) * 1.8 });
+    // towering peaked hood with a void and piercing eyes
+    const h = hood(0.17, 0.2, { open: 0.24, peak: 2.4 });
+    rig.add('head', 'ghost', h.shell, { y: 0.1, z: -0.015 }, { c: [0.22, 0.28, 0.32] });
+    rig.add('head', 'dark', xf(G.sph(0.13, 12, 10), { sz: 0.9 }), { y: 0.09, z: -0.005 });
+    rig.pair('head', 'head', 'glow', xf(G.sph(0.017, 8, 6), { sx: 1.7, sy: 0.55 }), { x: 0.042, y: 0.1, z: 0.11, rz: -0.28 }, { c: HDR(WRAITH_EYE, 9) });
+    rig.add('head', 'spirit', G.sph(0.06, 10, 8), { y: 0.1, z: 0.08, sx: 1.8, sy: 0.7, sz: 0.4 }, { c: HDR(WRAITH_EYE, 0.28) });
     // sleeves and skeletal hands
     for (const S of ['L', 'R']) {
       const sx = S === 'L' ? 1 : -1;
       rig.add('arm' + S, 'ghost', robe(0.07, 0.09, D.upper + 0.03, { seg: 10, rows: 2, folds: 4, tatter: 0, seed: 2 }), { y: 0.02 }, { c: GH });
-      rig.add('fore' + S, 'ghost', robe(0.08, 0.14, D.fore * 0.95, { seg: 12, rows: 3, folds: 5, foldAmp: 0.15, tatter: 0.5, seed: 4 + sx }), {}, { c: GH, anim: (v) => clamp(-v.y * 3) * 1.4 });
-      rig.add('fore' + S, 'bone', G.cyl(0.012, 0.01, D.fore * 0.6, 5), { y: -D.fore * 0.7 }, { c: [0.85, 0.85, 0.8] });
-      addBoneHand(rig, 'hand' + S, sx, { mat: 'bone', c: [0.85, 0.85, 0.8], s: 1.35 });
-      for (let i = 0; i < 4; i++) rig.add('hand' + S, 'bone', G.cone(0.005, 0.05, 4), { x: (i - 1.5) * 0.017, y: -0.13, z: 0.02, rx: Math.PI - 0.6 }, { c: [0.6, 0.6, 0.58] });
+      rig.add('fore' + S, 'ghost', robe(0.08, 0.16, D.fore * 0.9, { seg: 12, rows: 3, folds: 5, foldAmp: 0.18, tatter: 0.6, seed: 4 + sx }), {}, { c: GH, anim: (v) => clamp(-v.y * 3) * 1.6 });
+      rig.add('fore' + S, 'bone', mergeRaw([xf(thinBone(D.fore * 0.75, 0.011, 0.016, 0.016), { y: -D.fore * 0.32, x: 0.008 }), xf(thinBone(D.fore * 0.72, 0.01, 0.014, 0.017), { y: -D.fore * 0.33, x: -0.012 })]), {}, { cfn: boneShade([1.05, 1.1, 1.15], 4) });
+      addBoneHand(rig, 'hand' + S, sx, { mat: 'bone', c: [1.0, 1.05, 1.1], s: 1.4, fingerLen: 1.25, curl: 0.45 });
+      rig.add('hand' + S, 'bone', mergeRaw([0, 1, 2, 3].map((i) => xf(G.cone(0.006, 0.06, 3), { x: (i - 1.5) * 0.018, y: -0.135, z: 0.02, rx: Math.PI - 0.6 }))), {}, { c: [0.5, 0.52, 0.55] });
     }
     // spectral wisps trailing below
     const wisps = [];
     const R = rng(9);
-    for (let i = 0; i < 7; i++) { const a = (i / 7) * TAU; wisps.push(tube([[Math.sin(a) * 0.28, 0, Math.cos(a) * 0.24], [Math.sin(a) * 0.32, -0.2, Math.cos(a) * 0.26 - 0.1], [Math.sin(a + 0.4) * 0.24, -0.45 - R() * 0.15, Math.cos(a) * 0.2 - 0.3]], (u) => 0.035 * (1 - u), 8, 5)); }
-    rig.add('hips', 'spirit', mergeRaw(wisps), { y: -0.3 }, { c: HDR(0x7fe8ff, 0.07), anim: (v) => clamp(-v.y * 2) * 1.6 });
+    for (let i = 0; i < 8; i++) { const a = (i / 8) * TAU; wisps.push(tube([[Math.sin(a) * 0.3, 0, Math.cos(a) * 0.25], [Math.sin(a) * 0.34, -0.22, Math.cos(a) * 0.27 - 0.12], [Math.sin(a + 0.4) * 0.25, -0.5 - R() * 0.18, Math.cos(a) * 0.2 - 0.34]], (u) => 0.04 * (1 - u), 7, 4)); }
+    rig.add('hips', 'spirit', mergeRaw(wisps), { y: -0.32 }, { c: HDR(0x7fe8ff, 0.08), anim: (v) => clamp(-v.y * 2) * 1.8 });
     // a broken chain shackle on one wrist
-    rig.add('foreR', 'iron', mergeRaw([xf(G.tor(0.05, 0.012, 4, 10), { rx: Math.PI / 2, y: -0.22 }), ...[0, 1, 2].map((i) => xf(G.tor(0.022, 0.007, 4, 8), { y: -0.27 - i * 0.035, ry: (i % 2) * 1.57, x: 0.04 }))]), {}, { c: DARKSTEEL });
+    rig.add('foreR', 'iron', mergeRaw([xf(G.tor(0.05, 0.012, 4, 10), { rx: Math.PI / 2, y: -0.22 }), ...[0, 1, 2, 3].map((i) => xf(G.tor(0.022, 0.007, 3, 6), { y: -0.27 - i * 0.035, ry: (i % 2) * 1.57, x: 0.04 }))]), {}, { c: DARKSTEEL, anim: (v) => clamp((-v.y - 0.25) * 6) * 0.6 });
     rig.socket('muzzle', 'handR', 0, -0.1, 0.05);
     return D;
   },
@@ -169,70 +396,112 @@ export const wraith = {
     gait: 'float', hover: 0.42, death: 'dissipate', spawn: 'materialize', caster: false, look: 0.6,
     rest: { armL: [-0.35, 0, 0.15], foreL: [-0.6, 0, 0], armR: [-0.35, 0, -0.15], foreR: [-0.6, 0, 0], handL: [0.3, 0, 0], handR: [0.3, 0, 0] },
     stance: (P, m) => { P.apply({ spine: [0.15, 0, 0], chest: [0.12, 0, 0], neck: [-0.05, 0, 0], head: [-0.05, 0, 0] }); P.r('hips', Math.sin(m.time * 0.8) * 0.04, 0, Math.sin(m.time * 0.6) * 0.05); },
-    actions: {
-      claw: act2(
-        { armR: [-2.5, 0, -0.6], armL: [-2.3, 0, 0.6], foreR: [-0.7, 0, 0], foreL: [-0.7, 0, 0], handR: [-0.4, 0, 0], handL: [-0.4, 0, 0], chest: [-0.35, 0, 0], spine: [-0.15, 0, 0], head: [-0.15, 0, 0] },
-        { armR: [-0.8, 0, 0.5], armL: [-1.2, 0, -0.4], foreR: [-0.2, 0, 0], foreL: [-0.3, 0, 0], handR: [0.4, 0, 0], handL: [0.4, 0, 0], chest: [0.45, 0, 0], spine: [0.3, 0, 0], head: [0.2, 0, 0], base: [0, 0, 0, 0, -0.1, 0.35] },
-        { hit: 0.25 },
-      ),
-      cast: act2(
-        { armR: [-0.4, 0, -0.5], foreR: [-1.6, 0, 0], armL: [-0.4, 0, 0.5], foreL: [-1.6, 0, 0], chest: [-0.2, 0, 0], head: [-0.25, 0, 0] },
-        { armR: [-1.6, 0, 0.1], foreR: [0, 0, 0], handR: [-0.5, 0, 0], armL: [-0.6, 0, 0.4], foreL: [-0.5, 0, 0], chest: [0.2, 0, 0], head: [0.1, 0, 0] },
-        { hit: 0.25, recover: 0.85 },
-      ),
+    stagger: { spine: [-0.35, 0.15, 0.1], chest: [-0.3, 0.2, 0], head: [-0.4, -0.3, 0.2], armL: [0.4, 0, 0.8], armR: [0.4, 0, -0.8], foreL: [-0.4, 0, 0], foreR: [-0.4, 0, 0], base: [0, 0, 0, 0, 0.1, -0.2] },
+    actions: { claw: WR_CLAW, swing: WR_CLAW, cast: WR_CAST },
+    extra: (P, m, s, dt, k) => {
+      const an = s.anim;
+      m.U.uFlutterSpeed.value = an === 'windup' ? 2.6 : 1.6;
+      // the eyes flare through a wind-up; fingers curl and uncurl as it drifts
+      glowLevel(m, an === 'windup' ? 1 + 0.9 * smooth(0, 1, s.progress) : an === 'death' ? 1 - s.progress * 0.8 : 1);
+      if (!k.action && an !== 'death') { P.r('handL', Math.sin(m.time * 1.7) * 0.25); P.r('handR', Math.sin(m.time * 1.5 + 2) * 0.25); P.r('head', 0, 0, Math.sin(m.time * 0.43) * 0.12); }
     },
-    extra: (P, m, s, dt) => { m.U.uFlutterSpeed.value = 1.6; },
   },
 };
 
 // ----------------------------------------------------------------- jailer ----
+// The gaoler: a huge, pot-bellied brute in an iron bucket-mask and a leather apron, ring of keys
+// and shackles at the belt, a chain over one shoulder. His shield is a torn-off cell door (bars you
+// can see him through) and he swings a spiked ball on a chain.
+// cell door in door space: width along X, height along Y, face toward +Z
+function cellDoor(rig, bone, t, w = 0.64, h = 1.0) {
+  const IR = { cfn: rustFn(5, 0.9) };
+  const fr = [xf(G.box(w + 0.06, 0.06, 0.06), { y: h / 2 }), xf(G.box(w + 0.06, 0.06, 0.06), { y: -h / 2 }), xf(G.box(0.06, h, 0.06), { x: w / 2 }), xf(G.box(0.06, h, 0.06), { x: -w / 2 })];
+  for (let i = 0; i < 5; i++) fr.push(xf(G.cyl(0.017, 0.017, h, 6, true), { x: (i - 2) * w / 5.4 }));
+  for (const y of [-h * 0.24, h * 0.24]) fr.push(xf(G.box(w + 0.02, 0.055, 0.03), { y, z: 0.028 }));
+  // hinge knuckles torn off on one side, spikes along the top, a heavy lock box
+  fr.push(xf(G.cyl(0.03, 0.03, 0.1, 6), { x: -w / 2 - 0.035, y: h * 0.32 }), xf(G.cyl(0.03, 0.03, 0.1, 6), { x: -w / 2 - 0.035, y: -h * 0.32 }));
+  for (let i = 0; i < 5; i++) fr.push(xf(G.cone(0.022, 0.09, 4), { x: (i - 2) * w / 5.4, y: h / 2 + 0.07 }));
+  fr.push(xf(G.box(0.15, 0.17, 0.07), { x: w * 0.22, y: 0.02, z: 0.045 }));
+  rig.add(bone, 'iron', mergeRaw(fr), t, IR);
+  rig.add(bone, 'iron', rivets([-1, -0.5, 0, 0.5, 1].flatMap((x) => [[x * w * 0.44, -h * 0.24, 0.047], [x * w * 0.44, h * 0.24, 0.047]]), 0.012), t, { c: [1.6, 1.15, 0.85] });
+  rig.add(bone, 'dark', mergeRaw([xf(G.cyl(0.012, 0.012, 0.02, 6), { rx: Math.PI / 2, x: w * 0.22, y: 0.04, z: 0.08 }), xf(G.box(0.01, 0.035, 0.02), { x: w * 0.22, y: 0.012, z: 0.08 })]), t);
+}
+const JL_SKIN = [0.42, 0.3, 0.26];
+const jlSkin = (v) => {
+  const n = vnoise(v.x * 6 + 4, v.y * 6, v.z * 6, 51), d = vnoise(v.x * 24, v.y * 24, v.z * 24, 8), k = 0.8 + d * 0.32;
+  if (n > 0.7) return [0.3 * k, 0.2 * k, 0.22 * k]; // bruising, filth
+  return [JL_SKIN[0] * k, JL_SKIN[1] * k, JL_SKIN[2] * k];
+};
+// overhead: the ball whirls above the head while he rears back behind the door, then everything slams down
+const JL_SLAM = act2(
+  { armR: [-2.75, 0.2, -0.25], foreR: [-0.55, 0, 0], handR: [0.2, 0, 0], armL: [-0.55, -0.7, 0.35], foreL: [-1.25, 0, 0], chest: [-0.28, 0.12, 0], spine: [-0.18, 0, 0], neck: [0.1, 0, 0], head: [0.15, 0, 0], hips: [0, 0, 0, 0, -0.06, -0.1], thighL: [-0.45, 0, 0.1], shinL: [0.35, 0, 0], thighR: [0.2, 0, -0.1], shinR: [0.25, 0, 0] },
+  { armR: [-0.55, -0.2, 0.3], foreR: [-0.2, 0, 0], handR: [0.8, 0, 0], armL: [-0.15, -0.5, 0.3], foreL: [-0.8, 0, 0], chest: [0.5, 0, 0], spine: [0.38, 0, 0], neck: [-0.25, 0, 0], head: [-0.3, 0, 0], hips: [0, 0, 0, 0, -0.24, 0.18], thighL: [-0.95, 0, 0.1], shinL: [1.05, 0, 0], thighR: [0.15, 0, -0.1], shinR: [0.65, 0, 0] },
+  { hit: 0.26, tremble: 0.035 },
+);
+// flail swing: wound back low and to the right with the ball circling, then whipped across
+const JL_SWING = act2(
+  { armR: [-1.1, 0.55, -1.0], foreR: [-0.7, 0, 0], handR: [0.3, 0, 0], armL: [-0.6, -0.85, 0.3], foreL: [-1.3, 0, 0], chest: [0, -0.7, 0], spine: [0.05, -0.3, 0], head: [0, 0.75, 0], hips: [0, -0.2, 0, 0, -0.09, -0.05], thighL: [-0.4, 0, 0.1], shinL: [0.45, 0, 0], thighR: [0.2, 0, -0.1], shinR: [0.4, 0, 0] },
+  { armR: [-1.4, -0.5, 0.7], foreR: [-0.2, 0, 0], handR: [0.5, 0, 0], armL: [-0.3, -0.6, 0.3], foreL: [-1.1, 0, 0], chest: [0.15, 0.75, 0], spine: [0.12, 0.3, 0], head: [-0.1, -0.7, 0], hips: [0, 0.25, 0, 0, -0.12, 0.2], thighR: [-0.6, 0, -0.1], shinR: [0.55, 0, 0], thighL: [0.3, 0, 0.1] },
+  { hit: 0.25, tremble: 0.03 },
+);
 export const jailer = {
-  id: 'jailer', height: 2.4, radius: 0.7, eyeColor: 0xff8a3a, defaultAttack: 'slam', attackTypes: ['slam', 'swing', 'bash'],
+  id: 'jailer', height: 2.4, radius: 0.7, eyeColor: 0xff8a3a, defaultAttack: 'slam', attackTypes: ['slam', 'swing', 'bash'], flutter: 0.03,
   build(rig) {
-    const D = humanSkeleton(rig, { thigh: 0.52, shin: 0.5, ankle: 0.08, hipW: 0.16, spine: 0.25, chest: 0.45, neck: 0.08, shoulderW: 0.33, shoulderDrop: 0.07, upper: 0.42, fore: 0.4 });
+    const D = humanSkeleton(rig, { thigh: 0.52, shin: 0.5, ankle: 0.08, hipW: 0.17, spine: 0.25, chest: 0.45, neck: 0.08, shoulderW: 0.36, shoulderDrop: 0.08, upper: 0.42, fore: 0.4 });
     rig.bone('flail', 'handR', 0, -0.07, 0.55);
-    const SK = [0.42, 0.3, 0.26];
-    addFleshBody(rig, D, { c: SK, muscle: 1.9, belly: 0.1, bellyY: 0.15, depth: 1.2, seed: 21, torsoW: 1.05, grip: { R: true, L: true } });
-    // leather apron, straps and belt
-    rig.add('chest', 'leather', panel(0.5, 1.15, { ws: 6, hs: 8, tatter: 0.08, seed: 3, curve: 0.18, taperBot: 0.85 }), { y: D.chest * 0.75, z: 0.2, rx: 0.08 }, { c: [0.75, 0.55, 0.42], skin: chainSkin([['thighL', -0.95], ['hips', -0.55], ['chest', 0.0]], (v) => v.y), anim: (v) => clamp((-v.y - 0.6) * 0.8) * 0.4 });
-    rig.add('chest', 'leather', mergeRaw([xf(G.box(0.05, 0.62, 0.02), { x: 0.16, y: D.chest * 0.65, z: 0.19, rx: -0.4, rz: 0.1 }), xf(G.box(0.05, 0.62, 0.02), { x: -0.16, y: D.chest * 0.65, z: 0.19, rx: -0.4, rz: -0.1 })]), {}, { c: [0.45, 0.3, 0.2] });
-    rig.add('hips', 'leather', xf(G.cyl(0.29, 0.29, 0.08, 18, true), { sz: 0.85 }), { y: 0.02 }, { c: [0.4, 0.28, 0.18] });
-    rig.add('hips', 'iron', G.box(0.1, 0.09, 0.03), { y: 0.02, z: 0.26 }, { c: RUSTY });
-    // key ring + shackles on the belt
-    rig.add('hips', 'iron', mergeRaw([xf(G.tor(0.05, 0.008, 4, 12), { x: 0.24, y: -0.06, z: 0.12, ry: 1.0 }), ...[0, 1, 2, 3].map((i) => xf(G.box(0.012, 0.09, 0.004), { x: 0.24 + (i - 1.5) * 0.02, y: -0.13, z: 0.13, rz: (i - 1.5) * 0.2 })), xf(G.tor(0.06, 0.012, 4, 12), { x: -0.25, y: -0.08, z: 0.06, ry: 1.3 })]), {}, { c: RUSTY });
-    // trousers & boots
+    addFleshBody(rig, D, { c: JL_SKIN, cfn: jlSkin, limbSeg: 10, muscle: 2.05, belly: 0.15, bellyY: 0.15, depth: 1.25, seed: 21, torsoW: 1.14, hunch: 0.05, veins: true, veinC: [0.36, 0.24, 0.24], grip: { R: true, L: true } });
+    const LEA = [0.62, 0.45, 0.33];
+    // leather apron, braces and belt
+    rig.add('chest', 'leather', deform(panel(0.56, 1.2, { ws: 6, hs: 8, tatter: 0.1, seed: 3, curve: 0.24, taperBot: 0.85 }), (v) => { v.z += clamp(-v.y, 0, 0.5) * 0.17; }), { y: D.chest * 0.78, z: 0.29 }, {
+      cfn: (v) => { const n = vnoise(v.x * 7, v.y * 6, 1, 23), k = 0.75 + 0.35 * vnoise(v.x * 25, v.y * 25, 0, 2), b = smooth(0.58, 0.78, n); return [lerp(0.78, 0.4, b) * k, lerp(0.58, 0.12, b) * k, lerp(0.44, 0.1, b) * k]; },
+      skin: chainSkin([['thighL', -0.95], ['hips', -0.55], ['chest', 0.0]], (v) => v.y), anim: (v) => clamp((-v.y - 0.6) * 0.8) * 0.5,
+    });
+    rig.add('chest', 'leather', mergeRaw([xf(G.box(0.06, 0.5, 0.022), { x: 0.17, y: D.chest * 0.78, z: 0.25, rx: -0.55, rz: 0.1 }), xf(G.box(0.06, 0.5, 0.022), { x: -0.17, y: D.chest * 0.78, z: 0.25, rx: -0.55, rz: -0.1 })]), {}, { c: [0.45, 0.3, 0.2] });
+    rig.add('hips', 'leather', xf(G.cyl(0.31, 0.31, 0.09, 18, true), { sz: 0.86 }), { y: 0.02 }, { c: [0.4, 0.28, 0.18] });
+    rig.add('hips', 'iron', G.box(0.11, 0.1, 0.03), { y: 0.02, z: 0.275 }, { cfn: rustFn(2) });
+    // heavy leather shoulder mantle under the mask
+    rig.add('chest', 'leather', robe(0.17, 0.44, 0.26, { seg: 18, rows: 3, folds: 8, foldAmp: 0.09, tatter: 0.2, seed: 8 }), { y: D.chest + 0.06, sz: 0.85 }, { c: [0.32, 0.24, 0.18], anim: (v) => clamp(-v.y * 3) * 0.3 });
+    // key ring + shackles on the belt, a chain slung over the left shoulder
+    rig.add('hips', 'iron', mergeRaw([xf(G.tor(0.06, 0.009, 4, 12), { x: 0.26, y: -0.07, z: 0.13, ry: 1.0 }), ...[0, 1, 2, 3, 4].map((i) => xf(G.box(0.014, 0.1, 0.005), { x: 0.26 + (i - 2) * 0.02, y: -0.14, z: 0.14, rz: (i - 2) * 0.2 })), xf(G.tor(0.065, 0.013, 4, 12), { x: -0.27, y: -0.09, z: 0.06, ry: 1.3 }), xf(G.tor(0.065, 0.013, 4, 12), { x: -0.29, y: -0.17, z: 0.04, ry: 1.0, rx: 0.4 })]), {}, { cfn: rustFn(4) });
+    const ch = [];
+    for (let i = 0; i < 18; i++) { const u = i / 17, a = lerp(-0.5, 1.6, u); ch.push(xf(G.tor(0.032, 0.009, 3, 6), { x: lerp(0.24, -0.26, u), y: D.chest * 0.98 - Math.sin(u * Math.PI) * D.chest * 0.62, z: 0.25 * Math.cos(a * 0.7) * (u < 0.5 ? 1 : 1), ry: (i % 2) * Math.PI / 2 + 0.6, rz: 0.9 })); }
+    rig.add('chest', 'iron', mergeRaw(ch), {}, { c: [1.3, 1.05, 0.9] });
+    // trousers & boots, bracers
     for (const S of ['L', 'R']) {
-      rig.add('thigh' + S, 'cloth', taper(0.15, 0.11, D.thigh + 0.05, 10, 2), { y: 0.03 }, { c: [0.3, 0.26, 0.22] });
-      rig.add('shin' + S, 'leather', taper(0.1, 0.09, D.shin * 0.75, 10, 2), { y: -D.shin * 0.25 }, { c: [0.35, 0.24, 0.16] });
-      rig.add('foot' + S, 'leather', xf(G.sph(0.07, 10, 6), { sx: 1.05, sy: 0.6, sz: 1.9 }), { y: -0.04, z: 0.06 }, { c: [0.3, 0.2, 0.14] });
-      rig.add('fore' + S, 'leather', G.cyl(0.08, 0.07, 0.2, 10), { y: -0.27 }, { c: [0.35, 0.24, 0.16] });
+      rig.add('thigh' + S, 'cloth', taper(0.16, 0.12, D.thigh + 0.05, 10, 2), { y: 0.03 }, { c: [0.28, 0.24, 0.2] });
+      rig.add('shin' + S, 'leather', taper(0.11, 0.1, D.shin * 0.75, 10, 2), { y: -D.shin * 0.25 }, { c: [0.35, 0.24, 0.16] });
+      rig.add('shin' + S, 'leather', shell([[0.125, -0.04], [0.13, 0.03]], 0.008, 10), { y: -D.shin * 0.25 }, { c: [0.3, 0.2, 0.14] });
+      rig.add('foot' + S, 'leather', xf(G.sph(0.075, 10, 6), { sx: 1.05, sy: 0.6, sz: 1.9 }), { y: -0.04, z: 0.06 }, { c: [0.3, 0.2, 0.14] });
+      rig.add('fore' + S, 'leather', mergeRaw([xf(G.cyl(0.085, 0.075, 0.22, 10), { y: -0.27 }), ...[-0.2, -0.32].map((y) => xf(G.tor(0.087, 0.01, 3, 10), { rx: Math.PI / 2, y }))]), {}, { c: [0.35, 0.24, 0.16] });
     }
     // iron mask helm: bucket with eye slits, breathing holes and rivets
-    const helm = shell([[0.135, -0.02], [0.14, 0.12], [0.135, 0.22], [0.1, 0.27], [0.001, 0.285]], 0.012, 16);
+    const helm = shell([[0.14, -0.02], [0.145, 0.12], [0.14, 0.22], [0.105, 0.27], [0.001, 0.285]], 0.012, 16);
     deform(helm, (v) => { v.z *= 1.08; if (v.z > 0) v.z += Math.max(0, 1 - Math.abs(v.x) / 0.14) * 0.02; });
-    rig.add('head', 'iron', helm, { y: 0.0 }, { c: DARKSTEEL });
-    rig.pair('head', 'head', 'dark', G.box(0.06, 0.016, 0.02), { x: 0.045, y: 0.15, z: 0.145 });
-    rig.pair('head', 'head', 'glow', G.box(0.03, 0.008, 0.01), { x: 0.045, y: 0.15, z: 0.15 }, { c: HDR(0xff8a3a, 4) });
-    rig.add('head', 'dark', mergeRaw([0, 1, 2, 3, 4, 5].map((i) => xf(G.cyl(0.006, 0.006, 0.02, 5), { x: (i % 3 - 1) * 0.025, y: 0.06 + Math.floor(i / 3) * 0.025, z: 0.155, rx: Math.PI / 2 }))));
-    rig.add('head', 'iron', mergeRaw([xf(G.tor(0.142, 0.01, 4, 20), { rx: Math.PI / 2, y: 0.0, sy: 1.08 }), xf(G.box(0.02, 0.27, 0.02), { y: 0.13, z: 0.155 }), xf(G.tor(0.142, 0.01, 4, 20), { rx: Math.PI / 2, y: 0.2, sy: 1.08 })]), {}, { c: RUSTY });
-    rig.add('head', 'iron', rivets(Array.from({ length: 12 }, (_, i) => { const a = (i / 12) * TAU; return [Math.sin(a) * 0.15, 0.1, Math.cos(a) * 0.15 * 1.08]; }), 0.01), {}, { c: RUSTY });
-    // big iron shield on the left, flail on the right
-    addTowerShield(rig, 'foreL', { w: 0.7, h: 1.05, y: -0.2, c: [0.4, 0.34, 0.3], rimC: RUSTY, spike: true });
+    rig.add('head', 'iron', helm, { y: 0.0 }, { cfn: rustFn(6, 0.7) });
+    rig.pair('head', 'head', 'dark', G.box(0.06, 0.016, 0.02), { x: 0.045, y: 0.15, z: 0.15 });
+    rig.pair('head', 'head', 'glow', G.box(0.03, 0.008, 0.01), { x: 0.045, y: 0.15, z: 0.155 }, { c: HDR(0xff8a3a, 4.5) });
+    rig.add('head', 'dark', mergeRaw([0, 1, 2, 3, 4, 5].map((i) => xf(G.cyl(0.006, 0.006, 0.02, 5), { x: (i % 3 - 1) * 0.025, y: 0.06 + Math.floor(i / 3) * 0.025, z: 0.16, rx: Math.PI / 2 }))));
+    rig.add('head', 'iron', mergeRaw([xf(G.tor(0.147, 0.011, 4, 20), { rx: Math.PI / 2, y: 0.0, sy: 1.08 }), xf(G.box(0.022, 0.27, 0.02), { y: 0.13, z: 0.16 }), xf(G.tor(0.147, 0.011, 4, 20), { rx: Math.PI / 2, y: 0.2, sy: 1.08 })]), {}, { cfn: rustFn(3) });
+    rig.add('head', 'iron', rivets(Array.from({ length: 10 }, (_, i) => { const a = (i / 10) * TAU; return [Math.sin(a) * 0.155, 0.1, Math.cos(a) * 0.155 * 1.08]; }), 0.011), {}, { c: [2.0, 1.2, 0.8] });
+    // the cell-door shield on the left forearm, the flail on the right
+    cellDoor(rig, 'foreL', { x: 0.08, y: -0.2, z: 0, ry: Math.PI / 2, rx: Math.PI / 2 });
     rig.add('handR', 'wood', xf(G.cyl(0.03, 0.035, 0.6, 8), { rx: Math.PI / 2, z: 0.22 }), { y: -0.07 }, { c: [0.6, 0.42, 0.3] });
-    rig.add('handR', 'iron', xf(G.cyl(0.04, 0.04, 0.06, 8), { rx: Math.PI / 2, z: 0.52 }), { y: -0.07 }, { c: RUSTY });
-    const links = mergeRaw(Array.from({ length: 6 }, (_, i) => xf(G.tor(0.025, 0.008, 4, 8), { y: -0.035 - i * 0.045, ry: (i % 2) * Math.PI / 2 })));
-    rig.add('flail', 'iron', links, {}, { c: DARKSTEEL });
-    const ball = mergeRaw([G.sph(0.13, 12, 9), ...Array.from({ length: 14 }, (_, i) => { const a = i * 2.4, b = Math.acos(1 - 2 * (i + 0.5) / 14); const d = new THREE.Vector3(Math.sin(b) * Math.cos(a), Math.cos(b), Math.sin(b) * Math.sin(a)); const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d); const e = new THREE.Euler().setFromQuaternion(q); return xf(G.cone(0.03, 0.09, 4), { x: d.x * 0.15, y: d.y * 0.15, z: d.z * 0.15, rx: e.x, ry: e.y, rz: e.z }); })]);
-    rig.add('flail', 'iron', ball, { y: -0.4 }, { c: DARKSTEEL });
+    rig.add('handR', 'iron', mergeRaw([xf(G.cyl(0.042, 0.042, 0.07, 8), { rx: Math.PI / 2, z: 0.52 }), xf(G.tor(0.025, 0.008, 4, 8), { z: 0.56, ry: Math.PI / 2 })]), { y: -0.07 }, { cfn: rustFn(1) });
+    const links = mergeRaw(Array.from({ length: 6 }, (_, i) => xf(G.tor(0.026, 0.009, 4, 8), { y: -0.035 - i * 0.047, ry: (i % 2) * Math.PI / 2, sy: 1.25 })));
+    rig.add('flail', 'iron', links, {}, { c: [1.2, 1.05, 1.0] });
+    const ball = mergeRaw([G.sph(0.13, 12, 9), ...Array.from({ length: 14 }, (_, i) => { const a = i * 2.4, b = Math.acos(1 - 2 * (i + 0.5) / 14); const d = new THREE.Vector3(Math.sin(b) * Math.cos(a), Math.cos(b), Math.sin(b) * Math.sin(a)); const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d); const e = new THREE.Euler().setFromQuaternion(q); return xf(G.cone(0.032, 0.1, 4), { x: d.x * 0.15, y: d.y * 0.15, z: d.z * 0.15, rx: e.x, ry: e.y, rz: e.z }); })]);
+    rig.add('flail', 'iron', ball, { y: -0.4 }, { cfn: rustFn(9, 1.1) });
     rig.socket('muzzle', 'flail', 0, -0.4, 0);
     return D;
   },
   pose: humanoidPose,
   anim: {
-    death: 'fall', spawn: 'rise', gait: 'plod', armSwing: 0.2, armOut: 0.25, stride: 0.42, knee: 0.7, breath: 1.2,
-    rest: { armR: [-0.3, 0, -0.05], foreR: [-0.9, 0, 0], handR: [0.5, 0, 0], armL: [-0.3, -0.9, 0.25], foreL: [-1.3, 0, 0] },
-    stance: (P) => P.apply({ spine: [0.08, 0, 0], chest: [0.1, 0, 0], neck: [-0.1, 0, 0], thighL: [-0.1, 0, 0.08], thighR: [-0.1, 0, -0.08], shinL: [0.18, 0, 0], shinR: [0.18, 0, 0], hips: [0, 0, 0, 0, -0.03, 0] }),
+    death: 'fall', spawn: 'rise', gait: 'plod', armSwing: 0.2, armOut: 0.28, stride: 0.42, knee: 0.7, breath: 1.2,
+    rest: { armR: [-0.3, 0, -0.05], foreR: [-0.9, 0, 0], handR: [0.5, 0, 0], armL: [-0.32, -0.9, 0.28], foreL: [-1.3, 0, 0] },
+    stance: (P) => P.apply({ spine: [0.08, 0, 0], chest: [0.1, 0, 0], neck: [-0.1, 0, 0], thighL: [-0.1, 0, 0.09], thighR: [-0.1, 0, -0.09], shinL: [0.18, 0, 0], shinR: [0.18, 0, 0], hips: [0, 0, 0, 0, -0.03, 0] }),
+    stagger: { spine: [-0.18, 0.1, 0.05], chest: [-0.16, 0.15, 0], head: [-0.3, -0.2, 0.12], armR: [0.3, 0, -0.5], foreR: [-0.5, 0, 0], armL: [0.1, -0.6, 0.4], hips: [0, 0, 0, 0, -0.05, -0.1], thighL: [-0.3, 0, 0], shinL: [0.4, 0, 0] },
     actions: {
+      slam: JL_SLAM, swing: JL_SWING,
       bash: act2(
         { armL: [-0.1, -1.2, 0.5], foreL: [-1.5, 0, 0], chest: [-0.1, 0.5, 0], spine: [0, 0.2, 0], hips: [0, 0, 0, 0, -0.05, -0.1], thighR: [-0.4, 0, 0], shinR: [0.6, 0, 0] },
         { armL: [-0.9, -0.9, 0.2], foreL: [-1.0, 0, 0], chest: [0.2, -0.3, 0], spine: [0.15, -0.1, 0], hips: [0, 0, 0, 0, -0.08, 0.35], thighL: [-0.7, 0, 0], shinL: [0.6, 0, 0] },
@@ -240,11 +509,19 @@ export const jailer = {
       ),
     },
     extra: (P, m, s, dt, k) => {
-      // flail pendulum (lags the hand), whirls during windup
-      const T = m.time;
-      if (k.action && s.anim === 'windup') { P.r('flail', -1.2 + Math.cos(T * 14) * 0.9, 0, Math.sin(T * 14) * 1.3); }
-      else if (k.action && s.anim === 'attack') { P.r('flail', 0.6 * (1 - s.progress) - 0.2, 0, 0); }
-      else P.r('flail', Math.sin(T * 2.2) * 0.25 + 0.2 + k.w * Math.sin(k.ph) * 0.4, 0, Math.sin(T * 1.7) * 0.2);
+      // flail: pendulum lagging the hand; whirls overhead (slam) or at the side (swing) through the wind-up
+      const T = m.time, an = s.anim;
+      if (k.action && an === 'windup') {
+        const sp = 9 + 7 * s.progress;
+        if (s.attackType === 'slam') P.r('flail', -1.45 + Math.cos(T * sp) * 0.25, Math.sin(T * sp) * 1.4, Math.sin(T * sp) * 0.4);
+        else P.r('flail', -1.2 + Math.cos(T * sp) * 1.0, 0, Math.sin(T * sp) * 1.3);
+      } else if (k.action && an === 'attack') P.r('flail', 0.7 * (1 - s.progress) - 0.25, 0, 0);
+      else if (an === 'death') P.r('flail', 0.6 * s.progress, 0, 0.4 * s.progress);
+      else P.r('flail', Math.sin(T * 2.2) * 0.25 + 0.2 + k.w * Math.sin(k.ph) * 0.45, 0, Math.sin(T * 1.7) * 0.2);
+      glowLevel(m, an === 'windup' ? 1 + smooth(0, 1, s.progress) : 1);
+      // a heavy breather: shoulders heave, the mask tips with each breath
+      P.r('chest', Math.max(0, Math.sin(T * 1.2 + m.seed * 4)) * 0.035, 0, 0); P.r('head', -Math.max(0, Math.sin(T * 1.2 + m.seed * 4)) * 0.05, 0, 0);
+      P.r('hips', 0, 0, Math.sin(k.ph) * 0.05 * k.w);
     },
   },
 };
@@ -354,7 +631,15 @@ export const executionerGuard = {
   id: 'executionerGuard', height: 2.5, radius: 0.65, eyeColor: 0xff3a20, elite: true, defaultAttack: 'slam', attackTypes: ['slam', 'sweep'],
   build(rig) { return buildHeadsman(rig, {}); },
   pose: humanoidPose,
-  anim: HEADSMAN_ANIM,
+  anim: {
+    ...HEADSMAN_ANIM,
+    stagger: { spine: [-0.2, 0.1, 0.06], chest: [-0.18, 0.15, 0], head: [-0.3, -0.2, 0.1], armL: [0.2, 0, 0.4], foreL: [-0.5, 0, 0], hips: [0, 0, 0, 0, -0.05, -0.1], thighL: [-0.3, 0, 0], shinL: [0.4, 0, 0] },
+    extra: (P, m, s, dt, k) => {
+      // eyes burn hotter through the wind-up; a slow, heavy breath heaves the shoulders
+      glowLevel(m, s.anim === 'windup' ? 1 + 1.1 * smooth(0, 1, s.progress) : s.anim === 'death' ? 1 - 0.9 * smooth(0.3, 0.9, s.progress) : 1);
+      P.r('chest', Math.max(0, Math.sin(m.time * 1.3 + m.seed * 3)) * 0.04 * (k.action ? 0.3 : 1), 0, 0);
+    },
+  },
 };
 export { HEADSMAN_ANIM };
 

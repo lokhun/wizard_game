@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { G, xf, taper, lathe, shell, tube, deform, bumpy, robe, panel, mergeRaw, chainSkin, spikeRing, rng, vnoise, clamp, lerp, smooth, bump, easeOut, easeIn, easeInOut, TAU } from './core.js';
 import { humanSkeleton, humanoidPose, act2, ACT } from './humanoid.js';
+import { glowLevel } from './bossKit.js';
 import {
   addSkull, addSkeletonBody, addFleshBody, addFleshHand, addBoneHand, addPlate, addTabard, greatHelm, hood, addWing, wingBones, flapWings, addHalberd, addCrystalStaff, addTowerShield, bookGeo,
   pauldron, rivets, HDR, STEEL, RUSTY, DARKSTEEL, BLACKSTEEL, GOLDTRIM,
@@ -62,7 +63,11 @@ export const animatedArmor = {
         { hit: 0.22 },
       ),
     },
-    extra: (P, m) => { m.U.uFlutterSpeed.value = 2.0; },
+    extra: (P, m, s) => {
+      m.U.uFlutterSpeed.value = s.anim === 'windup' ? 3.2 : 2.0;
+      // the binding light swells through a wind-up and drains away as the suit falls apart
+      glowLevel(m, s.anim === 'windup' ? 1 + 0.9 * smooth(0, 1, s.progress) : s.anim === 'death' ? 1 - 0.9 * smooth(0.2, 0.8, s.progress) : 1);
+    },
   },
 };
 
@@ -78,7 +83,7 @@ export const grimoire = {
     rig.bone('lower', 'spine', 0, -0.01, 0);
     rig.bone('pageA', 'spine', 0, 0, 0); rig.bone('pageB', 'spine', 0, 0, 0);
     rig.bone('runes', 'book', 0, 0, 0);
-    const W = 0.46, Dp = 0.36;
+    const W = 0.52, Dp = 0.4;
     const LEATHER = [0.45, 0.12, 0.14], PAGE = [0.95, 0.85, 0.62];
     for (const [b, sg] of [['upper', 1], ['lower', -1]]) {
       const cv = G.box(W + 0.04, 0.026, Dp + 0.02, 4, 1, 4);
@@ -116,6 +121,13 @@ export const grimoire = {
       ring.push(xf(G.box(0.008, 0.07, 0.003), { ...at }), xf(G.box(0.04, 0.008, 0.003), { ...at, y: 0.02 + (i % 3) * 0.012 }), xf(G.box(0.006, 0.03, 0.003), { ...at, x: at.x + Math.sin(a) * 0.015, z: at.z - Math.cos(a) * 0.015, y: -0.025, rz: 0.6 }));
     }
     rig.add('runes', 'spirit', mergeRaw(ring), {}, { c: HDR(RUNE, 1.1) });
+    // a long black tongue lolling out over the fore-edge teeth
+    rig.add('lower', 'leather', tube([[0, 0.0, Dp * 0.45], [0, 0.01, Dp * 0.85], [0.01, -0.04, Dp + 0.08], [0.03, -0.16, Dp + 0.1], [0.02, -0.25, Dp + 0.06]], (u) => 0.03 * (1 - u * 0.7), 10, 5), {}, { c: [0.75, 0.22, 0.26], anim: (v) => clamp((Dp - v.z) * -3 + 0.6) * 1.2 });
+    // a broken chain and padlock swinging from the clasp
+    const lk = [];
+    for (let i = 0; i < 4; i++) lk.push(xf(G.tor(0.016, 0.005, 3, 6), { x: W * 0.3, y: -0.06 - i * 0.03, z: Dp + 0.01, ry: (i % 2) * Math.PI / 2, sy: 1.3 }));
+    lk.push(xf(G.box(0.05, 0.055, 0.02), { x: W * 0.3, y: -0.2, z: Dp + 0.01 }), xf(G.tor(0.016, 0.006, 3, 8, Math.PI), { x: W * 0.3, y: -0.172, z: Dp + 0.01 }));
+    rig.add('lower', 'gold', mergeRaw(lk), {}, { c: [0.7, 0.55, 0.38], anim: (v) => clamp(-v.y * 5) * 0.8 });
     rig.socket('muzzle', 'book', 0, 0, 0.18);
     return {};
   },
@@ -169,6 +181,7 @@ export const grimoire = {
     }
     P.r('upper', -open); P.r('lower', open * 0.55);
     P.s('runes', Math.max(0.001, runeS));
+    glowLevel(m, anim === 'windup' ? 1 + 0.8 * smooth(0, 1, p) : anim === 'death' ? 1 - 0.85 * p : 1);
     return rate;
   },
 };
@@ -322,12 +335,12 @@ export const imp = {
     let prev = 'hips';
     for (let i = 0; i < 6; i++) { rig.bone('tail' + i, prev, 0, -0.01, i === 0 ? -0.06 : -0.075, { rate: 0.65 }); prev = 'tail' + i; }
     const SK = [1.25, 0.62, 0.5];
-    addFleshBody(rig, D, { mat: 'magma', c: SK, muscle: 0.75, seed: 51, rough: 1.2, belly: 0.03, bellyY: 0.07, claws: 0.035, toeClaws: true, clawC: 0x1a1210 });
+    addFleshBody(rig, D, { mat: 'magma', c: SK, seg: 12, limbSeg: 8, muscle: 0.8, seed: 51, rough: 1.2, belly: 0.03, bellyY: 0.07, claws: 0.035, toeClaws: true, clawC: 0x1a1210 });
     // big head with grin, horns, ears
     const hd = deform(G.sph(0.1, 16, 12), (v) => { v.z *= 1.05; if (v.y < -0.02) { v.x *= 1.08; } if (v.z > 0.05 && v.y > 0.0) v.z += 0.01; });
     rig.add('head', 'magma', bumpy(hd, 0.006, 12, 3), { y: 0.09, z: 0.01 }, { c: SK });
     rig.add('head', 'magma', xf(G.box(0.15, 0.025, 0.05), { y: 0.14, z: 0.075, rx: 0.4 }), {}, { c: SK });
-    rig.pair('head', 'head', 'bone', tube([[0.05, 0.15, 0.03], [0.1, 0.22, 0.0], [0.12, 0.3, -0.07], [0.1, 0.33, -0.15]], (u) => 0.024 * (1 - u * 0.85), 12, 6), {}, { c: [0.25, 0.18, 0.15] });
+    rig.pair('head', 'head', 'bone', tube([[0.05, 0.15, 0.03], [0.1, 0.22, 0.0], [0.12, 0.3, -0.07], [0.1, 0.33, -0.15]], (u) => 0.026 * (1 - u * 0.85), 8, 5), {}, { c: [0.25, 0.18, 0.15] });
     rig.pair('head', 'head', 'magma', xf(G.cone(0.035, 0.13, 4), { sz: 0.3 }), { x: 0.1, y: 0.11, z: -0.0, rz: -1.25, ry: -0.25 }, { c: SK });
     rig.pair('head', 'head', 'dark', G.sph(0.022, 8, 6), { x: 0.04, y: 0.105, z: 0.085, sz: 0.6 });
     rig.pair('head', 'head', 'glow', xf(G.sph(0.016, 8, 6), { sx: 1.2, sy: 0.75 }), { x: 0.043, y: 0.107, z: 0.095, rz: -0.3 }, { c: HDR(0xffd23a, 7) });
@@ -336,11 +349,11 @@ export const imp = {
     rig.add('jaw', 'magma', xf(G.box(0.1, 0.025, 0.07), { y: 0.03, z: 0.04 }), {}, { c: SK });
     rig.add('jaw', 'bone', mergeRaw(Array.from({ length: 8 }, (_, i) => { const a = (i / 7 - 0.5) * 2.0; return xf(G.cone(0.006, 0.02, 4), { x: Math.sin(a) * 0.045, y: 0.05, z: 0.04 + Math.cos(a) * 0.03 }); })), {}, { c: [0.95, 0.85, 0.6] });
     // wings + spade tail
-    addWing(rig, 1, { span: 0.6, mat: 'leather', c: [0.5, 0.12, 0.08], boneC: [0.3, 0.1, 0.08], claw: true, fingers: 3 });
-    addWing(rig, -1, { span: 0.6, mat: 'leather', c: [0.5, 0.12, 0.08], boneC: [0.3, 0.1, 0.08], claw: true, fingers: 3 });
+    addWing(rig, 1, { span: 0.6, mat: 'leather', c: [0.5, 0.12, 0.08], boneC: [0.3, 0.1, 0.08], claw: true, fingers: 3, us: 12 });
+    addWing(rig, -1, { span: 0.6, mat: 'leather', c: [0.5, 0.12, 0.08], boneC: [0.3, 0.1, 0.08], claw: true, fingers: 3, us: 12 });
     const pts = []; for (let i = 0; i <= 6; i++) pts.push([0, -0.01 - i * 0.01, -0.05 - i * 0.075]);
     const chain = [['hips', 0.04], ...Array.from({ length: 6 }, (_, i) => ['tail' + i, 0.06 + i * 0.075])];
-    rig.add('hips', 'magma', tube(pts, (u) => 0.025 * (1 - u * 0.7), 24, 6), {}, { c: SK, skin: chainSkin(chain, (v) => -v.z) });
+    rig.add('hips', 'magma', tube(pts, (u) => 0.025 * (1 - u * 0.7), 12, 5), {}, { c: SK, skin: chainSkin(chain, (v) => -v.z) });
     rig.add('tail5', 'magma', xf(G.cone(0.045, 0.1, 4), { z: -0.08, rx: -Math.PI / 2, sy: 0.3 }), {}, { c: SK });
     // loincloth scrap
     rig.add('hips', 'cloth', panel(0.12, 0.12, { tatter: 0.4, seed: 4 }), { y: -0.02, z: 0.075 }, { c: [0.15, 0.08, 0.06], anim: (v) => -v.y * 2 });
@@ -366,6 +379,11 @@ export const imp = {
       for (let i = 0; i < 6; i++) P.r('tail' + i, 0.35 - i * 0.05 + Math.sin(m.time * 3 - i * 0.7) * 0.15, Math.sin(m.time * 2.1 - i * 0.6) * 0.25, 0);
       if (!k.action) P.r('jaw', 0.2 + Math.sin(m.time * 4) * 0.08);
       if (!k.action && !dead) m.setOrb(0.25 + Math.sin(m.time * 5) * 0.05);
+      // the little furnace stokes up before it throws (eyes, grin and every crack brighten)
+      const heat = s.anim === 'windup' ? 1 + smooth(0, 1, s.progress) : dead ? 1 - 0.8 * s.progress : 1;
+      glowLevel(m, heat);
+      const st = m.state; st.crack0 = st.crack0 ?? m.U.uCrack.value.clone();
+      m.U.uCrack.value.copy(st.crack0).multiplyScalar(0.7 + 0.3 * heat);
     },
   },
 };
@@ -459,22 +477,33 @@ export const royalGuard = {
     addSkeletonBody(rig, D, { c: [0.85, 0.82, 0.72], grip: { R: true, L: true }, armored: true });
     const BK = [0.2, 0.2, 0.23];
     addPlate(rig, D, { mat: 'steel', c: BK, bulk: 1.1, pauldron: 0.14, trim: true, mailC: [0.45, 0.45, 0.5] });
-    addTabard(rig, D, { c: [0.06, 0.05, 0.06], tatter: 0.15, seed: 4, len: 0.95, w: 0.8, emblem: mergeRaw([xf(G.box(0.14, 0.03, 0.01), {}), ...[-1, 0, 1].map((i) => xf(G.cone(0.02, 0.07, 4), { x: i * 0.05, y: 0.045 }))]), cfn: (v) => (Math.abs(v.x) > 0.17 ? GOLDTRIM : [0.06, 0.05, 0.06]) });
+    addTabard(rig, D, { c: [0.06, 0.05, 0.06], tatter: 0.15, seed: 4, len: 0.95, w: 0.8, depth: 2.05, emblem: mergeRaw([xf(G.box(0.14, 0.03, 0.01), {}), ...[-1, 0, 1].map((i) => xf(G.cone(0.02, 0.07, 4), { x: i * 0.05, y: 0.045 }))]), cfn: (v) => (Math.abs(v.x) > 0.17 ? GOLDTRIM : [0.06, 0.05, 0.06]) });
     // skull under an open-faced, crested helm
     addSkull(rig, 'head', 'jaw', { eye: RG_EYE, eyeK: 7, c: [0.85, 0.82, 0.72] });
     const helm = shell([[0.135, 0.06], [0.14, 0.13], [0.13, 0.2], [0.09, 0.25], [0.001, 0.27]], 0.01, 16);
     rig.add('head', 'steel', helm, { y: 0.01, sz: 1.1 }, { c: BK });
     rig.add('head', 'steel', mergeRaw([xf(G.box(0.03, 0.15, 0.14), { x: 0.12, y: 0.03, z: 0.0 }), xf(G.box(0.03, 0.15, 0.14), { x: -0.12, y: 0.03, z: 0.0 }), xf(G.box(0.24, 0.12, 0.03), { y: 0.06, z: -0.13 })]), {}, { c: BK });
     rig.add('head', 'gold', mergeRaw([xf(G.tor(0.142, 0.01, 4, 20), { rx: Math.PI / 2, y: 0.13, sy: 1.1 }), xf(G.box(0.02, 0.14, 0.32), { y: 0.3, z: -0.02 }), xf(G.box(0.012, 0.18, 0.02), { y: 0.13, z: 0.15 })]), {}, { c: GOLDTRIM });
-    addTowerShield(rig, 'foreL', { w: 0.62, h: 1.1, y: -0.18, c: BK, rimC: GOLDTRIM, mat: 'steel', rimMat: 'gold', emblem: (r, b, t) => r.add(b, 'gold', mergeRaw([xf(G.tor(0.12, 0.02, 4, 16), { z: 0.07 }), xf(G.box(0.03, 0.5, 0.02), { z: 0.07 }), xf(G.box(0.3, 0.03, 0.02), { z: 0.07, y: 0.08 })]), t, { c: GOLDTRIM }) });
+    addTowerShield(rig, 'foreL', { w: 0.56, h: 0.98, y: -0.17, c: BK, rimC: GOLDTRIM, mat: 'steel', rimMat: 'gold', emblem: (r, b, t) => r.add(b, 'gold', mergeRaw([xf(G.tor(0.12, 0.02, 4, 16), { z: 0.07 }), xf(G.box(0.03, 0.5, 0.02), { z: 0.07 }), xf(G.box(0.3, 0.03, 0.02), { z: 0.07, y: 0.08 })]), t, { c: GOLDTRIM }) });
     addHalberd(rig, 'handR', { len: 2.4, grip: 0.38, metalC: [1.4, 1.4, 1.5], trimC: GOLDTRIM });
+    // a long, moth-eaten royal cape, black with a gold-threaded hem
+    const cape = panel(0.56, 1.35, { ws: 6, hs: 9, tatter: 0.35, seed: 31, curve: 0.12, taperBot: 1.25 });
+    rig.add('chest', 'cloth', cape, { y: D.chest - 0.02, z: -0.23, ry: Math.PI, rx: 0.08 }, {
+      cfn: (v) => { const k = 0.7 + 0.35 * vnoise(v.x * 8, v.y * 8, 3, 9); return v.y < -1.18 ? [0.65 * k, 0.5 * k, 0.24 * k] : [0.07 * k, 0.06 * k, 0.08 * k]; },
+      anim: (v) => clamp(-v.y / 1.2) * 1.6,
+      skin: chainSkin([['hips', -1.05], ['spine', -0.5], ['chest', -0.05]], (v) => v.y),
+    });
     rig.socket('muzzle', 'handR', 0, -0.07, 1.4);
     return D;
   },
   pose: humanoidPose,
   anim: {
     death: 'collapse', spawn: 'rise', gait: 'plod', armSwing: 0.15, stride: 0.5, knee: 0.7,
-    rest: { armR: [-0.3, 0, 0.0], foreR: [-1.15, 0, 0], handR: [-0.2, 0, 0], armL: [-0.3, -0.9, 0.25], foreL: [-1.3, 0, 0] },
+    rest: { armR: [-0.3, 0, 0.0], foreR: [-1.15, 0, 0], handR: [-0.2, 0, 0], armL: [-0.12, -0.9, 0.25], foreL: [-1.3, 0, 0] },
+    extra: (P, m, s, dt, k) => {
+      glowLevel(m, s.anim === 'windup' ? 1 + smooth(0, 1, s.progress) : s.anim === 'death' ? 1 - 0.9 * s.progress : 1);
+      if (!k.action && s.anim !== 'death') P.r('jaw', Math.max(0, Math.sin(m.time * 0.8 + m.seed * 5)) * 0.12);
+    },
     stance: (P) => P.apply({ spine: [0.05, 0, 0], thighL: [-0.06, 0, 0.04], thighR: [-0.06, 0, -0.04], shinL: [0.1, 0, 0], shinR: [0.1, 0, 0] }),
     actions: {
       bash: act2(
