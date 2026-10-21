@@ -61,6 +61,7 @@ const LEAK_MAT = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.2, 1.25,
 const BLOOD_MAT = new THREE.MeshStandardMaterial({ color: 0x4a0408, roughness: 0.12, metalness: 0.2, emissive: 0x3a0002, emissiveIntensity: 1 });
 const RUNE_MAT = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 0.25, 0.2) });
 const _v = new THREE.Vector3();
+const BLOOD_MOON = new THREE.Color(1, 0.12, 0.08); // a Color: Color.lerp reads r/g/b, a Vector3 gave NaN
 
 export class Encounters {
   constructor(game) {
@@ -764,7 +765,7 @@ export class Encounters {
     g.selfLight.distance = 11 + (this.selfK - 1) * 5;
     if (g.biome.moon) {
       this._moonK = (this._moonK ?? 0) + (this._moonWant - (this._moonK ?? 0)) * k;
-      g.moon.color.copy(this.moonBase).lerp(_v.set(1, 0.12, 0.08), this._moonK * 0.85);
+      g.moon.color.copy(this.moonBase).lerp(BLOOD_MOON, this._moonK * 0.85);
     }
   }
 
