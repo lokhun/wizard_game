@@ -322,12 +322,12 @@ export const imp = {
     let prev = 'hips';
     for (let i = 0; i < 6; i++) { rig.bone('tail' + i, prev, 0, -0.01, i === 0 ? -0.06 : -0.075, { rate: 0.65 }); prev = 'tail' + i; }
     const SK = [1.25, 0.62, 0.5];
-    addFleshBody(rig, D, { mat: 'magma', c: SK, muscle: 0.75, seed: 51, rough: 1.2, belly: 0.03, bellyY: 0.07, claws: 0.035, toeClaws: true, clawC: 0x1a1210 });
+    addFleshBody(rig, D, { mat: 'magma', c: SK, seg: 12, limbSeg: 8, muscle: 0.8, seed: 51, rough: 1.2, belly: 0.03, bellyY: 0.07, claws: 0.035, toeClaws: true, clawC: 0x1a1210 });
     // big head with grin, horns, ears
     const hd = deform(G.sph(0.1, 16, 12), (v) => { v.z *= 1.05; if (v.y < -0.02) { v.x *= 1.08; } if (v.z > 0.05 && v.y > 0.0) v.z += 0.01; });
     rig.add('head', 'magma', bumpy(hd, 0.006, 12, 3), { y: 0.09, z: 0.01 }, { c: SK });
     rig.add('head', 'magma', xf(G.box(0.15, 0.025, 0.05), { y: 0.14, z: 0.075, rx: 0.4 }), {}, { c: SK });
-    rig.pair('head', 'head', 'bone', tube([[0.05, 0.15, 0.03], [0.1, 0.22, 0.0], [0.12, 0.3, -0.07], [0.1, 0.33, -0.15]], (u) => 0.024 * (1 - u * 0.85), 12, 6), {}, { c: [0.25, 0.18, 0.15] });
+    rig.pair('head', 'head', 'bone', tube([[0.05, 0.15, 0.03], [0.1, 0.22, 0.0], [0.12, 0.3, -0.07], [0.1, 0.33, -0.15]], (u) => 0.026 * (1 - u * 0.85), 8, 5), {}, { c: [0.25, 0.18, 0.15] });
     rig.pair('head', 'head', 'magma', xf(G.cone(0.035, 0.13, 4), { sz: 0.3 }), { x: 0.1, y: 0.11, z: -0.0, rz: -1.25, ry: -0.25 }, { c: SK });
     rig.pair('head', 'head', 'dark', G.sph(0.022, 8, 6), { x: 0.04, y: 0.105, z: 0.085, sz: 0.6 });
     rig.pair('head', 'head', 'glow', xf(G.sph(0.016, 8, 6), { sx: 1.2, sy: 0.75 }), { x: 0.043, y: 0.107, z: 0.095, rz: -0.3 }, { c: HDR(0xffd23a, 7) });
@@ -336,11 +336,11 @@ export const imp = {
     rig.add('jaw', 'magma', xf(G.box(0.1, 0.025, 0.07), { y: 0.03, z: 0.04 }), {}, { c: SK });
     rig.add('jaw', 'bone', mergeRaw(Array.from({ length: 8 }, (_, i) => { const a = (i / 7 - 0.5) * 2.0; return xf(G.cone(0.006, 0.02, 4), { x: Math.sin(a) * 0.045, y: 0.05, z: 0.04 + Math.cos(a) * 0.03 }); })), {}, { c: [0.95, 0.85, 0.6] });
     // wings + spade tail
-    addWing(rig, 1, { span: 0.6, mat: 'leather', c: [0.5, 0.12, 0.08], boneC: [0.3, 0.1, 0.08], claw: true, fingers: 3 });
-    addWing(rig, -1, { span: 0.6, mat: 'leather', c: [0.5, 0.12, 0.08], boneC: [0.3, 0.1, 0.08], claw: true, fingers: 3 });
+    addWing(rig, 1, { span: 0.6, mat: 'leather', c: [0.5, 0.12, 0.08], boneC: [0.3, 0.1, 0.08], claw: true, fingers: 3, us: 12 });
+    addWing(rig, -1, { span: 0.6, mat: 'leather', c: [0.5, 0.12, 0.08], boneC: [0.3, 0.1, 0.08], claw: true, fingers: 3, us: 12 });
     const pts = []; for (let i = 0; i <= 6; i++) pts.push([0, -0.01 - i * 0.01, -0.05 - i * 0.075]);
     const chain = [['hips', 0.04], ...Array.from({ length: 6 }, (_, i) => ['tail' + i, 0.06 + i * 0.075])];
-    rig.add('hips', 'magma', tube(pts, (u) => 0.025 * (1 - u * 0.7), 24, 6), {}, { c: SK, skin: chainSkin(chain, (v) => -v.z) });
+    rig.add('hips', 'magma', tube(pts, (u) => 0.025 * (1 - u * 0.7), 12, 5), {}, { c: SK, skin: chainSkin(chain, (v) => -v.z) });
     rig.add('tail5', 'magma', xf(G.cone(0.045, 0.1, 4), { z: -0.08, rx: -Math.PI / 2, sy: 0.3 }), {}, { c: SK });
     // loincloth scrap
     rig.add('hips', 'cloth', panel(0.12, 0.12, { tatter: 0.4, seed: 4 }), { y: -0.02, z: 0.075 }, { c: [0.15, 0.08, 0.06], anim: (v) => -v.y * 2 });
