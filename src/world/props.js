@@ -584,6 +584,62 @@ function hayCart(rng) {
   return parts;
 }
 function cart() { return hayCart(Math.random).filter((p) => p[0] !== 'cloth'); }
+// a wagon that lost a wheel: the bed lists onto its axle, the wheel lies in the grass
+function brokenWagon(rng) {
+  const parts = [];
+  const tilt = 0.2 + rng() * 0.1;
+  const bed = [['wood', box(1.4, 0.1, 2.4), 0, 0.62, 0], ['wood', box(0.06, 0.45, 2.4), 0.7, 0.85, 0], ['wood', box(0.06, 0.45, 2.4), -0.7, 0.85, 0], ['wood', box(1.4, 0.45, 0.06), 0, 0.85, -1.2]];
+  for (const [k, g, x, y, z] of bed) parts.push([k, tf(g, { x, y: y - 0.12, z, rz: tilt })]);
+  // the surviving wheel, spokes and hub
+  parts.push(['wood', tf(tor(0.45, 0.06, 5, 12), { x: 0.8, y: 0.5, z: -0.6, ry: Math.PI / 2 })]);
+  for (let k = 0; k < 4; k++) parts.push(['wood', tf(box(0.05, 0.85, 0.05), { x: 0.8, y: 0.5, z: -0.6, rx: (k / 4) * Math.PI })]);
+  parts.push(['iron', tf(cyl(0.08, 0.08, 0.16, 8), { x: 0.8, y: 0.5, z: -0.6, rz: Math.PI / 2 })]);
+  // the lost one, flat in the grass, and a snapped spoke
+  parts.push(['wood', tf(tor(0.45, 0.06, 5, 12), { x: -1.25, y: 0.06, z: 0.5, rx: Math.PI / 2 })]);
+  for (let k = 0; k < 3; k++) parts.push(['wood', tf(box(0.05, 0.85, 0.05), { x: -1.25, y: 0.07, z: 0.5, rx: Math.PI / 2, rz: (k / 3) * Math.PI })]);
+  parts.push(['wood', tf(box(0.05, 0.4, 0.05), { x: -0.6, y: 0.03, z: 1.1, rz: Math.PI / 2, ry: 0.7 })]);
+  // the shafts dropped to the ground, loose boards and spilled sacks
+  for (const s of [-0.35, 0.35]) parts.push(['wood', tf(box(0.08, 0.08, 1.7), { x: s, y: 0.25, z: 1.85, rx: 0.28 })]);
+  parts.push(['wood', tf(box(0.24, 0.04, 1.3), { x: -1.0, y: 0.03, z: -0.9, ry: 0.5 })]);
+  const sackG = jitter(sph(0.28, 8, 6), 0.04, rng); sackG.scale(1, 0.7, 1.2);
+  parts.push(['cloth', colorize(tf(sackG, { x: 0.15, y: 0.7, z: 0.5 }), 0x8a7452)]);
+  return parts;
+}
+// training dummy: a straw man bound to a post on cross feet, arms out, a sack for a head
+function trainingDummy(rng) {
+  const parts = [];
+  for (const r of [0, Math.PI / 2]) parts.push(['wood', tf(box(0.9, 0.1, 0.12), { y: 0.05, ry: r + 0.3 })]);
+  parts.push(['wood', tf(cyl(0.06, 0.07, 2.0, 7), { y: 1.0 })]);
+  parts.push(['wood', tf(box(1.2, 0.09, 0.09), { y: 1.5, rz: (rng() - 0.5) * 0.15 })]);
+  const body = jitter(cyl(0.24, 0.2, 0.75, 9), 0.03, rng);
+  parts.push(['cloth', colorize(tf(body, { y: 1.28 }), 0xa88a4a)]);
+  for (const x of [-0.5, 0.5]) parts.push(['cloth', colorize(tf(jitter(cyl(0.09, 0.08, 0.36, 6), 0.02, rng), { x, y: 1.5, rz: Math.PI / 2 }), 0x9a7c40)]);
+  const head = jitter(sph(0.17, 8, 6), 0.025, rng);
+  parts.push(['cloth', colorize(tf(head, { y: 1.85, sy: 1.1 }), 0x8a7a5a)]);
+  for (const y of [1.05, 1.3, 1.52, 1.72]) parts.push(['cloth', colorize(tf(tor(y === 1.72 ? 0.1 : 0.22, 0.018, 3, 10), { y, rx: Math.PI / 2 }), 0x5a4428)]);
+  // a battered practice shield strapped to its chest
+  if (rng() < 0.6) {
+    parts.push(['wood', tf(cyl(0.28, 0.28, 0.04, 10), { y: 1.3, z: 0.24, rx: Math.PI / 2 })]);
+    parts.push(['iron', tf(tor(0.28, 0.02, 3, 12), { y: 1.3, z: 0.26 })]);
+  }
+  return parts;
+}
+// bales stacked against a wall, bound with twine
+function hayBales(rng) {
+  const parts = [];
+  const bale = (x, y, z, ry) => {
+    const g = jitter(box(1.0, 0.48, 0.52), 0.025, rng);
+    parts.push(['cloth', colorize(tf(g, { x, y: y + 0.24, z, ry }), rng() < 0.5 ? 0xa88c48 : 0x98803e)]);
+    for (const o of [-0.28, 0.28]) parts.push(['cloth', colorize(tf(box(0.03, 0.5, 0.54), { x: x + o * Math.cos(ry), y: y + 0.24, z: z - o * Math.sin(ry), ry }), 0x5a4428)]);
+  };
+  bale(-0.52, 0, 0, (rng() - 0.5) * 0.1);
+  bale(0.52, 0, 0.02, (rng() - 0.5) * 0.1);
+  bale(0.05, 0.48, 0, (rng() - 0.5) * 0.3);
+  if (rng() < 0.5) bale(1.1, 0, 0.75, 1.3);
+  const loose = jitter(sph(0.5, 8, 5), 0.08, rng); loose.scale(1.3, 0.25, 1);
+  parts.push(['cloth', colorize(tf(loose, { x: -0.2, y: 0.03, z: 0.5 }), 0xa89048)]);
+  return parts;
+}
 function ruinPillar(rng) {
   const parts = [];
   const h = 2 + rng() * 5;
@@ -681,7 +737,7 @@ export const PROPS = {
   bucket, hay, rack, cage, skeletonSit, bloodstain, puddle, grate, mushrooms, glowshrooms, pipe, sconce, brazier: () => brazier(false),
   brazierTall: () => brazier(true), brazierFloor, chandelier, candles, candelabra, bookPile, scrolls, armorStand, weaponRack, banner,
   painting, chest, statue, statueSmall: (r) => statue(r, true), well, fountain, tree, deadTree: (r) => tree(r, true), grave, hayCart, cart,
-  ruinPillar, gallows, throne, stainedGlass, shrine, merchant: merchantStall, ladder, stairsDown,
+  ruinPillar, gallows, throne, stainedGlass, shrine, merchant: merchantStall, ladder, stairsDown, brokenWagon, trainingDummy, hayBales,
 };
 export { cellBars, bookshelf };
 

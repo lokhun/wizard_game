@@ -119,7 +119,10 @@ const SURFS = {
     float mortarN = fbm(uv, 40., 3);
     h = max(h, 0.12 + mortarN * 0.08);
     vec3 base = mix(vec3(0.40, 0.38, 0.35), vec3(0.52, 0.49, 0.45), b.y);
-    base = mix(base, vec3(0.36, 0.33, 0.30), smoothstep(0.4, 0.8, fbm(uv + 3.1, 5., 4)));
+    // no two stones alike: ochre, cold grey, sooty black, the odd pale block
+    float hv = hash12(vec2(b.y * 53.1, 7.7));
+    base *= hv < 0.22 ? vec3(1.1, 0.97, 0.8) : hv < 0.46 ? vec3(0.86, 0.9, 0.97) : hv < 0.56 ? vec3(0.5, 0.48, 0.46) : hv < 0.62 ? vec3(1.22, 1.18, 1.1) : vec3(1.0);
+    base = mix(base, vec3(0.36, 0.33, 0.30), smoothstep(0.4, 0.8, fbm(uv + 3.1, 5., 4)) * 0.8);
     base *= 0.8 + 0.35 * detail;
     vec3 mortar = vec3(0.22, 0.20, 0.18) * (0.7 + 0.5 * mortarN);
     col = mix(mortar, base, stone);
@@ -127,8 +130,11 @@ const SURFS = {
     col = mix(col, col * vec3(0.55, 0.52, 0.45), grime * 0.7);
     float moss = smoothstep(0.62, 0.8, fbm(uv + 1.9, 6., 5)) * (1. - stone * 0.6);
     col = mix(col, vec3(0.13, 0.17, 0.08), moss * 0.6);
+    // damp seeping down the face: darker, glossier streaks
+    float seep = smoothstep(0.58, 0.85, fbm(vec2(uv.x * 7., uv.y * 0.8), 7., 4));
+    col *= 1. - seep * 0.3;
     col = srgb(col);
-    rough = mix(0.97, 0.82, stone) - detail * 0.05;
+    rough = mix(0.97, 0.82, stone) - detail * 0.05 - seep * 0.3;
     metal = 0.;
     ao = mix(0.55, 1.0, stone) * (0.85 + 0.15 * bulge);
   }`,
@@ -326,13 +332,20 @@ const SURFS = {
   void surf(vec2 uv, out vec3 col, out float h, out float rough, out float metal, out float ao){
     float n = fbm(uv, 6., 6);
     float blades = ridged(vec2(uv.x * 1., uv.y * 1.), 60., 3);
-    float dirtM = smoothstep(0.45, 0.7, fbm(uv + 2.3, 4., 5));
-    vec3 g1 = vec3(0.13, 0.17, 0.06), g2 = vec3(0.22, 0.24, 0.09);
-    vec3 grassC = mix(g1, g2, blades) * (0.75 + 0.5 * n);
-    vec3 dirt = vec3(0.17, 0.13, 0.09) * (0.7 + 0.5 * fbm(uv, 30., 4));
-    vec3 c = mix(grassC, dirt, dirtM * 0.85);
+    float fine = ridged(uv, 140., 2);
+    float dirtM = smoothstep(0.56, 0.74, fbm(uv + 2.3, 4., 5));
+    vec3 g1 = vec3(0.05, 0.075, 0.05), g2 = vec3(0.11, 0.14, 0.095);
+    vec3 grassC = mix(g1, g2, blades * 0.7 + fine * 0.3) * (0.7 + 0.55 * n);
+    // withered patches: straw-grey rather than brown
+    grassC = mix(grassC, vec3(0.15, 0.14, 0.1), smoothstep(0.55, 0.8, fbm(uv + 6.1, 5., 4)) * 0.6);
+    vec3 dirt = vec3(0.1, 0.09, 0.075) * (0.7 + 0.5 * fbm(uv, 30., 4));
+    vec3 c = mix(grassC, dirt, dirtM * 0.8);
     float pebbles = smoothstep(0.08, 0.0, voronoi(uv, 40., 1.).x) * dirtM;
-    c = mix(c, vec3(0.35, 0.33, 0.3), pebbles);
+    c = mix(c, vec3(0.3, 0.3, 0.29), pebbles);
+    // dead leaves blown into the turf
+    vec4 lv = voronoi(uv, 26., 1.);
+    float leaf = smoothstep(0.16, 0.08, lv.x) * step(0.82, lv.z);
+    c = mix(c, vec3(0.16, 0.1, 0.06) * (0.7 + 0.6 * fract(lv.z * 13.)), leaf);
     col = srgb(c);
     h = 0.4 + blades * 0.3 * (1. - dirtM) + pebbles * 0.3 + n * 0.1;
     rough = 0.95;
@@ -394,14 +407,21 @@ const SURFS = {
   plaster: /* glsl */ `
   void surf(vec2 uv, out vec3 col, out float h, out float rough, out float metal, out float ao){
     float n = fbm(uv, 5., 6);
-    float worn = smoothstep(0.58, 0.64, fbm(uv + 3.3, 3., 6));
+    float wm = fbm(uv + 3.3, 3., 6);
+    float worn = smoothstep(0.64, 0.69, wm);
+    float rim = smoothstep(0.6, 0.645, wm) * (1. - worn);
     vec4 b = bricks(uv, vec2(5., 12.), 0.5, 0.1);
     float brick = smoothstep(0.002, 0.008, b.x);
-    vec3 brickC = mix(vec3(0.35, 0.18, 0.12), vec3(0.45, 0.25, 0.17), b.y) * mix(0.4, 1., brick);
-    vec3 plasterC = vec3(0.55, 0.50, 0.42) * (0.85 + 0.2 * fbm(uv, 40., 4));
-    plasterC = mix(plasterC, vec3(0.33, 0.29, 0.22), smoothstep(0.4, 0.9, n) * 0.6);
+    vec3 brickC = mix(vec3(0.27, 0.15, 0.11), vec3(0.35, 0.21, 0.15), b.y) * mix(0.4, 1., brick);
+    vec3 plasterC = vec3(0.50, 0.45, 0.37) * (0.85 + 0.2 * fbm(uv, 40., 4));
+    plasterC = mix(plasterC, vec3(0.30, 0.26, 0.2), smoothstep(0.4, 0.9, n) * 0.65);
+    // soot and damp run down the plaster; hairline cracks; a grubby rim where it has broken away
+    float streak = smoothstep(0.5, 0.9, fbm(vec2(uv.x * 8., uv.y * 0.7), 8., 4));
+    vec4 v = voronoi(uv, 5., 1.);
+    float crack = (1. - smoothstep(0., 0.0025, v.w)) * step(0.55, hash12(vec2(v.z * 17., 3.)));
+    plasterC *= (1. - streak * 0.25) * (1. - crack * 0.55) * (1. - rim * 0.4);
     col = srgb(mix(plasterC, brickC, worn));
-    h = mix(0.75 + n * 0.05, 0.3 + 0.2 * brick, worn);
+    h = mix(0.75 + n * 0.05 + rim * 0.04 - crack * 0.1, 0.3 + 0.2 * brick, worn);
     rough = 0.92;
     metal = 0.;
     ao = mix(1., mix(0.5, 0.9, brick), worn);
