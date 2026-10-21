@@ -69,7 +69,8 @@ const GradeShader = {
       // damage and heal edges
       float edge = smoothstep(0.25, 0.75, length(dc) * 1.4);
       col = mix(col, vec3(0.55, 0.0, 0.0) + col * 0.4, uDamage * edge * 0.85);
-      col += vec3(0.1, 0.4, 0.15) * uHeal * edge;
+      // healing warms the screen edge green; a tint, not a wash over the view
+      col = mix(col, col * vec3(0.9, 1.3, 0.95) + vec3(0.012, 0.055, 0.022), min(uHeal, 1.0) * edge * 0.85);
       if (dashEdge > 0.0) {
         float ang = atan(dc.y, dc.x);
         float lane = floor(ang * 64.0);

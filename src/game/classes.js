@@ -86,6 +86,19 @@ function trackSummons(ctx, type, pos, life, { tick, gone, interval = 0.25 }) {
     } });
 }
 
+// The grave opens (Raise Dead, Army of the Dead): bone shards burst from the
+// floor, a column of green soul-fire, a pulse of light.
+function raiseFx(ctx, p) {
+  ctx.vfx.burst(v3(p.x, p.y + 0.2, p.z), { count: 10, speed: 4, upward: 1.4, life: 0.9, size: 0.12, sprite: SPR.CHUNK, solid: true, gravity: 12, spin: 6, color: [0.62, 0.6, 0.52], color2: [0.4, 0.38, 0.32] });
+  for (let i = 0; i < 12; i++) {
+    const a = Math.random() * Math.PI * 2, r = rand(0, 0.45);
+    ctx.vfx.P.glow({ x: p.x + Math.cos(a) * r, y: p.y + 0.1, z: p.z + Math.sin(a) * r, vx: rand(-0.3, 0.3), vy: rand(2.5, 5), vz: rand(-0.3, 0.3), r: 0.3, g: 1.0, b: 0.35, r2: 0.03, g2: 0.2, b2: 0.05, life: rand(0.5, 0.9), size: rand(0.35, 0.6), size2: 0.1, sprite: SPR.FLAME, drag: 1.5, delay: i * 0.02 });
+  }
+  ctx.vfx.burst(v3(p.x, p.y + 0.4, p.z), { element: 'necrotic', count: 14, speed: 2.5, upward: 1.2, life: 1, size: 0.3, sprite: SPR.WISP, drag: 1.5 });
+  ctx.vfx.ring(p, 1.6, fxOf('necrotic').mid, 0.5, 0.18);
+  ctx.vfx.flash(v3(p.x, p.y + 1, p.z), 0x50c050, 14, 7, 0.5);
+}
+
 // A spike of ice rising from the ground (visual), shattering after `life`.
 function iceSpike(ctx, at, life, onShatter) {
   return fxProj(ctx, { el: 'frost', pos: v3(at.x, at.y + 0.45, at.z), vel: v3(rand(-0.06, 0.06), 0.3, rand(-0.06, 0.06)), radius: 0.05, life, core: 0, mesh: 'bigShard', meshScale: rand(1.0, 1.4), light: 0, trail: 0,
@@ -93,29 +106,56 @@ function iceSpike(ctx, at, life, onShatter) {
 }
 
 // small helper: hold-to-channel beam that damages the first enemy it touches
-function beamChannel({ el, range, width, dmg, interval = 0.1, st, heal = 0, allyHeal = 0, pierce = false, sound, max = 4, onTickHit }) {
+function beamChannel({ el, range, width, dmg, interval = 0.1, st, heal = 0, allyHeal = 0, pierce = false, sound, max = 4, onTickHit, flowBack = false }) {
   return {
     max,
     start(ctx, S) {
+      const fx = fxOf(el);
       S.beam = ctx.vfx.beam({ element: el, width });
+      // a wide soft sheath around the hard core: the beam keeps its body at range
+      S.halo = ctx.vfx.beam({ element: el, width: width * 3.4, color: [fx.mid[0] * 0.28, fx.mid[1] * 0.28, fx.mid[2] * 0.28], core: [fx.mid[0] * 0.22, fx.mid[1] * 0.22, fx.mid[2] * 0.22], noise: 1 });
       S.acc = 0;
       S.snd = ctx.loop(sound ?? 'loop_channel');
       S.end = v3();
+      // the beam snaps on with a flash at the focus
+      ctx.vfx.muzzle(ctx.origin, ctx.dir, el, 1.3);
     },
     update(ctx, S, dt) {
       const o = ctx.origin, d = ctx.dir;
+      const fx = fxOf(el);
       const { hits, wall } = ctx.rt.rayActors(o, d, range, width * 0.8);
       let len = wall;
       if (!pierce && hits.length) len = hits[0].t;
       S.end.copy(o).addScaledVector(d, len);
       S.beam.alpha = 0.85 + Math.sin(ctx.time * 40) * 0.15;
       S.beam.update(o, S.end, width * (0.9 + Math.random() * 0.2));
+      S.halo.alpha = 0.8 + Math.sin(ctx.time * 23) * 0.2;
+      // (it starts a little way out, so it never wraps round the lens)
+      S.halo.update(tmp2.copy(o).addScaledVector(d, Math.min(1.6, len * 0.5)), S.end, width * 3.4 * (0.85 + Math.sin(ctx.time * 17) * 0.15));
+      // energy streaming along the beam (toward the caster for a siphon)
+      const nf = emitN(S, 'eF', 50, dt);
+      for (let i = 0; i < nf; i++) {
+        const t = rand(0.12, 1) * len, sp = flowBack ? -22 : 26;
+        const j = width * 0.6;
+        ctx.vfx.P.glow({ x: o.x + d.x * t + rand(-j, j), y: o.y + d.y * t + rand(-j, j), z: o.z + d.z * t + rand(-j, j), vx: d.x * sp, vy: d.y * sp, vz: d.z * sp,
+          r: fx.core[0] * 0.5, g: fx.core[1] * 0.5, b: fx.core[2] * 0.5, r2: fx.mid[0] * 0.3, g2: fx.mid[1] * 0.3, b2: fx.mid[2] * 0.3, life: rand(0.1, 0.2), size: 0.05, stretch: 0.025, sprite: flowBack ? SPR.WISP : SPR.SPARK });
+      }
       // impact sparks at the end
       const ns = emitN(S, 'eS', 70, dt);
       if (ns) ctx.vfx.burst(S.end, { element: el, count: ns, speed: 4, life: 0.3, size: 0.05, stretch: 0.02, drag: 3 });
-      if (emitN(S, 'eG', 14, dt)) { const c = fxOf(el).mid; ctx.vfx.P.glow({ x: S.end.x, y: S.end.y, z: S.end.z, r: c[0] * 0.6, g: c[1] * 0.6, b: c[2] * 0.6, life: 0.1, size: width * 5, sprite: SPR.GLOW }); }
-      ctx.lightAt(S.end, fxOf(el).light, 8, 6);
-      ctx.lightAt(tmp.copy(o).addScaledVector(d, Math.min(len, 3)), fxOf(el).light, 5, 5);
+      if (emitN(S, 'eG', 14, dt)) {
+        ctx.vfx.P.glow({ x: S.end.x, y: S.end.y, z: S.end.z, r: fx.mid[0] * 0.45, g: fx.mid[1] * 0.45, b: fx.mid[2] * 0.45, life: 0.1, size: Math.max(0.7, width * 5.5), sprite: SPR.GLOW });
+      }
+      // a pulsing burn ring where it bites
+      if (emitN(S, 'eR', 6, dt)) ctx.vfx.P.glow({ x: S.end.x, y: S.end.y, z: S.end.z, r: fx.core[0] * 0.35, g: fx.core[1] * 0.35, b: fx.core[2] * 0.35, life: 0.22, size: 0.25, size2: 1.3, sprite: SPR.RING });
+      const nx = emitN(S, 'eX', 14, dt);
+      for (let i = 0; i < nx; i++) {
+        if (el === 'frost') ctx.vfx.P.solid({ x: S.end.x, y: S.end.y, z: S.end.z, vx: rand(-1, 1), vy: rand(0, 0.6), vz: rand(-1, 1), r: 0.55, g: 0.65, b: 0.75, a: 0.25, life: 0.9, size: 0.3, size2: 1.1, sprite: SPR.SMOKE, drag: 2, spin: rand(-1, 1) });
+        else if (el === 'holy') ctx.vfx.P.glow({ x: S.end.x, y: S.end.y, z: S.end.z, vx: rand(-1.5, 1.5), vy: rand(0.5, 2.5), vz: rand(-1.5, 1.5), r: fx.core[0] * 0.5, g: fx.core[1] * 0.5, b: fx.core[2] * 0.5, life: 0.7, size: 0.08, sprite: SPR.STAR, drag: 1.5 });
+        else ctx.vfx.P.glow({ x: S.end.x, y: S.end.y, z: S.end.z, vx: rand(-1, 1), vy: rand(0.5, 1.8), vz: rand(-1, 1), r: fx.mid[0] * 0.55, g: fx.mid[1] * 0.55, b: fx.mid[2] * 0.55, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2], life: 0.6, size: 0.22, size2: 0.05, sprite: fx.spr === SPR.CHUNK ? SPR.GLOW : fx.spr, drag: 1.5, spin: 2 });
+      }
+      ctx.lightAt(S.end, fx.light, 8, 6);
+      ctx.lightAt(tmp.copy(o).addScaledVector(d, Math.min(len, 3)), fx.light, 5, 5);
       S.snd?.setPos(o);
       S.acc += dt;
       while (S.acc >= interval) {
@@ -131,6 +171,7 @@ function beamChannel({ el, range, width, dmg, interval = 0.1, st, heal = 0, ally
     },
     end(ctx, S) {
       S.beam?.release(0.15);
+      S.halo?.release(0.25);
       S.snd?.stop(0.15);
     },
   };
@@ -144,7 +185,7 @@ function coneChannel({ el, range, angle, dmg, interval = 0.12, st, sound, max = 
       // roaring volume behind the particles: scrolling-noise flame cone
       // seen end-on from your own eyes the volume reads as a ball, so the caster
       // gets a thin one and the flame stream carries it; partners see it full
-      S.cone = ctx.vfx.cone({ element: el, speed: 4.5, alpha: ctx.local ? 0.45 : 1.5 });
+      S.cone = ctx.vfx.cone({ element: el, speed: 4.5, alpha: ctx.local ? 0.35 : 0.85 });
     },
     update(ctx, S, dt) {
       const o = ctx.origin, d = ctx.dir;
@@ -152,19 +193,29 @@ function coneChannel({ el, range, angle, dmg, interval = 0.12, st, sound, max = 
       // the cone starts just past the focus so its throat isn't on the lens
       tmp2.copy(o).addScaledVector(d, 0.35);
       S.cone.update(tmp2, d, range * 0.95, Math.tan(angle) * range * 0.8, 0.9 + 0.1 * Math.sin(ctx.time * 31));
-      // flame tongues seeded all along the cone (not piled up where drag stops
-      // them), widening and cooling from a hot orange throat to sooty red
-      const n = emitN(S, 'eF', 160, dt);
+      // the jet: ragged glowing puffs born at the hand and hurled down the
+      // cone, swelling and cooling as they go (streaked along their flight so
+      // it reads as a stream, not a cluster of upright tongues)
+      // (seen down its own length the jet overlaps itself: the caster gets fewer, darker puffs)
+      const n = emitN(S, 'eF', ctx.local ? 105 : 150, dt);
       for (let i = 0; i < n; i++) {
-        const t = (ctx.local ? 0.16 : 0.1) + Math.pow(Math.random(), 0.9) * 0.82;
-        const w = Math.tan(angle) * t;
-        const sx = d.x + rand(-1, 1) * w * 0.8, sy = d.y + rand(-1, 1) * w * 0.5, sz = d.z + rand(-1, 1) * w * 0.8;
+        const t = (ctx.local ? 0.1 : 0.04) + Math.pow(Math.random(), 1.6) * 0.45;
+        const w = Math.tan(angle) * 0.75;
+        const sx = d.x + rand(-1, 1) * w, sy = d.y + rand(-0.7, 0.7) * w, sz = d.z + rand(-1, 1) * w;
+        const L = t * range, sp = range * rand(1.5, 2.1);
+        const hot = t < 0.16;
+        const c0 = hot ? fx.core : fx.mid, k0 = (hot ? 0.3 : 0.45) * (ctx.local ? 0.75 : 1);
+        ctx.vfx.P.glowAmbient({ x: o.x + sx * L, y: o.y + sy * L, z: o.z + sz * L, vx: sx * sp, vy: sy * sp + 0.8, vz: sz * sp,
+          r: c0[0] * k0, g: c0[1] * k0, b: c0[2] * k0, r2: fx.end[0] * 0.9, g2: fx.end[1] * 0.9, b2: fx.end[2] * 0.9,
+          life: rand(0.32, 0.46), size: 0.1 + t * 0.7, size2: 0.9 + Math.random() * 0.7, sprite: SPR.SMOKE, drag: 1.4, stretch: 0.025, spin: rand(-3, 3) });
+      }
+      // a crown of licking tongues where the jet breaks up
+      const nt = emitN(S, 'eT', 28, dt);
+      for (let i = 0; i < nt; i++) {
+        const t = rand(0.55, 0.95), w = Math.tan(angle) * t * 0.8;
         const L = t * range;
-        const c0 = t < 0.3 ? fx.core : fx.mid, k0 = t < 0.3 ? 0.42 : 0.7;
-        // the stream must read from the hand outward, so it skips the near-lens fade
-        ctx.vfx.P.glowAmbient({ x: o.x + sx * L, y: o.y + sy * L, z: o.z + sz * L, vx: sx * range * 0.9, vy: sy * range * 0.9 + 0.6, vz: sz * range * 0.9,
-          r: c0[0] * k0, g: c0[1] * k0, b: c0[2] * k0, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2],
-          life: rand(0.18, 0.32), size: 0.2 + t * 1.3, size2: 0.35 + t * 1.6, sprite: SPR.FLAME, drag: 1.5, spin: rand(-2, 2) });
+        ctx.vfx.P.glow({ x: o.x + (d.x + rand(-1, 1) * w) * L, y: o.y + (d.y + rand(-0.4, 0.6) * w) * L, z: o.z + (d.z + rand(-1, 1) * w) * L, vx: d.x * 2, vy: rand(1, 2.2), vz: d.z * 2,
+          r: fx.mid[0] * 0.6, g: fx.mid[1] * 0.6, b: fx.mid[2] * 0.6, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2], life: rand(0.25, 0.45), size: rand(0.4, 0.8), size2: 0.1, sprite: SPR.FLAME, drag: 1.5, spin: 2 });
       }
       const ne = emitN(S, 'eE', 30, dt);
       for (let i = 0; i < ne; i++) {
@@ -261,6 +312,16 @@ export const CLASSES = {
             const p = v3(start.x + dir.x * i * 1.6, ctx.groundAt(start.x + dir.x * i * 1.6, start.z + dir.z * i * 1.6), start.z + dir.z * i * 1.6);
             ctx.after(i * 0.035, () => ctx.zone({ pos: p, radius: 1.3, life: 3, interval: 0.3, el: 'fire', dmg: 5, st: { burn: [2, 4] }, flames: true }));
           }
+          // a gout of flame where you burst out, and a flare where you land
+          ctx.vfx.burst(v3(start.x, start.y + 0.8, start.z), { element: 'fire', count: 12, speed: 4, life: 0.5, size: 0.5, size2: 0.1, sprite: SPR.SMOKE, drag: 3, upward: 0.6, color: [0.8, 0.32, 0.08], color2: [0.25, 0.03, 0] });
+          ctx.after(0.24, () => {
+            const q = ctx.casterPos();
+            const gp = v3(q.x, ctx.groundAt(q.x, q.z), q.z);
+            ctx.vfx.ring(gp, 2.2, fxOf('fire').mid, 0.35, 0.12);
+            ctx.vfx.burst(v3(gp.x, gp.y + 0.3, gp.z), { element: 'fire', count: 14, speed: 5, upward: 0.4, life: 0.45, size: 0.4, size2: 0.08, sprite: SPR.SMOKE, drag: 3.5, color: [0.8, 0.32, 0.08], color2: [0.25, 0.03, 0] });
+            ctx.vfx.burst(v3(gp.x, gp.y + 0.3, gp.z), { element: 'fire', count: 10, speed: 6, upward: 1, life: 0.8, size: 0.03, sprite: SPR.EMBER, gravity: 6, color: [1.5, 0.45, 0.06], color2: [0.4, 0.03, 0] });
+            ctx.vfx.flash(v3(gp.x, gp.y + 1, gp.z), 0xff6a20, 14, 7, 0.3);
+          });
         },
       },
       ultimate: {
@@ -269,7 +330,22 @@ export const CLASSES = {
           ctx.sound('cast_fire_big', 1.2);
           const c = ctx.aimPoint.clone();
           const R = ctx.aoe(7);
-          ctx.vfx.decal(v3(c.x, ctx.groundAt(c.x, c.z), c.z), 'glyph', R * 2.2, 3.5, 0xff6020);
+          ctx.vfx.decal(v3(c.x, ctx.groundAt(c.x, c.z), c.z), 'glyph', R * 2.2, 3.5, 0x8a2a08);
+          // the sky over the target catches fire: ash and cinders drift down
+          // through a red glow for as long as the storm lasts
+          const cg = ctx.groundAt(c.x, c.z), top = Math.min(cg + 9, ctx.g.level.ceilAt(c.x, c.z) - 0.4);
+          ctx.zone({ pos: v3(c.x, cg, c.z), radius: 0, life: 3.4, interval: 9, onTick: () => {},
+            visual: (z, dt) => {
+              const k = Math.min(1, z.age / 0.4) * Math.min(1, (z.life - z.age) / 0.6);
+              const n = emitN(z, 'eA', 90 * k, dt);
+              for (let i = 0; i < n; i++) {
+                const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R;
+                const ember = i % 3 === 0;
+                if (ember) ctx.vfx.P.glow({ x: c.x + Math.cos(a) * r, y: top - rand(0, 1.5), z: c.z + Math.sin(a) * r, vx: rand(-0.5, 0.5), vy: rand(-2.5, -1), vz: rand(-0.5, 0.5), r: 1.5, g: 0.5, b: 0.08, r2: 0.5, g2: 0.05, b2: 0, life: rand(1.2, 2.2), size: 0.035, sprite: SPR.EMBER, drag: 0.5 });
+                else ctx.vfx.P.solid({ x: c.x + Math.cos(a) * r, y: top - rand(0, 1), z: c.z + Math.sin(a) * r, vx: rand(-0.4, 0.4), vy: rand(-1.2, -0.4), vz: rand(-0.4, 0.4), r: 0.06, g: 0.045, b: 0.04, a: 0.35, life: rand(1.5, 2.5), size: 0.5, size2: 1.4, sprite: SPR.SMOKE, drag: 0.4, spin: rand(-0.5, 0.5) });
+              }
+              ctx.lightAt(tmp.set(c.x, top - 0.5, c.z), 0xff4010, (10 + 6 * Math.sin(ctx.time * 9)) * k, R * 2.2);
+            } });
           for (let i = 0; i < 10; i++) {
             ctx.after(0.25 + i * 0.28, () => {
               const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R;
@@ -284,25 +360,48 @@ export const CLASSES = {
               const ty = ctx.groundAt(tx, tz);
               const start = v3(tx - 6, ty + 22, tz - 3);
               const vel = v3(tx, ty, tz).sub(start).normalize().multiplyScalar(32);
-              ctx.vfx.telegraph(v3(tx, ty, tz), { radius: 3, dur: 0.7, color: [1.8, 0.5, 0.06] });
+              ctx.vfx.telegraph(v3(tx, ty, tz), { radius: 3, dur: 0.7, color: [0.9, 0.22, 0.03] });
               ctx.proj({ el: 'fire', pos: start, vel, radius: 0.8, life: 3, core: 2.4, mesh: 'meteor', light: 25, trail: 3, noWallUntilGround: true,
                 data: {},
                 // burning rock: a thick smoke plume and flame tongues streaming off it
                 onTick: (p, dt) => {
+                  // it tears through the vault in a spray of burning rubble
+                  if (!p.noWall && !p.data.broke) {
+                    p.data.broke = true;
+                    if (p.pos.y < ty + 18) {
+                      ctx.vfx.burst(p.pos, { count: 10, speed: 5, life: 1, size: 0.16, sprite: SPR.CHUNK, solid: true, gravity: 14, spin: 6, color: [0.25, 0.2, 0.16], color2: [0.15, 0.12, 0.1] });
+                      ctx.vfx.burst(p.pos, { element: 'fire', count: 14, speed: 6, life: 0.5, size: 0.4, size2: 0.08, sprite: SPR.FLAME, drag: 3, color: [1.4, 0.5, 0.1], color2: [0.3, 0.03, 0] });
+                      ctx.vfx.smoke(p.pos, { count: 3, size: 1, color: [0.06, 0.05, 0.04], alpha: 0.5, rise: -0.3, life: 1.6 });
+                    }
+                  }
                   const ns = emitN(p.data, 'eS', 40, dt);
                   for (let i = 0; i < ns; i++) ctx.vfx.P.solid({ x: p.pos.x + rand(-0.4, 0.4), y: p.pos.y + rand(-0.4, 0.4), z: p.pos.z + rand(-0.4, 0.4), vx: -p.vel.x * 0.05, vy: 0.8, vz: -p.vel.z * 0.05, r: 0.05, g: 0.04, b: 0.035, a: 0.55, life: rand(1.2, 2), size: 0.7, size2: 2.4, sprite: SPR.SMOKE, drag: 1, spin: rand(-0.6, 0.6) });
                   const nf = emitN(p.data, 'eF', 70, dt);
                   const fx = fxOf('fire');
                   for (let i = 0; i < nf; i++) ctx.vfx.P.glow({ x: p.pos.x + rand(-0.5, 0.5), y: p.pos.y + rand(-0.5, 0.5), z: p.pos.z + rand(-0.5, 0.5), vx: -p.vel.x * 0.15 + rand(-1, 1), vy: -p.vel.y * 0.15 + rand(0, 1), vz: -p.vel.z * 0.15 + rand(-1, 1), r: fx.mid[0] * 0.8, g: fx.mid[1] * 0.8, b: fx.mid[2] * 0.8, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2], life: rand(0.25, 0.45), size: 0.9, size2: 0.2, sprite: SPR.FLAME, drag: 2, spin: rand(-2, 2) });
+                  // a hot comet head wrapped round the rock
+                  if (emitN(p.data, 'eH', 30, dt)) ctx.vfx.P.glow({ x: p.pos.x, y: p.pos.y, z: p.pos.z, vx: p.vel.x * 0.8, vy: p.vel.y * 0.8, vz: p.vel.z * 0.8, r: fx.mid[0] * 0.55, g: fx.mid[1] * 0.55, b: fx.mid[2] * 0.55, r2: fx.mid[0] * 0.3, g2: fx.mid[1] * 0.3, b2: fx.mid[2] * 0.3, life: 0.1, size: 3.4, size2: 2.6, sprite: SPR.GLOW });
                 },
                 hit: { dmg: 30, el: 'fire' }, aoe: { radius: 3.2, dmg: 60, el: 'fire', st: { burn: [4, 8] }, kb: 10 },
-                // augment: each impact leaves a pool of molten slag
-                onExpire: forge ? (p, pos) => {
+                onExpire: (p, pos) => {
                   if (cleared(p)) return;
                   const gp = v3(pos.x, ctx.groundAt(pos.x, pos.z), pos.z);
+                  // the rock bursts apart: molten shards, a fan of fire along the
+                  // floor, a crater, and a pillar of flame and soot
+                  ctx.vfx.burst(v3(gp.x, gp.y + 0.4, gp.z), { count: 10, speed: 9, upward: 0.9, life: 1.1, size: 0.2, sprite: SPR.CHUNK, solid: true, gravity: 16, spin: 7, color: [0.12, 0.09, 0.08], color2: [0.08, 0.06, 0.05] });
+                  ctx.vfx.burst(v3(gp.x, gp.y + 0.4, gp.z), { element: 'fire', count: 10, speed: 10, upward: 1, life: 0.9, size: 0.05, sprite: SPR.EMBER, gravity: 12, drag: 1, stretch: 0.015, color: [1.6, 0.6, 0.1], color2: [0.5, 0.05, 0] });
+                  for (let i = 0; i < 10; i++) {
+                    const a = (i / 10) * Math.PI * 2;
+                    ctx.vfx.P.glow({ x: gp.x, y: gp.y + 0.25, z: gp.z, vx: Math.cos(a) * 9, vy: 0.6, vz: Math.sin(a) * 9, r: 0.8, g: 0.32, b: 0.06, r2: 0.25, g2: 0.03, b2: 0, life: 0.45, size: 0.6, size2: 1.1, sprite: SPR.SMOKE, drag: 3.5, spin: 2 });
+                  }
+                  for (let i = 0; i < 6; i++) ctx.vfx.P.glow({ x: gp.x + rand(-0.4, 0.4), y: gp.y + 0.5, z: gp.z + rand(-0.4, 0.4), vy: rand(4, 7), r: 0.9, g: 0.4, b: 0.1, r2: 0.3, g2: 0.03, b2: 0, life: rand(0.6, 0.9), size: 0.9, size2: 0.4, sprite: SPR.FLAME, drag: 1.5, delay: i * 0.03 });
+                  ctx.vfx.decal(gp, 'crack', 3.6, 8);
+                  ctx.vfx.flash(v3(gp.x, gp.y + 2, gp.z), 0xff7020, 40, 16, 0.4);
+                  if (!forge) return;
+                  // augment: each impact leaves a pool of molten slag
                   ctx.vfx.decal(gp, 'scorch', 4.5, 6);
                   ctx.zone({ pos: gp, radius: ctx.aoe(2.2), life: 3, interval: 0.35, el: 'fire', dmg: 7 * augM(ctx, 'pyro_meteor'), st: { burn: [3, 6] }, flames: true });
-                } : undefined });
+                } });
             });
           }
           ctx.kick(0.25, 4);
@@ -338,12 +437,32 @@ export const CLASSES = {
           ctx.sound('freeze');
           const p = ctx.casterPos();
           const R = ctx.aoe(6.5);
-          ctx.vfx.ring(v3(p.x, p.y, p.z), R, fxOf('frost').core, 0.6, 0.3);
+          ctx.vfx.ring(v3(p.x, p.y, p.z), R, [0.45, 0.75, 1.0], 0.6, 0.1);
           ctx.vfx.shell(v3(p.x, p.y + 1, p.z), { element: 'frost', radius: R, life: 0.45 });
           ctx.vfx.decal(p, 'frost', R * 2, 6);
+          ctx.vfx.flash(v3(p.x, p.y + 1, p.z), 0x80c8ff, 30, R * 2.5, 0.35);
           for (let i = 0; i < 40; i++) {
             const a = (i / 40) * Math.PI * 2;
             ctx.vfx.P.glow({ x: p.x, y: p.y + 0.3, z: p.z, vx: Math.cos(a) * R * 2, vy: rand(0, 2), vz: Math.sin(a) * R * 2, r: 0.95, g: 1.25, b: 1.5, life: 0.6, size: 0.22, sprite: SPR.SHARD, drag: 3, spin: 4 });
+          }
+          // a rolling front of freezing mist hugging the floor, glittering rime in it
+          for (let i = 0; i < 26; i++) {
+            const a = (i / 26) * Math.PI * 2 + rand(-0.1, 0.1), sp = R * rand(2.4, 3);
+            ctx.vfx.P.solid({ x: p.x + Math.cos(a) * 0.6, y: p.y + 0.25, z: p.z + Math.sin(a) * 0.6, vx: Math.cos(a) * sp, vy: 0.2, vz: Math.sin(a) * sp, r: 0.55, g: 0.66, b: 0.76, a: 0.32, life: rand(1.2, 1.7), size: 0.7, size2: 2.4, sprite: SPR.SMOKE, drag: 3, spin: rand(-1, 1) });
+            ctx.vfx.P.glow({ x: p.x, y: p.y + 0.1, z: p.z, vx: Math.cos(a) * sp * 0.9, vy: rand(0.2, 0.8), vz: Math.sin(a) * sp * 0.9, r: 0.7, g: 0.95, b: 1.3, life: rand(0.8, 1.3), size: 0.07, sprite: SPR.SNOW, drag: 2.8, spin: 3 });
+          }
+          // a crown of ice bursting out of the floor along the wave front
+          if (!aug(ctx, 'cryo_nova')) {
+            for (let i = 0; i < 9; i++) {
+              const a = (i / 9) * Math.PI * 2 + rand(-0.15, 0.15), r = R * rand(0.55, 0.85);
+              const x = p.x + Math.cos(a) * r, z = p.z + Math.sin(a) * r;
+              if (ctx.g.collision.pointSolid(x, p.y + 0.5, z)) continue;
+              const sp = v3(x, ctx.groundAt(x, z), z);
+              ctx.after(r / R * 0.18, () => {
+                ctx.vfx.burst(v3(sp.x, sp.y + 0.3, sp.z), { element: 'frost', count: 5, speed: 3, upward: 1, life: 0.5, size: 0.1, sprite: SPR.SHARD, gravity: 8, spin: 6 });
+                iceSpike(ctx, sp, 0.9 + Math.random() * 0.3, (pos) => ctx.vfx.burst(pos, { element: 'frost', count: 8, speed: 5, life: 0.6, size: 0.12, sprite: SPR.SHARD, gravity: 12, spin: 8, color: [0.9, 1.25, 1.5] }));
+              });
+            }
           }
           ctx.area(v3(p.x, p.y + 1, p.z), R, { dmg: 25, el: 'frost', st: { freeze: 2.5 }, kb: 3 });
           ctx.kick(0.2, 3);
@@ -374,6 +493,12 @@ export const CLASSES = {
           ctx.sound('cast_frost_big');
           ctx.proj({ el: 'frost', vel: ctx.dir.clone().multiplyScalar(40), radius: 0.35, life: 2, core: 0.8, mesh: 'bigShard', light: 10, trail: 1.6, pierce: 4,
             hit: { dmg: 55, el: 'frost', st: { chill: 2 }, tag: 'shard', kb: 6 },
+            // each body it runs through bursts in a spray of ice
+            onHit: (p, a, pos) => {
+              ctx.vfx.impact(pos, 'frost', 1.3);
+              ctx.vfx.burst(pos, { element: 'frost', count: 12, speed: 7, dir: p.vel.clone().normalize(), spread: 0.8, life: 0.6, size: 0.14, sprite: SPR.SHARD, gravity: 10, spin: 8, color: [0.9, 1.25, 1.5] });
+              ctx.vfx.smoke(pos, { count: 2, size: 0.6, color: [0.5, 0.6, 0.7], alpha: 0.3, life: 1 });
+            },
             // augment: breaks into a ring of piercing shards
             onExpire: aug(ctx, 'cryo_spike') ? (p, pos) => {
               if (cleared(p)) return;
@@ -407,7 +532,17 @@ export const CLASSES = {
                 const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * z.radius;
                 ctx.vfx.P.glow({ x: z.pos.x + Math.cos(a) * r - 3, y: z.pos.y + 9, z: z.pos.z + Math.sin(a) * r, vx: 6, vy: -14, vz: rand(-1, 1), r: 0.9, g: 1.15, b: 1.5, life: 0.65, size: 0.1, sprite: i % 3 ? SPR.SNOW : SPR.SHARD, stretch: 0.02, spin: 3 });
               }
-              if (Math.random() < dt * 6) ctx.vfx.smoke(v3(z.pos.x + rand(-1, 1) * z.radius * 0.7, z.pos.y + 0.5, z.pos.z + rand(-1, 1) * z.radius * 0.7), { count: 1, size: 2, color: [0.6, 0.7, 0.8], alpha: 0.25, life: 2.5, speed: 3 });
+              // low driven haze and wind-torn streaks, all blowing the same way
+              const nh = emitN(z, 'eH', 7, dt);
+              for (let i = 0; i < nh; i++) {
+                const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * z.radius * 0.85;
+                ctx.vfx.P.solid({ x: z.pos.x + Math.cos(a) * r - 1.5, y: z.pos.y + rand(0.3, 1.2), z: z.pos.z + Math.sin(a) * r, vx: rand(2.5, 4), vy: rand(-0.1, 0.2), vz: rand(-0.5, 0.5), r: 0.52, g: 0.6, b: 0.7, a: 0.17, life: rand(2, 3), size: 2.2, size2: 4.5, sprite: SPR.SMOKE, drag: 0.3, spin: rand(-0.4, 0.4) });
+              }
+              const nw = emitN(z, 'eW', 50, dt);
+              for (let i = 0; i < nw; i++) {
+                const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * z.radius;
+                ctx.vfx.P.glow({ x: z.pos.x + Math.cos(a) * r - 2, y: z.pos.y + rand(0.3, 4), z: z.pos.z + Math.sin(a) * r, vx: rand(9, 13), vy: rand(-3, -1), vz: rand(-1, 1), r: 0.35, g: 0.45, b: 0.6, life: 0.4, size: 0.12, sprite: SPR.WISP, stretch: 0.08, drag: 0.5 });
+              }
               ctx.lightAt(v3(z.pos.x, z.pos.y + 3, z.pos.z), 0x80c8ff, 14, z.radius * 1.6);
             } });
           // augment: great icicles plunge onto the most frozen foe in the storm
@@ -447,8 +582,10 @@ export const CLASSES = {
           const o = ctx.origin.clone();
           const { hits, wall } = ctx.rt.rayActors(o, ctx.dir, 32, 0.35);
           const end = hits.length ? hits[0].point : o.clone().addScaledVector(ctx.dir, wall);
-          ctx.vfx.lightning(o, end, { element: 'lightning', life: 0.12, branches: 1 });
-          ctx.vfx.impact(end, 'lightning', 0.7);
+          ctx.vfx.lightning(o, end, { element: 'lightning', life: 0.12, branches: 1, width: 0.1 });
+          // the channel re-strikes a beat later along a new path: a flickering arc, not a one-frame line
+          ctx.after(0.05, () => ctx.vfx.lightning(o, end, { element: 'lightning', life: 0.09, branches: 0, width: 0.05 }));
+          ctx.vfx.impact(end, 'lightning', hits.length ? 1 : 0.7);
           ctx.muzzle('lightning');
           const empowered = ctx.consumeStatic?.() ? 1.5 : 1;
           if (hits.length) {
@@ -476,7 +613,11 @@ export const CLASSES = {
             data: { acc: 0 },
             onTick: (p, dt) => {
               p.data.acc += dt;
-              if (emitN(p.data, 'eL', 14, dt)) ctx.vfx.lightning(p.pos, tmp.copy(p.pos).add(tmp2.set(rand(-1.4, 1.4), rand(-1, 1), rand(-1.4, 1.4))), { life: 0.06, branches: 0, width: 0.035 });
+              if (emitN(p.data, 'eL', 20, dt)) ctx.vfx.lightning(p.pos, tmp.copy(p.pos).add(tmp2.set(rand(-1.8, 1.8), rand(-1.2, 1.2), rand(-1.8, 1.8))), { life: 0.07, branches: 0, width: 0.04 });
+              // a flickering corona and sparks spitting off the ball
+              if (emitN(p.data, 'eG', 20, dt)) ctx.vfx.P.glow({ x: p.pos.x, y: p.pos.y, z: p.pos.z, r: 0.25, g: 0.3, b: 0.75, life: 0.08, size: rand(1.3, 2.1), sprite: SPR.GLOW });
+              const nk = emitN(p.data, 'eK', 30, dt);
+              for (let i = 0; i < nk; i++) ctx.vfx.P.glow({ x: p.pos.x, y: p.pos.y, z: p.pos.z, vx: rand(-6, 6), vy: rand(-4, 6), vz: rand(-6, 6), r: 0.8, g: 0.9, b: 1.6, life: rand(0.1, 0.25), size: 0.035, stretch: 0.03, drag: 3, gravity: 6, sprite: SPR.SPARK });
               if (anchor && !p.data.anchored && p.pos.distanceTo(o0) >= stopAt) {
                 p.data.anchored = true;
                 p.vel.set(0, 0, 0);
@@ -520,8 +661,11 @@ export const CLASSES = {
           ctx.sound('cast_lightning_big'); ctx.sound('shockwave');
           const p = ctx.casterPos();
           const R = ctx.aoe(5.5);
-          ctx.vfx.ring(p, R, fxOf('lightning').core, 0.4, 0.35);
+          ctx.vfx.ring(p, R, fxOf('lightning').mid, 0.4, 0.14);
           ctx.vfx.shell(v3(p.x, p.y + 1, p.z), { element: 'lightning', radius: R, life: 0.3 });
+          ctx.vfx.dustWave(p, R, { color: [0.15, 0.16, 0.2], alpha: 0.4, glow: [0.6, 0.7, 1.5] });
+          ctx.vfx.decal(p, 'scorch', R * 0.9, 6);
+          ctx.vfx.flash(v3(p.x, p.y + 1.2, p.z), 0x90a8ff, 45, R * 3, 0.25);
           for (let i = 0; i < 8; i++) {
             const a = (i / 8) * Math.PI * 2;
             ctx.vfx.lightning(v3(p.x, p.y + 1, p.z), v3(p.x + Math.cos(a) * R, p.y + rand(0, 2), p.z + Math.sin(a) * R), { life: 0.15, branches: 1 });
@@ -570,20 +714,50 @@ export const CLASSES = {
           const c = ctx.aimPoint.clone();
           c.y = ctx.groundAt(c.x, c.z);
           const R = ctx.aoe(11);
+          // the cloud gathers under the vault (or high over open ground), so the
+          // strikes come from something you can see
+          const cy = Math.min(c.y + 10, ctx.g.level.ceilAt(c.x, c.z) - 1.2);
+          const sky = v3();
           ctx.zone({ pos: c, radius: R, life: 8, interval: 0.28,
             onTick: (z) => {
               const targets = ctx.rt.inRadius(z.pos, z.radius);
               const t = targets.length ? targets[Math.floor(Math.random() * targets.length)] : null;
-              const tp = t ? v3(t.pos.x, t.pos.y + 0.2, t.pos.z) : v3(z.pos.x + rand(-1, 1) * z.radius, z.pos.y, z.pos.z + rand(-1, 1) * z.radius);
-              ctx.vfx.lightning(v3(tp.x + rand(-2, 2), z.pos.y + 14, tp.z + rand(-2, 2)), tp, { life: 0.2, branches: 2, width: 0.16 });
-              ctx.vfx.impact(tp, 'lightning', 1.2);
+              const tp = t ? v3(t.pos.x, t.pos.y + 0.2, t.pos.z) : v3(z.pos.x + rand(-1, 1) * z.radius * 0.8, z.pos.y, z.pos.z + rand(-1, 1) * z.radius * 0.8);
+              const top = v3(tp.x + rand(-1.5, 1.5), cy, tp.z + rand(-1.5, 1.5));
+              ctx.vfx.lightning(top, tp, { life: 0.22, branches: 2, width: 0.18 });
+              // a thinner leader a beat later: the strike flickers like the real thing
+              ctx.after(0.06, () => ctx.vfx.lightning(top, tp, { life: 0.1, branches: 0, width: 0.09 }));
+              ctx.vfx.impact(tp, 'lightning', 1.4);
+              ctx.vfx.ring(tp, 1.8, fxOf('lightning').mid, 0.3, 0.25);
+              ctx.vfx.burst(tp, { element: 'lightning', count: 10, speed: 7, upward: 0.6, life: 0.4, size: 0.04, stretch: 0.03, gravity: 9, drag: 2 });
+              ctx.vfx.P.glow({ x: top.x, y: top.y, z: top.z, r: 0.35, g: 0.4, b: 0.75, life: 0.18, size: 6, size2: 4, sprite: SPR.GLOW });
+              ctx.vfx.flash(v3(tp.x, tp.y + 1.5, tp.z), 0x90a8ff, 30, 12, 0.18);
               ctx.vfx.decal(tp, 'scorch', 1.6, 5);
               ctx.sound('impact_lightning', 0.8, tp);
               if (t) ctx.area(tp, 2.2, { dmg: 38, el: 'lightning', st: { shock: 3 } });
             },
             visual: (z, dt) => {
-              if (Math.random() < dt * 10) ctx.vfx.P.solid({ x: z.pos.x + rand(-1, 1) * z.radius, y: z.pos.y + 13, z: z.pos.z + rand(-1, 1) * z.radius, vx: rand(-0.5, 0.5), vz: rand(-0.5, 0.5), r: 0.05, g: 0.06, b: 0.1, a: 0.6, life: 3, size: 4, size2: 6, sprite: SPR.SMOKE, spin: 0.2 });
-              ctx.lightAt(v3(z.pos.x, z.pos.y + 10, z.pos.z), 0x8090ff, 6 + (Math.random() < 0.1 ? 40 : 0), 30);
+              const k = Math.min(1, z.age / 0.8) * Math.min(1, (z.life - z.age) / 1);
+              // churning storm cloud
+              const n = emitN(z, 'eC', 16 * k, dt);
+              for (let i = 0; i < n; i++) {
+                const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * z.radius * 0.9;
+                ctx.vfx.P.solid({ x: z.pos.x + Math.cos(a) * r, y: cy + rand(-0.6, 0.4), z: z.pos.z + Math.sin(a) * r, vx: -Math.sin(a) * 1.2, vy: rand(-0.1, 0.1), vz: Math.cos(a) * 1.2, r: 0.045, g: 0.05, b: 0.08, a: 0.65, life: rand(2.2, 3.2), size: 3, size2: 5.5, sprite: SPR.SMOKE, spin: rand(-0.3, 0.3), drag: 0.3 });
+              }
+              // lightning crawling through the cloud's belly
+              if (emitN(z, 'eF', 3.5 * k, dt)) {
+                const a = Math.random() * Math.PI * 2, r = Math.random() * z.radius * 0.7;
+                sky.set(z.pos.x + Math.cos(a) * r, cy - 0.3, z.pos.z + Math.sin(a) * r);
+                ctx.vfx.lightning(sky, v3(sky.x + rand(-4, 4), cy + rand(-0.6, 0.2), sky.z + rand(-4, 4)), { life: 0.12, branches: 1, width: 0.06 });
+                ctx.vfx.P.glow({ x: sky.x, y: sky.y, z: sky.z, r: 0.3, g: 0.35, b: 0.7, life: 0.15, size: 5, sprite: SPR.GLOW });
+              }
+              // a stray drizzle of sparks falling out of it
+              const nr = emitN(z, 'eR', 40 * k, dt);
+              for (let i = 0; i < nr; i++) {
+                const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * z.radius;
+                ctx.vfx.P.glow({ x: z.pos.x + Math.cos(a) * r, y: cy - rand(0.5, 1.5), z: z.pos.z + Math.sin(a) * r, vy: -9, r: 0.3, g: 0.38, b: 0.6, life: 0.6, size: 0.025, stretch: 0.03, sprite: SPR.SPARK });
+              }
+              ctx.lightAt(sky.set(z.pos.x, cy - 1, z.pos.z), 0x8090ff, (5 + (Math.random() < 0.12 ? 30 : 0)) * k, 30);
             } });
           ctx.kick(0.2, 3);
         },
@@ -719,6 +893,8 @@ export const CLASSES = {
               const R = ctx.aoe(9);
               const hum = ctx.loop('loop_portal');
               hum?.setPos?.(c);
+              // the collapsing star itself: a churning violet sun at the heart
+              fxProj(ctx, { el: 'arcane', pos: c.clone(), vel: v3(0, 0, 0), radius: 0.05, life: 3.5, core: 0.85, mesh: 'orb', meshScale: 3.2, light: 0, trail: 0, noWall: true });
               ctx.zone({ pos: c, radius: R, life: 3.5, interval: 0.25, el: 'arcane', dmg: 9, pull: 7,
                 visual: (z, dt) => {
                   const n = emitN(z, 'eS', 260, dt);
@@ -727,14 +903,34 @@ export const CLASSES = {
                     const px = z.pos.x + Math.cos(a) * r, pz = z.pos.z + Math.sin(a) * r, py = z.pos.y + rand(-1, 2);
                     ctx.vfx.P.glow({ x: px, y: py, z: pz, vx: (z.pos.x - px) * 2 + Math.cos(a + 1.5) * 4, vy: (z.pos.y - py) * 2, vz: (z.pos.z - pz) * 2 + Math.sin(a + 1.5) * 4, r: 0.9, g: 0.35, b: 1.5, life: 0.5, size: 0.07, stretch: 0.03, sprite: SPR.SPARK });
                   }
-                  // dark heart with a violet event-horizon ring
+                  // dark heart with a faint violet event horizon...
+                  const grow = Math.min(1, z.age / 0.5);
                   if (emitN(z, 'eC', 24, dt)) {
-                    ctx.vfx.P.solid({ x: z.pos.x, y: z.pos.y, z: z.pos.z, r: 0, g: 0, b: 0, a: 0.85, life: 0.15, size: 1.8, sprite: SPR.GLOW });
-                    ctx.vfx.P.glow({ x: z.pos.x, y: z.pos.y, z: z.pos.z, r: 0.35, g: 0.1, b: 0.7, life: 0.15, size: 3 + Math.sin(z.age * 20) * 0.3, sprite: SPR.RING, rot: z.age * 4 });
+                    ctx.vfx.P.solid({ x: z.pos.x, y: z.pos.y, z: z.pos.z, r: 0, g: 0, b: 0, a: 0.9, life: 0.15, size: 1.9 * grow, sprite: SPR.GLOW });
+                    ctx.vfx.P.glow({ x: z.pos.x, y: z.pos.y, z: z.pos.z, r: 0.14, g: 0.04, b: 0.3, life: 0.15, size: (3.2 + Math.sin(z.age * 20) * 0.2) * grow, sprite: SPR.RING });
+                  }
+                  // ...and a blazing accretion disc whirling round it
+                  const nd = emitN(z, 'eD', 200, dt);
+                  for (let i = 0; i < nd; i++) {
+                    const a = Math.random() * Math.PI * 2, r = rand(1.1, 2.8) * grow, sp = 4.5;
+                    const hot = r < 1.7;
+                    ctx.vfx.P.glow({ x: z.pos.x + Math.cos(a) * r, y: z.pos.y + rand(-0.06, 0.06) + Math.cos(a) * r * 0.22, z: z.pos.z + Math.sin(a) * r, vx: -Math.sin(a) * sp - Math.cos(a) * 1.2, vy: -Math.sin(a) * sp * 0.22, vz: Math.cos(a) * sp - Math.sin(a) * 1.2,
+                      r: hot ? 1.0 : 0.6, g: hot ? 0.5 : 0.2, b: hot ? 1.4 : 1.1, r2: 0.2, g2: 0.03, b2: 0.45, life: rand(0.25, 0.4), size: hot ? 0.13 : 0.1, stretch: 0.04, sprite: SPR.SPARK });
+                  }
+                  // it draws in, brighter and faster, in the instant before it bursts
+                  if (z.life - z.age < 0.3 && !z.cl) {
+                    z.cl = true;
+                    for (let i = 0; i < 50; i++) {
+                      const a = Math.random() * Math.PI * 2, e = rand(-0.6, 0.6), r = rand(4, 7);
+                      ctx.vfx.P.glow({ x: z.pos.x + Math.cos(a) * r * Math.cos(e), y: z.pos.y + Math.sin(e) * r, z: z.pos.z + Math.sin(a) * r * Math.cos(e), vx: -Math.cos(a) * Math.cos(e) * r * 3.6, vy: -Math.sin(e) * r * 3.6, vz: -Math.sin(a) * Math.cos(e) * r * 3.6, r: 0.9, g: 0.4, b: 1.6, life: 0.27, size: 0.08, stretch: 0.04, sprite: SPR.SPARK });
+                    }
                   }
                   ctx.lightAt(z.pos, 0xb050ff, 25, 14);
                 },
                 onEnd: (z) => {
+                  ctx.vfx.flash(z.pos, 0xd080ff, 60, 22, 0.5);
+                  ctx.vfx.shell(z.pos, { element: 'arcane', radius: ctx.aoe(6.5), from: 0.5, life: 0.5, alpha: 0.5 });
+                  ctx.kick(0.3, 4);
                   hum?.stop?.(0.3);
                   ctx.vfx.explosion(z.pos, 'arcane', 6);
                   ctx.sound('explosion_big', 1, z.pos);
@@ -779,7 +975,7 @@ export const CLASSES = {
       },
       secondary: {
         name: 'Life Drain', icon: 'drain', desc: 'Channel a beam that siphons health from the enemy.', mode: 'channel', cd: 5, style: 'channel', hand: 'left',
-        channel: beamChannel({ el: 'necrotic', range: 15, width: 0.1, dmg: 4.5, interval: 0.1, heal: 0.35, sound: 'loop_beam_shadow', max: 4,
+        channel: beamChannel({ el: 'necrotic', range: 15, width: 0.1, dmg: 4.5, interval: 0.1, heal: 0.35, sound: 'loop_beam_shadow', max: 4, flowBack: true,
           onTickHit: (ctx, a) => {
             if (Math.random() < 0.5) ctx.vfx.P.glow({ x: a.pos.x, y: a.pos.y + a.height * 0.6, z: a.pos.z, vx: (ctx.origin.x - a.pos.x) * 2, vy: 1, vz: (ctx.origin.z - a.pos.z) * 2, r: 0.45, g: 1.3, b: 0.45, life: 0.5, size: 0.15, sprite: SPR.WISP });
             // augment: the siphon forks to a second foe
@@ -804,7 +1000,7 @@ export const CLASSES = {
           for (let i = 0; i < 2; i++) {
             const p = v3(c.x + (i - 0.5) * 2, ctx.groundAt(c.x, c.z), c.z);
             ctx.vfx.decal(p, 'glyph', 2.4, 1.5, 0x60ff60);
-            ctx.vfx.burst(p, { element: 'necrotic', count: 30, speed: 3, upward: 1, life: 1, size: 0.3, sprite: SPR.WISP });
+            raiseFx(ctx, p);
             ctx.summon('skeletonMinion', p, 20);
           }
           // augment: the servants burst in necrotic flame when they fall or expire
@@ -827,7 +1023,14 @@ export const CLASSES = {
         cast(ctx) {
           ctx.sound('cast_shadow_big');
           ctx.proj({ el: 'necrotic', vel: ctx.dir.clone().multiplyScalar(48), radius: 0.35, life: 1.4, core: 0.5, mesh: 'spear', light: 6, trail: 1.2, pierce: 99,
-            hit: { dmg: 45, el: 'physical', st: { bleed: [4, 6] }, kb: 5 } });
+            hit: { dmg: 45, el: 'physical', st: { bleed: [4, 6] }, kb: 5 },
+            // each body it skewers sprays bone splinters and blood out the far side
+            onHit: (p, a, pos) => {
+              const d = p.vel.clone().normalize();
+              ctx.vfx.burst(pos, { count: 8, speed: 7, dir: d, spread: 0.6, life: 0.6, size: 0.07, sprite: SPR.CHUNK, solid: true, gravity: 12, spin: 8, color: [0.7, 0.68, 0.6], color2: [0.45, 0.43, 0.38] });
+              ctx.vfx.burst(pos, { count: 10, speed: 6, dir: d, spread: 0.5, life: 0.6, size: 0.06, sprite: SPR.DROP, solid: true, gravity: 12, stretch: 0.04, color: [0.28, 0, 0.02], color2: [0.15, 0, 0.01] });
+              ctx.vfx.impact(pos, 'necrotic', 1.1);
+            } });
           ctx.kick(0.1, 2);
           // augment: a wake of bone spikes erupts along the spear's path
           if (aug(ctx, 'necro_spear')) {
@@ -858,13 +1061,21 @@ export const CLASSES = {
             const a = (i / 6) * Math.PI * 2;
             const sp = v3(p.x + Math.cos(a) * 3, p.y, p.z + Math.sin(a) * 3);
             ctx.vfx.decal(sp, 'glyph', 2.2, 2, 0x60ff60);
-            ctx.after(i * 0.1, () => ctx.summon('skeletonMinion', sp, 18));
+            ctx.after(i * 0.1, () => { raiseFx(ctx, sp); ctx.summon('skeletonMinion', sp, 18); });
           }
           for (let k = 0; k < 10; k++) {
             ctx.after(k * 0.07, () => {
               const c = v3(p.x + d.x * (2 + k * 1.6), p.y + 1, p.z + d.z * (2 + k * 1.6));
               ctx.vfx.burst(c, { element: 'necrotic', count: 18, speed: 3, upward: 1.5, life: 0.8, size: 0.5, sprite: SPR.WISP });
               ctx.vfx.smoke(c, { count: 2, color: [0.05, 0.15, 0.05], alpha: 0.5 });
+              // a crest of shrieking spirits rolling forward over a tide of grave-fog
+              const gy = ctx.groundAt(c.x, c.z);
+              for (let j = 0; j < 7; j++) {
+                const sx = rand(-1.6, 1.6);
+                ctx.vfx.P.glow({ x: c.x - d.z * sx, y: gy + rand(0.2, 1.6), z: c.z + d.x * sx, vx: d.x * 7, vy: rand(1.5, 3), vz: d.z * 7, r: 0.35, g: 1.1, b: 0.4, r2: 0.04, g2: 0.25, b2: 0.06, life: rand(0.5, 0.8), size: 0.45, size2: 0.9, sprite: SPR.WISP, stretch: 0.02, drag: 2 });
+              }
+              ctx.vfx.P.solid({ x: c.x, y: gy + 0.3, z: c.z, vx: d.x * 4, vy: 0.2, vz: d.z * 4, r: 0.05, g: 0.12, b: 0.05, a: 0.45, life: 1.6, size: 1.6, size2: 3.4, sprite: SPR.SMOKE, drag: 1.5, spin: rand(-0.6, 0.6) });
+              if (k % 2 === 0) ctx.vfx.decal(v3(c.x, gy, c.z), 'crack', 2.4, 5);
               ctx.area(c, ctx.aoe(2.6), { dmg: 26, el: 'necrotic', kb: 4 });
             });
           }
@@ -884,7 +1095,7 @@ export const CLASSES = {
         name: 'Blood Lance', icon: 'drop', desc: 'Fast lances of blood that cause Bleeding.', mode: 'auto', rate: 0.28, style: 'flick', hand: 'left',
         cast(ctx) {
           ctx.sound('cast_blood', 0.6);
-          ctx.fan(1, 1.5, (dir) => ctx.proj({ el: 'blood', vel: dir.multiplyScalar(50), radius: 0.15, life: 1.4, core: 0.45, light: 4, trail: 1,
+          ctx.fan(1, 1.5, (dir) => ctx.proj({ el: 'blood', vel: dir.multiplyScalar(50), radius: 0.15, life: 1.4, core: 0.55, light: 5, trail: 1.3, tracerW: 1.3,
             hit: { dmg: 14, el: 'blood', st: { bleed: [3, 3] } } }));
           ctx.muzzle('blood');
         },
@@ -898,8 +1109,14 @@ export const CLASSES = {
           ctx.sound('cast_blade'); ctx.sound('cast_blood');
           const o = ctx.casterPos().clone().add(v3(0, 1.2, 0));
           const d = ctx.flatDir();
-          ctx.vfx.slash(o, d, 'blood', 4.2, 1, { life: 0.3, tilt: 0.22 });
-          ctx.vfx.slash(o.clone().add(v3(0, -0.15, 0)), d, 'blood', 3.4, 1, { life: 0.34, tilt: 0.16, alpha: 0.5, sparks: 0 });
+          const so = ctx.local ? o.clone().setY(o.y - 0.15) : o, roll = ctx.local ? 0.2 : 0.4;
+          ctx.vfx.slash(so, d, 'blood', 4.2, 1, { life: 0.32, tilt: 0.1, roll, color: [1.4, 0.08, 0.14] });
+          ctx.vfx.slash(so.clone().add(v3(0, -0.15, 0)), d, 'blood', 3.4, 1, { life: 0.36, tilt: 0.06, roll: roll * 0.9, alpha: 0.5, sparks: 0 });
+          // blood flung off the scythe's edge along the cut
+          for (let i = 0; i < 18; i++) {
+            const a = Math.atan2(d.x, d.z) + (i / 17 - 0.5) * 2.2, r = rand(3, 4.2);
+            ctx.vfx.P.solid({ x: o.x + Math.sin(a) * r, y: o.y + rand(-0.4, 0.3) - Math.sin(a - Math.atan2(d.x, d.z)) * 0.6, z: o.z + Math.cos(a) * r, vx: Math.cos(a) * 4, vy: rand(0.5, 2), vz: -Math.sin(a) * 4, r: 0.3, g: 0, b: 0.02, life: rand(0.4, 0.7), size: rand(0.05, 0.09), stretch: 0.04, sprite: SPR.DROP, gravity: 12, delay: i * 0.008 });
+          }
           for (const a of ctx.rt.inCone(o, d, ctx.aoe(4.4), 1.0)) ctx.hit(a, { dmg: 32, el: 'blood', st: { bleed: [4, 5] }, kb: 6 }, v3(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z));
           // augment: a crescent of blood flies on through the line (Hemorrhage on the freshly cut)
           if (reaper) {
@@ -939,7 +1156,34 @@ export const CLASSES = {
           ctx.buff('bloodpact', 6, { dmgMult: 0.4, rateMult: 0.25 });
           const p = ctx.casterPos();
           ctx.vfx.burst(v3(p.x, p.y + 1, p.z), { element: 'blood', count: 50, speed: 5, life: 0.8, size: 0.12, sprite: SPR.DROP, gravity: 10 });
-          ctx.vfx.ring(p, 3, fxOf('blood').core, 0.6);
+          ctx.vfx.ring(p, 3, fxOf('blood').core, 0.6, 0.15);
+          // the pact is sealed: blood spirals up out of you around a crimson
+          // sigil, and you burn with it for as long as the pact lasts
+          ctx.vfx.flash(v3(p.x, p.y + 1.2, p.z), 0xe02030, 30, 8, 0.4);
+          ctx.screenTint([1.25, 0.82, 0.82], 0.35);
+          // (round your own head the spiral is just red smears on the lens:
+          // the caster sees it from the hand instead)
+          if (ctx.local) {
+            const o = ctx.origin, d = ctx.dir;
+            ctx.vfx.burst(v3(o.x + d.x * 0.8, o.y + d.y * 0.8, o.z + d.z * 0.8), { element: 'blood', count: 3, speed: 1, life: 0.9, size: 0.3, sprite: SPR.RUNE, drag: 3, spin: 2, color: [1.0, 0.06, 0.1] });
+            ctx.vfx.burst(v3(o.x + d.x * 1.2, o.y + d.y * 1.2, o.z + d.z * 1.2), { count: 16, speed: 4, dir: d, spread: 0.7, life: 0.7, size: 0.07, sprite: SPR.DROP, solid: true, gravity: 10, stretch: 0.04, color: [0.3, 0, 0.02], color2: [0.15, 0, 0.01] });
+          }
+          for (let i = 0; i < (ctx.local ? 0 : 36); i++) {
+            const a = (i / 36) * Math.PI * 4, r = 0.9 - i * 0.012;
+            ctx.vfx.P.glow({ x: p.x + Math.cos(a) * r, y: p.y + 0.1 + i * 0.05, z: p.z + Math.sin(a) * r, vx: -Math.sin(a) * 2.5, vy: 2.2, vz: Math.cos(a) * 2.5, r: 1.1, g: 0.05, b: 0.08, r2: 0.25, g2: 0, b2: 0.02, life: 0.7, size: 0.2, size2: 0.05, sprite: SPR.DROP, drag: 1.2, delay: i * 0.008 });
+          }
+          ctx.vfx.burst(v3(p.x, p.y + 1.3, p.z), { element: 'blood', count: 5, speed: 1.5, life: 1, size: 0.35, sprite: SPR.RUNE, drag: 2, spin: 2, upward: 0.6, color: [1.0, 0.06, 0.1] });
+          ctx.zone({ pos: p.clone(), radius: 0, life: 6, interval: 9, onTick: () => {},
+            visual: (z, dt) => {
+              const q = ctx.casterPos();
+              const n = emitN(z, 'eA', 24, dt);
+              for (let i = 0; i < n; i++) {
+                const a = Math.random() * Math.PI * 2;
+                ctx.vfx.P.glow({ x: q.x + Math.cos(a) * 0.45, y: q.y + rand(0.2, 1.6), z: q.z + Math.sin(a) * 0.45, vy: rand(0.6, 1.4), r: 1.1, g: 0.05, b: 0.08, r2: 0.25, g2: 0, b2: 0.02, life: 0.7, size: 0.28, size2: 0.05, sprite: SPR.FLAME });
+              }
+              if (emitN(z, 'eD', 3, dt)) ctx.vfx.P.solid({ x: q.x + rand(-0.3, 0.3), y: q.y + 1, z: q.z + rand(-0.3, 0.3), r: 0.28, g: 0, b: 0.02, life: 0.6, size: 0.06, sprite: SPR.DROP, gravity: 10 });
+              ctx.lightAt(tmp.set(q.x, q.y + 1.2, q.z), 0xe02030, 4, 5);
+            } });
         },
       },
       ability2: {
@@ -954,9 +1198,16 @@ export const CLASSES = {
             const ap = v3(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z);
             ctx.hit(a, { dmg: 22, el: 'blood', st: { bleed: [3, 4] } }, ap);
             for (let i = 0; i < 6; i++) ctx.vfx.P.glow({ x: ap.x, y: ap.y, z: ap.z, vx: (p.x - ap.x) * 1.6 + rand(-1, 1), vy: 2 + rand(0, 2), vz: (p.z - ap.z) * 1.6 + rand(-1, 1), r: 1.4, g: 0.06, b: 0.1, life: 0.6, size: 0.13, sprite: SPR.DROP, gravity: 4 });
+            // a crimson tether rips the life out of each of them
+            ctx.vfx.lightning(ap, v3(p.x, p.y + 1.1, p.z), { element: 'blood', life: 0.35, branches: 0, width: 0.07, jag: 0.5 });
+            ctx.vfx.burst(ap, { count: 12, speed: 4, life: 0.6, size: 0.08, sprite: SPR.DROP, gravity: 10, solid: true, color: [0.3, 0, 0.02], color2: [0.15, 0, 0.01], stretch: 0.04 });
+            ctx.vfx.impact(ap, 'blood', 1);
           }
           ctx.healSelf(12 + hits.length * 6);
           ctx.healAllies(p, 14, 12 + hits.length * 4);
+          // the stolen blood pours into you
+          ctx.vfx.burst(v3(p.x, p.y + 1.1, p.z), { element: 'blood', count: 20, speed: 2, life: 0.7, size: 0.2, size2: 0.04, sprite: SPR.GLOW, drag: 2, upward: 0.5, color: [0.9, 0.05, 0.08] });
+          ctx.vfx.flash(v3(p.x, p.y + 1.2, p.z), 0xe02030, 20, 8, 0.4);
         },
       },
       ultimate: {
@@ -969,8 +1220,50 @@ export const CLASSES = {
           const pc = v3(p.x, p.y + 1, p.z);
           ctx.vfx.explosion(pc, 'blood', 7);
           ctx.vfx.shell(pc, { element: 'blood', radius: R, life: 0.5 });
+          ctx.vfx.dustWave(p, R, { color: [0.22, 0.01, 0.02], alpha: 0.5, count: 34, glow: [1.2, 0.05, 0.08] });
+          ctx.vfx.P.glow({ x: p.x, y: p.y + 1.2, z: p.z, r: 0.75, g: 0.02, b: 0.05, r2: 0.3, g2: 0, b2: 0.02, life: 0.4, size: 1, size2: R * 2.2, sprite: SPR.RING });
+          ctx.vfx.ring(p, R, fxOf('blood').mid, 0.6, 0.12);
           ctx.area(pc, R, { dmg: 70 + 160 * missing, el: 'blood', st: { bleed: [5, 8] }, kb: 12 });
           ctx.healSelf(25);
+          // the body gives up its blood all at once: a crimson flash, a storm of
+          // droplets driven out level with the eye, and a ring of geysers
+          ctx.vfx.flash(v3(p.x, p.y + 1.5, p.z), 0xe02030, 55, R * 2.5, 0.5);
+          ctx.screenTint([1.35, 0.75, 0.75], 0.45);
+          for (let i = 0; i < 70; i++) {
+            const a = (i / 70) * Math.PI * 2 + rand(-0.05, 0.05), e = rand(-0.15, 0.35), sp = rand(16, 26);
+            ctx.vfx.P.solid({ x: p.x + Math.cos(a) * 0.8, y: p.y + 1.2, z: p.z + Math.sin(a) * 0.8, vx: Math.cos(a) * sp, vy: e * sp, vz: Math.sin(a) * sp, r: 0.32, g: 0.0, b: 0.02, r2: 0.16, g2: 0, b2: 0.01, life: rand(0.5, 0.8), size: rand(0.06, 0.12), stretch: 0.05, sprite: SPR.DROP, gravity: 14, drag: 1.6 });
+            if (i % 2 === 0) ctx.vfx.P.glow({ x: p.x + Math.cos(a) * 0.8, y: p.y + 1.2, z: p.z + Math.sin(a) * 0.8, vx: Math.cos(a) * sp * 1.1, vy: e * sp, vz: Math.sin(a) * sp * 1.1, r: 1.4, g: 0.05, b: 0.08, r2: 0.3, g2: 0, b2: 0.02, life: rand(0.3, 0.45), size: 0.1, stretch: 0.06, sprite: SPR.SPARK, drag: 2.5 });
+          }
+          // a crimson mist hangs over the ground afterwards, embers of blood rising through it
+          const mp = v3(p.x, ctx.groundAt(p.x, p.z), p.z);
+          ctx.zone({ pos: mp, radius: 0, life: 2.6, interval: 9, onTick: () => {},
+            visual: (z, dt) => {
+              const k = Math.min(1, z.age / 0.4) * Math.min(1, (z.life - z.age) / 1);
+              const n = emitN(z, 'eM', 9 * k, dt);
+              for (let i = 0; i < n; i++) {
+                const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R * 0.8;
+                ctx.vfx.P.solid({ x: mp.x + Math.cos(a) * r, y: mp.y + 0.3, z: mp.z + Math.sin(a) * r, vx: rand(-0.3, 0.3), vy: rand(0.05, 0.25), vz: rand(-0.3, 0.3), r: 0.2, g: 0.01, b: 0.02, a: 0.35, life: rand(1.5, 2.2), size: 1.4, size2: 2.8, sprite: SPR.SMOKE, drag: 0.6, spin: rand(-0.4, 0.4) });
+              }
+              const ne = emitN(z, 'eE', 22 * k, dt);
+              for (let i = 0; i < ne; i++) {
+                const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R * 0.8;
+                ctx.vfx.P.glow({ x: mp.x + Math.cos(a) * r, y: mp.y + 0.2, z: mp.z + Math.sin(a) * r, vy: rand(0.8, 1.8), r: 1.2, g: 0.04, b: 0.07, r2: 0.3, g2: 0, b2: 0.02, life: rand(0.8, 1.3), size: 0.04, sprite: SPR.EMBER, drag: 0.5 });
+              }
+              ctx.lightAt(tmp.set(mp.x, mp.y + 1, mp.z), 0xe02030, 6 * k, R * 1.5);
+            } });
+          for (let i = 0; i < 10; i++) {
+            const a = (i / 10) * Math.PI * 2, r = R * 0.55;
+            const gx = p.x + Math.cos(a) * r, gz = p.z + Math.sin(a) * r;
+            if (ctx.g.collision.pointSolid(gx, p.y + 0.5, gz)) continue;
+            const gy = ctx.groundAt(gx, gz);
+            ctx.after(0.12 + i * 0.015, () => {
+              ctx.vfx.burst(v3(gx, gy + 0.1, gz), { count: 14, speed: 7, dir: v3(0, 1, 0), spread: 0.25, life: 0.9, size: 0.1, sprite: SPR.DROP, gravity: 14, solid: true, color: [0.3, 0, 0.02], color2: [0.15, 0, 0.01], stretch: 0.05 });
+              ctx.vfx.P.glow({ x: gx, y: gy + 0.4, z: gz, vy: 3, r: 0.8, g: 0.03, b: 0.06, r2: 0.2, g2: 0, b2: 0.02, life: 0.5, size: 0.8, size2: 1.5, sprite: SPR.SMOKE, drag: 2 });
+              // each geyser is a glowing crimson jet, not just dark drops
+              for (let j = 0; j < 8; j++) ctx.vfx.P.glow({ x: gx + rand(-0.15, 0.15), y: gy + 0.1, z: gz + rand(-0.15, 0.15), vx: rand(-0.6, 0.6), vy: rand(6, 10), vz: rand(-0.6, 0.6), r: 1.3, g: 0.05, b: 0.08, r2: 0.3, g2: 0, b2: 0.02, life: rand(0.4, 0.6), size: 0.12, stretch: 0.05, sprite: SPR.SPARK, gravity: 12, drag: 0.5, delay: j * 0.015 });
+              ctx.vfx.decal(v3(gx, gy, gz), 'blood', 1.6, 8);
+            });
+          }
           // augment: a pool of blood that bleeds foes and mends allies standing in it
           if (aug(ctx, 'blood_nova')) {
             const m = augM(ctx, 'blood_nova');
@@ -1051,9 +1344,25 @@ export const CLASSES = {
         cast(ctx) {
           ctx.sound('cast_time_big');
           const a = ctx.casterPos().clone().add(v3(0, 1, 0));
-          ctx.vfx.burst(a, { element: 'time', count: 30, speed: 3, life: 0.8, size: 0.3, sprite: SPR.RING });
+          const tc = fxOf('time');
+          // time runs backwards: motes rush in to where you stood, and you are
+          // pulled out of the moment along a thread of light
+          for (let i = 0; i < 36; i++) {
+            const ang = Math.random() * Math.PI * 2, e = rand(-0.8, 0.9), r = rand(2.2, 3.4);
+            const ox = Math.cos(ang) * Math.cos(e) * r, oy = Math.sin(e) * r, oz = Math.sin(ang) * Math.cos(e) * r;
+            ctx.vfx.P.glow({ x: a.x + ox, y: a.y + oy, z: a.z + oz, vx: -ox / 0.3, vy: -oy / 0.3, vz: -oz / 0.3, r: tc.core[0] * 0.5, g: tc.core[1] * 0.5, b: tc.core[2] * 0.5, life: 0.3, size: 0.06, stretch: 0.04, sprite: SPR.SPARK });
+          }
+          ctx.vfx.burst(a, { element: 'time', count: 16, speed: 3, life: 0.8, size: 0.3, sprite: SPR.RING });
+          ctx.vfx.ring(v3(a.x, a.y - 1, a.z), 2.2, tc.core, 0.5, 0.15);
           const b = ctx.rewind(3);
-          if (b) ctx.vfx.shell(v3(b.x, b.y + 1, b.z), { element: 'time', radius: 2, life: 0.4 });
+          if (b) {
+            const bb = v3(b.x, b.y + 1, b.z);
+            ctx.vfx.shell(bb, { element: 'time', radius: 2, life: 0.4 });
+            if (bb.distanceTo(a) > 1) ctx.vfx.lightning(a, bb, { element: 'time', life: 0.35, branches: 0, width: 0.06, jag: 0.25 });
+            ctx.vfx.burst(bb, { element: 'time', count: 24, speed: 5, life: 0.6, size: 0.06, sprite: SPR.STAR, drag: 3 });
+            ctx.vfx.ring(v3(b.x, b.y, b.z), 2.6, tc.core, 0.5, 0.12);
+            ctx.vfx.flash(bb, tc.light, 20, 8, 0.4);
+          }
           // augment: the self you abandoned lingers, then detonates in shattered time
           if (aug(ctx, 'chrono_rewind')) {
             const m = augM(ctx, 'chrono_rewind');
@@ -1120,9 +1429,34 @@ export const CLASSES = {
           const R = 28;
           ctx.vfx.shell(v3(p.x, p.y + 1, p.z), { element: 'time', radius: R, life: 0.8, alpha: 0.6 });
           ctx.vfx.ring(p, R, fxOf('time').core, 0.8, 0.05);
+          ctx.vfx.ring(p, 9, fxOf('time').mid, 0.5, 0.07);
+          ctx.vfx.flash(v3(p.x, p.y + 1.5, p.z), 0x40d0b8, 40, 20, 0.6);
           ctx.area(v3(p.x, p.y + 1, p.z), R, { dmg: 10, el: 'time', st: { stun: 4, slow: 6 }, tag: 'big' });
           ctx.buff('timestop', 4, { cdRate: 1 });
           ctx.screenTint([0.6, 1.1, 1.05], 4);
+          ctx.kick(0.15, -4);
+          const tc = fxOf('time');
+          // the moment holds: motes of dust hang dead still in the air around you
+          for (let i = 0; i < 140; i++) {
+            const a = Math.random() * Math.PI * 2, r = 1.2 + Math.pow(Math.random(), 0.7) * 13;
+            const star = i % 5 === 0;
+            ctx.vfx.P.glow({ x: p.x + Math.cos(a) * r, y: p.y + rand(0.2, 3.2), z: p.z + Math.sin(a) * r, r: tc.core[0] * (star ? 0.5 : 0.4), g: tc.core[1] * (star ? 0.5 : 0.4), b: tc.core[2] * (star ? 0.5 : 0.4),
+              life: 4.2, size: star ? 0.18 : 0.06, sprite: star ? SPR.STAR : SPR.SPARK, delay: r * 0.025 });
+          }
+          // every foe caught is locked inside a slowly turning clock ring
+          for (const a of ctx.rt.inRadius(p, R).slice(0, 16)) {
+            const c = v3(a.pos.x, a.pos.y + a.height * 0.55, a.pos.z), d = Math.hypot(a.pos.x - p.x, a.pos.z - p.z) * 0.025;
+            ctx.vfx.P.glow({ x: c.x, y: c.y, z: c.z, r: tc.core[0] * 0.4, g: tc.core[1] * 0.4, b: tc.core[2] * 0.4, life: 4, size: a.height * 1.25, sprite: SPR.RING, spin: 0.6, delay: d });
+            ctx.vfx.P.glow({ x: c.x, y: c.y, z: c.z, r: tc.mid[0] * 0.35, g: tc.mid[1] * 0.35, b: tc.mid[2] * 0.35, life: 0.35, size: 0.3, size2: a.height * 1.6, sprite: SPR.RING, delay: d });
+            ctx.vfx.burst(c, { element: 'time', count: 6, speed: 2.5, life: 0.5, size: 0.08, sprite: SPR.STAR, drag: 4 });
+          }
+          // ...and lets go: a ring sweeps back in as time resumes
+          ctx.after(3.85, () => {
+            const q = ctx.casterPos();
+            ctx.vfx.ring(q, 12, tc.core, 0.5, 0.12);
+            ctx.vfx.burst(v3(q.x, q.y + 1.2, q.z), { element: 'time', count: 24, speed: 6, life: 0.6, size: 0.25, sprite: SPR.RING, drag: 3 });
+            ctx.sound('cast_time', 0.7);
+          });
         },
       },
     },
@@ -1166,6 +1500,10 @@ export const CLASSES = {
             hit: { dmg: 12, el: 'shadow', st: { hex: 6, bleed: [6, 5] } },
             onHit: (p, a, pos) => {
               ctx.vfx.decal(v3(pos.x, ctx.groundAt(pos.x, pos.z), pos.z), 'glyph', 2, 1.5, 0xa040ff);
+              // the curse brands itself on the victim
+              ctx.vfx.burst(pos, { element: 'shadow', count: 4, speed: 1.2, life: 0.9, size: 0.3, sprite: SPR.RUNE, drag: 2, spin: 2, upward: 0.5, color: [0.8, 0.2, 1.3] });
+              ctx.vfx.P.glow({ x: pos.x, y: pos.y, z: pos.z, r: 0.5, g: 0.1, b: 0.9, life: 0.3, size: 0.4, size2: 1.8, sprite: SPR.RING });
+              ctx.vfx.smoke(pos, { count: 3, size: 0.6, color: [0.03, 0, 0.05], alpha: 0.7, life: 1.1 });
               // augment: the curse splits and seeks out three more victims
               if (!aug(ctx, 'warlock_hex') || p.data.child || !a) return;
               const m = augM(ctx, 'warlock_hex');
@@ -1202,7 +1540,20 @@ export const CLASSES = {
               // a black maw ringed in violet: dark enough that enemies stay visible against it
               if (emitN(z, 'eC', 24, dt)) {
                 ctx.vfx.P.solid({ x: z.pos.x, y: z.pos.y, z: z.pos.z, r: 0, g: 0, b: 0, a: 0.85, life: 0.15, size: 1.6, sprite: SPR.GLOW });
-                ctx.vfx.P.glow({ x: z.pos.x, y: z.pos.y, z: z.pos.z, r: 0.5, g: 0.08, b: 0.85, life: 0.15, size: 2.2 + Math.sin(z.age * 30) * 0.2, sprite: SPR.RING, rot: -z.age * 5 });
+                ctx.vfx.P.glow({ x: z.pos.x, y: z.pos.y, z: z.pos.z, r: 0.2, g: 0.03, b: 0.38, life: 0.15, size: 2.4 + Math.sin(z.age * 30) * 0.2, sprite: SPR.RING, rot: -z.age * 5 });
+              }
+              // a whirlpool of violet light round the maw
+              const nd = emitN(z, 'eD', 110, dt);
+              for (let i = 0; i < nd; i++) {
+                const a = Math.random() * Math.PI * 2, r = rand(1, 2.4), sp = 7 / r;
+                ctx.vfx.P.glow({ x: z.pos.x + Math.cos(a) * r, y: z.pos.y + rand(-0.1, 0.1) + Math.sin(a) * r * 0.25, z: z.pos.z + Math.sin(a) * r, vx: (-Math.sin(a) * sp - Math.cos(a) * 1.5) * r, vy: 0, vz: (Math.cos(a) * sp - Math.sin(a) * 1.5) * r,
+                  r: 0.8, g: 0.2, b: 1.3, r2: 0.15, g2: 0.0, b2: 0.35, life: rand(0.12, 0.22), size: 0.06, stretch: 0.035, sprite: SPR.SPARK });
+              }
+              // grasping tendrils lash out at whatever it is dragging in
+              if (emitN(z, 'eT', 5, dt)) {
+                const held = ctx.rt.inRadius(z.pos, z.radius);
+                const t = held.length ? held[Math.floor(Math.random() * held.length)] : null;
+                if (t) ctx.vfx.lightning(z.pos, v3(t.pos.x, t.pos.y + t.height * 0.5, t.pos.z), { element: 'shadow', life: 0.14, branches: 1, width: 0.05, jag: 0.6 });
               }
               ctx.lightAt(z.pos, 0xa040ff, 14, 10);
             },
@@ -1233,6 +1584,21 @@ export const CLASSES = {
           const a = ctx.casterPos().clone().add(v3(0, 1, 0));
           ctx.vfx.smoke(a, { count: 10, color: [0.03, 0, 0.05], alpha: 0.8, size: 0.8 });
           ctx.dash(9, 0.2, { invuln: 0.6 });
+          // the shadow you shed stays standing - a smoky silhouette shot through
+          // with violet that swells and darkens, then bursts
+          const sf = fxOf('shadow');
+          ctx.zone({ pos: v3(a.x, a.y - 1, a.z), radius: 0, life: 0.6, interval: 9, onTick: () => {},
+            visual: (z, dt) => {
+              const k = z.age / z.life;
+              const n = emitN(z, 'eS', 90, dt);
+              for (let i = 0; i < n; i++) {
+                const h = Math.random() * 1.8, w = h > 1.45 ? 0.16 : 0.3 - Math.abs(h - 0.9) * 0.05, an = Math.random() * Math.PI * 2;
+                const dark = i % 3 === 0;
+                if (dark) ctx.vfx.P.solid({ x: z.pos.x + Math.cos(an) * w, y: z.pos.y + h, z: z.pos.z + Math.sin(an) * w, vy: 0.3, r: 0.03, g: 0, b: 0.05, a: 0.7, life: 0.4, size: 0.3, size2: 0.5, sprite: SPR.SMOKE, spin: 1 });
+                else ctx.vfx.P.glow({ x: z.pos.x + Math.cos(an) * w, y: z.pos.y + h, z: z.pos.z + Math.sin(an) * w, vx: -Math.cos(an) * 0.6, vy: 0.4, vz: -Math.sin(an) * 0.6, r: sf.mid[0] * (0.4 + k), g: sf.mid[1] * (0.4 + k), b: sf.mid[2] * (0.4 + k), life: 0.3, size: 0.14, sprite: SPR.WISP, spin: 2 });
+              }
+              ctx.lightAt(tmp.set(z.pos.x, z.pos.y + 1, z.pos.z), sf.light, 3 + 8 * k, 5);
+            } });
           ctx.after(0.6, () => { ctx.vfx.explosion(a, 'shadow', 3); ctx.area(a, ctx.aoe(3.2), { dmg: 28, el: 'shadow', st: { hex: 3 } }); ctx.sound('explosion', 0.8, a); });
         },
       },
@@ -1242,7 +1608,7 @@ export const CLASSES = {
           ctx.sound('cast_shadow_big', 1.3); ctx.sound('boss_roar', 0.4);
           const c = ctx.aimPoint.clone(); c.y = ctx.groundAt(c.x, c.z);
           const R = ctx.aoe(8);
-          ctx.vfx.decal(c, 'glyph', R * 2.2, 5, 0x9030ff);
+          ctx.vfx.decal(c, 'glyph', R * 2.2, 5, 0x4a1488);
           for (let i = 0; i < 14; i++) {
             ctx.after(0.2 + i * 0.25, () => {
               const targets = ctx.rt.inRadius(c, R);
@@ -1299,10 +1665,20 @@ export const CLASSES = {
           const R = ctx.aoe(5.5);
           // augment: the sanctuary is carried with you as a moving halo
           const halo = aug(ctx, 'light_sanct');
-          if (!halo) ctx.vfx.decal(c, 'glyph', R * 2.1, 6, 0xffd060);
+          if (!halo) ctx.vfx.decal(c, 'glyph', R * 2.1, 6, 0xb89040);
+          ctx.vfx.ring(c, R, fxOf('holy').core, 0.6, 0.16);
+          ctx.vfx.flash(v3(c.x, c.y + 2, c.z), 0xffd870, 30, R * 2.5, 0.5);
+          // a shaft of dawn light falls on the spot
+          for (let i = 0; i < 20; i++) ctx.vfx.P.glow({ x: c.x + rand(-0.6, 0.6), y: c.y + rand(4, 7), z: c.z + rand(-0.6, 0.6), vy: -14, r: 1.1, g: 0.9, b: 0.45, r2: 0.5, g2: 0.35, b2: 0.1, life: 0.4, size: 0.12, stretch: 0.05, sprite: SPR.GLOW, delay: i * 0.01 });
           ctx.zone({ pos: c, radius: R, life: 6, interval: 0.5, el: 'holy', dmg: 8, healAllies: 4, follow: halo,
             visual: (z, dt) => {
-              if (halo && emitN(z, 'eH', 2.5, dt)) ctx.vfx.ring(z.pos, z.radius, fxOf('holy').core, 0.7, 0.06);
+              if (emitN(z, 'eH', halo ? 2.5 : 0.8, dt)) ctx.vfx.ring(z.pos, z.radius, fxOf('holy').core, 0.7, 0.06);
+              // a curtain of rising light along the rim marks the hallowed ground
+              const nr = emitN(z, 'eR', 34, dt);
+              for (let i = 0; i < nr; i++) {
+                const a = Math.random() * Math.PI * 2;
+                ctx.vfx.P.glow({ x: z.pos.x + Math.cos(a) * z.radius, y: z.pos.y + 0.05, z: z.pos.z + Math.sin(a) * z.radius, vy: rand(1.2, 2.4), r: 1.0, g: 0.8, b: 0.35, r2: 0.4, g2: 0.25, b2: 0.05, life: rand(0.7, 1.1), size: 0.05, stretch: 0.06, sprite: SPR.SPARK, drag: 0.5 });
+              }
               const n = emitN(z, 'eS', 36, dt);
               for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * z.radius; ctx.vfx.P.glow({ x: z.pos.x + Math.cos(a) * r, y: z.pos.y + 0.1, z: z.pos.z + Math.sin(a) * r, vy: rand(1, 2.5), r: 1.4, g: 1.1, b: 0.45, life: 1.4, size: 0.09, sprite: SPR.STAR }); }
               ctx.lightAt(v3(z.pos.x, z.pos.y + 2, z.pos.z), 0xffd870, 10, z.radius * 2);
@@ -1314,8 +1690,18 @@ export const CLASSES = {
         cast(ctx) {
           ctx.sound('shield'); ctx.sound('cast_holy');
           const p = ctx.casterPos();
-          ctx.vfx.ring(p, 12, fxOf('holy').mid, 0.6, 0.1);
+          ctx.vfx.ring(p, 12, fxOf('holy').mid, 0.6, 0.05);
           ctx.shieldAllies(p, 12, 45, 6);
+          // a golden ward settles over you: motes spiral up and a soft flare
+          {
+            const hf = fxOf('holy');
+            for (let i = 0; i < 30; i++) {
+              const a = (i / 30) * Math.PI * 6;
+              ctx.vfx.P.glow({ x: p.x + Math.cos(a) * 0.9, y: p.y + 0.1 + i * 0.06, z: p.z + Math.sin(a) * 0.9, vx: -Math.sin(a) * 1.5, vy: 1.5, vz: Math.cos(a) * 1.5, r: hf.core[0] * 0.5, g: hf.core[1] * 0.45, b: hf.core[2] * 0.3, life: 0.8, size: 0.09, sprite: SPR.STAR, drag: 1, delay: i * 0.01 });
+            }
+            ctx.vfx.flash(v3(p.x, p.y + 1.2, p.z), 0xffd060, 18, 8, 0.5);
+            ctx.screenTint([1.15, 1.08, 0.9], 0.4);
+          }
           // augment: the ward erupts in radiance now, and again when it fades
           if (aug(ctx, 'light_aegis')) {
             const m = augM(ctx, 'light_aegis');
@@ -1340,12 +1726,24 @@ export const CLASSES = {
           ctx.sound('cast_holy_big', 1.3);
           const p = ctx.casterPos();
           const targets = ctx.rt.inRadius(p, 20);
+          const hf = fxOf('holy');
           targets.forEach((t, i) => {
-            ctx.after(0.1 + i * 0.06, () => {
+            // a ring of light marks each condemned foe a heartbeat before the strike
+            const t0 = 0.1 + i * 0.06;
+            ctx.after(Math.max(0, t0 - 0.12), () => ctx.vfx.ring(v3(t.pos.x, t.pos.y, t.pos.z), 1.8, hf.core, 0.35, 0.2));
+            ctx.after(t0, () => {
               const tp = v3(t.pos.x, t.pos.y, t.pos.z);
-              const b = ctx.vfx.beam({ element: 'holy', width: 0.6, noise: 0.3 });
-              b.update(tp, v3(tp.x, tp.y + 30, tp.z), 0.9);
-              b.release(0.5);
+              const top = Math.min(tp.y + 30, ctx.g.level.ceilAt(tp.x, tp.z) + 2);
+              // a pillar that slams down from above, then narrows and fades
+              const b = ctx.vfx.beam({ element: 'holy', width: 0.6, noise: 0.3, color: [1.3, 0.95, 0.4], core: [1.6, 1.4, 0.95] });
+              const sky = v3(tp.x, top, tp.z), foot = v3();
+              ctx.vfx._track(b.mesh, 0.5, (k) => {
+                const drop = Math.min(1, k / 0.12);
+                foot.set(tp.x, top + (tp.y - top) * drop, tp.z);
+                b.alpha = k < 0.25 ? 1 : 1 - (k - 0.25) / 0.75;
+                b.update(foot, sky, 0.75 * (1 - k * 0.7));
+              });
+              for (let j = 0; j < 10; j++) ctx.vfx.P.glow({ x: tp.x + rand(-0.5, 0.5), y: tp.y + rand(0, 0.4), z: tp.z + rand(-0.5, 0.5), vy: rand(3, 7), r: hf.core[0] * 0.5, g: hf.core[1] * 0.5, b: hf.core[2] * 0.4, life: rand(0.6, 1), size: 0.08, stretch: 0.04, sprite: SPR.SPARK, drag: 1, delay: 0.06 });
               ctx.vfx.explosion(v3(tp.x, tp.y + 1, tp.z), 'holy', 2.5);
               ctx.area(v3(tp.x, tp.y + 1, tp.z), 2, { dmg: 75, el: 'holy', st: { mark: 6, stun: 0.5 } });
               ctx.sound('impact_holy', 0.8, tp);
@@ -1446,6 +1844,33 @@ export const CLASSES = {
           const p = ctx.casterPos();
           ctx.vfx.burst(v3(p.x, p.y + 1, p.z), { count: 20, speed: 3, life: 0.8, size: 0.2, sprite: SPR.CHUNK, solid: true, color: [0.35, 0.3, 0.25], gravity: 8 });
           ctx.screenTint([1.1, 1.0, 0.85], 5);
+          // the earth answers: stones tear up from the floor and slam onto you
+          for (let i = 0; i < 18; i++) {
+            const a = (i / 18) * Math.PI * 2 + rand(-0.2, 0.2), r = rand(2.2, 3.4), t = 0.28;
+            const x = p.x + Math.cos(a) * r, z = p.z + Math.sin(a) * r, y = p.y + rand(0.1, 0.4);
+            ctx.vfx.P.solid({ x, y, z, vx: (p.x - x) / t, vy: (p.y + rand(0.6, 1.6) - y) / t + 0.5 * 9 * t, vz: (p.z - z) / t, r: 0.32, g: 0.27, b: 0.21, life: t, size: rand(0.16, 0.3), sprite: SPR.CHUNK, gravity: 9, spin: rand(-6, 6) });
+          }
+          ctx.vfx.dustWave(p, 2.6, { color: [0.28, 0.23, 0.17], alpha: 0.35, count: 14 });
+          ctx.vfx.ring(p, 2.6, fxOf('earth').core, 0.4, 0.15);
+          ctx.after(0.28, () => {
+            const q = ctx.casterPos();
+            ctx.vfx.burst(v3(q.x, q.y + 1, q.z), { count: 14, speed: 5, life: 0.6, size: 0.1, sprite: SPR.CHUNK, solid: true, color: [0.3, 0.26, 0.2], gravity: 14 });
+            ctx.vfx.flash(v3(q.x, q.y + 1, q.z), 0xd09048, 18, 7, 0.3);
+            ctx.kick(0.12, -2);
+          });
+          // what your allies see: a crust of glowing amber stone around you
+          const sh = ctx.vfx.shell(v3(p.x, p.y + 1, p.z), { element: 'earth', radius: 1.15, follow: true, color: [0.75, 0.45, 0.16] });
+          ctx.zone({ pos: p.clone(), radius: 0, life: 5, interval: 9, onTick: () => {},
+            visual: (z, dt) => {
+              const q = ctx.casterPos();
+              sh?.update(tmp.set(q.x, q.y + 1, q.z), 0.55 * Math.min(1, z.age / 0.3) * Math.min(1, (z.life - z.age) / 0.4));
+              if (emitN(z, 'eG', 6, dt)) ctx.vfx.P.solid({ x: q.x + rand(-0.4, 0.4), y: q.y + rand(0.3, 1.6), z: q.z + rand(-0.4, 0.4), vy: -0.5, r: 0.3, g: 0.26, b: 0.2, life: 0.8, size: 0.06, sprite: SPR.CHUNK, gravity: 8, spin: 4 });
+            },
+            onEnd: () => {
+              sh?.release();
+              const q = ctx.casterPos();
+              ctx.vfx.burst(v3(q.x, q.y + 1, q.z), { count: 16, speed: 4, life: 0.8, size: 0.14, sprite: SPR.CHUNK, solid: true, color: [0.32, 0.27, 0.21], gravity: 12 });
+            } });
         },
       },
       ability2: {
@@ -1455,7 +1880,8 @@ export const CLASSES = {
           const p = ctx.casterPos();
           const R = ctx.aoe(6);
           ctx.vfx.explosion(v3(p.x, p.y + 0.3, p.z), 'earth', 4, { groundY: p.y });
-          ctx.vfx.ring(p, R, fxOf('earth').core, 0.5, 0.3);
+          ctx.vfx.ring(p, R, fxOf('earth').core, 0.5, 0.14);
+          ctx.vfx.dustWave(p, R, { color: [0.28, 0.23, 0.17], alpha: 0.5, count: 30 });
           for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2; ctx.spike(v3(p.x + Math.cos(a) * 3, p.y, p.z + Math.sin(a) * 3), 0.8); }
           ctx.area(v3(p.x, p.y + 1, p.z), R, { dmg: 38, el: 'earth', st: { stun: 1.2 }, kb: 8 });
           ctx.kick(0.4, 4);
@@ -1466,13 +1892,41 @@ export const CLASSES = {
         cast(ctx) {
           ctx.sound('cast_earth_big', 1.3);
           const c = ctx.aimPoint.clone(); c.y = ctx.groundAt(c.x, c.z);
-          ctx.vfx.telegraph(c, { radius: 7, dur: 1.2, color: [2.2, 1.2, 0.3] });
+          ctx.vfx.telegraph(c, { radius: 7, dur: 1.2, color: [0.75, 0.34, 0.07] });
           const start = v3(c.x, c.y + 26, c.z); // clamped below ceilings by ctx.proj
-          ctx.after(0.2, () => ctx.proj({ el: 'earth', pos: start, vel: v3(0, -26, 0), radius: 2, life: 3, core: 0, mesh: 'boulder', light: 0, trail: 3, noWallUntilGround: true,
+          // the ground beneath trembles and sheds grit while the mountain falls
+          ctx.zone({ pos: c.clone(), radius: 0, life: 1.2, interval: 9, onTick: () => {},
+            visual: (z, dt) => {
+              const n = emitN(z, 'eG', 30, dt);
+              for (let i = 0; i < n; i++) {
+                const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * 7;
+                ctx.vfx.P.solid({ x: c.x + Math.cos(a) * r, y: c.y + 0.05, z: c.z + Math.sin(a) * r, vy: rand(1, 2.5), r: 0.3, g: 0.26, b: 0.2, life: 0.5, size: rand(0.04, 0.09), sprite: SPR.CHUNK, gravity: 9, spin: 5 });
+              }
+              if (emitN(z, 'eD', 6, dt)) ctx.vfx.smoke(v3(c.x + rand(-5, 5), c.y + 0.2, c.z + rand(-5, 5)), { count: 1, size: 0.9, color: [0.26, 0.21, 0.16], alpha: 0.3, life: 1.4, rise: 0.4 });
+            } });
+          ctx.after(0.2, () => ctx.proj({ el: 'earth', pos: start, vel: v3(0, -26, 0), radius: 2, life: 3, core: 0, mesh: 'boulder', light: 10, trail: 3, noWallUntilGround: true, data: {},
             aoe: { radius: ctx.aoe(7.5), dmg: 220, el: 'earth', st: { stun: 1.5 }, kb: 18 },
+            // trailing a mane of dust and burning grit, cracks glowing from the heat of its fall
+            onTick: (p, dt) => {
+              const n = emitN(p.data, 'eT', 50, dt);
+              for (let i = 0; i < n; i++) {
+                const a = Math.random() * Math.PI * 2;
+                const ember = i % 3 === 0;
+                if (ember) ctx.vfx.P.glow({ x: p.pos.x + Math.cos(a) * 2, y: p.pos.y + rand(0, 1.5), z: p.pos.z + Math.sin(a) * 2, vx: Math.cos(a) * 2, vy: rand(2, 6), vz: Math.sin(a) * 2, r: 1.4, g: 0.5, b: 0.1, r2: 0.4, g2: 0.05, b2: 0, life: rand(0.4, 0.8), size: 0.04, sprite: SPR.EMBER, drag: 1 });
+                else ctx.vfx.P.solid({ x: p.pos.x + Math.cos(a) * 1.8, y: p.pos.y + rand(0.5, 2), z: p.pos.z + Math.sin(a) * 1.8, vx: Math.cos(a) * 1.5, vy: rand(4, 8), vz: Math.sin(a) * 1.5, r: 0.24, g: 0.2, b: 0.15, a: 0.5, life: rand(0.8, 1.3), size: 1, size2: 2.6, sprite: SPR.SMOKE, drag: 1.5, spin: rand(-1, 1) });
+              }
+            },
             onExpire: (p, pos) => {
               for (let i = 0; i < 14; i++) { const a = (i / 14) * Math.PI * 2; ctx.spike(v3(pos.x + Math.cos(a) * 5, c.y, pos.z + Math.sin(a) * 5), 1.6); }
               ctx.kick(0.6, 6);
+              if (!cleared(p)) {
+                // the impact: a wall of dust rolling out, boulders of rubble, a crater
+                ctx.vfx.dustWave(c, ctx.aoe(7.5), { color: [0.27, 0.22, 0.17], alpha: 0.55, count: 40 });
+                ctx.vfx.burst(v3(pos.x, c.y + 1, pos.z), { count: 26, speed: 13, upward: 0.9, life: 1.3, size: 0.35, sprite: SPR.CHUNK, solid: true, gravity: 18, spin: 6, color: [0.3, 0.25, 0.2], color2: [0.22, 0.18, 0.14] });
+                ctx.vfx.decal(c, 'crack', 9, 14);
+                ctx.vfx.flash(v3(c.x, c.y + 2, c.z), 0xd09048, 60, 20, 0.5);
+                ctx.vfx.ring(c, ctx.aoe(7.5), fxOf('earth').core, 0.6, 0.12);
+              }
               // augment: the boulder rolls on, crushing everything in its path
               if (aug(ctx, 'geo_mountain') && !cleared(p)) {
                 const m = augM(ctx, 'geo_mountain');
@@ -1507,7 +1961,7 @@ export const CLASSES = {
         name: 'Venom Thorns', icon: 'thorn', desc: 'Twin thorns that stack Poison.', mode: 'auto', rate: 0.32, style: 'flick', hand: 'right',
         cast(ctx) {
           ctx.sound('cast_poison', 0.6);
-          ctx.fan(2, 3, (dir) => ctx.proj({ el: 'poison', vel: dir.multiplyScalar(44), radius: 0.12, life: 1.4, core: 0.35, mesh: 'shard', meshScale: 0.7, light: 2, trail: 0.7,
+          ctx.fan(2, 3, (dir) => ctx.proj({ el: 'poison', vel: dir.multiplyScalar(44), radius: 0.12, life: 1.4, core: 0.35, mesh: 'thorn', light: 3, trail: 0.8,
             hit: { dmg: 6.5, el: 'poison', st: { poison: [1 + (ctx.stats.poisonBonus ?? 0), 2.2] } } }));
           ctx.muzzle('poison');
         },
@@ -1556,6 +2010,8 @@ export const CLASSES = {
           const c = ctx.aimPoint.clone(); c.y = ctx.groundAt(c.x, c.z);
           const R = ctx.aoe(5.5);
           ctx.vfx.decal(c, 'crack', R * 2, 6);
+          ctx.vfx.ring(c, R, fxOf('poison').core, 0.5, 0.12);
+          ctx.vfx.dustWave(c, R * 0.8, { color: [0.16, 0.15, 0.08], alpha: 0.4, count: 18, glow: [0.5, 0.9, 0.15] });
           for (let i = 0; i < 16; i++) { const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R; ctx.thorn(v3(c.x + Math.cos(a) * r, c.y, c.z + Math.sin(a) * r)); }
           ctx.area(v3(c.x, c.y + 1, c.z), R, { dmg: 16, el: 'poison', st: { root: 2.5, poison: [2, 2.5] } });
           // augment: the roots stay as a briar thicket
@@ -1579,6 +2035,10 @@ export const CLASSES = {
           for (const s of [-1, 1]) {
             const sp = v3(p.x + d.x * 2 - d.z * s * 1.5, p.y, p.z + d.z * 2 + d.x * s * 1.5);
             ctx.vfx.burst(v3(sp.x, sp.y + 0.6, sp.z), { element: 'poison', count: 25, speed: 3, life: 0.8, size: 0.25, sprite: SPR.FEATHER, spin: 3 });
+            // the spirit gathers out of green light before it runs
+            for (let i = 0; i < 10; i++) ctx.vfx.P.glow({ x: sp.x + rand(-0.4, 0.4), y: sp.y + 0.1, z: sp.z + rand(-0.4, 0.4), vy: rand(2, 4), r: 0.4, g: 1.1, b: 0.3, r2: 0.05, g2: 0.25, b2: 0.05, life: rand(0.5, 0.8), size: 0.35, size2: 0.08, sprite: SPR.FLAME, drag: 1.5, delay: i * 0.02 });
+            ctx.vfx.ring(sp, 1.5, fxOf('poison').mid, 0.45, 0.18);
+            ctx.vfx.flash(v3(sp.x, sp.y + 1, sp.z), 0x80c828, 10, 6, 0.4);
             ctx.summon('spiritWolf', sp, 15);
           }
           ctx.healSelf(20);
@@ -1605,7 +2065,8 @@ export const CLASSES = {
           for (let w = 0; w < 3; w++) {
             ctx.after(w * 0.6, () => {
               const R = ctx.aoe(5 + w * 3.5);
-              ctx.vfx.ring(p, R, fxOf('poison').core, 0.5, 0.2);
+              ctx.vfx.ring(p, R, fxOf('poison').core, 0.5, 0.12);
+              ctx.vfx.dustWave(p, R, { color: [0.12, 0.16, 0.06], alpha: 0.4, count: 18 + w * 8 });
               for (let i = 0; i < 18; i++) { const a = (i / 18) * Math.PI * 2 + w; ctx.thorn(v3(p.x + Math.cos(a) * R, p.y, p.z + Math.sin(a) * R)); }
               ctx.area(v3(p.x, p.y + 1, p.z), R, { dmg: 38, el: 'poison', st: { poison: [3, 3], root: 1.2 }, kb: 5 });
               ctx.sound('cast_earth_big', 0.7);
@@ -1634,8 +2095,13 @@ export const CLASSES = {
           const side = ctx.counter('slash') % 2 ? -1 : 1;
           ctx.animStyle(side > 0 ? 'swing' : 'swing2');
           // bright leading edge + a fainter inner echo so the cut has weight
-          ctx.vfx.slash(o, d, 'blade', 3.6, side, { life: 0.24 });
-          ctx.vfx.slash(o, d, 'blade', 2.8, side, { life: 0.28, alpha: 0.4, sparks: 0, tilt: 0.2 });
+          // a diagonal cut across the view (a flat one runs edge-on to the eye,
+          // and a steep pitch threw half the arc over your head)
+          // (your own cut sits a little lower and flatter: a steep diagonal swings
+          // the ends of the arc up past your head as big slabs)
+          const so = ctx.local ? o.clone().setY(o.y - 0.2) : o, roll = ctx.local ? 0.2 : 0.45;
+          ctx.vfx.slash(so, d, 'blade', 3.6, side, { life: 0.26, tilt: 0.1, roll });
+          ctx.vfx.slash(so, d, 'blade', 2.8, side, { life: 0.3, alpha: 0.45, sparks: 0, tilt: 0.06, roll: roll * 0.9 });
           let hitAny = false;
           for (const a of ctx.rt.inCone(o, d, 3.8, 1.0)) {
             ctx.hit(a, { dmg: 24, el: 'blade', kb: 5 }, v3(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z));
@@ -1651,7 +2117,8 @@ export const CLASSES = {
           const n = 3 + ctx.useCharges();
           // augment: the blades fly back to you, cutting again (return hits build Edge)
           const recall = aug(ctx, 'blade_blades');
-          ctx.fan(n, Math.min(30, 6 + n * 2.5), (dir) => ctx.proj({ el: 'blade', vel: dir.multiplyScalar(40), radius: 0.2, life: recall ? 2.4 : 1.2, core: 0.4, mesh: 'blade', light: 4, trail: 0.7, pierce: recall ? 4 : 2, bounce: recall ? 1 : 0,
+          ctx.muzzle('blade', 1.2);
+          ctx.fan(n, Math.min(30, 6 + n * 2.5), (dir) => ctx.proj({ el: 'blade', vel: dir.multiplyScalar(40), radius: 0.2, life: recall ? 2.4 : 1.2, core: 0.45, mesh: 'blade', meshScale: 1.6, light: 4, trail: 1, tracerW: 0.8, pierce: recall ? 4 : 2, bounce: recall ? 1 : 0,
             hit: { dmg: 15, el: 'blade', kb: 3 }, data: {},
             onHit: recall ? (p, a) => { if (p.data.ret && a) ctx.addCharge(1, 5); } : undefined,
             onTick: recall ? (p, dt) => {
@@ -1694,6 +2161,14 @@ export const CLASSES = {
           }
           const p = ctx.casterPos();
           ctx.vfx.shell(v3(p.x, p.y + 1.1, p.z), { element: 'blade', radius: 1.4, life: 0.7, alpha: 0.7 });
+          // the ward itself: a circle of runes held up in front of you for its whole window
+          {
+            const fd = ctx.flatDir(), bf = fxOf('blade');
+            const w = v3(p.x + fd.x * 1.25, p.y + 1.35, p.z + fd.z * 1.25);
+            ctx.vfx.P.glowAmbient({ x: w.x, y: w.y, z: w.z, r: bf.mid[0] * 0.3, g: bf.mid[1] * 0.3, b: bf.mid[2] * 0.3, life: 0.7, size: 0.3, size2: 1.15, sprite: SPR.RING });
+            ctx.vfx.P.glowAmbient({ x: w.x, y: w.y, z: w.z, r: bf.core[0] * 0.18, g: bf.core[1] * 0.18, b: bf.core[2] * 0.18, life: 0.7, size: 0.85, size2: 0.95, sprite: SPR.RUNE, spin: 2.5 });
+            ctx.vfx.burst(w, { element: 'blade', count: 10, speed: 3, life: 0.3, size: 0.04, stretch: 0.03, drag: 4 });
+          }
           // the caster sits inside that shell, so show the ward as a sweep in front of them
           ctx.vfx.slash(v3(p.x, p.y + 1.25, p.z), ctx.flatDir(), 'blade', 1.6, 1, { life: 0.35, tilt: 1.2, alpha: 0.7, sparks: 4 });
           ctx.vfx.ring(p, 1.8, fxOf('blade').mid, 0.5, 0.15);
@@ -1746,17 +2221,51 @@ export const CLASSES = {
         name: 'Thousand Edges', icon: 'blades', desc: 'A storm of spectral swords orbits you, shredding enemies (6s).', cost: 100, style: 'raise', hand: 'both',
         cast(ctx) {
           ctx.sound('cast_blade_big', 1.3);
-          ctx.zone({ follow: true, pos: ctx.casterPos().clone(), radius: ctx.aoe(5.5), life: 6, interval: 0.2, el: 'blade', dmg: 11, st: { bleed: [2, 3] },
+          const R = ctx.aoe(5.5);
+          // a ring of spectral swords (the shared blade mesh: no new materials)
+          // wheels round you, each dragging a streak of light
+          const def = ctx.rt.meshCache.blade, swords = [];
+          for (let i = 0; i < 7; i++) {
+            const m = new THREE.Mesh(def.geo, def.mat);
+            m.scale.setScalar(2.2);
+            m.rotation.order = 'YXZ';
+            ctx.g.scene.add(m);
+            swords.push(m);
+          }
+          const p0 = ctx.casterPos();
+          ctx.vfx.ring(p0, R, fxOf('blade').mid, 0.5, 0.08);
+          ctx.vfx.burst(v3(p0.x, p0.y + 1.1, p0.z), { element: 'blade', count: 30, speed: 10, life: 0.35, size: 0.05, stretch: 0.04, drag: 4 });
+          ctx.zone({ follow: true, pos: ctx.casterPos().clone(), radius: R, life: 6, interval: 0.2, el: 'blade', dmg: 11, st: { bleed: [2, 3] },
             visual: (z, dt) => {
               const p = ctx.casterPos();
               z.pos.copy(p);
-              const n = emitN(z, 'eB', 330, dt);
+              const k = Math.min(1, z.age / 0.35) * Math.min(1, (z.life - z.age) / 0.3);
+              for (let i = 0; i < swords.length; i++) {
+                const m = swords[i];
+                const a = z.age * 4.2 + (i / swords.length) * Math.PI * 2;
+                const r = R * (0.45 + 0.25 * k + 0.08 * Math.sin(z.age * 3 + i * 1.7));
+                const y = p.y + 1.0 + Math.sin(z.age * 5 + i * 2.1) * 0.35;
+                m.position.set(p.x + Math.cos(a) * r, y, p.z + Math.sin(a) * r);
+                // edge-first along the orbit, tipped slightly in
+                m.rotation.set(0.25 * Math.sin(z.age * 7 + i), -a, 0.35);
+                m.scale.setScalar(2.2 * Math.max(0.01, k));
+                if (emitN(m.userData, 'eT', 30, dt)) ctx.vfx.P.glow({ x: m.position.x, y: m.position.y, z: m.position.z, vx: Math.sin(a) * 2, vy: 0, vz: -Math.cos(a) * 2, r: 0.4, g: 0.8, b: 1.4, r2: 0.1, g2: 0.25, b2: 0.6, life: 0.22, size: 0.16, size2: 0.02, sprite: SPR.SHARD, spin: 0, rot: -a });
+              }
+              const n = emitN(z, 'eB', 140, dt);
               for (let i = 0; i < n; i++) {
                 const a = z.age * 6 + Math.random() * Math.PI * 2;
                 const r = z.radius * (0.55 + 0.35 * Math.sin(z.age * 3 + a * 5));
                 ctx.vfx.P.glow({ x: p.x + Math.cos(a) * r, y: p.y + 0.8 + Math.sin(a * 2) * 0.5, z: p.z + Math.sin(a) * r, vx: -Math.sin(a) * 18, vz: Math.cos(a) * 18, r: 0.55, g: 1.15, b: 1.9, life: 0.12, size: 0.1, stretch: 0.03, sprite: SPR.SHARD });
               }
-              ctx.lightAt(v3(p.x, p.y + 1, p.z), 0x60b8ff, 10, 8);
+              ctx.lightAt(tmp.set(p.x, p.y + 1, p.z), 0x60b8ff, 10, 8);
+            },
+            onEnd: () => {
+              const q = ctx.casterPos();
+              for (const m of swords) {
+                ctx.vfx.burst(m.position, { element: 'blade', count: 6, speed: 5, life: 0.3, size: 0.05, stretch: 0.03, drag: 3 });
+                ctx.g.scene.remove(m);
+              }
+              ctx.vfx.ring(q, R, fxOf('blade').mid, 0.35, 0.12);
             } });
         },
       },
@@ -1787,15 +2296,27 @@ export const CLASSES = {
           const d = ctx.dir;
           // a visible blast of air: a short-lived swirling cone, pale streaks and
           // a wall of grey dust shoved forward (dust reads on bright floors too)
-          ctx.vfx.cone({ element: 'wind', hot: [0.55, 0.7, 0.68], mid: [0.4, 0.52, 0.5], cool: [0.1, 0.14, 0.14], speed: 7, alpha: 1.2,
-            life: 0.45, origin: o.clone().addScaledVector(d, 0.8), dir: d, len: ctx.aoe(9) * 0.9, radius: Math.tan(0.6) * ctx.aoe(9) * 0.75 });
+          // (seen from its own apex the gust volume is a grey ball in your face:
+          // the caster gets a faint one pushed further out, the streaks carry it)
+          ctx.vfx.cone({ element: 'wind', hot: [0.55, 0.7, 0.68], mid: [0.4, 0.52, 0.5], cool: [0.1, 0.14, 0.14], speed: 7, alpha: ctx.local ? 0.25 : 0.8,
+            life: 0.45, origin: o.clone().addScaledVector(d, ctx.local ? 1.8 : 0.8), dir: d, len: ctx.aoe(9) * 0.9, radius: Math.tan(0.6) * ctx.aoe(9) * 0.75 });
+          // the streaks: for partners a spray down the cone; for the caster a
+          // tunnel of streaks bursting out round the edge of the view (seen
+          // straight down their flight they bunched into a ball of fluff)
+          const su = tmp.set(-d.z, 0, d.x).normalize(), sw = tmp2.crossVectors(su, d).normalize();
           for (let i = 0; i < 46; i++) {
+            if (ctx.local) {
+              const a = Math.random() * Math.PI * 2, r = rand(0.7, 1.6), f0 = rand(1.2, 3.2);
+              const ox = su.x * Math.cos(a) * r + sw.x * Math.sin(a) * r, oy = su.y * Math.cos(a) * r + sw.y * Math.sin(a) * r, oz = su.z * Math.cos(a) * r + sw.z * Math.sin(a) * r;
+              ctx.vfx.P.glow({ x: o.x + d.x * f0 + ox, y: o.y + d.y * f0 + oy, z: o.z + d.z * f0 + oz, vx: d.x * 22 + ox * 6, vy: d.y * 22 + oy * 6, vz: d.z * 22 + oz * 6, r: 0.55, g: 0.72, b: 0.72, life: 0.4, size: 0.16, sprite: SPR.WISP, stretch: 0.05, drag: 3 });
+              continue;
+            }
             const sx = d.x + rand(-0.4, 0.4), sy = d.y + rand(-0.2, 0.3), sz = d.z + rand(-0.4, 0.4);
             const f0 = rand(0.8, 2.5);
             ctx.vfx.P.glow({ x: o.x + d.x * f0, y: o.y + d.y * f0, z: o.z + d.z * f0, vx: sx * 24, vy: sy * 24, vz: sz * 24, r: 0.65, g: 0.85, b: 0.85, life: 0.45, size: 0.22, sprite: SPR.WISP, stretch: 0.035, drag: 3 });
           }
           for (let i = 0; i < 16; i++) {
-            const sx = d.x + rand(-0.45, 0.45), sz = d.z + rand(-0.45, 0.45), f0 = rand(1.5, 3.5);
+            const sx = d.x + rand(-0.45, 0.45), sz = d.z + rand(-0.45, 0.45), f0 = ctx.local ? rand(2.8, 5) : rand(1.5, 3.5);
             ctx.vfx.P.solid({ x: o.x + d.x * f0, y: o.y - rand(0.3, 1.0), z: o.z + d.z * f0, vx: sx * 14, vy: rand(-0.5, 1.5), vz: sz * 14, r: 0.42, g: 0.44, b: 0.42, a: 0.3, life: 0.9, size: 0.5, size2: 1.8, sprite: SPR.SMOKE, drag: 2.5, spin: rand(-2, 2) });
           }
           const struck = ctx.rt.inCone(o, d, ctx.aoe(9), 0.6);
@@ -1887,7 +2408,8 @@ export const CLASSES = {
           ctx.sound('cast_wind_big'); ctx.sound('jump');
           const p = ctx.casterPos();
           ctx.launch(13, 2.2);
-          ctx.vfx.ring(p, 4, fxOf('wind').core, 0.4, 0.3);
+          ctx.vfx.ring(p, 4, fxOf('wind').core, 0.4, 0.14);
+          ctx.vfx.dustWave(p, 4.5, { color: [0.4, 0.42, 0.41], alpha: 0.3 });
           ctx.vfx.explosion(v3(p.x, p.y + 0.3, p.z), 'wind', 3, { groundY: p.y });
           ctx.area(v3(p.x, p.y + 1, p.z), ctx.aoe(4), { dmg: 15, el: 'wind', kb: 14 });
           // augment: crash back down in a shockwave, harder the further you fell
@@ -1922,7 +2444,7 @@ export const CLASSES = {
           const RR = ctx.aoe(10);
           // the eye wall: a slow, wide funnel around the caster (it fades where
           // it nears the camera), plus a ring of debris and wind streaks
-          const wall = ctx.vfx.funnel({ r0: Math.min(3.5, RR * 0.4), r1: RR * 0.75, height: 7, snake: 0.4, spin: 1.2, twist: 2, color: [0.16, 0.18, 0.18], hi: [0.55, 0.64, 0.62], alpha: 0.55 });
+          const wall = ctx.vfx.funnel({ r0: Math.min(3.5, RR * 0.4), r1: RR * 0.75, height: 7, snake: 0.4, spin: 1.2, twist: 2, color: [0.16, 0.18, 0.18], hi: [0.55, 0.64, 0.62], alpha: ctx.local ? 0.4 : 0.55 });
           const base = v3();
           ctx.zone({ follow: true, pos: ctx.casterPos().clone(), radius: RR, life: 6, interval: 0.2, el: 'wind', dmg: 9, pull: 6,
             visual: (z, dt) => {
