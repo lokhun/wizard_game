@@ -60,6 +60,13 @@
     }
   } catch (hit) {
     if (!hit || hit.l === undefined) throw hit;
+    // pin the offending frame over the page for the closing screenshot
+    g.renderer.render(performance.now() / 1000);
+    const shot = document.createElement('canvas');
+    shot.width = R.domElement.width; shot.height = R.domElement.height;
+    shot.getContext('2d').drawImage(R.domElement, 0, 0);
+    shot.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;z-index:99999';
+    document.body.appendChild(shot);
     return { stopped: hit, cls: p.classId };
   }
   window.__freeze = false;
