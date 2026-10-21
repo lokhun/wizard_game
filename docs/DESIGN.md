@@ -32,6 +32,12 @@ How the research in `RESEARCH.md` turned into the game.
   - 39 class-specific tomes, three per class, at Rare rarity or better. Each changes a spell's behaviour rather than its numbers.
   - About half of all tome offers include one.
   - Several feed reactions, for example Crown of Rime → Shatter, Ossuary Wake → Blight and Recurrence → Paradox, so builds lean into a class's combo.
+- **Relics** are the run-defining pickups (treasure rooms, elite chambers, the merchant, the Gaoler's shrine):
+  - Most are procs with their own look, triggered on hit, crit, kill, multi-kill, dash, cast, ability use, taking damage, standing still, low health, fight start, gold pickup or chamber clear.
+  - Cursed relics (crimson double frame) pair a strong upside with a real downside.
+  - Sets: Pyre, Storm, Grave, Tide, Fang and Arcanum each wake a bonus at 2 and 3 pieces (banner when it wakes; set pips on the HUD shelf). Relics of a set you hold roll twice as often.
+  - Procs run where the owner's damage is computed (their own machine) and go through the normal hit path; each one is broadcast as a named visual (`rfx`) that teammates replay without damage. Orbiting motes, the familiar and the frost sentinel are rebuilt on every machine from the owner's relic list.
+  - Proc damage grows ×(1 + 0.3 per realm) on top of the usual damage stats.
 - **Trial rooms:** an optional gilded side door (sigil ⧗) on some floors.
   - Inside: a denser fight with more champions and a 45 s clock (+3 s per realm).
   - Clear it in time for an Epic-or-better tome and triple gold; if the clock runs out, you still fight your way out for an ordinary reward.

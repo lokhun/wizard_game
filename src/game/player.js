@@ -7,6 +7,7 @@ import { SPR } from '../render/particles.js';
 import { fxOf } from '../render/vfx.js';
 import { rand } from '../core/rng.js';
 import { K_WATER, WATER_Y } from '../world/levelgen.js';
+import { applyRelicSets } from './relicDefs.js';
 
 const WADE_C = [0.16, 0.22, 0.22]; // ripple rings on channel water
 
@@ -108,6 +109,7 @@ export class LocalPlayer {
     const s = baseStats(this.classId);
     for (const u of this.upgrades) u.def.apply(s, u.mult, this);
     for (const r of this.relics) r.def.apply?.(s, this);
+    applyRelicSets(s, this);
     for (const b of this.buffs) {
       for (const k in b.mods) {
         if (k === 'cdRate') s.cdRate += b.mods[k];
@@ -160,6 +162,7 @@ export class LocalPlayer {
     g.audio?.play('hurt', { volume: 0.8 });
     g.ui?.damageDirection(fromPos, this);
     if (this.stats.thorns && opts.attacker) g.hitActor(opts.attacker, { dmg: this.stats.thorns, el: 'physical', src: this.id }, opts.attacker.pos);
+    g.relics?.onHurt(dmg);
     if (this.hp <= 0) this._goDown();
     this.recomputeStats();
     return dmg;

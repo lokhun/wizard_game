@@ -1,4 +1,5 @@
 import { CLASSES } from './classes.js';
+import { NEW_RELICS, setCounts } from './relicDefs.js';
 
 // ---------------------------------------------------------------------------
 // Arcane Tomes (per-player upgrades picked 1-of-3 after rooms) and Relics.
@@ -133,20 +134,21 @@ TOMES.push(...AUGMENTS);
 const AUG_CHANCE = 0.21;
 
 export const RELICS = [
-  { id: 'emberheart', name: 'Ember Heart', icon: 'flame', desc: 'Burning enemies take +30% damage from you.', apply: (s) => { s.vs.burn = (s.vs.burn ?? 0) + 0.3; } },
-  { id: 'frosttear', name: 'Frozen Tear', icon: 'snow', desc: 'Chilled and Frozen enemies take +30% damage from you.', apply: (s) => { s.vs.chill = (s.vs.chill ?? 0) + 0.3; s.vs.frozen = (s.vs.frozen ?? 0) + 0.3; } },
-  { id: 'stormcrown', name: 'Storm Crown', icon: 'lightning', desc: '15% of your hits call down a lightning strike.', apply: (s) => { s.smite = 0.15; } },
-  { id: 'luckycoin', name: 'Lucky Coin', icon: 'gold', desc: '+8% critical chance and +20% gold.', apply: (s) => { s.critChance += 0.08; s.goldMult += 0.2; } },
-  { id: 'vampfang', name: 'Vampire Fang', icon: 'drop', desc: 'Critical hits heal 3 health.', apply: (s) => { s.critHeal = 3; } },
-  { id: 'hourglass', name: 'Cracked Hourglass', icon: 'clock', desc: 'Abilities recharge 15% faster.', apply: (s) => { s.cdr += 0.15; } },
-  { id: 'skullcup', name: 'Skull Chalice', icon: 'skull', desc: '+40 max health. Kills heal 2.', apply: (s) => { s.maxHp += 40; s.killHeal += 2; } },
-  { id: 'mirror', name: 'Shard of the Mirror', icon: 'multi', desc: 'Primary fires +1 projectile.', apply: (s) => { s.extraProj += 1; } },
+  { id: 'emberheart', set: 'pyre', name: 'Ember Heart', icon: 'flame', desc: 'Burning enemies take +30% damage from you.', apply: (s) => { s.vs.burn = (s.vs.burn ?? 0) + 0.3; } },
+  { id: 'frosttear', set: 'tide', name: 'Frozen Tear', icon: 'snow', desc: 'Chilled and Frozen enemies take +30% damage from you.', apply: (s) => { s.vs.chill = (s.vs.chill ?? 0) + 0.3; s.vs.frozen = (s.vs.frozen ?? 0) + 0.3; } },
+  { id: 'stormcrown', set: 'storm', name: 'Storm Crown', icon: 'lightning', desc: '15% of your hits call down a lightning strike.', apply: (s) => { s.smite = (s.smite ?? 0) + 0.15; } },
+  { id: 'luckycoin', set: 'fang', name: 'Lucky Coin', icon: 'gold', desc: '+8% critical chance and +20% gold.', apply: (s) => { s.critChance += 0.08; s.goldMult += 0.2; } },
+  { id: 'vampfang', set: 'fang', name: 'Vampire Fang', icon: 'drop', desc: 'Critical hits heal 3 health.', apply: (s) => { s.critHeal = 3; } },
+  { id: 'hourglass', set: 'arcanum', name: 'Cracked Hourglass', icon: 'clock', desc: 'Abilities recharge 15% faster.', apply: (s) => { s.cdr += 0.15; } },
+  { id: 'skullcup', set: 'grave', name: 'Skull Chalice', icon: 'skull', desc: '+40 max health. Kills heal 2.', apply: (s) => { s.maxHp += 40; s.killHeal += 2; } },
+  { id: 'mirror', set: 'arcanum', name: 'Shard of the Mirror', icon: 'multi', desc: 'Primary fires +1 projectile.', apply: (s) => { s.extraProj += 1; } },
   { id: 'boots', name: 'Boots of the Wind', icon: 'speed', desc: '+15% move speed and +1 dash.', apply: (s) => { s.moveSpeed *= 1.15; s.dashCharges += 1; } },
   { id: 'aegis', name: 'Broken Aegis', icon: 'shield', desc: 'Take 12% less damage.', apply: (s) => { s.armor += 0.12; } },
-  { id: 'grimoire', name: 'Forbidden Grimoire', icon: 'power', desc: '+25% damage, +25% area.', apply: (s) => { s.dmgMult += 0.25; s.aoeMult += 0.25; } },
-  { id: 'phoenixash', name: 'Phoenix Ash', icon: 'phoenix', desc: 'Rise again once at 50% health when you would fall.', once: true, apply: () => {}, onGain: (p) => { p.relicLives = (p.relicLives ?? 0) + 1; } },
+  { id: 'grimoire', set: 'arcanum', name: 'Forbidden Grimoire', icon: 'power', desc: '+25% damage, +25% area.', apply: (s) => { s.dmgMult += 0.25; s.aoeMult += 0.25; } },
+  { id: 'phoenixash', set: 'pyre', name: 'Phoenix Ash', icon: 'phoenix', desc: 'Rise again once at 50% health when you would fall.', once: true, apply: () => {}, onGain: (p) => { p.relicLives = (p.relicLives ?? 0) + 1; } },
   { id: 'warhorn', name: 'Ancestral Warhorn', icon: 'ult', desc: 'Ultimate charges 50% faster.', apply: (s) => { s.ultRate += 0.5; } },
-  { id: 'eye', name: 'Eye of the Deep', icon: 'eye', desc: 'Your hits deal +15% damage to Hexed, Shocked or Marked enemies.', apply: (s) => { s.vs.hex = (s.vs.hex ?? 0) + 0.15; s.vs.shock = (s.vs.shock ?? 0) + 0.15; s.vs.mark = (s.vs.mark ?? 0) + 0.15; } },
+  { id: 'eye', set: 'storm', name: 'Eye of the Deep', icon: 'eye', desc: 'Your hits deal +15% damage to Hexed, Shocked or Marked enemies.', apply: (s) => { s.vs.hex = (s.vs.hex ?? 0) + 0.15; s.vs.shock = (s.vs.shock ?? 0) + 0.15; s.vs.mark = (s.vs.mark ?? 0) + 0.15; } },
+  ...NEW_RELICS,
 ];
 
 // Roll n distinct tome choices for a player
@@ -193,12 +195,19 @@ export function rollRarity(rng = Math.random, min = 0) {
   return min;
 }
 
+// Relics you can still take. Relics of a set you already hold weigh double
+// (so sets come together); cursed ones turn up a little less often.
 export function rollRelics(player, n = 3, rng = Math.random) {
   const owned = new Set(player.relics.map((r) => r.def.id));
+  const sets = setCounts(player.relics);
   const pool = RELICS.filter((r) => !owned.has(r.id));
+  const w = (r) => (r.cursed ? 0.6 : 1) * (sets[r.set] ? 2 : 1);
   const out = [];
   while (out.length < n && pool.length) {
-    const i = Math.floor(rng() * pool.length);
+    let tot = 0;
+    for (const r of pool) tot += w(r);
+    let x = rng() * tot, i = 0;
+    for (; i < pool.length - 1; i++) { x -= w(pool[i]); if (x <= 0) break; }
     out.push({ def: pool.splice(i, 1)[0] });
   }
   return out;

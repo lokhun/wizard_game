@@ -75,11 +75,28 @@ const P = {
   boss: 'M12 2c5 0 8 4 8 9 0 3-2 5-3 6v4H7v-4c-1-1-3-3-3-6 0-5 3-9 8-9zM8 11l3 1-1 2zM16 11l-3 1 1 2zM3 3l4 4M21 3l-4 4',
   elite: 'M12 2l3 6 6 1-4 4 1 7-6-3-6 3 1-7-4-4 6-1z',
   stairs: 'M3 21h4v-4h4v-4h4V9h4V5h2',
+  // relics
+  glyph: 'M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18zM12 7l4 7H8zM12 3v4M4.5 16.5 8 14M19.5 16.5 16 14',
+  wheel: 'M12 9a3 3 0 1 1 0 6 3 3 0 0 1 0-6zM12 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM4 15a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM20 15a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM6 15.5l3.5-2M18 15.5l-3.5-2M12 6v3',
+  lantern: 'M9 3h6M12 3V1M8 6h8l1 3v8l-1 3H8l-1-3V9zM10 13c0-1.2 1-2.2 2-3.2 1 1 2 2 2 3.2a2 2 0 0 1-4 0zM7 9h10M7 17h10',
+  censer: 'M12 2v5M6 9h12l-2 7H8zM9 16l-1 4h8l-1-4M5 6c1-1 2 0 3-1M16 5c1 1 2 0 3 1',
+  bell: 'M12 2v2M7 16v-5a5 5 0 0 1 10 0v5l2 2H5zM10 20a2 2 0 0 0 4 0',
+  mine: 'M12 6l5 6-5 6-5-6zM12 2v4M12 18v4M3 12h4M17 12h4',
+  idol: 'M12 2a3 3 0 1 1 0 6 3 3 0 0 1 0-6zM8 22l1-11h6l1 11zM6 22h12M9 14h6',
+  pearl: 'M3 16c0-6 4-10 9-10s9 4 9 10zM12 10a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM3 16h18',
+  fang: 'M5 3h14c0 7-2 12-4 18-1-4-2-7-3-9-1 2-2 5-3 9C7 15 5 10 5 3z',
+  briar: 'M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5 4 4 0 0 1 7 2.5c0 5.5-7 10-7 10zM2 7l3 1M22 7l-3 1M3 14l3-1M21 14l-3-1M12 2v3',
+  tooth: 'M6 3c2 0 4 1 6 1s4-1 6-1c2 4 0 8-1 10l-1 8-2-6h-4l-2 6-1-8C5 11 4 7 6 3z',
+  metronome: 'M8 21h8L13 3h-2zM12 17 17 6M9 14h6',
+  owl: 'M5 4l3 3h8l3-3v9a7 7 0 0 1-14 0zM9 11a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zM15 11a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zM11 16l1 1 1-1',
+  laurel: 'M12 21c-5-2-8-7-8-13M12 21c5-2 8-7 8-13M4 8c2 0 3 1 3 3M6 13c2 0 3 1 3 3M20 8c-2 0-3 1-3 3M18 13c-2 0-3 1-3 3M10 21h4',
+  codex: 'M4 4h12l4 3v14H8l-4-3zM8 7v14M11 10h6M11 13h6',
+  dice: 'M4 4h16v16H4zM8 8h.1M16 16h.1M12 12h.1M16 8h.1M8 16h.1',
 };
 
 export function iconSVG(name, color = '#e8d8b0', size = 40, opts = {}) {
   const d = P[name] ?? P.power;
-  const filled = opts.fill ?? ['bolt', 'lightning', 'flame', 'fireball', 'drop', 'heart', 'pact', 'shield', 'spike', 'skull', 'rock', 'power', 'ult', 'crescent', 'phoenix', 'elite', 'boss', 'crown', 'orb', 'slash'].includes(name);
+  const filled = opts.fill ?? ['bolt', 'lightning', 'flame', 'fireball', 'drop', 'heart', 'pact', 'shield', 'spike', 'skull', 'rock', 'power', 'ult', 'crescent', 'phoenix', 'elite', 'boss', 'crown', 'orb', 'slash', 'fang', 'tooth'].includes(name);
   const glow = opts.glow !== false;
   return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" style="${glow ? `filter:drop-shadow(0 0 3px ${color})` : ''}">
     <path d="${d}" fill="${filled ? color : 'none'}" fill-opacity="${filled ? 0.85 : 0}" stroke="${color}" stroke-width="${filled ? 0.8 : 1.7}" stroke-linecap="round" stroke-linejoin="round"/>

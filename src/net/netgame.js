@@ -52,7 +52,7 @@ export function handleGameMessage(game, msg, from) {
     case 'tp': game.requestTeleport(game.player.id, msg.x, msg.z); break;
     case 'kc': {
       const a = game.actors.byId.get(msg.id);
-      game.onLocalKill(a ?? { pos: new THREE.Vector3(msg.x, 0, msg.z), boss: false, mask: 0 }, !!msg.hx, !!msg.b);
+      game.onLocalKill(a ?? { pos: new THREE.Vector3(msg.x, 0, msg.z), boss: false, mask: 0 }, !!msg.hx, !!msg.b, msg.m ?? 0);
       break;
     }
     case 'dn': {
@@ -128,6 +128,7 @@ export function handleGameMessage(game, msg, from) {
     case 'victory': if (!game.isHost) game.victory(); break;
     case 'defeat': if (!game.isHost) game.defeat(); break;
     case 'ping': game.addPing?.(msg); break;
+    case 'rfx': if (msg.p !== game.player?.id) game.relics?.fx(msg); break; // a teammate's relic proc (visual)
     default: break;
   }
 }

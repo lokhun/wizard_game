@@ -16,6 +16,8 @@ import { resolveHit, ST, REACTIONS } from '../game/combat.js';
 import { getViewModel, preloadEnemies, getEnemyModel, getAvatar, setEnemyRim } from './models.js';
 import { Critters } from '../world/critters.js';
 import { rollTomes, rollRelics, RARITY, TOMES } from './upgrades.js';
+import { RelicRuntime } from './relics.js';
+import { relicColor, relicDesc } from './relicDefs.js';
 import { makeChest, makePedestal, makePortal } from './interactables.js';
 import { warmEruptionMeshes } from './caster.js';
 import { CLASS_META } from './classMeta.js';
@@ -48,6 +50,7 @@ export class Game {
     this.spells = new SpellRuntime(this);
     this.actors = new ActorManager(this);
     this.director = new Director(this);
+    this.relics = new RelicRuntime(this);
     this.time = 0;
     this.remotes = new Map();
     this.hazards = [];
@@ -106,6 +109,7 @@ export class Game {
     for (const p of players) if (p.id !== localId) this.addRemote(p);
     this._setViewModel(classId);
     this.ui?.onRunStart(this);
+    this.relics.onRunStart();
     this.loadFloor(floor);
   }
 
@@ -126,6 +130,7 @@ export class Game {
     }
     this.remotes.set(p.id, r);
     this.isSolo = false;
+    this.relics?.onPeerJoin();
     this.ui?.toast(`${p.name} joined as ${CLASS_META[p.classId].name}`);
   }
   removeRemote(id) {
@@ -150,6 +155,7 @@ export class Game {
     for (const i of this.interactables) i.dispose?.();
     this.interactables = [];
     this.spells.clear();
+    this.relics?.onFloor();
     this.actors.clear();
     for (const d of this.drops) this.scene.remove(d.mesh);
     this.drops = [];
@@ -516,6 +522,7 @@ export class Game {
       if (this.isHost) this.director.update(dt);
       this.actors.update(dt);
       this.spells.update(dt);
+      this.relics?.update(dt);
       this._updateHazards(dt);
       this._updatePools(dt);
       this._updateDrops(dt);
@@ -707,6 +714,7 @@ export class Game {
     for (const k in st.vs) if (a.mask & ST[k]) mult += st.vs[k];
     if (st.execute && a.hp / a.maxHp < 0.3) mult += st.execute;
     if (st.bossDmg && (a.boss || a.elite)) mult += st.bossDmg;
+    if (this.relics) mult += this.relics.dmgMod(a, H);
     let dmg = Math.max(1, Math.round(res.dmg * mult));
     if (H.tag === 'dot') dmg = Math.max(0, Math.round(res.dmg * mult));
     const elShow = H.el;
@@ -732,16 +740,12 @@ export class Game {
       }
       if (res.reaction === 'shatter') this.audio?.play('shatter', { pos });
     }
-    // relic procs
-    if (st.smite && H.tag !== 'dot' && H.tag !== 'smite' && Math.random() < st.smite) {
-      const top = new THREE.Vector3(a.pos.x + rand(-1, 1), a.pos.y + 12, a.pos.z + rand(-1, 1));
-      this.vfx.lightning(top, new THREE.Vector3(a.pos.x, a.pos.y + 0.5, a.pos.z), { life: 0.2, branches: 2, width: 0.12 });
-      this.spells.after(0.02, () => this.hitActor(a, { dmg: 25, el: 'lightning', tag: 'smite', st: { shock: 2 }, src: p.id }, pos));
-    }
     if (res.crit && st.critHeal) p.heal(st.critHeal, true);
     // statuses: scale by status power and add class/tome extras
     let stPayload = H.st;
     if (stPayload && stPayload.poison && st.poisonBonus && H.tag !== 'dot') stPayload = { ...stPayload, poison: [stPayload.poison[0], stPayload.poison[1]] };
+    // relic procs (lightning strikes, glyphs, overkill arcs...) and the statuses they add
+    if (this.relics) stPayload = this.relics.onHit(a, H, res, dmg, pos, stPayload);
     // local feedback
     if (dmg > 0) {
       if (H.tag !== 'dot') a.hitFlash = res.crit ? 0.6 : 0.4;
@@ -793,19 +797,21 @@ export class Game {
     if (Math.random() < (a.elite ? 1 : a.boss ? 0 : 0.1)) this.spawnDrop('health', a.pos, 18 + this.floorIndex * 4);
     // kill credit
     if (killer === this.player.id) this.onLocalKill(a);
-    else if (killer) this.net?.sendTo(killer, { t: 'kc', id: a.id, el, x: a.pos.x, z: a.pos.z, hx: a.mask & ST.hex ? 1 : 0, b: a.mask & ST.burn ? 1 : 0 });
+    else if (killer) this.net?.sendTo(killer, { t: 'kc', id: a.id, el, x: a.pos.x, z: a.pos.z, hx: a.deathMask & ST.hex ? 1 : 0, b: a.deathMask & ST.burn ? 1 : 0, m: a.deathMask });
     if (a.boss) this.onBossKilled(a);
   }
 
-  onLocalKill(a, hexed, burning) {
+  // mask: the statuses the foe died with (actors.kill clears them first)
+  onLocalKill(a, hexed, burning, mask = a?.deathMask ?? 0) {
     const p = this.player;
     p.onDealtDamage(0, true);
-    if (p.stats.hexKill && (hexed ?? (a && a.mask & ST.hex))) {
+    this.relics?.onKill(a, mask);
+    if (p.stats.hexKill && (hexed ?? (mask & ST.hex))) {
       p.heal(5);
       for (const s in p.cds) if (p.cds[s] > 0) p.cds[s] = Math.max(0, p.cds[s] - 1);
     }
     // pyromancer: burning enemies explode
-    if (p.stats.burnExplode && (burning ?? (a && a.mask & ST.burn)) && a) {
+    if (p.stats.burnExplode && (burning ?? (mask & ST.burn)) && a) {
       const c = new THREE.Vector3(a.pos.x, a.pos.y + 1, a.pos.z);
       this.vfx.explosion(c, 'fire', 2.5);
       this.audio?.play('explosion', { pos: c, volume: 0.7 });
@@ -1134,6 +1140,7 @@ export class Game {
       this.stats.gold += v;
       this.audio?.play('pickup_gold', { volume: 0.5 });
       this.ui?.goldPulse();
+      this.relics?.onGold();
     } else if (d.type === 'health') {
       p.heal(d.value);
       this.healPulse = 0.6;
@@ -1226,6 +1233,7 @@ export class Game {
     }
     this.audio?.play(locked ? 'door_close' : 'door_open', { pos: new THREE.Vector3(room.cx, 1, room.cz) });
     if (locked) this.critters?.startle(new THREE.Vector3(room.cx, 1, room.cz), Math.max(room.w, room.h) * T);
+    this.relics?.onRoomLock(room, locked);
     if (locked) {
       this.audio?.setMusic(room.type === ROOM.BOSS ? 'boss' : 'combat');
       if (room.type === ROOM.TRIAL) { this.ui?.banner('TRIAL OF SPEED', `Slay them all within ${room.trialLimit ?? 45} seconds`, '#ffcf60'); this.audio?.play('boss_roar', { volume: 0.4 }); }
@@ -1239,6 +1247,7 @@ export class Game {
   slowMo(dur, k) { if (!this.slow || this.slow.k > k) this.slow = { t: 0, dur, k }; }
 
   onRoomCleared(room) {
+    this.relics?.onRoomClear(room);
     this.audio?.setMusic('explore');
     this.audio?.play('room_clear');
     // the last kill lands heavy: a breath of slow motion and a warm wash of light
@@ -1248,12 +1257,13 @@ export class Game {
     }
     if (room.type === ROOM.BOSS) return; // handled by boss death
     if (room.type === ROOM.TRIAL) this.ui?.banner(room.trialWon ? 'TRIAL CONQUERED' : 'CHAMBER CLEARED', room.trialWon ? 'An epic tome is yours' : 'Too slow — a lesser reward', room.trialWon ? '#ffcf60' : '#e8c070');
-    else this.ui?.banner('CHAMBER CLEARED', room.type === ROOM.ELITE ? 'A rare tome awaits' : 'Claim your reward', '#e8c070');
+    else this.ui?.banner('CHAMBER CLEARED', room.type === ROOM.ELITE ? 'A relic awaits' : 'Claim your reward', '#e8c070');
     // revive dead teammates at the end of a room
     if (this.player.dead) { this.player.dead = false; this.player.downed = false; this.player.hp = Math.round(this.player.maxHp * 0.3); this.player.spawnAt(room.cx, room.cz, this.player.yaw); this.ui?.toast('You return from beyond the veil'); }
     if (this.player.downed) this.player.revive(0.3);
     else if (this.player.alive && this.player.hp < this.player.maxHp) this.player.heal(this.player.maxHp * 0.15); // a breath of respite between fights
-    this.spawnPedestal(room, room.type === ROOM.TRIAL ? (room.trialWon ? 2 : 0) : room.type === ROOM.ELITE ? 1 : 0);
+    // elite chambers offer a relic instead of a tome (a gold-ringed lectern)
+    this.spawnPedestal(room, room.type === ROOM.TRIAL ? (room.trialWon ? 2 : 0) : room.type === ROOM.ELITE ? 3 : 0, room.type === ROOM.ELITE);
     if (this._ctxTips?.sigil) { this._tipQ?.unshift(this._ctxTips.sigil); this._ctxTips.sigil = null; }
     if (this.isHost) {
       const gold = Math.round((10 + this.floorIndex * 6) * (room.type === ROOM.ELITE ? 2.5 : room.type === ROOM.TRIAL && room.trialWon ? 3 : 1));
@@ -1261,8 +1271,9 @@ export class Game {
     }
   }
 
-  spawnPedestal(room, minRarity) {
+  spawnPedestal(room, minRarity, relic = false) {
     const it = makePedestal(this, new THREE.Vector3(room.cx, this.groundY(room.cx, room.cz), room.cz), minRarity);
+    if (relic) { it.relic = true; it.label = 'Claim a Relic'; it.minRarity = 1; } // (built gold-ringed, rolls like an elite tome if ever read as one)
     this.interactables.push(it);
   }
 
@@ -1446,6 +1457,12 @@ export class Game {
     switch (it.kind) {
       case 'pedestal': {
         this.audio?.play('tome_open');
+        if (it.relic) {
+          const relics = rollRelics(p, 3);
+          if (!relics.length) { it.usedBy.add(p.id); break; }
+          this.ui?.chooseRelic(relics, (r) => { if (!r) return; this.grantRelic(r); it.usedBy.add(p.id); it.onUsed?.(p.id); });
+          break;
+        }
         const offer = () => {
           const choices = rollTomes(p, 3, it.minRarity ?? 0);
           const reroll = p.rerolls > 0 ? { left: p.rerolls, fn: () => { p.rerolls--; offer(); } } : null;
@@ -1533,14 +1550,19 @@ export class Game {
     this.vfx.burst(p.eye.clone().add(p.forward().multiplyScalar(1)), { element: 'arcane', count: 30, speed: 3, life: 1, size: 0.15, sprite: SPR.STAR });
     this.ui?.toast(`${c.def.name} (${RARITY[c.rarity].name})`, RARITY[c.rarity].color);
   }
-  grantRelic(r) {
+  grantRelic(r, quiet = false) {
     const p = this.player;
     p.relics.push(r);
     r.def.onGain?.(p);
     p.recomputeStats();
+    this.relics?.refresh(quiet);
+    if (quiet) return;
     this.audio?.play('tome_pick');
-    this.ui?.toast(`Relic: ${r.def.name}`, '#ffb030');
+    if (r.def.cursed) this.audio?.play('ui_back', { volume: 0.6 });
+    this.ui?.toast(`${r.def.cursed ? 'Cursed relic' : 'Relic'}: ${r.def.name}`, relicColor(r.def));
   }
+  onLocalCast(slot) { this.relics?.onCast(slot); }
+  onLocalDash() { this.relics?.onDash(); }
   buy(item) {
     const p = this.player;
     if (item.sold || p.gold < item.price) { this.audio?.play('ui_error'); return false; }
@@ -1677,7 +1699,7 @@ function makeShopStock(game, p) {
   const tomes = rollTomes(p, 3, 1);
   for (const t of tomes) items.push({ name: t.def.name, desc: (t.def.aug ? `Augment · ${t.def.spellName}. ` : '') + t.def.desc(t.mult), icon: t.def.icon, rarity: t.rarity, price: [50, 90, 150, 240][t.rarity] + f * 15, apply: () => game.grantTome(t) });
   const rel = rollRelics(p, 1);
-  for (const r of rel) items.push({ name: r.def.name, desc: r.def.desc, icon: r.def.icon, price: 180 + f * 25, relic: true, apply: () => game.grantRelic(r) });
+  for (const r of rel) items.push({ name: r.def.name, desc: relicDesc(r.def), icon: r.def.icon, price: 180 + f * 25, relic: true, color: relicColor(r.def), apply: () => game.grantRelic(r) });
   return items;
 }
 

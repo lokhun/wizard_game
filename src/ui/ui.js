@@ -6,6 +6,7 @@ import { RARITY } from '../game/upgrades.js';
 import { ROOM, T } from '../world/levelgen.js';
 import { BIOMES } from '../world/biomes.js';
 import { fightsHere } from '../game/director.js';
+import { updateRelicShelf, relicListHTML, relicCard } from './relicUI.js';
 
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 const KEYS = { primary: 'LMB', secondary: 'RMB', ability1: 'Q', ability2: 'E', ultimate: 'R' };
@@ -362,7 +363,7 @@ export class UI {
     if (bk !== this._buffKey) {
       this._buffKey = bk;
       const col = hex(p.meta.color);
-      h.buffs.innerHTML = p.buffs.map((b) => `<div class="buff">${iconSVG(b.id === 'stoneskin' ? 'stoneskin' : b.id === 'bloodpact' ? 'pact' : b.id === 'timestop' ? 'hourglass' : 'power', col, 20)}<span class="t">${Math.ceil(b.t)}</span></div>`).join('')
+      h.buffs.innerHTML = p.buffs.map((b) => `<div class="buff">${iconSVG(b.icon ?? (b.id === 'stoneskin' ? 'stoneskin' : b.id === 'bloodpact' ? 'pact' : b.id === 'timestop' ? 'hourglass' : 'power'), col, 20)}<span class="t">${b.label ?? Math.ceil(b.t)}</span></div>`).join('')
         + (p.hasteT > 0 ? `<div class="buff">${iconSVG('speed', '#40e0c8', 20)}<span class="t">${Math.ceil(p.hasteT)}</span></div>` : '');
     }
     // ability slots (child elements looked up once)
@@ -434,6 +435,7 @@ export class UI {
       d.el.style.opacity = Math.max(0, d.t);
       if (d.t <= 0) { d.el.remove(); this.dmgDirs.splice(i, 1); }
     }
+    updateRelicShelf(this, game);
     // pointer lock hint
     h.clickHint.classList.toggle('hidden', this.input.locked || this.modalOpen || game.ended || !!this.pauseEl);
     this._minimap(game);
@@ -857,14 +859,8 @@ export class UI {
     }, cb, true, reroll);
   }
   chooseRelic(relics, cb) {
-    this._choiceModal('Relics', 'A cursed treasure — claim one', relics, (r, i) => `
-      <div class="tome card" data-i="${i}" style="--rc:#ffb030">
-        <div class="rar" style="color:#ffb030">Relic</div>
-        <div class="ticon">${iconSVG(r.def.icon, '#ffb030', 54)}</div>
-        <div class="tname">${r.def.name}</div>
-        <div class="tdesc">${r.def.desc}</div>
-        <div class="tkey">[${i + 1}]</div>
-      </div>`, cb);
+    const owned = this.game?.player?.relics ?? [];
+    this._choiceModal('Relics', 'Ancient power — claim one', relics, (r, i) => relicCard(r, i, owned), cb);
   }
   chooseBlessing(list, cb, title = 'The Shrine Answers', sub = 'Accept one blessing') {
     this._choiceModal(title, sub, list, (b, i) => `
@@ -880,8 +876,8 @@ export class UI {
     const render = () => items.map((it, i) => {
       const r = it.rarity !== undefined ? RARITY[it.rarity] : null;
       return `<div class="shop-item ${it.sold ? 'sold' : ''} ${player.gold < it.price ? 'cant' : ''}" data-i="${i}">
-        <div>${iconSVG(it.icon, r ? r.color : it.relic ? '#ffb030' : '#e8d8b0', 40)}</div>
-        <div><div class="sname" style="color:${r ? r.color : it.relic ? '#ffb030' : 'var(--text)'}">${it.name}</div><div class="sdesc">${it.desc}</div><div class="price">${it.sold ? 'SOLD' : it.price + ' gold'}</div></div>
+        <div>${iconSVG(it.icon, r ? r.color : it.relic ? it.color ?? '#ffb030' : '#e8d8b0', 40)}</div>
+        <div><div class="sname" style="color:${r ? r.color : it.relic ? it.color ?? '#ffb030' : 'var(--text)'}">${it.name}</div><div class="sdesc">${it.desc}</div><div class="price">${it.sold ? 'SOLD' : it.price + ' gold'}</div></div>
       </div>`;
     }).join('');
     const m = this._modal(`
@@ -911,12 +907,12 @@ export class UI {
       const counts = new Map();
       for (const u of p.upgrades) { const k = u.def.id; const e = counts.get(k) ?? { def: u.def, n: 0, best: 0 }; e.n++; e.best = Math.max(e.best, u.rarity); counts.set(k, e); }
       const tomes = [...counts.values()].map((e) => `<span title="${esc(e.def.desc(1))}" style="display:inline-flex;align-items:center;gap:4px;margin:2px 8px 2px 0;color:${RARITY[e.best].color}">${iconSVG(e.def.icon, RARITY[e.best].color, 18, { glow: false })}${esc(e.def.name)}${e.n > 1 ? ' ×' + e.n : ''}</span>`).join('');
-      const relics = p.relics.map((r) => `<span style="display:inline-flex;align-items:center;gap:4px;margin:2px 8px 2px 0;color:#ffb030">${iconSVG(r.def.icon, '#ffb030', 18, { glow: false })}${esc(r.def.name)}</span>`).join('');
+      const relics = relicListHTML(p);
       const st = p.stats;
       build = `<div class="panel" style="padding:12px 16px;max-width:620px;font-size:14px;text-align:left;margin-bottom:6px">
         <div class="subtitle" style="margin-bottom:6px">Your build</div>
         <div>${tomes || '<span style="color:var(--text-dim)">No tomes bound yet.</span>'}</div>
-        ${relics ? `<div style="margin-top:6px">${relics}</div>` : ''}
+        ${relics ? `<div class="relic-pause">${relics}</div>` : ''}
         <div style="margin-top:8px;color:var(--text-dim);font-size:13px">Damage ×${st.dmgMult.toFixed(2)} · Crit ${Math.round(st.critChance * 100)}% (×${st.critMult.toFixed(2)}) · Cooldowns −${Math.round(st.cdr * 100)}% · Armor ${Math.round(st.armor * 100)}% · Speed ${st.moveSpeed.toFixed(1)}</div>
       </div>`;
     }

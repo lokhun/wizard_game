@@ -296,6 +296,7 @@ export class ActorManager {
     a.deadT = 0;
     a.anim = 'death';
     a.animT = 0;
+    a.deathMask = a.mask; // kill effects (burning foes exploding, relics) read what it died with
     a.st = {};
     a.mask = 0;
     this._rebuildLists();
