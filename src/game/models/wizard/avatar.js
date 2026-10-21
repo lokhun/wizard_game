@@ -459,7 +459,9 @@ export function createAvatar(classId, ctx) {
 
     const kk = 1 - Math.exp(-dt * 13);
     for (let i = 0; i < allJoints.length; i++) allJoints[i].step(kk);
-    root.updateMatrixWorld(true);
+    // no full-tree update before aiming: aimFocus refreshes the arm chain it
+    // reads itself, and the pass below brings every node up to date (each
+    // full pass over ~150 nodes was a third of an avatar's frame)
     if (gripFrameR) aimFocus(armR, gripFrameR, focusDir, focusUp);
     if (gripFrameL && lhold === 'staff') aimFocus(armL, gripFrameL, leftDir, leftUp);
     root.updateMatrixWorld(true);
@@ -469,7 +471,8 @@ export function createAvatar(classId, ctx) {
     cloth.gravK = Math.max(downK, deadK);
     cloth.wind.set(Math.sin(t * 0.21) * 0.6 + 0.5, 0, Math.cos(t * 0.17) * 0.5).multiplyScalar(cos.wind ?? 1).applyQuaternion(rq);
     cloth.step(dt, wscale, wpos.y, t);
-    for (let i = 0; i < cloth.chains.length; i++) { const bs = cloth.chains[i].bones; for (let j = 0; j < bs.length; j++) bs[j].updateMatrixWorld(true); }
+    // a chain's bones are nested: updating the first refreshes the whole chain
+    for (let i = 0; i < cloth.chains.length; i++) { const bs = cloth.chains[i].bones; if (bs.length) bs[0].updateMatrixWorld(true); }
 
     // ---- floating book (arcanist)
     if (floatG) {
