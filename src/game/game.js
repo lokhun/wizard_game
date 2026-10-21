@@ -194,7 +194,8 @@ export class Game {
     this.actors.setLevel(level, this.collision);
     this.director.setLevel(level);
     const b0 = level.biome;
-    preloadEnemies([...new Set([...b0.enemies, ...b0.elites, b0.boss, 'skeleton', 'hound', 'slime', 'slimeling', ...this.encounters.warmTypes(level)].map((t) => ENEMY_DEFS[t]?.model ?? BOSS_DEFS[t]?.model ?? t))], this);
+    // the menu backdrop has no enemies: a run's own floor builds them
+    if (!this.menuMode) preloadEnemies([...new Set([...b0.enemies, ...b0.elites, b0.boss, 'skeleton', 'hound', 'slime', 'slimeling', ...this.encounters.warmTypes(level)].map((t) => ENEMY_DEFS[t]?.model ?? BOSS_DEFS[t]?.model ?? t))], this);
     // atmosphere
     const b = this.biome;
     this.scene.fog = new THREE.FogExp2(b.fog.color, b.fog.density);
@@ -281,7 +282,9 @@ export class Game {
     let added = [];
     try {
       const b = level.biome;
-      const types = new Set([...b.enemies, ...(b.elites ?? []), b.boss, 'skeletonMinion', 'spiritWolf', ...this.encounters.warmTypes(level)]);
+      // the menu backdrop only shows the level: models, spells and rewards are a run's
+      const menu = this.menuMode;
+      const types = new Set(menu ? [] : [...b.enemies, ...(b.elites ?? []), b.boss, 'skeletonMinion', 'spiritWolf', ...this.encounters.warmTypes(level)]);
       const models = [...new Set([...types].map((t) => ENEMY_DEFS[t]?.model ?? BOSS_DEFS[t]?.model ?? t))];
       const cam = this.renderer.camera;
       const front = cam.position.clone().add(new THREE.Vector3(0, 0, -3).applyQuaternion(cam.quaternion));
@@ -300,17 +303,19 @@ export class Game {
         place(f.root);
         hold.push(() => f.dispose?.());
       }
-      for (const o of this.spells.warmObjects()) place(o);
-      for (const o of warmEruptionMeshes()) place(o);
-      for (const t of ['gold', 'health']) place(makeDropMesh(t));
+      for (const o of menu ? [] : this.spells.warmObjects()) place(o);
+      for (const o of menu ? [] : warmEruptionMeshes()) place(o);
+      for (const t of menu ? [] : ['gold', 'health']) place(makeDropMesh(t));
       // rewards build themselves into the scene (swept up below); mute their
       // arrival bursts and the portal hum while they're only being compiled
       const vfxExplosion = this.vfx.explosion, vfxDecal = this.vfx.decal, audio = this.audio;
       this.vfx.explosion = () => {}; this.vfx.decal = () => ({ visible: false }); this.audio = null;
       try {
-        const ped = makePedestal(this, front.clone(), 0);
-        const portal = makePortal(this, front.clone());
-        hold.push(() => { ped.dispose?.(); portal.dispose?.(); });
+        if (!menu) {
+          const ped = makePedestal(this, front.clone(), 0);
+          const portal = makePortal(this, front.clone());
+          hold.push(() => { ped.dispose?.(); portal.dispose?.(); });
+        }
       } finally { this.vfx.explosion = vfxExplosion; this.vfx.decal = vfxDecal; this.audio = audio; }
       for (const pool of [this.vfx.ringPool, this.vfx.telePool, this.vfx.beamPool, this.vfx.shellPool, this.vfx.slashPool, this.vfx.funnelPool, this.vfx.conePool, this.vfx.boltPool, this.vfx.sigilPool]) {
         const it = pool?.items[0];

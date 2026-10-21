@@ -7,3 +7,4 @@
 // See models/wizard/viewmodel.js and models/wizard/avatar.js for details.
 export { createViewModel } from './models/wizard/viewmodel.js';
 export { createAvatar } from './models/wizard/avatar.js';
+export { wizardBakes } from './models/wizard/surfaces.js';

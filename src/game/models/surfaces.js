@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import { bake, bakeMain } from '../../render/bake.js';
 
 // ---------------------------------------------------------------------------
 // Extra procedural surfaces for creatures (flesh, fur, clean steel, chainmail,
@@ -178,24 +178,9 @@ const SURFS = {
 const NORMAL_K = { flesh: 0.45, fur: 0.8, steel: 0.25, mail: 1.2, wool: 0.5, scales: 1.2, charred: 1.0, magmastone: 1.2, weathered: 0.9 };
 
 const VERT = /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }`;
-function frag(name, mode) {
-  const k = (NORMAL_K[name] ?? 1).toFixed(2);
-  return COMMON + SURFS[name] + /* glsl */ `
-  void main(){
-    vec3 col; float h, rough, metal, ao;
-    surf(vUv, col, h, rough, metal, ao);
-  #if MODE == 0
-    gl_FragColor = vec4(col, 1.);
-  #elif MODE == 1
-    float e = uTexel; vec3 c1; float hx, hy, r1, m1, a1;
-    surf(fract(vUv + vec2(e, 0.)), c1, hx, r1, m1, a1);
-    surf(fract(vUv + vec2(0., e)), c1, hy, r1, m1, a1);
-    vec3 n = normalize(vec3((h - hx) * ${k}, (h - hy) * ${k}, e * 4.0));
-    gl_FragColor = vec4(n * 0.5 + 0.5, 1.);
-  #else
-    gl_FragColor = vec4(ao, rough, metal, gEm);
-  #endif
-  }`.replace('#if MODE', `#define MODE ${mode}\n#if MODE`);
+// ORM alpha carries surf()'s emissive cracks (gEm)
+function frag(name) {
+  return COMMON + SURFS[name] + bakeMain((NORMAL_K[name] ?? 1).toFixed(2), 'gEm');
 }
 
 const cache = new WeakMap();
@@ -206,28 +191,13 @@ export function creatureSurface(renderer, name, size = 512, seed = 1) {
   if (!m) { m = new Map(); cache.set(renderer, m); }
   const key = `${name}:${size}:${seed}`;
   if (m.has(key)) return m.get(key);
-  const scene = new THREE.Scene();
-  const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
-  quad.frustumCulled = false;
-  scene.add(quad);
-  const render = (mode, srgb) => {
-    const rt = new THREE.WebGLRenderTarget(size, size, {
-      minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping,
-      generateMipmaps: true, depthBuffer: false, colorSpace: srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace,
-    });
-    rt.texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-    const mat = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: frag(name, mode), uniforms: { uSeed: { value: seed }, uTexel: { value: 1 / size } }, depthTest: false, depthWrite: false });
-    quad.material = mat;
-    const prev = renderer.getRenderTarget();
-    renderer.setRenderTarget(rt);
-    renderer.render(scene, cam);
-    renderer.setRenderTarget(prev);
-    mat.dispose();
-    return rt.texture;
-  };
-  const set = { map: render(0, true), normalMap: render(1, false), ormMap: render(2, false) };
-  quad.geometry.dispose();
+  const [map, normalMap, ormMap] = bake(renderer, VERT, frag(name), { size, seed }).map((rt) => rt.texture);
+  const set = { map, normalMap, ormMap };
   m.set(key, set);
   return set;
+}
+
+// The bake shaders of every creature surface, for warmBakes.
+export function creatureBakes(names = CREATURE_SURFACES) {
+  return names.map((n) => ({ vert: VERT, frag: frag(n) }));
 }

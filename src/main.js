@@ -16,7 +16,9 @@ import { handleGameMessage } from './net/netgame.js';
 import { setModelModules, getAvatar } from './game/models.js';
 import { CLASS_IDS, CLASS_META } from './game/classMeta.js';
 import { sigilTexture } from './game/models/wizard/sigil.js';
-import { TextureFactory } from './render/textures.js';
+import { TextureFactory, surfaceBakes } from './render/textures.js';
+import { warmBakes } from './render/bake.js';
+import { installShaderFixes } from './render/shaderFixes.js';
 import { attachMeta, loadProfile, resetProfile, difficultyFor, cleanPacts, pactsUnlocked, pactStrip, showPactBoard, showCodex, showDailyRite, riteLine, demoSummary, FEATS } from './meta/index.js';
 
 // Optional modules (resolved at build time; missing files are simply skipped)
@@ -56,6 +58,7 @@ if (q.get('quality')) settings.quality = q.get('quality');
 // ---------------------------------------------------------------------------
 const canvas = document.getElementById('game');
 const renderer = new Renderer(canvas, settings.quality);
+installShaderFixes(renderer.renderer.getContext());
 renderer.baseFov = settings.fov;
 renderer.noRender = NORENDER;
 const input = new Input(canvas);
@@ -91,6 +94,10 @@ async function boot() {
     canAgain: () => !net,
     onAgain: () => { ui.closeAllModals(); if (dailyRun) startDaily(dailyRun); else startSolo(); },
   });
+  // compile the procedural-texture bake shaders the menu needs in parallel
+  // before the first bake: one at a time they blocked for ~15 s on Windows
+  // (see render/bake.js). Creature skins only matter once a run starts.
+  await warmBakes(renderer.renderer, [...surfaceBakes(), ...(wizardMod?.wizardBakes?.() ?? [])]);
   // warm up the procedural textures used everywhere
   await frame();
   for (const s of ['dungeonWall', 'flagstone', 'wood', 'iron', 'sewerWall', 'cobble']) { game.texFactory.get(s, s === 'iron' ? 512 : 1024, 1, 'floor'); } // (floor-scoped: a later realm frees what it doesn't use)
@@ -100,6 +107,7 @@ async function boot() {
   ui.loading(1, 'Ready');
   await frame();
   ui.hideLoading();
+  warmBakes(renderer.renderer, enemyMod?.creatureBakes?.() ?? [], { lanes: 2 }); // in the background, gently
   const join = q.get('join');
   if (join) doJoin(join);
   else if (q.get('autostart')) { if (CLASS_IDS.includes(q.get('autostart'))) selectedClass = q.get('autostart'); startSolo(); }
@@ -542,9 +550,10 @@ function loop(now) {
   }
   if (dt > 0.05) dt = 0.05;
   // a floor's shaders are still compiling: hold everything behind the veil
-  // (rendering now would compile them synchronously, which is the freeze)
-  if (game?.loadingFloor && !game.menuMode) {
-    if (!veil) { veil = true; ui.loading(0.85, 'Preparing the realm…'); }
+  // (rendering now would compile them synchronously, which is the freeze).
+  // The menu stays up over its backdrop, which appears once it is ready.
+  if (game?.loadingFloor) {
+    if (!veil && !game.menuMode) { veil = true; ui.loading(0.85, 'Preparing the realm…'); }
     input.endFrame();
     return;
   }

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { bake, bakeMain } from './bake.js';
 
 // ---------------------------------------------------------------------------
 // GPU procedural texture generation.
@@ -493,24 +494,8 @@ varying vec2 vUv;
 void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }
 `;
 
-function fragFor(name, mode, normalStrength) {
-  return COMMON + SURFS[name] + /* glsl */ `
-  void main(){
-    vec3 col; float h, rough, metal, ao;
-    surf(vUv, col, h, rough, metal, ao);
-    #if MODE == 0
-      gl_FragColor = vec4(col, 1.);
-    #elif MODE == 1
-      float e = uTexel;
-      vec3 c1; float hx, hy, r1, m1, a1;
-      surf(fract(vUv + vec2(e, 0.)), c1, hx, r1, m1, a1);
-      surf(fract(vUv + vec2(0., e)), c1, hy, r1, m1, a1);
-      vec3 n = normalize(vec3((h - hx) * ${normalStrength.toFixed(2)}, (h - hy) * ${normalStrength.toFixed(2)}, e * 4.0));
-      gl_FragColor = vec4(n * 0.5 + 0.5, 1.);
-    #else
-      gl_FragColor = vec4(ao, rough, metal, 1.);
-    #endif
-  }`.replace('#if MODE', `#define MODE ${mode}\n#if MODE`);
+function fragFor(name, normalStrength) {
+  return COMMON + SURFS[name] + bakeMain(normalStrength.toFixed(2));
 }
 
 const NORMAL_STRENGTH = {
@@ -522,11 +507,6 @@ const NORMAL_STRENGTH = {
 export class TextureFactory {
   constructor(renderer) {
     this.renderer = renderer;
-    this.scene = new THREE.Scene();
-    this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-    this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
-    this.quad.frustumCulled = false;
-    this.scene.add(this.quad);
     this.cache = new Map();
     this.maxAniso = renderer.capabilities.getMaxAnisotropy();
     // A realm's own walls and floors are 1024² sets (~17 MB of GPU memory
@@ -539,34 +519,6 @@ export class TextureFactory {
     this.targets = new Map(); // texture -> its render target (an RT texture is only freed with its target)
   }
 
-  _render(frag, size, srgb, seed) {
-    const rt = new THREE.WebGLRenderTarget(size, size, {
-      minFilter: THREE.LinearMipmapLinearFilter,
-      magFilter: THREE.LinearFilter,
-      wrapS: THREE.RepeatWrapping,
-      wrapT: THREE.RepeatWrapping,
-      generateMipmaps: true,
-      depthBuffer: false,
-      colorSpace: srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace,
-    });
-    rt.texture.anisotropy = this.maxAniso;
-    const mat = new THREE.ShaderMaterial({
-      vertexShader: VERT,
-      fragmentShader: frag,
-      uniforms: { uSeed: { value: seed }, uTexel: { value: 1 / size } },
-      depthTest: false,
-      depthWrite: false,
-    });
-    this.quad.material = mat;
-    const prevRT = this.renderer.getRenderTarget();
-    this.renderer.setRenderTarget(rt);
-    this.renderer.render(this.scene, this.camera);
-    this.renderer.setRenderTarget(prevRT);
-    mat.dispose();
-    this.targets.set(rt.texture, rt);
-    return rt.texture;
-  }
-
   // Returns { map, normalMap, ormMap } for a named surface. scope 'floor':
   // only the current floor's materials use it (see endFloor).
   get(name, size = 1024, seed = 1, scope = null) {
@@ -575,11 +527,10 @@ export class TextureFactory {
     if (this.cache.has(key)) return this.cache.get(key);
     if (!SURFS[name]) throw new Error('unknown surface ' + name);
     const ns = NORMAL_STRENGTH[name] ?? 1;
-    const set = {
-      map: this._render(fragFor(name, 0, ns), size, true, seed),
-      normalMap: this._render(fragFor(name, 1, ns), size, false, seed),
-      ormMap: this._render(fragFor(name, 2, ns), size, false, seed),
-    };
+    const targets = bake(this.renderer, VERT, fragFor(name, ns), { size, seed, anisotropy: this.maxAniso });
+    for (const rt of targets) this.targets.set(rt.texture, rt);
+    const [map, normalMap, ormMap] = targets.map((rt) => rt.texture);
+    const set = { map, normalMap, ormMap };
     this.cache.set(key, set);
     return set;
   }
@@ -598,6 +549,11 @@ export class TextureFactory {
   }
 
   static get surfaces() { return Object.keys(SURFS); }
+}
+
+// The bake shaders of the named surfaces (all by default), for warmBakes.
+export function surfaceBakes(names = Object.keys(SURFS)) {
+  return names.map((n) => ({ vert: VERT, frag: fragFor(n, NORMAL_STRENGTH[n] ?? 1) }));
 }
 
 // Build a MeshStandardMaterial from a procedural surface.

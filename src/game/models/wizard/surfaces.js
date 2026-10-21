@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { bake, bakeMain } from '../../../render/bake.js';
 
 // ---------------------------------------------------------------------------
 // Extra procedural surfaces for the wizard models (bark grain running along a
@@ -164,59 +165,11 @@ const NS = { bark: 1.6, metal: 0.5, skin: 0.42, fur: 1.2, glove: 0.6, robe: 0.45
 
 const VERT = /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }`;
 
-function fragFor(name, mode) {
-  const ns = (NS[name] ?? 1).toFixed(2);
-  return `#define MODE ${mode}\n` + COMMON + SURFS[name] + /* glsl */ `
-  void main(){
-    vec3 col; float h, rough, metal, ao;
-    surf(vUv, col, h, rough, metal, ao);
-    #if MODE == 0
-      gl_FragColor = vec4(col, 1.);
-    #elif MODE == 1
-      float e = uTexel;
-      vec3 c1; float hx, hy, r1, m1, a1;
-      surf(fract(vUv + vec2(e, 0.)), c1, hx, r1, m1, a1);
-      surf(fract(vUv + vec2(0., e)), c1, hy, r1, m1, a1);
-      vec3 n = normalize(vec3((h - hx) * ${ns}, (h - hy) * ${ns}, e * 4.0));
-      gl_FragColor = vec4(n * 0.5 + 0.5, 1.);
-    #else
-      gl_FragColor = vec4(ao, rough, metal, 1.);
-    #endif
-  }`;
+function fragFor(name) {
+  return COMMON + SURFS[name] + bakeMain((NS[name] ?? 1).toFixed(2));
 }
 
 const factoryCache = new WeakMap();
-
-function renderTex(factory, frag, size, srgb, seed) {
-  const renderer = factory.renderer;
-  const rt = new THREE.WebGLRenderTarget(size, size, {
-    minFilter: THREE.LinearMipmapLinearFilter,
-    magFilter: THREE.LinearFilter,
-    wrapS: THREE.RepeatWrapping,
-    wrapT: THREE.RepeatWrapping,
-    generateMipmaps: true,
-    depthBuffer: false,
-    colorSpace: srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace,
-  });
-  rt.texture.anisotropy = factory.maxAniso ?? 4;
-  const mat = new THREE.ShaderMaterial({
-    vertexShader: VERT, fragmentShader: frag,
-    uniforms: { uSeed: { value: seed }, uTexel: { value: 1 / size } },
-    depthTest: false, depthWrite: false,
-  });
-  const scene = new THREE.Scene();
-  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
-  quad.frustumCulled = false;
-  scene.add(quad);
-  const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  const prev = renderer.getRenderTarget();
-  renderer.setRenderTarget(rt);
-  renderer.render(scene, cam);
-  renderer.setRenderTarget(prev);
-  mat.dispose();
-  quad.geometry.dispose();
-  return rt.texture;
-}
 
 // { map, normalMap, ormMap } for one of the wizard surfaces, or falls back to
 // the shared TextureFactory surfaces (wood, iron, gold, cloth, bone, leather...).
@@ -226,13 +179,15 @@ export function getSurface(factory, name, size = 512, seed = 1) {
   if (!cache) { cache = new Map(); factoryCache.set(factory, cache); }
   const key = `${name}:${size}:${seed}`;
   if (cache.has(key)) return cache.get(key);
-  const set = {
-    map: renderTex(factory, fragFor(name, 0), size, true, seed),
-    normalMap: renderTex(factory, fragFor(name, 1), size, false, seed),
-    ormMap: renderTex(factory, fragFor(name, 2), size, false, seed),
-  };
+  const [map, normalMap, ormMap] = bake(factory.renderer, VERT, fragFor(name), { size, seed, anisotropy: factory.maxAniso ?? 4 }).map((rt) => rt.texture);
+  const set = { map, normalMap, ormMap };
   cache.set(key, set);
   return set;
+}
+
+// The bake shaders of every wizard surface, for warmBakes.
+export function wizardBakes() {
+  return Object.keys(SURFS).map((n) => ({ vert: VERT, frag: fragFor(n) }));
 }
 
 // ---------------------------------------------------------------------------
