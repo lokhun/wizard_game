@@ -326,3 +326,79 @@ export function springTo(state, target, keys, dt, omega, zeta = 1) {
     v[k] = vk; state[k] = x;
   }
 }
+
+// ------------------------------------------------------- weapons ----
+// Orientation of a hafted weapon bone whose shaft runs along its local +Y and whose edge
+// faces local +Z, from the haft's yaw th (0 = forward), pitch ph (+ up; past PI/2 it points
+// back over the head) and roll ps of the edge about the haft. Writes a rotation basis.
+const _hY = new THREE.Vector3(), _hU = new THREE.Vector3(), _hV = new THREE.Vector3(), _hZ = new THREE.Vector3(), _hX = new THREE.Vector3();
+export function haftBasis(th, ph, ps, out) {
+  const ct = Math.cos(th), sT = Math.sin(th), cp = Math.cos(ph), sp = Math.sin(ph);
+  _hY.set(sT * cp, sp, ct * cp);
+  _hU.set(-sT * sp, cp, -ct * sp);
+  _hV.crossVectors(_hY, _hU);
+  _hZ.copy(_hU).multiplyScalar(Math.cos(ps)).addScaledVector(_hV, Math.sin(ps));
+  _hX.crossVectors(_hY, _hZ);
+  return out.makeBasis(_hX, _hY, _hZ);
+}
+// Pose weapon bone `bone` (child of the chest) from params ax {th, ph, ps, gx, gy, gz} and
+// close the hands on it: grips [{ side, y (along the haft), w, flip }], poles in chest space.
+const _wM = new THREE.Matrix4(), _wQ = new THREE.Quaternion(), _wE = new THREE.Euler(), _wP = new THREE.Vector3(), _wS = new THREE.Vector3();
+const _wG = new THREE.Vector3(), _wA = new THREE.Vector3(), _wPole = new THREE.Vector3();
+export function wield(m, bone, ax, grips, poles) {
+  haftBasis(ax.th, ax.ph, ax.ps, _wM);
+  _wQ.setFromRotationMatrix(_wM);
+  _wE.setFromQuaternion(_wQ, 'XYZ');
+  snapRot(m, bone, _wE);
+  setBone(m, bone, ax.gx, ax.gy, ax.gz, 1);
+  boneWorld(m, m.bones[bone], _wM);
+  _wA.setFromMatrixColumn(_wM, 1).normalize();
+  for (let i = 0; i < grips.length; i++) {
+    const g = grips[i];
+    if (g.w <= 0.001) continue;
+    boneWorld(m, m.bones[bone], _wM);
+    _wG.set(0, g.y, 0).applyMatrix4(_wM);
+    boneWorld(m, m.bones.chest, _wM);
+    _wM.decompose(_wP, _wQ, _wS);
+    const pl = poles[g.side > 0 ? 0 : 1];
+    _wPole.set(pl[0], pl[1], pl[2]).applyQuaternion(_wQ);
+    gripIK(m, g.side, _wG, _wA, _wPole, g.w, !!g.flip);
+  }
+}
+
+// swing trail: an annular sector in its local XZ plane, leading edge on +Z, trailing toward -X
+export function swingTrailGeo(r0, r1, span, col) {
+  const pos = [], c = [], idx = [], A = 24, Rr = 3;
+  for (let i = 0; i <= A; i++) {
+    const u = i / A, a = -u * span;
+    for (let k = 0; k <= Rr; k++) {
+      const v = k / Rr, r = r0 + (r1 - r0) * v;
+      pos.push(Math.sin(a) * r, 0, Math.cos(a) * r);
+      c.push(col[0], col[1], col[2], (1 - u) ** 2.2 * Math.sin(Math.PI * (0.15 + v * 0.85)) * (0.4 + 0.6 * v));
+    }
+  }
+  for (let i = 0; i < A; i++) for (let k = 0; k < Rr; k++) { const a = i * (Rr + 1) + k, b = a + Rr + 1; idx.push(a, b, a + 1, b, b + 1, a + 1); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(c, 4));
+  g.setIndex(idx);
+  return g;
+}
+// lay a swing trail (child of the weapon's parent) in the plane of the swing from the weapon
+// params ax and their spring velocities ax._v; returns how fast the weapon is moving (rad/s)
+const _tY = new THREE.Vector3(), _tV = new THREE.Vector3(), _tU = new THREE.Vector3(), _tM = new THREE.Matrix4();
+export function aimTrail(mesh, ax) {
+  const v = ax._v ?? {}, vt = v.th ?? 0, vp = v.ph ?? 0;
+  const th = ax.th, ph = ax.ph, ct = Math.cos(th), sT = Math.sin(th), cp = Math.cos(ph), sp = Math.sin(ph);
+  _tY.set(sT * cp, sp, ct * cp);
+  _tV.set(ct * cp, 0, -sT * cp).multiplyScalar(vt).addScaledVector(_tU.set(-sT * sp, cp, -ct * sp), vp);
+  const speed = _tV.length();
+  if (speed > 1e-3) {
+    _tV.multiplyScalar(1 / speed);
+    _tU.crossVectors(_tY, _tV);
+    _tM.makeBasis(_tV, _tU, _tY);
+    mesh.quaternion.setFromRotationMatrix(_tM);
+    mesh.position.set(ax.gx, ax.gy, ax.gz);
+  }
+  return speed;
+}

@@ -4,7 +4,7 @@ import { humanoidPose, act2, ACT } from './humanoid.js';
 import { twoSided, HDR, RUSTY, DARKSTEEL } from './parts.js';
 import { buildHeadsman, HEADSMAN_ANIM } from './dungeon.js';
 import { skullGeo } from '../../world/props.js';
-import { addFx, fxOf, fxSet, paint, softRing, softDisc, Rope, aimChain, boneWorld, boneModel, snapRot, setBone, gripIK, springTo, glowLevel } from './bossKit.js';
+import { addFx, fxOf, fxSet, paint, softRing, softDisc, Rope, aimChain, boneWorld, boneModel, snapRot, setBone, gripIK, springTo, glowLevel, haftBasis } from './bossKit.js';
 
 // ================================================================ The Executioner ==
 // The Headsman of the Oubliette: a hulking hooded brute with a crescent greataxe.
@@ -241,15 +241,6 @@ function deathPose(P, p, m, s) {
 const _X = new THREE.Vector3(), _Y = new THREE.Vector3(), _Z = new THREE.Vector3(), _U = new THREE.Vector3(), _V = new THREE.Vector3();
 const _Mb = new THREE.Matrix4(), _Mc = new THREE.Matrix4(), _Ma = new THREE.Matrix4(), _Q = new THREE.Quaternion(), _E = new THREE.Euler(), _P = new THREE.Vector3(), _S = new THREE.Vector3();
 const _gR = new THREE.Vector3(), _gL = new THREE.Vector3(), _axis = new THREE.Vector3(), _poleR = new THREE.Vector3(), _poleL = new THREE.Vector3();
-function haftBasis(th, ph, ps, out) {
-  const ct = Math.cos(th), sT = Math.sin(th), cp = Math.cos(ph), sp = Math.sin(ph);
-  _Y.set(sT * cp, sp, ct * cp);
-  _U.set(-sT * sp, cp, -ct * sp);
-  _V.crossVectors(_Y, _U);
-  _Z.copy(_U).multiplyScalar(Math.cos(ps)).addScaledVector(_V, Math.sin(ps));
-  _X.crossVectors(_Y, _Z);
-  return out.makeBasis(_X, _Y, _Z);
-}
 function weapon(m, s, dt, ax, wR, dead) {
   const st = m.state;
   if (dead) { dropAxe(m, s, dt); return; }
