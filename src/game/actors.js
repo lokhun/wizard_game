@@ -87,6 +87,7 @@ function bodyOf(type) {
 const CORPSE_LINGER = 7;
 const CORPSE_CAP = 16;
 const RANGED_KINDS = new Set(['shoot', 'lob', 'circle']);
+const LOS_KINDS = new Set(['lunge', 'charge', 'circle', 'shoot', 'lob']); // _canUse reads los for these
 
 export class ActorManager {
   constructor(game) {
@@ -824,10 +825,12 @@ export class ActorManager {
     // ---- chase / reposition
     a.yaw = angleDamp(a.yaw, faceYaw, 8, dt);
     if (!follow && am > 0) {
-      const eyeY = a.pos.y + a.height * 0.7;
-      const los = g.collision.los(a.pos.x, eyeY, a.pos.z, tp.x, tp.y + 1.2, tp.z);
+      // line of sight only when an attack that needs it is off cooldown (it was
+      // marched every frame for every chasing enemy, mostly to be ignored)
+      let los = null;
       for (const at of def.attacks ?? []) {
         if ((a.cds[at.id] ?? 0) > 0) continue;
+        if (los === null && LOS_KINDS.has(at.kind)) los = g.collision.los(a.pos.x, a.pos.y + a.height * 0.7, a.pos.z, tp.x, tp.y + 1.2, tp.z);
         if (!this._canUse(a, at, dist, tRad, los)) continue;
         // ranged "fire tokens": only a couple of shooters wind up on one target at once,
         // so volleys stay readable and dodgeable
