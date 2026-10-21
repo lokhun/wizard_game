@@ -141,7 +141,7 @@ void main(){
   float ring = smoothstep(r - w, r, d) * (1.0 - smoothstep(r, r + w * 0.3, d));
   float a = atan(p.y, p.x);
   float n = 0.7 + 0.3 * sin(a * 12.0 + uTime * 6.0) * sin(a * 7.0 - uTime * 4.0);
-  float fill = (1.0 - smoothstep(0.0, r, d)) * 0.15 * (1.0 - uProg);
+  float fill = (1.0 - smoothstep(0.0, r, d)) * 0.08 * (1.0 - uProg);
   float alpha = (ring * n + fill) * (1.0 - uProg);
   // a wave sweeping under your own feet must not flash the whole screen
   alpha *= mix(0.25, 1.0, smoothstep(0.8, 5.0, vDepth));
@@ -615,8 +615,9 @@ export class VFX {
       for (let i = 0; i < max - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
       g.setIndex(idx);
       const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
-        vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }',
-        fragmentShader: 'uniform vec3 uColor; uniform float uAlpha; varying vec2 vUv; void main(){ float d = abs(vUv.y - 0.5) * 2.0; float c = pow(1.0 - d, 2.0); gl_FragColor = vec4(uColor * c * uAlpha + vec3(0.9, 0.93, 1.0) * pow(1.0 - d, 8.0) * uAlpha * 1.5, 1.0); }',
+        // bolts that pass the lens (a blink, a nova at your feet) fade instead of whiting out the view
+        vertexShader: 'varying vec2 vUv; varying float vDepth; void main(){ vUv = uv; vec4 mv = modelViewMatrix * vec4(position,1.); vDepth = -mv.z; gl_Position = projectionMatrix * mv; }',
+        fragmentShader: 'uniform vec3 uColor; uniform float uAlpha; varying vec2 vUv; varying float vDepth; void main(){ float d = abs(vUv.y - 0.5) * 2.0; float c = pow(1.0 - d, 2.0); float nk = mix(0.12, 1.0, smoothstep(0.6, 4.0, vDepth)); gl_FragColor = vec4((uColor * c * uAlpha + vec3(0.9, 0.93, 1.0) * pow(1.0 - d, 8.0) * uAlpha * 1.5) * nk, 1.0); }',
         uniforms: { uColor: { value: new THREE.Color() }, uAlpha: { value: 1 } },
         transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
       }));
@@ -935,7 +936,7 @@ export class VFX {
     const yaw = Math.atan2(d.x, d.z);
     // a diagonal cut reads far better from eye height than a flat one
     const tilt = opts.tilt ?? 0.28;
-    m.rotation.set(side * tilt, yaw, side * 0.18, 'YXZ');
+    m.rotation.set(side * tilt, yaw, side * (opts.roll ?? 0.18), 'YXZ');
     const life = opts.life ?? 0.24;
     this._track(m, life, (k) => {
       u.uProg.value = Math.min(1, k * 1.6);

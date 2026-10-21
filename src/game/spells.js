@@ -115,16 +115,22 @@ export class SpellRuntime {
     const shard = new THREE.OctahedronGeometry(0.12, 0);
     shard.scale(0.7, 0.7, 3.2);
     M.shard = { geo: shard, mat: new THREE.MeshStandardMaterial({ color: 0xbfefff, emissive: 0x4ab8ff, emissiveIntensity: 1.6, roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.9 }) };
+    // venom thorn: a long barbed spine, dark green with a sickly glow
+    const thorn = new THREE.ConeGeometry(0.05, 0.75, 5, 1);
+    thorn.rotateX(Math.PI / 2);
+    M.thorn = { geo: thorn, mat: new THREE.MeshStandardMaterial({ color: 0x3a4a14, emissive: 0x6aa020, emissiveIntensity: 0.9, roughness: 0.5, flatShading: true }) };
     const big = new THREE.OctahedronGeometry(0.3, 0);
     big.scale(0.8, 0.8, 4);
     M.bigShard = { geo: big, mat: M.shard.mat };
     const rock = new THREE.DodecahedronGeometry(0.22, 0);
-    M.rock = { geo: rock, mat: new THREE.MeshStandardMaterial({ color: 0x6a5a48, roughness: 0.95, emissive: 0x401800, emissiveIntensity: 0.4, flatShading: true }) };
+    const magma = magmaTexture();
+    M.rock = { geo: rock, mat: new THREE.MeshStandardMaterial({ color: 0x6a5a48, roughness: 0.95, emissive: 0x803810, emissiveIntensity: 1.0, emissiveMap: magma, flatShading: true }) };
     const meteor = new THREE.DodecahedronGeometry(0.9, 1);
     // charred rock glowing from within: dark faces, hot cracks via the emissive map
-    M.meteor = { geo: meteor, mat: new THREE.MeshStandardMaterial({ color: 0x1a1210, roughness: 1, emissive: 0xff5010, emissiveIntensity: 2.2, emissiveMap: magmaTexture(), flatShading: true }) };
+    M.meteor = { geo: meteor, mat: new THREE.MeshStandardMaterial({ color: 0x1a1210, roughness: 1, emissive: 0xff5010, emissiveIntensity: 2.2, emissiveMap: magma, flatShading: true }) };
     const boulder = new THREE.DodecahedronGeometry(2.2, 1);
-    M.boulder = { geo: boulder, mat: new THREE.MeshStandardMaterial({ color: 0x5a4a38, roughness: 1, emissive: 0x803000, emissiveIntensity: 0.6, flatShading: true }) };
+    // cracked stone glowing from the heat of its fall
+    M.boulder = { geo: boulder, mat: new THREE.MeshStandardMaterial({ color: 0x4a3e32, roughness: 1, emissive: 0xc05010, emissiveIntensity: 1.3, emissiveMap: magma, flatShading: true }) };
     const spear = new THREE.ConeGeometry(0.07, 1.4, 6);
     spear.rotateX(Math.PI / 2);
     M.spear = { geo: spear, mat: new THREE.MeshStandardMaterial({ color: 0xe8e0c8, roughness: 0.6, emissive: 0x204010, emissiveIntensity: 0.6 }) };
@@ -151,7 +157,8 @@ export class SpellRuntime {
     cres.rotateZ(-Math.PI * 0.45);
     cres.rotateX(Math.PI / 2);
     cres.rotateY(-Math.PI / 2);
-    M.crescent = { geo: cres, mat: nearFade(new THREE.MeshBasicMaterial({ color: new THREE.Color(0.95, 1.4, 1.35), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })) };
+    // (fades hard near the lens: leaving the hand it was a white bar across the view)
+    M.crescent = { geo: cres, mat: nearFade(new THREE.MeshBasicMaterial({ color: new THREE.Color(0.8, 1.2, 1.15), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }), new THREE.Vector4(0.8, 7.0, 0.12, 0.45)) };
     const orb = new THREE.SphereGeometry(0.25, 16, 12);
     M.orb = { geo: orb, mat: null }; // per element basic material
     const flask = new THREE.SphereGeometry(0.12, 10, 8);
@@ -232,7 +239,7 @@ export class SpellRuntime {
       const def = this.meshCache[p.mesh];
       const mesh = new THREE.Mesh(def.geo, def.mat ?? this._orbMat(proj.el));
       if (p.meshScale) mesh.scale.setScalar(p.meshScale);
-      if (p.mesh === 'orb') { proj.orbS = p.meshScale ?? 1; mesh.scale.setScalar(proj.orbS * 0.3); }
+      if (p.mesh === 'orb' || p.mesh === 'crescent') { proj.orbS = p.meshScale ?? 1; mesh.scale.setScalar(proj.orbS * 0.3); }
       group.add(mesh);
       proj.mesh = mesh;
       proj.spin = p.spin ?? (p.mesh === 'rock' || p.mesh === 'meteor' || p.mesh === 'boulder' ? 6 : 0);

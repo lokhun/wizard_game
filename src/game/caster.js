@@ -16,12 +16,29 @@ const UP = new THREE.Vector3(0, 1, 0);
 let spikeGeo, thornGeo, tentacleGeo, spikeMat, thornMat, tentacleMat;
 function ensureGeo() {
   if (spikeGeo) return;
-  spikeGeo = new THREE.ConeGeometry(0.45, 2.4, 6, 1);
+  // a jagged shard of rock, not a smooth cone
+  spikeGeo = new THREE.ConeGeometry(0.45, 2.4, 6, 3);
+  {
+    const pa = spikeGeo.getAttribute('position');
+    let sd = 7;
+    const rnd = () => ((sd = (sd * 9301 + 49297) % 233280) / 233280);
+    const key = (x, y, z) => `${x.toFixed(3)},${y.toFixed(3)},${z.toFixed(3)}`;
+    const off = new Map();
+    for (let i = 0; i < pa.count; i++) {
+      const x = pa.getX(i), y = pa.getY(i), z = pa.getZ(i);
+      const k = key(x, y, z);
+      if (!off.has(k)) off.set(k, [(rnd() - 0.5) * 0.22, (rnd() - 0.5) * 0.25, (rnd() - 0.5) * 0.22]);
+      const o = off.get(k), r = Math.hypot(x, z);
+      if (r < 1e-3) continue; // keep the tip and the base centre where they are
+      pa.setXYZ(i, x + o[0], y + o[1] * (y > -1.1 ? 1 : 0), z + o[2]);
+    }
+    spikeGeo.computeVertexNormals();
+  }
   spikeGeo.translate(0, 1.2, 0);
-  spikeMat = new THREE.MeshStandardMaterial({ color: 0x6a5844, roughness: 0.95, flatShading: true, emissive: 0x2a1000, emissiveIntensity: 0.6 });
+  spikeMat = new THREE.MeshStandardMaterial({ color: 0x4e443a, roughness: 0.95, flatShading: true, emissive: 0x3a1400, emissiveIntensity: 0.45 });
   thornGeo = new THREE.ConeGeometry(0.12, 1.5, 5, 1);
   thornGeo.translate(0, 0.75, 0);
-  thornMat = new THREE.MeshStandardMaterial({ color: 0x3a4a18, roughness: 0.7, emissive: 0x304a08, emissiveIntensity: 0.5, flatShading: true });
+  thornMat = new THREE.MeshStandardMaterial({ color: 0x34441a, roughness: 0.7, emissive: 0x4a7a10, emissiveIntensity: 0.85, flatShading: true });
   const pts = [];
   for (let i = 0; i <= 10; i++) pts.push(new THREE.Vector3(Math.sin(i * 0.5) * 0.3 * (i / 10), i * 0.42, Math.cos(i * 0.4) * 0.2 * (i / 10)));
   tentacleGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.32, 8, false);
@@ -217,6 +234,9 @@ export function makeCtx(game, caster, o) {
     thorn(pos) {
       for (let i = 0; i < 3; i++) erupt(game, new THREE.Vector3(pos.x + rand(-0.3, 0.3), pos.y, pos.z + rand(-0.3, 0.3)), thornGeo, thornMat, rand(0.7, 1.3), 2.2, false, rand(-0.5, 0.5));
       vfx.burst(new THREE.Vector3(pos.x, pos.y + 0.3, pos.z), { element: 'poison', count: 4, speed: 2, life: 0.6, size: 0.1, sprite: SPR.FEATHER, gravity: 4, upward: 1 });
+      // torn earth and a sickly green flare where the briar breaks through
+      vfx.burst(new THREE.Vector3(pos.x, pos.y + 0.15, pos.z), { count: 4, speed: 3, upward: 1.2, life: 0.6, size: 0.08, sprite: SPR.CHUNK, solid: true, gravity: 12, spin: 5, color: [0.2, 0.17, 0.1] });
+      vfx.P.glow({ x: pos.x, y: pos.y + 0.3, z: pos.z, vy: 1, r: 0.35, g: 0.7, b: 0.12, life: 0.35, size: 0.9, size2: 0.3, sprite: SPR.GLOW });
     },
     tentacle(pos) {
       const m = new THREE.Mesh(tentacleGeo, tentacleMat);
