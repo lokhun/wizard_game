@@ -1,4 +1,4 @@
-// Regression (run with smoke.mjs "?autostart=necromancer&test=1&norender=1&god=1", wait 3000).
+// Regression (run with smoke.mjs "?autostart=necromancer&test=1&norender=1&god=1", wait 3000). Expect bosses killed, "nonFinite":0, errors: 0.
 // Bot playthrough: teleports through main-path rooms, fights, takes tomes, kills bosses, ascends.
 (async () => {
   while (!window.__game || window.__game.menuMode || !window.__game.player || window.__game.player.id !== 'solo') await new Promise((r) => setTimeout(r, 200));
@@ -19,6 +19,7 @@
     return { best, d: bd };
   };
   const start = performance.now();
+  let nonFinite = 0;
   const origDefeat = g.defeat.bind(g);
   g.defeat = () => { log.push('DEFEAT called: hp=' + g.player.hp + ' downed=' + g.player.downed + ' dead=' + g.player.dead + ' stack=' + new Error().stack.split('\n').slice(1, 4).join('|')); origDefeat(); };
   for (let floor = g.floorIndex; floor < 5; floor++) {
@@ -54,6 +55,11 @@
       if (g.ended) break;
       // take a tome from any pedestal
       for (const it of g.interactables) if (it.kind === 'pedestal' && !it.usedBy.has(g.player.id)) { const { rollTomes } = window.__upgrades ?? await import('/src/game/upgrades.js'); const c = rollTomes(g.player, 3, it.minRarity); g.grantTome(c[0]); it.usedBy.add(g.player.id); }
+      // NaN/Infinity in a light or the grade wrecks the whole frame yet throws nothing: catch it here
+      const nan = [];
+      g.scene.traverse((o) => { if (o.isLight && (!isFinite(o.intensity) || !o.color.toArray().every(isFinite))) nan.push(o.type); });
+      for (const [k, u] of Object.entries(g.renderer.grade.uniforms)) { const v = u.value; if (typeof v === 'number' ? !isFinite(v) : v?.toArray && !v.toArray().every(isFinite)) nan.push('grade.' + k); }
+      if (nan.length) { log.push(`NON-FINITE on F${floor} ${room.type}: ${nan.join(',')}`); nonFinite++; }
       log.push(`[down=${g.player.downed} dead=${g.player.dead} sr=${g.player.selfRevives} ended=${g.ended}] F${floor} ${room.type} t=${t.toFixed(0)}s hp=${Math.round(g.player.hp)}/${g.player.maxHp} kills=${g.stats.kills} dmg=${Math.round(g.stats.damage)} tomes=${g.player.upgrades.length} boss=${(()=>{const b=g.actors.list?.find?.((a)=>a.boss)??[...(g.actors.actors??[])].find((a)=>a.boss);return b?Math.round(b.hp)+'/'+b.maxHp+' ph'+(b.brain?.phase)+' hostiles='+g.actors.hostiles().length:'none'})()}`);
     }
     if (g.ended) { log.push('ENDED victory=' + (g.floorIndex >= 4)); break; }
@@ -63,5 +69,5 @@
       g.loadFloor(floor + 1);
     }
   }
-  return { ms: Math.round(performance.now() - start), log, ended: g.ended, floor: g.floorIndex };
+  return { ms: Math.round(performance.now() - start), log, ended: g.ended, floor: g.floorIndex, nonFinite };
 })()
