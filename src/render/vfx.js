@@ -926,7 +926,7 @@ export class VFX {
     const m = this.slashPool.get();
     const fx = fxOf(element);
     const u = m.material.uniforms;
-    u.uColor.value.setRGB(...clampHDR(fx.mid, 1.5));
+    u.uColor.value.setRGB(...clampHDR(opts.color ?? fx.mid, 1.5));
     u.uCore.value.setRGB(...clampHDR(fx.core, 1.8));
     u.uSide.value = side;
     u.uSeed.value = Math.random() * 50;
@@ -1089,8 +1089,10 @@ export class VFX {
     // thin shock ring around it - both still read at range, where sparks are
     // sub-pixel, and neither lingers long enough to hide the target
     const matter = hot || element === 'earth' || element === 'blood' || element === 'poison' || element === 'enemyGreen' || element === 'physical';
-    this.P.glow({ x, y, z, r: fx.core[0] * 0.55, g: fx.core[1] * 0.55, b: fx.core[2] * 0.55, life: 0.11, size: 0.5 * scale, size2: 1.15 * scale, sprite: matter ? SPR.GLOW : SPR.STAR });
-    if (!matter) this.P.glow({ x, y, z, r: fx.mid[0] * 0.5, g: fx.mid[1] * 0.5, b: fx.mid[2] * 0.5, r2: fx.end[0] * 0.5, g2: fx.end[1] * 0.5, b2: fx.end[2] * 0.5, life: 0.2, size: 0.2 * scale, size2: 1.5 * scale, sprite: SPR.RING });
+    // the hit marks grow a little with distance so a hit across the room still registers
+    const far = Math.min(1.8, Math.max(1, this.camera.position.distanceTo(pos) / 7)) * scale;
+    this.P.glow({ x, y, z, r: fx.core[0] * 0.55, g: fx.core[1] * 0.55, b: fx.core[2] * 0.55, life: 0.14, size: 0.5 * far, size2: 1.15 * far, sprite: matter ? SPR.GLOW : SPR.STAR });
+    if (!matter) this.P.glow({ x, y, z, r: fx.mid[0] * 0.5, g: fx.mid[1] * 0.5, b: fx.mid[2] * 0.5, r2: fx.end[0] * 0.5, g2: fx.end[1] * 0.5, b2: fx.end[2] * 0.5, life: 0.22, size: 0.2 * far, size2: 1.5 * far, sprite: SPR.RING });
     else if (hot) this.P.glow({ x, y, z, vy: 1.2, r: fx.mid[0] * 0.45, g: fx.mid[1] * 0.45, b: fx.mid[2] * 0.45, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2], life: 0.35, size: 0.35 * scale, size2: 0.9 * scale, sprite: SPR.SMOKE, spin: 2 });
     // few small sparks, cooling over their life (orange -> deep red for fire)
     this.burst(pos, { element, count: Math.round(7 * scale), speed: 5 * scale, life: 0.35, size: 0.04 * scale, sprite: SPR.SPARK, gravity: hot || element === 'earth' ? 7 : 1, stretch: 0.015,

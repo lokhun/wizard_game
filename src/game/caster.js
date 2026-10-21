@@ -27,10 +27,12 @@ function ensureGeo() {
     for (let i = 0; i < pa.count; i++) {
       const x = pa.getX(i), y = pa.getY(i), z = pa.getZ(i);
       const k = key(x, y, z);
-      if (!off.has(k)) off.set(k, [(rnd() - 0.5) * 0.22, (rnd() - 0.5) * 0.25, (rnd() - 0.5) * 0.22]);
+      if (!off.has(k)) off.set(k, [(rnd() - 0.5) * 0.4, (rnd() - 0.5) * 0.3, (rnd() - 0.5) * 0.4, 0.7 + rnd() * 0.6]);
       const o = off.get(k), r = Math.hypot(x, z);
       if (r < 1e-3) continue; // keep the tip and the base centre where they are
-      pa.setXYZ(i, x + o[0], y + o[1] * (y > -1.1 ? 1 : 0), z + o[2]);
+      // ragged facets, and the shard leans and kinks a little as it rises
+      const h = (y + 1.2) / 2.4;
+      pa.setXYZ(i, x * o[3] + o[0] * (0.4 + h) + h * h * 0.25, y + o[1] * (y > -1.1 ? 1 : 0), z * o[3] + o[2] * (0.4 + h));
     }
     spikeGeo.computeVertexNormals();
   }
@@ -38,7 +40,7 @@ function ensureGeo() {
   spikeMat = new THREE.MeshStandardMaterial({ color: 0x4e443a, roughness: 0.95, flatShading: true, emissive: 0x3a1400, emissiveIntensity: 0.45 });
   thornGeo = new THREE.ConeGeometry(0.12, 1.5, 5, 1);
   thornGeo.translate(0, 0.75, 0);
-  thornMat = new THREE.MeshStandardMaterial({ color: 0x34441a, roughness: 0.7, emissive: 0x4a7a10, emissiveIntensity: 0.85, flatShading: true });
+  thornMat = new THREE.MeshStandardMaterial({ color: 0x2c3416, roughness: 0.6, emissive: 0x3a5c0c, emissiveIntensity: 0.55, flatShading: true });
   const pts = [];
   for (let i = 0; i <= 10; i++) pts.push(new THREE.Vector3(Math.sin(i * 0.5) * 0.3 * (i / 10), i * 0.42, Math.cos(i * 0.4) * 0.2 * (i / 10)));
   tentacleGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.32, 8, false);
