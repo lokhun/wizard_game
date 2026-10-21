@@ -242,7 +242,8 @@ export class Director {
       const cx = room.x + 1 + Math.floor(this.rng.next() * (room.w - 2));
       const cy = room.y + 1 + Math.floor(this.rng.next() * (room.h - 2));
       const idx = cy * L.W + cx;
-      if (L.cells[idx] !== FLOOR || L.kind[idx] === K_WATER) continue;
+      // (an L-shaped room's cut corner can hold corridor floor: that is outside the doors)
+      if (L.cells[idx] !== FLOOR || L.kind[idx] === K_WATER || L.roomId[idx] !== room.id) continue;
       const x = (cx + 0.5) * T, z = (cy + 0.5) * T;
       if (g.collision.pushOut(x, z, 0.6)) continue;
       let near = 1e9;
