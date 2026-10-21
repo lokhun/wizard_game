@@ -116,6 +116,11 @@ export class LightPool {
         if (dx * dx + dy * dy + dz * dz < FX_CLUSTER_R2) { sum += b.intensity; if (b.intensity > top) top = b.intensity; }
       }
       a.k = sum > 0 ? Math.min(1, Math.max(FX_BUDGET, top * 1.25) / sum) : 1;
+      // a light at your own hand (muzzle flares, a ward you stand in) lights
+      // whatever you're pressed against from a hand's breadth: it would blow
+      // shiny armour and close walls out to white, so it eases off near the eye
+      const dx = a.x - cx, dy = a.y - cy, dz = a.z - cz, dc = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (dc < 2.5) a.k *= 0.35 + 0.65 * Math.max(0, (dc - 0.4) / 2.1);
     }
     for (let i = 0; i < this.fxLights.length; i++) {
       const l = this.fxLights[i];
