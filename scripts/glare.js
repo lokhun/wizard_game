@@ -46,7 +46,7 @@
     }
     inp.mouse.left = inp.mouse.right = false;
   };
-  for (let round = 0; round < 2; round++) {
+  for (let round = 0; round < (+new URLSearchParams(location.search).get('rounds') || 1); round++) {
     run('primary', null, 1.2);
     run('ability1', 'KeyQ', 1.6);
     run('secondary', null, 1.6);
