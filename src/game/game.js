@@ -23,6 +23,7 @@ import { sigilTexture } from './models/wizard/sigil.js';
 import { ENEMY_DEFS, BOSS_DEFS } from './enemyDefs.js';
 import { rand } from '../core/rng.js';
 import { clamp } from '../core/math.js';
+import { Emitter } from '../meta/emitter.js';
 
 const WADE_C = [0.16, 0.22, 0.22]; // ripple rings on channel water
 
@@ -81,6 +82,8 @@ export class Game {
     for (const l of this.viewLights) renderer.viewScene.add(l);
     this.difficulty = { enemyHp: 1, enemyDamage: 1, playerDamage: 1 };
     this.hitSoundT = 0;
+    // what happened, for whoever listens (run tracking, feats, the run summary: src/meta)
+    this.events = new Emitter();
   }
 
   // ======================================================================
@@ -106,6 +109,7 @@ export class Game {
     for (const p of players) if (p.id !== localId) this.addRemote(p);
     this._setViewModel(classId);
     this.ui?.onRunStart(this);
+    this.events.emit('runStart');
     this.loadFloor(floor);
   }
 
@@ -225,7 +229,7 @@ export class Game {
       }
     }
     // place players
-    this.player.rerolls = 1;
+    this.player.rerolls = this.difficulty.rerolls ?? 1;
     const s = level.spawn;
     this.player.spawnAt(s.x, s.z, 0);
     if (this.player.downed) { this.player.downed = false; this.player.hp = Math.max(this.player.hp, Math.round(this.player.maxHp * 0.5)); }
@@ -239,6 +243,7 @@ export class Game {
     this.audio?.play('floor_enter');
     this.ui?.onFloor(this, b, index);
     if (index === 0 && !this.menuMode) this._tutorialTips();
+    this.events.emit('floor', index);
     this._prewarm(level);
   }
 
@@ -435,7 +440,7 @@ export class Game {
     this.vfx.addShake?.(0.35);
     this.audio?.play('explosion_big', { pos: c });
     const p = this.player;
-    if (p.alive && !p.downed && !p.dead && p.pos.distanceTo(c) < R + 0.4) p.takeDamage(Math.round(p.maxHp * 0.18), 'fire', c);
+    if (p.alive && !p.downed && !p.dead && p.pos.distanceTo(c) < R + 0.4) p.takeDamage(Math.round(p.maxHp * 0.18), 'fire', c, { cause: 'a powder keg' });
     if (local) {
       this.localAreaHit(c, R, 70, 'fire', { burn: 2 });
       this.smashAt(c, R * 0.9);
@@ -503,7 +508,7 @@ export class Game {
       else dt *= this.slow.k + (1 - this.slow.k) * u * u;
     }
     this.time += dt;
-    this.stats.time += realDt;
+    if (!this.paused || !this.isSolo) this.stats.time += realDt; // a paused solo run isn't run time
     const input = this.input;
     const p = this.player;
 
@@ -522,6 +527,7 @@ export class Game {
     }
     for (const it of this.interactables) it.update?.(dt, this.time);
     this._updateTips(realDt);
+    this.events.emit('tick', realDt);
     this._updateDoorSigns(realDt);
     this._ambient(realDt);
     this.critters?.update(dt, this.time, this.renderer.camera.position, this.allPlayers());
@@ -773,6 +779,7 @@ export class Game {
     const willKill = a.hp - dmg <= 0;
     p.onDealtDamage(dmg, false);
     this.stats.damage += dmg;
+    this.events.emit('hit', dmg, a, res, H);
     const kbMult = st.kbMult ?? 1;
     const payload = { dmg, el: H.el, st: stPayload, kb: (H.kb ?? 0) * kbMult, kbDir: H.kbDir, pull: H.pull, src: p.id, consume: res.consume, power: st.statusPower };
     if (this.isHost) this.actors.damage(a, payload);
@@ -790,7 +797,7 @@ export class Game {
     // drops
     const gold = Math.round((a.def.gold ?? 1) * (a.elite ? 4 : 1) * (1 + this.floorIndex * 0.25));
     if (gold > 0) this.spawnDrop('gold', a.pos, gold);
-    if (Math.random() < (a.elite ? 1 : a.boss ? 0 : 0.1)) this.spawnDrop('health', a.pos, 18 + this.floorIndex * 4);
+    if (Math.random() < (a.elite ? 1 : a.boss ? 0 : 0.1 * (this.difficulty.orbChance ?? 1))) this.spawnDrop('health', a.pos, 18 + this.floorIndex * 4);
     // kill credit
     if (killer === this.player.id) this.onLocalKill(a);
     else if (killer) this.net?.sendTo(killer, { t: 'kc', id: a.id, el, x: a.pos.x, z: a.pos.z, hx: a.mask & ST.hex ? 1 : 0, b: a.mask & ST.burn ? 1 : 0 });
@@ -800,6 +807,7 @@ export class Game {
   onLocalKill(a, hexed, burning) {
     const p = this.player;
     p.onDealtDamage(0, true);
+    this.events.emit('kill', a);
     if (p.stats.hexKill && (hexed ?? (a && a.mask & ST.hex))) {
       p.heal(5);
       for (const s in p.cds) if (p.cds[s] > 0) p.cds[s] = Math.max(0, p.cds[s] - 1);
@@ -1225,6 +1233,7 @@ export class Game {
       this.collision.setDoorBlocked(door, locked);
     }
     this.audio?.play(locked ? 'door_close' : 'door_open', { pos: new THREE.Vector3(room.cx, 1, room.cz) });
+    this.events.emit('roomLock', room, locked);
     if (locked) this.critters?.startle(new THREE.Vector3(room.cx, 1, room.cz), Math.max(room.w, room.h) * T);
     if (locked) {
       this.audio?.setMusic(room.type === ROOM.BOSS ? 'boss' : 'combat');
@@ -1239,6 +1248,7 @@ export class Game {
   slowMo(dur, k) { if (!this.slow || this.slow.k > k) this.slow = { t: 0, dur, k }; }
 
   onRoomCleared(room) {
+    this.events.emit('roomClear', room);
     this.audio?.setMusic('explore');
     this.audio?.play('room_clear');
     // the last kill lands heavy: a breath of slow motion and a warm wash of light
@@ -1252,7 +1262,7 @@ export class Game {
     // revive dead teammates at the end of a room
     if (this.player.dead) { this.player.dead = false; this.player.downed = false; this.player.hp = Math.round(this.player.maxHp * 0.3); this.player.spawnAt(room.cx, room.cz, this.player.yaw); this.ui?.toast('You return from beyond the veil'); }
     if (this.player.downed) this.player.revive(0.3);
-    else if (this.player.alive && this.player.hp < this.player.maxHp) this.player.heal(this.player.maxHp * 0.15); // a breath of respite between fights
+    else if (this.player.alive && this.player.hp < this.player.maxHp) this.player.heal(this.player.maxHp * 0.15 * (this.difficulty.clearHeal ?? 1)); // a breath of respite between fights
     this.spawnPedestal(room, room.type === ROOM.TRIAL ? (room.trialWon ? 2 : 0) : room.type === ROOM.ELITE ? 1 : 0);
     if (this._ctxTips?.sigil) { this._tipQ?.unshift(this._ctxTips.sigil); this._ctxTips.sigil = null; }
     if (this.isHost) {
@@ -1309,6 +1319,7 @@ export class Game {
 
   bossDefeated() {
     const room = this.level.bossRoom;
+    this.events.emit('bossDown');
     this.audio?.play('victory_sting');
     this.audio?.setMusic('explore');
     this.vfx.addShake(1);
@@ -1359,8 +1370,7 @@ export class Game {
     this.ended = true;
     this.net?.broadcast({ t: 'victory' });
     this.audio?.setMusic('victory');
-    this.ui?.endScreen(true, this);
-    saveRunStats(this, true);
+    if (!this.events.emit('end', true)) this.ui?.endScreen(true, this); // the run summary (src/meta) listens
   }
 
   _checkRunEnd(dt = 1 / 60) {
@@ -1379,8 +1389,7 @@ export class Game {
     this.net?.broadcast({ t: 'defeat' });
     this.audio?.setMusic('defeat');
     this.audio?.play('defeat_sting');
-    this.ui?.endScreen(false, this);
-    saveRunStats(this, false);
+    if (!this.events.emit('end', false)) this.ui?.endScreen(false, this);
   }
 
   onLocalDowned() {
@@ -1430,6 +1439,7 @@ export class Game {
       if (this.reviveHold >= 3) {
         this.reviveHold = 0;
         this.net?.sendTo(reviveTarget.id, { t: 'revive', f: 0.4 });
+        this.events.emit('revive', reviveTarget);
         this.audio?.play('revive');
       }
       return;
@@ -1528,6 +1538,7 @@ export class Game {
     const p = this.player;
     p.upgrades.push(c);
     p.recomputeStats();
+    this.events.emit('tome', c);
     if (c.def.id === 'phoenix') { /* handled via stats.extraLives */ }
     this.audio?.play('tome_pick');
     this.vfx.burst(p.eye.clone().add(p.forward().multiplyScalar(1)), { element: 'arcane', count: 30, speed: 3, life: 1, size: 0.15, sprite: SPR.STAR });
@@ -1538,6 +1549,7 @@ export class Game {
     p.relics.push(r);
     r.def.onGain?.(p);
     p.recomputeStats();
+    this.events.emit('relic', r);
     this.audio?.play('tome_pick');
     this.ui?.toast(`Relic: ${r.def.name}`, '#ffb030');
   }
@@ -1678,22 +1690,8 @@ function makeShopStock(game, p) {
   for (const t of tomes) items.push({ name: t.def.name, desc: (t.def.aug ? `Augment · ${t.def.spellName}. ` : '') + t.def.desc(t.mult), icon: t.def.icon, rarity: t.rarity, price: [50, 90, 150, 240][t.rarity] + f * 15, apply: () => game.grantTome(t) });
   const rel = rollRelics(p, 1);
   for (const r of rel) items.push({ name: r.def.name, desc: r.def.desc, icon: r.def.icon, price: 180 + f * 25, relic: true, apply: () => game.grantRelic(r) });
+  for (const it of items) it.price = Math.round(it.price * (game.difficulty.shopCost ?? 1)); // the Avarice pact
   return items;
-}
-
-function saveRunStats(game, won) {
-  try {
-    const key = 'arcane-ascent-stats';
-    const s = JSON.parse(localStorage.getItem(key) || '{}');
-    s.runs = (s.runs ?? 0) + 1;
-    if (won) s.wins = (s.wins ?? 0) + 1;
-    s.bestFloor = Math.max(s.bestFloor ?? 0, game.floorIndex + 1);
-    s.kills = (s.kills ?? 0) + game.stats.kills;
-    const c = game.player.classId;
-    s.classWins = s.classWins ?? {};
-    if (won) s.classWins[c] = (s.classWins[c] ?? 0) + 1;
-    localStorage.setItem(key, JSON.stringify(s));
-  } catch { /* storage unavailable */ }
 }
 
 export { typeIndex, soundEl, K_WATER, ROOM };

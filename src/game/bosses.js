@@ -44,7 +44,8 @@ export class BossBrain {
     return best;
   }
   players() { return this.g.allPlayers().filter((p) => p.alive && !p.dead && !p.downed); }
-  get hpf() { return this.a.hp / this.a.maxHp; }
+  // the Wrath pact (game.difficulty.bossEnrage) brings every later phase on sooner
+  get hpf() { return this.a.hp / this.a.maxHp - (this.g.difficulty?.bossEnrage ?? 0); }
   get dmg() { return this.a.dmg; }
 
   modifyDamage(dmg, H) {

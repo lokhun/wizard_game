@@ -88,7 +88,7 @@ export class Director {
   partySize() { return Math.max(1, this.g.allPlayers().length); }
   hpScale() { return FLOOR_HP[this.floor] * (1 + 0.32 * (this.partySize() - 1)) * (this.g.difficulty?.enemyHp ?? 1); }
   dmgScale() { return FLOOR_DMG[this.floor] * (this.g.difficulty?.enemyDamage ?? 1); }
-  countScale() { return 1 + 0.5 * (this.partySize() - 1); }
+  countScale() { return (1 + 0.5 * (this.partySize() - 1)) * (this.g.difficulty?.enemyCount ?? 1); }
 
   spawnEnemy(type, x, z, opts = {}) {
     const def = ENEMY_DEFS[type] ?? BOSS_DEFS[type];
@@ -98,6 +98,7 @@ export class Director {
       : def.hp * this.hpScale() * (opts.elite ? 3 : 1);
     const dmg = def.dmg * this.dmgScale() * (opts.elite ? 1.3 : 1);
     const a = this.g.actors.spawn(type, x, z, { hp, dmg, elite: opts.elite, affix: opts.affix, yaw: opts.yaw ?? Math.random() * 6.28, dormant: opts.dormant, homeRoom: opts.homeRoom, spawnFx: opts.spawnFx });
+    if (!BOSS_DEFS[type]) a.speedMult *= this.g.difficulty?.enemySpeed ?? 1; // the Hunt pact
     if (this.active && !opts.noCredit) this.active.spawned.add(a.id);
     return a;
   }
@@ -184,7 +185,8 @@ export class Director {
       let budget = (8 + f * 3 + depth * 1.2 + w * 2.5) * this.countScale() * (trial ? 1.45 : 1);
       const list = [];
       if (room.type === ROOM.ELITE && w === nWaves - 1) {
-        list.push({ type: rng.pick(b.elites), elite: false, champion: true, role: 'heavy' });
+        // the Champions pact: the chamber's champion bears an affix too
+        list.push({ type: rng.pick(b.elites), elite: false, champion: true, role: 'heavy', affix: this.g.difficulty?.eliteAffix ? rng.pick(AFFIXES) : null });
         budget *= 0.4;
       }
       // the opening wave uses a simple, readable squad; later waves get nastier ones
@@ -199,7 +201,7 @@ export class Director {
         const pack = def.pack ? rng.int(def.pack[0], def.pack[1]) : 1;
         for (let i = 0; i < pack && ((budget > 0 && list.length < cap) || (force && i === 0)); i++) {
           // occasional champion (elite affix) from floor 2 on
-          const elite = (f >= 1 || trial) && rng.chance((trial ? 0.18 : 0.04) + f * 0.02) && def.cost >= 2;
+          const elite = (f >= 1 || trial) && rng.chance(((trial ? 0.18 : 0.04) + f * 0.02) * (this.g.difficulty?.champions ?? 1)) && def.cost >= 2;
           list.push({ type, elite, affix: elite ? rng.pick(AFFIXES) : null, role: roleOf(type) });
           budget -= def.cost * (elite ? 3 : 1);
         }
