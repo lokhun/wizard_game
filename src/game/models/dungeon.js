@@ -338,6 +338,8 @@ export function buildHeadsman(rig, o = {}) {
     for (const S of ['L', 'R']) rig.add('arm' + S, 'iron', mergeRaw([0, 1, 2].map((i) => xf(G.tor(0.08, 0.014, 4, 12), { y: -0.12 - i * 0.08, rx: Math.PI / 2 + (i % 2) * 0.3 }))), {}, { c: DARKSTEEL });
   }
   // massive executioner's axe
+  // (o.noAxe: the caller hangs its own weapon and muzzle)
+  if (o.noAxe) return D;
   addAxe(rig, 'handR', { len: boss ? 1.95 : 1.75, grip: 0.18, headW: boss ? 0.62 : 0.5, headH: boss ? 0.78 : 0.62, headMat: 'steel', headC: [0.95, 0.92, 0.9], double: boss });
   if (boss) rig.add('handR', 'cloth', mergeRaw([tube([[0.0, 0.04, 1.2], [0.03, -0.08, 1.15], [0.0, -0.25, 1.18]], 0.012, 6, 3)]), { y: -0.07 }, { c: [0.3, 0.02, 0.02], anim: 1 });
   rig.socket('muzzle', 'handR', 0, -0.07, boss ? 1.4 : 1.2);

@@ -425,7 +425,8 @@ export class ActorManager {
         // bodies linger so the room remembers the fight; the oldest sink first when there are many
         const sinkAt = a.boss ? 9 : a.deadT > this._sinkOlder ? 1.8 : CORPSE_LINGER;
         if (a.model) {
-          if (a.deadT < 1.8) a.model.update(dt, { anim: 'death', t: a.animT, speed: 0, progress: a.progress, attackType: '' });
+          // bosses get a longer death performance (visual only: the model keeps animating past progress 1)
+          if (a.deadT < (a.boss ? 4.5 : 1.8)) a.model.update(dt, { anim: 'death', t: a.animT, speed: 0, progress: a.progress, attackType: '' });
           if (a.deadT > sinkAt) {
             a.sinkT = (a.sinkT ?? 0) + dt;
             a.model.root.position.y = a.pos.y - a.sinkT * 0.7;
