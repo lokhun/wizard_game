@@ -1,0 +1,27 @@
+# Production: /opt/wizard on the lokhunproject.fun Droplet, next to /opt/rift, /opt/house and /opt/puzzle.
+# A static file server for dist/ on loopback only; the rift Caddy terminates HTTPS for
+# play.lokhunproject.fun and proxies here. Co-op is peer-to-peer, so nothing else runs.
+services:
+  web:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./site:/srv:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    read_only: true
+    tmpfs: [/data, /config]
+    mem_limit: 64m
+    pids_limit: 64
+    cap_drop: [ALL]
+    # The image's caddy binary carries this file capability; without it exec fails.
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: '2'}
+    healthcheck:
+      test: [CMD, wget, -qO-, http://127.0.0.1:3003/healthz]
+      interval: 30s
+      timeout: 3s
+      retries: 3
