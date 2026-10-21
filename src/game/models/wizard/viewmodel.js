@@ -7,6 +7,7 @@ import { lathe, torus, mergeGeos, xf, mulberry, V, uvs } from './shapes.js';
 import { wob } from './fx.js';
 import { SigilPool } from './sigil.js';
 import { BladeTrail } from './trail.js';
+import { getCostume } from './costumes.js';
 
 // ---------------------------------------------------------------------------
 // First-person viewmodel: two hands with robe sleeves, the class focus and
@@ -143,21 +144,35 @@ class Spring {
   }
 }
 
-function sleeveGeo(meta, seed) {
-  // bell sleeve along +Y (y=0 at the cuff), elliptical, ragged cuff
-  const prof = [[0.05, 0.0], [0.052, 0.012], [0.056, 0.06], [0.061, 0.16], [0.067, 0.32], [0.072, 0.55]];
+// first-person sleeve along +Y (y = 0 at the cuff), elliptical, shaped like
+// the class costume's sleeve so your arms match what partners see
+const SLEEVE_PROFILES = {
+  fitted: [[0.047, 0.0], [0.049, 0.012], [0.052, 0.06], [0.057, 0.16], [0.063, 0.32], [0.069, 0.55]],
+  flare: [[0.062, 0.0], [0.061, 0.012], [0.056, 0.06], [0.058, 0.16], [0.064, 0.32], [0.07, 0.55]],
+  quilt: [[0.05, 0.0], [0.052, 0.012], [0.055, 0.06], [0.06, 0.16], [0.066, 0.32], [0.072, 0.55]],
+};
+// a warm, bright cuff colour reads as gold braid: give it a metal edge
+const gilt = (hex) => { const r = hex >> 16, g = (hex >> 8) & 255, b = hex & 255; return r > 0xb0 && r > g && g > b * 1.3; };
+function sleeveGeo(sl, seed) {
+  const bw = (sl.bell ?? 0.1) * 0.82;
+  const prof = sl.kind === 'bell'
+    ? [[bw, 0.0], [bw * 0.98, 0.012], [bw * 0.86, 0.07], [Math.max(0.064, bw * 0.72), 0.18], [0.068, 0.34], [0.072, 0.55]]
+    : SLEEVE_PROFILES[sl.kind] ?? SLEEVE_PROFILES.fitted;
   const g = uvs(lathe(prof.map(([r, y]) => [r, y]), 22), 1, 1.6);
   const p = g.getAttribute('position');
   const rnd = mulberry(seed);
   const jag = Array.from({ length: 23 }, () => rnd());
+  const tatter = sl.tatter ? 0.035 : 0.012;
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
     const a = Math.atan2(z, x);
     const k = Math.round(((a + Math.PI) / (Math.PI * 2)) * 22) % 22;
     let ny = y;
-    if (y < 0.001) ny = y - jag[k] * 0.012;
-    // folds
-    const fold = 1 + Math.sin(a * 5 + y * 20) * 0.04 * Math.min(1, y * 10);
+    if (y < 0.001) ny = y - jag[k] * tatter;
+    // folds (deeper on a loose bell), or stitched quilt ridges
+    const fold = sl.kind === 'quilt'
+      ? 1 + Math.abs(Math.sin(y * 70)) * 0.05 * Math.min(1, y * 10)
+      : 1 + Math.sin(a * 5 + y * 20) * (sl.kind === 'bell' ? 0.07 : 0.04) * Math.min(1, y * 10);
     p.setXYZ(i, x * fold, ny, z * fold * 0.85);
   }
   g.computeVertexNormals();
@@ -175,8 +190,11 @@ export function createViewModel(classId, ctx) {
   const sway = new THREE.Group();
   root.add(sway);
 
-  const robe = kit.clothDS(meta.robe);
-  const trim = kit.cloth(meta.trim);
+  // sleeves follow the class costume (cut, colour and cuff)
+  const cos = getCostume(classId, meta);
+  const sl = cos.sleeves ?? { kind: 'fitted', cuffKind: 'turn' };
+  const robe = kit.clothDS(sl.col ?? cos.coat?.col ?? cos.inner?.col ?? meta.robe);
+  const trim = kit.cloth(sl.cuff ?? meta.trim);
   const gold = kit.gold();
 
   function makeSleeve(parent, at, dir, seed, hand) {
@@ -184,19 +202,41 @@ export function createViewModel(classId, ctx) {
     s.position.copy(at).addScaledVector(dir.clone().normalize(), 0.035);
     s.quaternion.setFromUnitVectors(V(0, 1, 0), dir.clone().normalize());
     parent.add(s);
-    const sg = sleeveGeo(meta, seed);
+    const sg = sleeveGeo(sl, seed);
     s.name = 'sleeve';
     s.add(new THREE.Mesh(sg, robe));
-    const cuff = mergeGeos([
-      xf(lathe([[0.0535, 0.006], [0.0565, 0.012], [0.057, 0.03], [0.054, 0.036]], 22), { sz: 0.85 }),
-    ]);
-    s.add(new THREE.Mesh(cuff, trim));
-    const band = torus(0.0575, 0.0022, 4, 28, Math.PI * 2, { y: 0.021, rx: Math.PI / 2, sx: 1, sy: 0.85 });
-    s.add(new THREE.Mesh(band, gold));
-    // inner dark lining so the open end never shows a hollow
-    const lin = lathe([[0.046, 0.004], [0.05, 0.2]], 14);
+    const bell = sl.kind === 'bell';
+    const r0 = bell ? (sl.bell ?? 0.1) * 0.82 : (SLEEVE_PROFILES[sl.kind] ?? SLEEVE_PROFILES.fitted)[0][0];
+    const ck = sl.cuffKind ?? (bell ? (sl.cuff ? 'hem' : null) : 'turn');
+    if (ck === 'turn' || ck === 'hem') {
+      // turned-back cuff (or a trimmed hem on a bell), with a fine gilt edge
+      const w = ck === 'hem' ? 0.016 : 0.032;
+      const cuff = xf(lathe([[r0 + 0.0015, 0.004], [r0 + 0.0045, 0.01], [r0 + 0.005, w], [r0 + 0.002, w + 0.006]], 22), { sz: 0.85 });
+      s.add(new THREE.Mesh(cuff, trim));
+      if (!sl.cuff || gilt(sl.cuff)) s.add(new THREE.Mesh(torus(r0 + 0.0055, 0.0022, 4, 28, Math.PI * 2, { y: w * 0.62, rx: Math.PI / 2, sx: 1, sy: 0.85 }), gold));
+    } else if (ck === 'fur') {
+      const fur = xf(lathe([[r0 + 0.002, 0.0], [r0 + 0.016, 0.008], [r0 + 0.019, 0.026], [r0 + 0.012, 0.044], [r0 + 0.002, 0.05]], 22), { sz: 0.85 });
+      const fp = fur.getAttribute('position');
+      for (let i = 0; i < fp.count; i++) { const a = Math.atan2(fp.getZ(i), fp.getX(i)); const k = 1 + Math.sin(a * 23 + fp.getY(i) * 90) * 0.06; fp.setX(i, fp.getX(i) * k); fp.setZ(i, fp.getZ(i) * k); }
+      fur.computeVertexNormals();
+      s.add(new THREE.Mesh(fur, kit.fur(0xeceae6)));
+    } else if (ck === 'bracer') {
+      // a laced leather bracer over the end of a fitted sleeve
+      const br = xf(lathe([[r0 + 0.002, 0.0], [r0 + 0.006, 0.006], [r0 + 0.006, 0.1], [r0 + 0.003, 0.108]], 22), { sz: 0.85 });
+      s.add(new THREE.Mesh(br, kit.leather(sl.cuff ?? 0x4a3424)));
+      const ls = [];
+      for (let k = 0; k < 4; k++) ls.push(torus(r0 + 0.0068, 0.0016, 3, 24, Math.PI * 2, { y: 0.02 + k * 0.024, rx: Math.PI / 2, sx: 1, sy: 0.85 }));
+      s.add(new THREE.Mesh(mergeGeos(ls), kit.leather(0x1e140c)));
+    } else if (ck === 'wrap') {
+      // cloth wraps wound over the cuff
+      const prof = [];
+      for (let k = 0; k <= 12; k++) prof.push([r0 + 0.002 + (k % 2) * 0.004, k * 0.009]);
+      s.add(new THREE.Mesh(xf(lathe(prof, 22), { sz: 0.85 }), kit.cloth(sl.cuff ?? 0x6a5a40)));
+    }
+    // the inside of the sleeve: a dark lining, or a bell's under-sleeve
+    const lin = lathe(bell ? [[0.05, 0.0], [0.05, 0.03], [0.052, 0.2]] : [[r0 - 0.002, 0.004], [r0 + 0.002, 0.2]], 14);
     lin.scale(1, 1, 0.85);
-    s.add(new THREE.Mesh(lin, kit.plain(0x050404, 1)));
+    s.add(new THREE.Mesh(lin, bell ? kit.cloth(sl.under ?? cos.inner?.col ?? 0x202020) : kit.plain(0x050404, 1)));
     // forearm from the wrist into the sleeve (follows the sleeve, the wrist bends)
     const fa = lathe([[0.024, -0.045], [0.0255, -0.02], [0.028, 0.03], [0.033, 0.12], [0.036, 0.25]], 14);
     fa.scale(1, 1, 0.78);
