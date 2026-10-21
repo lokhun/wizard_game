@@ -144,7 +144,7 @@ export const executioner = {
     addFx(rig, 'chest', 'trail', swingTrailGeo(1.15, 2.05, 2.4, HDR(0xffd0b0, 0.55)));
     addFx(rig, 'base', 'ring', softRing(0.75, 1.0, 40, HDR(0xffc090, 0.9), 0.6), { y: 0.03 });
     addFx(rig, 'base', 'dust', softDisc(1, 28, [0.13, 0.11, 0.09], 1.2), { y: 0.05 });
-    const hot = paint(xf(extrude(ax.outline.filter((_, i) => i > 2 && i < 12).concat([[0.62, 1.7], [0.7, 1.45]]), 0.062, 0, 1), { ry: -Math.PI / 2 }), (v) => { const e = smooth(0.6, 0.84, v.z); return [3.2 * (0.4 + e), 0.9 * (0.3 + e * 0.8), 0.15, 0.25 + e * 0.75]; });
+    const hot = paint(xf(extrude(ax.outline.filter((_, i) => i > 2 && i < 12).concat([[0.62, 1.7], [0.7, 1.45]]), 0.062, 0, 1), { ry: -Math.PI / 2 }), (v) => { const e = smooth(0.6, 0.84, v.z); return [5 * (0.4 + e), 1.4 * (0.3 + e * 0.8), 0.22, 0.35 + e * 0.65]; });
     addFx(rig, 'axe', 'hot', hot);
     const sp = [];
     const RS = rng(5);
