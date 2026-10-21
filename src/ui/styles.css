@@ -184,7 +184,7 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .prompt .progress { width: 220px; height: 5px; background: #222; margin: 8px auto 0; border: 1px solid #000; }
 .prompt .progress i { display: block; height: 100%; background: var(--gold); }
 
-.banner { position: absolute; left: 0; right: 0; top: 15.5%; text-align: center; pointer-events: none; }
+.banner { position: absolute; left: 0; right: 0; top: max(15.5%, 116px); /* clear of the boss bar on short windows */ text-align: center; pointer-events: none; }
 .banner .b1 { font-family: 'Cinzel', var(--serif); font-weight: 600; font-size: clamp(26px, 3.6vw, 50px); letter-spacing: 0.12em; text-shadow: 0 0 30px currentColor, 0 3px 4px #000; }
 .banner .b2 { font-family: var(--serif); font-size: 14px; color: var(--text); letter-spacing: 0.3em; text-transform: uppercase; margin-top: 6px; text-shadow: 0 2px 3px #000; }
 .banner .line { width: 0; height: 1px; margin: 10px auto; background: linear-gradient(90deg, transparent, currentColor, transparent); transition: width 0.8s ease; }
