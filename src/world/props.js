@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { worldBox, tf, colorize } from '../render/geo.js';
+import { worldBox, tf, colorize, GeoBuilder } from '../render/geo.js';
 
 // ---------------------------------------------------------------------------
 // Procedural prop library. Each builder returns a list of [materialKey, geo]
@@ -353,7 +353,15 @@ function bookshelf(len) {
   parts.push(['wood', tf(box(len, h, 0.06), { y: h / 2 })]);
   for (let x = -len / 2; x <= len / 2 + 0.01; x += 1.0) parts.push(['wood', tf(box(0.08, h, d), { x, y: h / 2 })]);
   const rngL = mulberry(Math.floor(len * 1000));
-  const colors = [0x5a1a14, 0x1d2c44, 0x2a3a1e, 0x4a3218, 0x3c1838, 0x6a5a3a];
+  const colors = [0x5a1a14, 0x1d2c44, 0x2a3a1e, 0x4a3218, 0x3c1838, 0x6a5a3a].map((c) => new THREE.Color(c));
+  // every book is one shared unit box stretched by its matrix, all merged into a single part
+  const books = new GeoBuilder();
+  const book = (w, bh, x, y, z, rz) => {
+    _bq.setFromAxisAngle(_bz, rz);
+    _bm.compose(_bp.set(x, y, z), _bq, _bs.set(w, bh, 0.5));
+    const c = colors[Math.floor(rngL() * colors.length)];
+    books.addGeometry(unitBook(), _bm, [c.r, c.g, c.b]);
+  };
   for (let shelf = 0; shelf < 5; shelf++) {
     const y = 0.1 + shelf * 0.62;
     parts.push(['wood', tf(box(len, 0.05, d), { y })]);
@@ -363,20 +371,24 @@ function bookshelf(len) {
         if (leanProps) {
           // runs of books drawn as a few wider blocks
           const w = Math.min(len / 2 - 0.08 - x, 0.35 + rngL() * 0.45), bh = 0.36 + rngL() * 0.12;
-          parts.push(['leather', colorize(tf(box(w, bh, 0.5, 2), { x: x + w / 2, y: y + bh / 2 + 0.03, z: side * 0.45 }), colors[Math.floor(rngL() * colors.length)])]);
+          book(w, bh, x + w / 2, y + bh / 2 + 0.03, side * 0.45, 0);
           x += w + 0.01;
           continue;
         }
         const w = 0.05 + rngL() * 0.06, bh = 0.32 + rngL() * 0.2;
         if (rngL() < 0.08) { x += 0.2; continue; }
         const lean = rngL() < 0.1 ? 0.25 : 0;
-        parts.push(['leather', colorize(tf(box(w, bh, 0.5, 2), { x: x + w / 2, y: y + bh / 2 + 0.03, z: side * 0.45, rz: lean }), colors[Math.floor(rngL() * colors.length)])]);
+        book(w, bh, x + w / 2, y + bh / 2 + 0.03, side * 0.45, lean);
         x += w + 0.005;
       }
     }
   }
+  parts.push(['leather', books.build()]);
   return parts;
 }
+const _bm = new THREE.Matrix4(), _bq = new THREE.Quaternion(), _bp = new THREE.Vector3(), _bs = new THREE.Vector3(), _bz = new THREE.Vector3(0, 0, 1);
+let _unitBook = null;
+const unitBook = () => (_unitBook ??= worldBox(1, 1, 1, 0.12));
 function mulberry(a) { return function () { let t = (a += 0x6d2b79f5); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 
 function bookPile(rng) {

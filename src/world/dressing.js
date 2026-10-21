@@ -18,7 +18,6 @@ import { skullGeo, PROPS } from './props.js';
 
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
 const _m = new THREE.Matrix4(), _e = new THREE.Euler();
-const ni = (g) => (g.index ? g.toNonIndexed() : g);
 // cylinder with world-scaled UVs (u around the circumference, v along the height, 2 m per repeat)
 const cylG = (rt, rb, h, seg, open = false, t0 = 0, tl = Math.PI * 2) => {
   const g = new THREE.CylinderGeometry(rt, rb, h, seg, 1, open, t0, tl);
@@ -92,7 +91,7 @@ function bandGeo(curve, in0, in1, z0, z1, { outer = true, back = false, ends = f
     const tx = c.ny, ty = -c.nx; // tangent (direction of travel)
     quadN(b, P(c, in0, z0), P(c, in1, z0), P(c, in1, z1), P(c, in0, z1), [tx * s, ty * s, 0], [[0, 0], [0.3, 0], [0.3, 0.3], [0, 0.3]]);
   }
-  return ni(b.build());
+  return (b.build());
 }
 
 // Spandrel: fills the opening between an arch curve and the line y=top,
@@ -106,7 +105,7 @@ function spandrelGeo(curve, top, z0, z1) {
     }
     quadN(b, [a.x, a.y, z0], [c.x, c.y, z0], [c.x, c.y, z1], [a.x, a.y, z1], [-(a.nx + c.nx) / 2, -(a.ny + c.ny) / 2, 0], [[a.l * 0.5, 0], [c.l * 0.5, 0], [c.l * 0.5, (z1 - z0) * 0.5], [a.l * 0.5, (z1 - z0) * 0.5]], 0.7);
   }
-  return ni(b.build());
+  return (b.build());
 }
 
 // Box whose top face is pulled back (a weathered buttress slope): front-top edge at depth d1.
@@ -116,7 +115,7 @@ function wedgeGeo(w, h, d0, d1) {
   for (let i = 0; i < p.count; i++) if (p.getY(i) > 0 && p.getZ(i) > 0) p.setZ(i, p.getZ(i) - (d0 - d1));
   g.translate(0, h / 2, d0 / 2);
   g.computeVertexNormals();
-  return ni(g);
+  return (g);
 }
 
 // ---------------------------------------------------------------------------
@@ -160,7 +159,7 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
   const rng = new RNG(level.seed * 131 + level.floorIndex * 17 + 9);
   const out = { shafts: [], streams: null, flames: [] };
   const cache = new Map();
-  const G = (key, make) => { let g = cache.get(key); if (!g) cache.set(key, (g = ni(make()))); return g; };
+  const G = (key, make) => { let g = cache.get(key); if (!g) cache.set(key, (g = make())); return g; };
   const box = (w, h, d) => G(`box${w.toFixed(3)},${h.toFixed(3)},${d.toFixed(3)}`, () => worldBox(w, h, d));
 
   // world placement in a run's wall frame: x along the wall, y up, z out of the wall
@@ -707,7 +706,7 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
             }
             wallDecal(run, s, 1.1, run.h0 + 0.6, run.h0 + 2.25, 6, 0.017, 0.8);
             // now and then the last prisoner is still in them, slumped against the wall
-            if (hi && isRoom(run) && rng.chance(0.4)) for (const [k, g] of PROPS.skeletonSit(() => rng.next())) put(k, ni(g), run, s, 0.1, run.h0, 0.9);
+            if (hi && isRoom(run) && rng.chance(0.4)) for (const [k, g] of G('skel', () => PROPS.skeletonSit(() => 0.5))) put(k, g, run, s, 0.1, run.h0, 0.9);
             else if (isRoom(run) && rng.chance(0.4)) put('bone', G('skull', skullGeo), run, s + 0.1, 0.25, run.h0 + 0.09, 1, rng.range(-1, 1));
           } else if (r < 0.44 && bay.w >= 1.3) {
             // an ossuary niche: a dark arched recess with skulls and a guttering candle on its sill
@@ -778,6 +777,14 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
   // ---------------------------------------------------------------- hall of whispers
   if (id === 'keep') {
     const spines = [0x4a1612, 0x1a2640, 0x24341a, 0x3e2a14, 0x341430, 0x5a4a30, 0x2a1a10, 0x16201c];
+    // unit book: x -0.5..0.5 along the shelf, y 0..1 up, z 0..1 out; the top and side are shaded darker
+    const bookGeo = G('book', () => {
+      const g = new GeoBuilder();
+      quadN(g, [-0.5, 0, 1], [0.5, 0, 1], [0.5, 1, 1], [-0.5, 1, 1], [0, 0, 1], [[0, 0], [0.1, 0], [0.1, 0.4], [0, 0.4]], 1);
+      quadN(g, [-0.5, 1, 0], [0.5, 1, 0], [0.5, 1, 1], [-0.5, 1, 1], [0, 1, 0], [[0, 0], [0.1, 0], [0.1, 0.3], [0, 0.3]], 0.7);
+      quadN(g, [-0.5, 0, 0], [-0.5, 0, 1], [-0.5, 1, 1], [-0.5, 1, 0], [-1, 0, 0], [[0, 0], [0.3, 0], [0.3, 0.4], [0, 0.4]], 0.6);
+      return g.build();
+    });
     const bookcase = (run, s0, s1, h) => {
       const w = s1 - s0, s = (s0 + s1) / 2, D = 0.36;
       put('wood', box(w, h, 0.03), run, s, 0.015, run.h0 + h / 2, 0.45);
@@ -786,7 +793,6 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
       if (!lo) put('wood', box(w + 0.22, 0.12, D + 0.1), run, s, (D + 0.1) / 2, run.h0 + h + 0.16, 0.7);
       put('wood', box(w, 0.16, D), run, s, D / 2, run.h0 + 0.08, 0.6);
       const nSh = Math.floor((h - 0.2) / 0.56);
-      const b = new GeoBuilder();
       for (let k = 0; k <= nSh; k++) {
         const y = run.h0 + 0.16 + k * 0.56;
         put('wood', box(w - 0.1, 0.04, D - 0.02), run, s, D / 2, y, 0.75);
@@ -797,45 +803,17 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
           if (lo) {
             const bw = Math.min(s1 - 0.08 - x, 0.3 + rng.next() * 0.4), bh = 0.36 + rng.next() * 0.1;
             const c = new THREE.Color(spines[rng.int(0, spines.length - 1)]);
-            put('leather', box(bw, bh, 0.26), run, x + bw / 2, 0.16, y + 0.02 + bh / 2, [c.r * 2, c.g * 2, c.b * 2]);
+            put('leather', G('ublk', () => worldBox(1, 1, 1, 0.2)), run, x + bw / 2, 0.16, y + 0.02 + bh / 2, [c.r * 2, c.g * 2, c.b * 2], 0, bw, bh, 0.26);
             x += bw + 0.01; continue;
           }
           if (rng.chance(0.06)) { x += 0.12 + rng.next() * 0.2; continue; }
           const bw = 0.035 + rng.next() * 0.055, bh = 0.28 + rng.next() * 0.2, bd = 0.22 + rng.next() * 0.08;
           if (x + bw > s1 - 0.1) break;
           const c = new THREE.Color(spines[rng.int(0, spines.length - 1)]).multiplyScalar(1.6 + rng.next() * 0.8);
-          const col = [c.r, c.g, c.b], top = [c.r * 0.7, c.g * 0.7, c.b * 0.7];
-          const y0 = y + 0.02, y1 = y0 + bh, z1 = 0.04 + bd;
-          // local wall-frame quads (x along, z out); transformed below
-          quadN(b, [x, y0, z1], [x + bw, y0, z1], [x + bw, y1, z1], [x, y1, z1], [0, 0, 1], [[0, 0], [bw * 2, 0], [bw * 2, bh * 2], [0, bh * 2]], col);
-          quadN(b, [x, y1, 0.04], [x + bw, y1, 0.04], [x + bw, y1, z1], [x, y1, z1], [0, 1, 0], [[0, 0], [bw * 2, 0], [bw * 2, bd * 2], [0, bd * 2]], top);
-          if (hi) quadN(b, [x, y0, 0.04], [x, y0, z1], [x, y1, z1], [x, y1, 0.04], [-1, 0, 0], [[0, 0], [bd * 2, 0], [bd * 2, bh * 2], [0, bh * 2]], top);
+          // one shared unit book (spine, top, one side) stretched into place
+          put('leather', bookGeo, run, x + bw / 2, 0.04, y + 0.02, [c.r, c.g, c.b], 0, bw, bh, bd);
           x += bw + 0.004;
         }
-      }
-      if (b.count) {
-        // books were laid out in run coordinates: map local x (along) / z (out) into the world
-        const g = b.build();
-        const p = g.getAttribute('position'), nn = g.getAttribute('normal');
-        for (let i = 0; i < p.count; i++) {
-          const ax = p.getX(i), az = p.getZ(i);
-          runPos(run, ax, az);
-          p.setX(i, _p.x); p.setZ(i, _p.z);
-          const lx = nn.getX(i), lz = nn.getZ(i);
-          // along-axis unit and wall normal in world
-          const ux = run.axis === 'x' ? 1 : 0, uz = run.axis === 'x' ? 0 : 1;
-          nn.setX(i, lx * ux + lz * run.n[0]); nn.setZ(i, lx * uz + lz * run.n[2]);
-        }
-        // the along-axis flip can mirror the winding: re-wind triangles whose normals now point backwards
-        const ix = g.index;
-        for (let t = 0; t < ix.count; t += 3) {
-          const a = ix.getX(t), bb = ix.getX(t + 1), c = ix.getX(t + 2);
-          const e1x = p.getX(bb) - p.getX(a), e1y = p.getY(bb) - p.getY(a), e1z = p.getZ(bb) - p.getZ(a);
-          const e2x = p.getX(c) - p.getX(a), e2y = p.getY(c) - p.getY(a), e2z = p.getZ(c) - p.getZ(a);
-          const cx = e1y * e2z - e1z * e2y, cy = e1z * e2x - e1x * e2z, cz = e1x * e2y - e1y * e2x;
-          if (cx * nn.getX(a) + cy * nn.getY(a) + cz * nn.getZ(a) < 0) { ix.setX(t + 1, c); ix.setX(t + 2, bb); }
-        }
-        B('leather').addGeometry(g, _m.identity());
       }
     };
     const tapestryCols = [[0x7a1a20, 0xc89a40], [0x22386e, 0xb89a50], [0x2e4a24, 0xc89a40], [0x5a1e58, 0xd0a850]];
