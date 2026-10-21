@@ -60,6 +60,20 @@
     }
   } catch (hit) {
     if (!hit || hit.l === undefined) throw hit;
+    // which glowing objects make it: hide each in turn and see how far the frame darkens
+    const camP = g.renderer.camera.position, full = lum(), blame = [];
+    const cands = [];
+    g.scene.traverse((o) => { if ((o.isMesh || o.isSprite || o.isPoints) && o.visible && o.material && o.material.blending !== 1) cands.push(o); });
+    for (const o of cands) {
+      o.visible = false;
+      const d = full - lum();
+      o.visible = true;
+      if (d < 2) continue;
+      const m = o.material, wp = o.getWorldPosition(camP.clone());
+      blame.push({ d: +d.toFixed(1), what: [o.name, o.type, m.type, m.name, o.geometry?.type].filter(Boolean).join('/'), uni: m.uniforms ? Object.keys(m.uniforms).join(',') : undefined, dist: +wp.distanceTo(camP).toFixed(1), scale: o.scale.toArray().map((v) => +v.toFixed(2)) });
+    }
+    blame.sort((a, b) => b.d - a.d);
+    hit.blame = blame.slice(0, 5);
     // pin the offending frame over the page for the closing screenshot
     g.renderer.render(performance.now() / 1000);
     const shot = document.createElement('canvas');
