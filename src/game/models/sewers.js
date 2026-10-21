@@ -158,13 +158,6 @@ export const slime = {
       anim: (v) => smooth(0.05, 0.4, v.y),
       cfn: (v) => { const k = 0.45 + v.y * 0.7; return [0.22 * k, 0.75 * k, 0.12 * k]; },
     });
-    // fat drips bulging down the flanks (half sunk into the surface)
-    const drips = [];
-    for (let i = 0; i < 9; i++) {
-      const a = (i / 9) * TAU + 0.3, y = 0.16 + (i % 4) * 0.07, r = Math.sqrt(Math.max(0, 0.52 * 0.52 - (y - 0.5) ** 2)) * 1.06;
-      drips.push(xf(G.sph(0.034 + (i % 3) * 0.006, 6, 5), { x: Math.sin(a) * r, y, z: Math.cos(a) * r, sy: 2.1, sx: 0.85 }));
-    }
-    rig.add('body', 'slime', mergeRaw(drips), {}, { c: [0.25, 0.8, 0.14], anim: (v) => smooth(0.05, 0.4, v.y) });
     // glowing nucleus
     rig.add('body', 'spirit', G.sph(0.16, 14, 10), { y: 0.42 }, { c: HDR(0x5aff2a, 0.22) });
     // floating debris: skull, bones, rusty blade, coins
