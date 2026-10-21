@@ -6,7 +6,9 @@ A first-person, co-op wizard roguelike for the browser. Fight your way up from t
 - **Elemental reactions**: Melt, Shatter, Overload, Electrocute, Superconduct, Combust, Blight, Purge, Hemorrhage, Paradox and Sandstorm. In co-op you can set up reactions for each other.
 - **Roguelite runs**:
   - Procedurally generated floors with ambush rooms, elite chambers, treasure rooms, shrines and a merchant.
-  - Arcane Tomes (pick 1 of 3, with four rarities) and relics.
+  - Arcane Tomes (pick 1 of 3, with four rarities).
+  - 43 **relics** from treasure rooms, elite chambers, shops and shrines. Most are procs you can see: kills loose seeking soul wisps, dashes leave fire trails, frost mines or an exploding afterimage, crits sear burning glyphs, motes of lightning orbit you, a familiar fights at your shoulder. Five are **Cursed**: big upside, real downside.
+  - Relic **sets** (Pyre, Storm, Grave, Tide, Fang, Arcanum) wake a bonus at 2 and 3 pieces.
   - 39 **spell augments**, three per class, that change how a spell works. For example, Fireball bursts into cinders, Chain Lightning forks, and the Arcane Orb boomerangs back to you.
   - A boss at the end of every realm: Mother of Filth, The Executioner, Gravemaw the Stone Wyvern, Archmage Veyrin and the Hollow King. Each boss has 3 phases.
 - **Co-op for 1–4 players**: peer-to-peer over WebRTC with a 5-letter party code, so no game server is needed.
@@ -164,7 +166,9 @@ src/
     actors.js          enemies/summons: host AI, client interpolation, death FX
     bosses.js          5 multi-phase boss scripts
     director.js        room encounters, waves, scaling
-    upgrades.js        Arcane Tomes and relics
+    upgrades.js        Arcane Tomes and relic rolls
+    relicDefs.js       relic data, sets and their stat bonuses
+    relics.js          relic procs and their (replicated) visuals
     enemyModels.js / wizardModels.js   procedural characters, viewmodels and avatars
   audio/               procedural Web Audio sound effects and generative music
   net/                 PeerJS transport + in-run message handling
@@ -183,5 +187,6 @@ The automated tests use these URL parameters:
 - `&quality=low|medium|high|ultra`: set graphics quality.
 - `&test=1`: expose `window.__game`, `window.__input` and `window.__sim(seconds)`, which advances the game without rendering.
 - `?screen=summary&demo=win|loss|coop`, `?screen=codex&tab=0-3`, `?screen=pacts|daily|select`: open a meta screen directly; add `&profile=demo` to fill the profile with sample progress (test browsers only: it overwrites the stored profile). With `test=1`, `window.__screen(name, arg)` switches between them.
+- `&relics=stormwheel,soullantern`: with `test=1`, start the run holding these relics (ids from `src/game/relicDefs.js` and `upgrades.js`).
 
 `scripts/coop-test.mjs` runs a two-browser co-op session against a local PeerJS server (`npx peerjs --port 9000 --path /wizard --host 127.0.0.1`).
