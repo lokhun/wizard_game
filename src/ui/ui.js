@@ -83,7 +83,7 @@ export class UI {
 
   clearScreens() { this.screens.innerHTML = ''; }
 
-  showMenu({ onSolo, onHost, onJoin, onSettings, onHelp, name, onName, stats }) {
+  showMenu({ onSolo, onHost, onJoin, onSettings, onHelp, name, onName, stats, onDaily, onCodex, riteLine }) {
     this.clearScreens();
     this.hudEl.classList.add('hidden');
     const s = stats ?? {};
@@ -98,10 +98,10 @@ export class UI {
         <button class="btn primary" id="bSolo">Begin the Ascent</button>
         <button class="btn" id="bHost">Host Co-op Party</button>
         <button class="btn" id="bJoin">Join a Party</button>
-        <button class="btn" id="bHelp">How to Play</button>
-        <button class="btn" id="bSettings">Settings</button>
+        ${onDaily ? `<button class="btn rite" id="bDaily">Daily Rite<span class="rs2">${esc(riteLine ?? '')}</span></button>` : ''}
+        <div class="menu-row">${onCodex ? '<button class="btn" id="bCodex">Codex</button>' : ''}<button class="btn" id="bHelp">How to Play</button><button class="btn" id="bSettings">Settings</button></div>
         ${matchMedia('(pointer: coarse)').matches && !matchMedia('(pointer: fine)').matches ? '<div class="stats-line" style="color:#ff9040">Arcane Ascent needs a keyboard and mouse — play on a computer for the full experience.</div>' : ''}
-        <div class="stats-line">${s.runs ? `Runs ${s.runs} · Victories ${s.wins ?? 0} · Deepest floor ${s.bestFloor ?? 1} · Foes slain ${s.kills ?? 0}` : 'The Hollow King awaits atop the Ashen Keep.'}</div>
+        <div class="stats-line">${s.runs ? `Runs ${s.runs} · Victories ${s.wins ?? 0} · Deepest realm ${s.bestFloor ?? 1} · Foes slain ${(s.kills ?? 0).toLocaleString('en-US')}${s.feats !== undefined ? ` · Feats ${s.feats}` : ''}` : 'The Hollow King awaits atop the Ashen Keep.'}</div>
       </div>
       <div class="credit">Co-op for up to 4 wizards · 13 classes · 5 realms</div>`;
     this.screens.appendChild(el);
@@ -111,6 +111,8 @@ export class UI {
     el.querySelector('#bJoin').onclick = onJoin;
     el.querySelector('#bSettings').onclick = onSettings;
     el.querySelector('#bHelp').onclick = onHelp;
+    if (onDaily) el.querySelector('#bDaily').onclick = onDaily;
+    if (onCodex) el.querySelector('#bCodex').onclick = onCodex;
   }
 
   showJoin({ onJoin, onBack, status }) {
@@ -140,7 +142,7 @@ export class UI {
   }
 
   // class select also doubles as the co-op lobby
-  showClassSelect({ selected, onSelect, onConfirm, onBack, lobby, ascension }) {
+  showClassSelect({ selected, onSelect, onConfirm, onBack, lobby, ascension, pacts }) {
     this.clearScreens();
     const el = document.createElement('div');
     el.className = 'screen';
@@ -170,6 +172,7 @@ export class UI {
           <div class="subtitle" style="flex:1">Ascension <span style="color:var(--text-dim);letter-spacing:0;text-transform:none;font-size:12px">— enemies +20% health, +15% damage per level</span></div>
           <button class="btn small" id="ascDown">−</button><span id="ascVal" style="font-family:var(--serif);font-size:22px;color:var(--gold);min-width:24px;text-align:center">${ascension.value}</span><button class="btn small" id="ascUp">+</button>
         </div>` : ''}
+        ${pacts ? '<div id="csPacts"></div>' : ''}
         <div class="cs-buttons">
           <button class="btn" id="bBack">Back</button>
           <button class="btn primary" id="bGo">${lobby ? (lobby.isHost ? 'Begin Ascent' : 'Ready') : 'Begin Ascent'}</button>
@@ -192,10 +195,14 @@ export class UI {
         }).join('')}</div>
         <div style="margin-top:10px;color:var(--text-dim);font-size:13px">Health ${c.hp} · Speed ${Math.round(c.speed * 100)}%</div>`;
     };
+    // pacts: html for the chosen wizard, re-bound whenever it changes
+    let cur = selected;
+    const renderPacts = () => { const box = pacts && el.querySelector('#csPacts'); if (box) { box.innerHTML = pacts.html(cur); pacts.bind?.(box, cur, renderPacts); } };
     el.querySelectorAll('.card').forEach((cd) => {
-      cd.onclick = () => { onSelect(cd.dataset.id); render(cd.dataset.id); };
+      cd.onclick = () => { cur = cd.dataset.id; onSelect(cur); render(cur); renderPacts(); };
     });
     render(selected);
+    renderPacts();
     el.querySelector('#bGo').onclick = () => onConfirm();
     if (ascension && ascension.max > 0) {
       const setA = (v) => { ascension.value = Math.max(0, Math.min(ascension.max, v)); el.querySelector('#ascVal').textContent = ascension.value; ascension.onChange?.(ascension.value); };

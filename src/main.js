@@ -17,6 +17,7 @@ import { setModelModules, getAvatar } from './game/models.js';
 import { CLASS_IDS, CLASS_META } from './game/classMeta.js';
 import { sigilTexture } from './game/models/wizard/sigil.js';
 import { TextureFactory } from './render/textures.js';
+import { attachMeta, loadProfile, resetProfile, difficultyFor, cleanPacts, pactsUnlocked, pactStrip, showPactBoard, showCodex, showDailyRite, riteLine, demoSummary, FEATS } from './meta/index.js';
 
 // Optional modules (resolved at build time; missing files are simply skipped)
 const optional = import.meta.glob(['./audio/audio.js', './game/enemyModels.js', './game/wizardModels.js']);
@@ -69,6 +70,7 @@ let mode = 'menu'; // 'menu' | 'select' | 'run'
 let selectedClass = CLASS_IDS.includes(settings.lastClass) ? settings.lastClass : 'pyromancer';
 let lobby = null; // { players: [{id,name,classId,ready,host}], api }
 let menuAvatar = null;
+let dailyRun = null; // the daily rite being played (its wizard is borrowed, not saved as yours)
 
 async function boot() {
   const load = async (k) => (optional[k] ? optional[k]().catch((e) => { console.warn('optional module failed', k, e); return null; }) : null);
@@ -83,6 +85,12 @@ async function boot() {
   ui.loading(0.35, 'Carving the stone');
   game = new Game({ renderer, input, audio, ui, settings });
   window.__game = game;
+  // run tracking, feats and the run summary (src/meta)
+  attachMeta(game, ui, {
+    onMenu: () => ui.onReturnToMenu(),
+    canAgain: () => !net,
+    onAgain: () => { ui.closeAllModals(); if (dailyRun) startDaily(dailyRun); else startSolo(); },
+  });
   // warm up the procedural textures used everywhere
   await frame();
   for (const s of ['dungeonWall', 'flagstone', 'wood', 'iron', 'sewerWall', 'cobble']) { game.texFactory.get(s, s === 'iron' ? 512 : 1024, 1); }
@@ -96,6 +104,8 @@ async function boot() {
   if (join) doJoin(join);
   else if (q.get('autostart')) { if (CLASS_IDS.includes(q.get('autostart'))) selectedClass = q.get('autostart'); startSolo(); }
   else showMenu();
+  if (q.get('screen')) testScreen(q.get('screen'));
+  if (q.get('test')) window.__screen = (which, arg) => { ui.closeAllModals(); if (which === 'menu') showMenu(); else testScreen(which, arg); };
   // test hook: pretend the pointer is locked so automated tests can drive input
   if (q.get('test')) { input.locked = true; Object.defineProperty(input, 'locked', { get: () => true, set: () => {} }); window.__input = input; window.__THREE = THREE; // test scripts (scripts/glare.js) need math classes
     // advance the simulation without rendering (fast, deterministic tests)
@@ -212,14 +222,17 @@ function updateBackdrop(dt) {
 // ---------------------------------------------------------------------------
 // screens
 // ---------------------------------------------------------------------------
-function readStats() { try { return JSON.parse(localStorage.getItem('arcane-ascent-stats') || '{}'); } catch { return {}; } }
+function menuStats() { const p = loadProfile(); return { runs: p.runs, wins: p.wins, bestFloor: p.bestFloor, kills: p.kills, feats: `${Object.keys(p.feats).length}/${FEATS.length}` }; }
 
 function showMenu() {
   mode = 'menu';
   placeMenuAvatar();
   ui.showMenu({
     name: settings.name,
-    stats: readStats(),
+    stats: menuStats(),
+    riteLine: riteLine(),
+    onDaily: () => { audio?.init(); showDailyRite(ui, { onBegin: (r) => startDaily(r) }); },
+    onCodex: () => { audio?.init(); showCodex(ui); },
     onName: (n) => { settings.name = n.slice(0, 16); saveSettings(); },
     onSolo: () => { audio?.init(); showSelect(null); },
     onHost: () => { audio?.init(); doHost(); },
@@ -235,11 +248,11 @@ function showMenu() {
 function showSelect(lobbyInfo) {
   mode = 'select';
   placeMenuAvatar();
-  const wins = readStats().wins ?? 0;
   const api = ui.showClassSelect({
     selected: selectedClass,
     lobby: lobbyInfo,
-    ascension: (!lobbyInfo || lobbyInfo.isHost) ? { max: Math.min(10, wins), value: Math.min(settings.ascension ?? 0, wins), onChange: (v) => { settings.ascension = v; saveSettings(); } } : null,
+    // the host swears the pacts for the whole party
+    pacts: (!lobbyInfo || lobbyInfo.isHost) ? { html: (id) => pactStrip(id), bind: (box, id, rerender) => { const b = box.querySelector('#bPacts'); if (b) b.onclick = () => showPactBoard(ui, { classId: id, onClose: rerender }); } } : null,
     onSelect: (id) => {
       selectedClass = id;
       settings.lastClass = id;
@@ -279,11 +292,20 @@ function refreshLobby() {
 // ---------------------------------------------------------------------------
 // solo
 // ---------------------------------------------------------------------------
-function currentAscension() { return Math.min(settings.ascension ?? 0, readStats().wins ?? 0); }
+function currentPacts() { return pactsUnlocked() ? cleanPacts(loadProfile().pacts) : {}; }
 
 function startSolo() {
+  dailyRun = null;
   const fixedSeed = +new URLSearchParams(location.search).get('seed'); // test hook: reproducible floors
-  beginRun({ seed: fixedSeed || Math.floor(Math.random() * 1e9), localId: 'solo', isHost: true, net: null, players: [], ascension: currentAscension() });
+  beginRun({ seed: fixedSeed || Math.floor(Math.random() * 1e9), localId: 'solo', isHost: true, net: null, players: [], pacts: currentPacts() });
+}
+
+// the daily rite: today's seed, wizard and pacts, the same for everyone
+function startDaily(r) {
+  if (net) return;
+  dailyRun = r;
+  selectedClass = r.classId;
+  beginRun({ seed: r.seed, localId: 'solo', isHost: true, net: null, players: [], pacts: r.pacts, daily: r.key, floor: 0 });
 }
 
 function beginRun(opts) {
@@ -293,8 +315,7 @@ function beginRun(opts) {
     game.menuMode = false;
     game.backdrop = null;
     game.paused = false;
-    const a = opts.ascension ?? 0;
-    game.difficulty = { enemyHp: 1 + 0.2 * a, enemyDamage: 1 + 0.15 * a, playerDamage: 1, ascension: a };
+    game.difficulty = difficultyFor(opts.pacts, { daily: opts.daily ?? null });
     game.startRun({ ...opts, name: settings.name || 'Wizard', classId: selectedClass, floor: opts.floor ?? (+q.get('floor') || 0) });
     if (opts.late) applyLateState(opts.late);
     if (opts.late && net && !net.isHost) net.send({ t: 'started' });
@@ -305,6 +326,7 @@ function beginRun(opts) {
 
 ui.onReturnToMenu = () => {
   ui.closeAllModals();
+  if (dailyRun) { dailyRun = null; selectedClass = CLASS_IDS.includes(settings.lastClass) ? settings.lastClass : 'pyromancer'; }
   leaveNet();
   game.ended = true;
   startBackdrop();
@@ -388,7 +410,7 @@ function onLobbyMessage(msg, from) {
       audio?.play('ui_click');
       if (mode === 'run' && game && !game.menuMode) {
         // late join: bring them into the current floor; actors follow once they report 'started'
-        net.sendTo(from, { t: 'start', seed: game.seed, players: lobby.players, floor: game.floorIndex, late: lateState(), asc: game.difficulty?.ascension ?? 0 });
+        net.sendTo(from, { t: 'start', seed: game.seed, players: lobby.players, floor: game.floorIndex, late: lateState(), pk: game.difficulty?.pacts ?? {} });
         game.addRemote(p);
       }
     } else if (msg.t === 'started') {
@@ -418,7 +440,7 @@ function onLobbyMessage(msg, from) {
       }
     } else if (msg.t === 'start') {
       lobby.players = msg.players;
-      beginRun({ seed: msg.seed, localId: net.id, isHost: false, net, players: msg.players, floor: msg.floor ?? 0, late: msg.late, ascension: msg.asc ?? 0 });
+      beginRun({ seed: msg.seed, localId: net.id, isHost: false, net, players: msg.players, floor: msg.floor ?? 0, late: msg.late, pacts: msg.pk });
     } else if (msg.t === 'full') {
       alert('That party is full (4 wizards max).');
       leaveNet(); showMenu();
@@ -430,9 +452,9 @@ function hostStart() {
   const seed = Math.floor(Math.random() * 1e9);
   const me = lobby.players.find((p) => p.host);
   me.classId = selectedClass;
-  const asc = currentAscension();
-  net.broadcast({ t: 'start', seed, players: lobby.players, floor: +q.get('floor') || 0, asc });
-  beginRun({ seed, localId: 'host', isHost: true, net, players: lobby.players, ascension: asc });
+  const pk = currentPacts();
+  net.broadcast({ t: 'start', seed, players: lobby.players, floor: +q.get('floor') || 0, pk });
+  beginRun({ seed, localId: 'host', isHost: true, net, players: lobby.players, pacts: pk });
 }
 
 function lateState() {
@@ -462,7 +484,7 @@ input.onLockChange = (locked) => {
       code: net?.code,
       onResume: () => { game.paused = false; input.lock(); },
       onSettings: () => ui.showSettings(settings, (s) => { settings = s; saveSettings(); applyVolumes(); }),
-      onQuit: () => { game.ended = true; leaveNet(); startBackdrop(); showMenu(); },
+      onQuit: () => { game.events.emit('abandon'); game.ended = true; dailyRun = null; leaveNet(); startBackdrop(); showMenu(); },
     });
   } else if (locked) {
     ui.hidePause();
@@ -560,3 +582,23 @@ boot().catch((e) => {
 });
 
 void TextureFactory;
+
+// test hooks: ?screen=summary&demo=win|loss|coop, codex(&tab=0-3), pacts, daily, select; &profile=demo seeds a lived-in profile
+function testScreen(which, arg) {
+  if (q.get('profile') === 'demo' && !demoProfile.done) { demoProfile.done = true; demoProfile(); showMenu(); }
+  if (which === 'summary') demoSummary(ui, arg ?? q.get('demo') ?? 'win');
+  else if (which === 'codex') showCodex(ui, { tab: arg ?? (+q.get('tab') || 0) });
+  else if (which === 'pacts') showPactBoard(ui, { classId: selectedClass });
+  else if (which === 'daily') showDailyRite(ui, { onBegin: (r) => startDaily(r) });
+  else if (which === 'select') showSelect(null);
+}
+function demoProfile() {
+  const ids = CLASS_IDS;
+  const classes = Object.fromEntries(ids.slice(0, 9).map((id, i) => [id, { runs: 3 + i, wins: i % 3 === 0 ? 1 + (i % 2) : 0, bestFloor: 1 + (i % 5), fastest: i % 3 === 0 ? 1900 + i * 61 : 0, bestHeat: i % 3 === 0 ? i : -1, kills: 300 + i * 97 }]));
+  const feats = Object.fromEntries(FEATS.filter((f, i) => i % 3 !== 2).map((f, i) => [f.id, Date.now() - i * 864e5]));
+  resetProfile({ v: 1, runs: 47, wins: 6, deaths: 41, coopWins: 2, kills: 6420, damage: 2310400, time: 61230, gold: 18400, tomes: 412, rooms: 302, flawless: 41, bestFloor: 5,
+    records: { biggestHit: 4312, mostDamage: 188200, mostKills: 402, fastestWin: 1904, highestHeat: 9 }, classes, feats,
+    bestiary: { rat: 1200, slime: 430, slimeling: 610, ghoul: 220, bilespitter: 140, ratShaman: 61, ratOgre: 14, skeleton: 380, skeletonArcher: 210, wraith: 120, jailer: 64, executionerGuard: 6, fallenKnight: 140, hound: 260, gargoyle: 88 },
+    bosses: { motherOfFilth: 12, executioner: 9, stoneWyvern: 7, courtArchmage: 6 }, killedBy: { gargoyle: 6, executionerGuard: 3, executioner: 4, skeletonArcher: 2 },
+    pacts: { hides: 2, wrath: 1, fate: 1 }, daily: { last: new Date(Date.now() - 864e5).toISOString().slice(0, 10), streak: 4, bestStreak: 6, runs: 11, best: null } });
+}
