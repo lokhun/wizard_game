@@ -5,6 +5,7 @@ import { ST } from './combat.js';
 import { rand } from '../core/rng.js';
 import { segPointDist2 } from '../core/math.js';
 import { RELICS } from './upgrades.js';
+import { soundEl } from './spells.js';
 import { SETS, setCounts } from './relicDefs.js';
 
 // ---------------------------------------------------------------------------
@@ -418,9 +419,9 @@ export class RelicRuntime {
           visual: (z, dt) => {
             const fade = Math.min(1, (3 - z.age) * 2);
             // a hedge of flame tongues along the path, licking up out of a low glow
-            for (let i = 0, m = Math.round((len + 1) * 30 * dt * fade + Math.random()); i < m; i++) {
+            for (let i = 0, m = Math.round((len + 1) * 22 * dt * fade + Math.random()); i < m; i++) {
               const k2 = Math.random(), x = ax + (bx - ax) * k2 + rand(-0.35, 0.35), zz = az + (bz - az) * k2 + rand(-0.35, 0.35), gy = g.groundY(x, zz);
-              P.glow({ x, y: gy + 0.05, z: zz, vx: rand(-0.3, 0.3), vy: rand(1.4, 3), vz: rand(-0.3, 0.3), r: fx.mid[0] * 0.85, g: fx.mid[1] * 0.85, b: fx.mid[2] * 0.85, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2], life: rand(0.4, 0.75), size: rand(0.4, 0.7), size2: 0.1, sprite: SPR.FLAME, drag: 1.5, spin: 1.5 });
+              P.glow({ x, y: gy + 0.05, z: zz, vx: rand(-0.3, 0.3), vy: rand(1.4, 3), vz: rand(-0.3, 0.3), r: fx.mid[0] * 0.85, g: fx.mid[1] * 0.85, b: fx.mid[2] * 0.85, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2], life: rand(0.4, 0.75), size: rand(0.3, 0.55), size2: 0.08, sprite: SPR.FLAME, drag: 1.5, spin: 1.5 });
               if (i % 3 === 0) P.glow({ x, y: gy + 0.08, z: zz, r: fx.mid[0] * 0.3, g: fx.mid[1] * 0.3, b: fx.mid[2] * 0.3, life: 0.5, size: 0.9, size2: 0.6, sprite: SPR.GLOW });
             }
             g.lights.request(mid, fx.light, 7 * fade, 7);
@@ -569,7 +570,7 @@ export class RelicRuntime {
         vfx.burst(org, { element: el, count: 5, speed: 2, life: 0.25, size: 0.05, sprite: SPR.SPARK, drag: 3 });
         this._proj(pl, local, { el, pos: org, vel: uv(o.v), radius: 0.2, life: 1.6, core: 0.4, mesh: frost ? 'shard' : undefined, light: 2, trail: 0.8, homing: 3,
           hit: frost ? { dmg: this.pd(16), el: 'frost', st: { chill: 1 }, tag: 'shard' } : { dmg: this.pd(14), el, st: EL_ST[el] } });
-        au?.play(`cast_${frost ? 'frost' : el}`, { pos: org, volume: 0.3 });
+        au?.play(`cast_${frost ? 'frost' : soundEl(el)}`, { pos: org, volume: 0.3 });
         break;
       }
       case 'echo': {
