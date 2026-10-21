@@ -107,12 +107,18 @@ const SURFS = {
   // Big rough dungeon stones (Dark and Darker style grey walls)
   dungeonWall: /* glsl */ `
   void surf(vec2 uv, out vec3 col, out float h, out float rough, out float metal, out float ao){
-    vec2 wuv = uv + (vec2(fbm(uv, 6., 3), fbm(uv + 0.37, 6., 3)) - 0.5) * 0.012;
-    vec4 b = bricks(wuv, vec2(3., 6.), 0.5, 0.35);
+    // massive, irregular prison masonry: long blocks in uneven courses, some split in two
+    vec2 wuv = uv + (vec2(fbm(uv, 6., 3), fbm(uv + 0.37, 6., 3)) - 0.5) * 0.016;
+    vec4 b = bricks(wuv, vec2(2., 5.), 0.5, 0.7);
+    float split = step(0.55, hash12(vec2(b.y * 31.7, 2.3)));
+    float sx = b.z + (hash12(vec2(b.y * 7.1, 9.)) - 0.5) * 0.3;
+    float dSplit = abs(sx - 0.5) / 2.;
+    float edge0 = split > 0.5 ? min(b.x, dSplit) : b.x;
+    b.y = split > 0.5 ? hash12(vec2(b.y * 13.3, step(0.5, sx) + 4.)) : b.y;
     float n = fbm(uv, 12., 5);
-    float edge = b.x + (n - 0.5) * 0.02;
-    float stone = smoothstep(0.004, 0.028, edge);
-    float bulge = smoothstep(0.0, 0.09, b.x);
+    float edge = edge0 + (n - 0.5) * 0.024;
+    float stone = smoothstep(0.004, 0.03, edge);
+    float bulge = smoothstep(0.0, 0.12, edge0);
     float chips = smoothstep(0.55, 0.75, fbm(uv + b.y, 24., 4));
     float detail = fbm(uv, 32., 5);
     h = stone * (0.55 + 0.25 * bulge + 0.2 * b.y) - chips * 0.12 * stone + detail * 0.12;

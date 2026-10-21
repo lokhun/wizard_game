@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GeoBuilder, worldBox } from '../render/geo.js';
 import { T, FLOOR, K_WATER, ROOM } from './levelgen.js';
 import { RNG } from '../core/rng.js';
-import { skullGeo } from './props.js';
+import { skullGeo, PROPS } from './props.js';
 
 // ---------------------------------------------------------------------------
 // Architectural dressing. Turns the plain wall/ceiling shell into realm
@@ -19,6 +19,13 @@ import { skullGeo } from './props.js';
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
 const _m = new THREE.Matrix4(), _e = new THREE.Euler();
 const ni = (g) => (g.index ? g.toNonIndexed() : g);
+// cylinder with world-scaled UVs (u around the circumference, v along the height, 2 m per repeat)
+const cylG = (rt, rb, h, seg, open = false, t0 = 0, tl = Math.PI * 2) => {
+  const g = new THREE.CylinderGeometry(rt, rb, h, seg, 1, open, t0, tl);
+  const uv = g.getAttribute('uv'), cu = Math.max(rt, rb) * tl * 0.5, cv = h * 0.5;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * cu, uv.getY(i) * cv);
+  return g;
+};
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 // quad that winds itself to face n (so callers never fight the winding)
@@ -184,12 +191,20 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
     }
     return out;
   };
+  // wall-mounted props the level already placed (banners, paintings, the throne's rose window):
+  // bays that hold one are left to it
+  const wallProps = level.props.filter((p) => p.type === 'banner' || p.type === 'painting' || p.type === 'chains' || p.type === 'stainedGlass');
   const bays = (run, st, pad = 0.55) => {
     const xs = [run.a0 - pad + 0.2, ...st, run.a1 + pad - 0.2];
     const out = [];
     for (let i = 0; i < xs.length - 1; i++) {
       const s0 = xs[i] + pad, s1 = xs[i + 1] - pad;
-      if (s1 - s0 > 0.9) out.push({ s0, s1, mid: (s0 + s1) / 2, w: s1 - s0, i, n: xs.length - 1 });
+      if (s1 - s0 <= 0.9) continue;
+      const mid = (s0 + s1) / 2;
+      runPos(run, mid, 0.5);
+      const half = (s1 - s0) / 2;
+      if (wallProps.some((p) => Math.hypot(p.x - _p.x, p.z - _p.z) < (p.type === 'stainedGlass' ? 3.4 : 0.9) + half)) continue;
+      out.push({ s0, s1, mid, w: s1 - s0, i, n: xs.length - 1 });
     }
     return out;
   };
@@ -325,7 +340,7 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
         put('trim', box(1.0, 0.18, 0.36), run, s, 0.18, top - 0.09, 0.8);
       } else if (id === 'throne') {
         // engaged column: square plinth, half-round shaft, gilded rings and capital
-        const sh = G('tcol' + H.toFixed(2), () => { const g = new THREE.CylinderGeometry(0.42, 0.42, H - 1.5, lo ? 8 : 14, 1, true, -Math.PI / 2, Math.PI); g.scale(1, 1, 0.82); return g; });
+        const sh = G('tcol' + H.toFixed(2), () => { const g = cylG(0.42, 0.42, H - 1.5, lo ? 8 : 14, true, -Math.PI / 2, Math.PI); g.scale(1, 1, 0.82); return g; });
         put('trim', box(1.2, 0.8, 0.38), run, s, 0.19, run.h0 + 0.4, 0.75);
         put('trim', sh, run, s, 0, run.h0 + 0.8 + (H - 1.5) / 2, 0.95);
         const ring = G('tring', () => { const g = new THREE.TorusGeometry(0.43, 0.05, 4, 14, Math.PI); g.rotateX(Math.PI / 2); g.scale(1, 1, 0.82); return g; });
@@ -349,7 +364,7 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
     } else if (id === 'keep') {
       // wainscot: dark panelling with a chair rail, stiles and a cap
       const wh = 1.55;
-      put('wood', box(L, wh - 0.35, 0.05), run, mid, 0.025, run.h0 + 0.35 + (wh - 0.35) / 2, 0.7);
+      put('wood', box(L, wh - 0.35, 0.05), run, mid, 0.025, run.h0 + 0.35 + (wh - 0.35) / 2, 0.95);
       put('wood', box(L, 0.1, 0.11), run, mid, 0.055, run.h0 + wh, 0.8);
       if (!lo) {
         put('wood', box(L, 0.06, 0.08), run, mid, 0.04, run.h0 + 0.42, 0.7);
@@ -555,7 +570,7 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
       // a cast-iron main along some walls, on brackets, flanged at the joints
       if (run.len >= 6 && rng.chance(isRoom(run) ? 0.4 : 0.55)) {
         const r = rng.range(0.13, 0.2), d = 0.4 + r, y = Math.min(run.h1 - 0.8, run.h0 + rng.range(2.7, 3.3));
-        put('iron', G(`pipe${run.len},${r.toFixed(3)}`, () => { const c = new THREE.CylinderGeometry(r, r, run.len, lo ? 6 : 10, 1, true); c.rotateZ(Math.PI / 2); return c; }), run, mid, d, y, 0.9);
+        put('iron', G(`pipe${run.len},${r.toFixed(3)}`, () => { const c = cylG(r, r, run.len, lo ? 6 : 10, true); c.rotateZ(Math.PI / 2); return c; }), run, mid, d, y, 0.9);
         const fl = G('fl' + r.toFixed(3), () => { const t = new THREE.TorusGeometry(r + 0.02, 0.035, 4, lo ? 6 : 10); t.rotateY(Math.PI / 2); return t; });
         for (let s = run.a0 + 1.2; s < run.a1 - 0.6; s += 2.4) {
           put('iron', fl, run, s, d, y);
@@ -579,7 +594,7 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
         } else if (r < 0.42) {
           // outfall: a pipe mouth spilling a sheet of foul water down the wall
           const y = run.h0 + rng.range(1.3, 2.2);
-          put('iron', G('ofp', () => { const c = new THREE.CylinderGeometry(0.2, 0.2, 0.46, lo ? 6 : 10, 1, true); c.rotateX(Math.PI / 2); return c; }), run, s, 0.23, y, 0.9);
+          put('iron', G('ofp', () => { const c = cylG(0.2, 0.2, 0.46, lo ? 6 : 10, true); c.rotateX(Math.PI / 2); return c; }), run, s, 0.23, y, 0.9);
           put('iron', G('ofr', () => new THREE.TorusGeometry(0.21, 0.04, 4, lo ? 6 : 10)), run, s, 0.46, y);
           put('trim', box(0.7, 0.7, 0.08), run, s, 0.04, y, 0.7);
           const [ax, , az] = W3(run, s - 0.14, 0.5, 0), [bx, , bz] = W3(run, s + 0.14, 0.5, 0);
@@ -591,7 +606,7 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
         } else if (r < 0.66) {
           // downpipe from the vault to the floor, strapped to the wall, with a shoe at the foot
           const x = s + rng.range(-0.4, 0.4), top = run.h1 - 0.1, bot = run.h0 + 0.42;
-          put('iron', G('dp' + (top - bot).toFixed(2), () => new THREE.CylinderGeometry(0.1, 0.1, top - bot, lo ? 5 : 8, 1, true)), run, x, 0.24, (top + bot) / 2, 0.9);
+          put('iron', G('dp' + (top - bot).toFixed(2), () => cylG(0.1, 0.1, top - bot, lo ? 5 : 8, true)), run, x, 0.24, (top + bot) / 2, 0.9);
           put('iron', G('dpe', () => { const c = new THREE.CylinderGeometry(0.1, 0.1, 0.4, lo ? 5 : 8, 1, true); c.rotateX(Math.PI / 2); return c; }), run, x, 0.38, bot - 0.04, 0.9);
           for (let y = bot + 0.8; y < top - 0.3; y += 1.4) put('iron', box(0.3, 0.06, 0.3), run, x, 0.15, y);
           wallDecal(run, x, 0.55, run.h0 + 0.1, bot + 1.8, 6, 0.018, 0.9);
@@ -627,7 +642,7 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
       const st = runStops.get(run) ?? [];
       const northRun = run.n[2] === 1 && run.axis === 'x';
       for (const bay of bays(run, st)) {
-        const r = rng.next(), s = bay.mid;
+        const s = bay.mid;
         if (northRun && isRoom(run) && bay.w >= 1.4 && run.h1 - run.h0 >= 5 && rng.chance(0.45)) {
           // a barred light-well high in the wall: the only glimpse of the night outside
           const y1 = run.h1 - 0.85, y0 = y1 - 1.05, hw = 0.42;
@@ -643,47 +658,55 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
           out.shafts.push({ x: s, z: run.line + 0.2, top: y1 - 0.15, w: 0.95 });
           wallDecal(run, s, 1.2, run.h0 + 0.6, y0 - 0.1, 0, 0.017, 0.8);
         }
-        if (r < 0.3) {
-          // a pair of manacles hanging from wall plates, rust bleeding below them
-          for (const sg of [-1, 1]) {
-            const x = s + sg * 0.34, yTop = run.h0 + 2.15 + rng.range(-0.05, 0.05), yBot = yTop - rng.range(0.35, 0.6);
-            put('iron', plate, run, x, 0.02, yTop + 0.06);
-            chain(run, x, 0.07, yTop, yBot);
-            put('iron', cuff, run, x, 0.1, yBot - 0.05, 1, rng.range(0, 3));
+        // one or two features per bay: manacles, niches, rings, a gibbet cage overhead
+        let caged = false;
+        for (const s of bay.w >= 3.6 ? [bay.s0 + bay.w * 0.27, bay.s1 - bay.w * 0.27] : [bay.mid]) {
+          const r = rng.next();
+          if (r < 0.3) {
+            // a pair of manacles hanging from wall plates, rust bleeding below them
+            for (const sg of [-1, 1]) {
+              const x = s + sg * 0.34, yTop = run.h0 + 2.15 + rng.range(-0.05, 0.05), yBot = yTop - rng.range(0.35, 0.6);
+              put('iron', plate, run, x, 0.02, yTop + 0.06);
+              chain(run, x, 0.07, yTop, yBot);
+              put('iron', cuff, run, x, 0.1, yBot - 0.05, 1, rng.range(0, 3));
+            }
+            wallDecal(run, s, 1.1, run.h0 + 0.6, run.h0 + 2.25, 6, 0.017, 0.8);
+            // now and then the last prisoner is still in them, slumped against the wall
+            if (isRoom(run) && rng.chance(0.4)) for (const [k, g] of PROPS.skeletonSit(() => rng.next())) put(k, ni(g), run, s, 0.1, run.h0, 0.9);
+            else if (isRoom(run) && rng.chance(0.4)) put('bone', G('skull', skullGeo), run, s + 0.1, 0.25, run.h0 + 0.09, 1, rng.range(-1, 1));
+          } else if (r < 0.44 && bay.w >= 1.3) {
+            // an ossuary niche: a dark arched recess with skulls and a guttering candle on its sill
+            const y0 = run.h0 + 1.15;
+            wallDecal(run, s, 0.95, y0, y0 + 1.05, 5, 0.02, 1);
+            put('trim', box(1.05, 0.1, 0.3), run, s, 0.15, y0, 0.8);
+            put('trim', G('nichearch', () => bandGeo(archCurve(0.4, 0.28, false, 5), 0, 0.12, 0, 0.12, { outer: true, ends: true })), run, s, 0, y0 + 0.66, 0.75);
+            for (let k = 0; k < (hi ? 3 : 2); k++) put('bone', G('skull', skullGeo), run, s - 0.28 + k * 0.27, 0.13, y0 + 0.13, 0.9, rng.range(-0.4, 0.4));
+            put('candle', G('cstub', () => new THREE.CylinderGeometry(0.03, 0.035, 0.12, 6)), run, s + 0.38, 0.16, y0 + 0.11);
+            const [fx, fy, fz] = W3(run, s + 0.38, 0.16, y0 + 0.2);
+            flames.push({ x: fx, y: fy, z: fz, size: 0.25, kind: 'candle' });
+          } else if (r < 0.58) {
+            // an iron ring with a length of chain looped down from it
+            const y = run.h0 + rng.range(1.5, 1.9);
+            put('iron', box(0.08, 0.1, 0.05), run, s, 0.025, y + 0.05);
+            put('iron', G('ring', () => new THREE.TorusGeometry(0.11, 0.02, 4, lo ? 8 : 12)), run, s, 0.05, y - 0.07);
+            if (rng.chance(0.5)) chain(run, s + 0.08, 0.06, y - 0.15, run.h0 + 0.05);
+            wallDecal(run, s, 0.5, run.h0 + 0.2, y, 6, 0.017, 0.7);
+          } else if (r < 0.74 && !caged && isRoom(run) && run.h1 - run.h0 >= 5.3) {
+            caged = true;
+            // a gibbet cage hung from the joists, a prisoner's bones slumped in it
+            const d = 1.65, yB = run.h0 + 3.15, ch = 1.3;
+            for (let k = 0; k < (lo ? 6 : 9); k++) {
+              const a = (k / (lo ? 6 : 9)) * Math.PI * 2;
+              put('iron', G('cgbar', () => new THREE.CylinderGeometry(0.018, 0.018, ch, 4)), run, s + Math.cos(a) * 0.42, d + Math.sin(a) * 0.42, yB + ch / 2);
+            }
+            const hoop = G('choop', () => { const t = new THREE.TorusGeometry(0.42, 0.025, 4, lo ? 8 : 14); t.rotateX(Math.PI / 2); return t; });
+            put('iron', hoop, run, s, d, yB + 0.02); put('iron', hoop, run, s, d, yB + ch * 0.55); put('iron', hoop, run, s, d, yB + ch);
+            put('iron', G('cdome', () => new THREE.ConeGeometry(0.44, 0.38, lo ? 8 : 12, 1, true)), run, s, d, yB + ch + 0.19);
+            put('iron', box(0.9, 0.04, 0.9), run, s, d, yB);
+            chain(run, s, d, run.h1 - 0.02, yB + ch + 0.34, !hi);
+            put('bone', G('skull', skullGeo), run, s + 0.1, d - 0.05, yB + 0.14, 1, 0.6);
+            put('bone', G('cbone', () => { const c = new THREE.CylinderGeometry(0.022, 0.022, 0.5, 5); c.rotateZ(1.3); return c; }), run, s - 0.08, d + 0.1, yB + 0.06);
           }
-          wallDecal(run, s, 1.1, run.h0 + 0.6, run.h0 + 2.25, 6, 0.017, 0.8);
-          if (isRoom(run) && rng.chance(0.4)) put('bone', G('skull', skullGeo), run, s + 0.1, 0.25, run.h0 + 0.09, 1, rng.range(-1, 1));
-        } else if (r < 0.44 && bay.w >= 1.3) {
-          // an ossuary niche: a dark arched recess with skulls and a guttering candle on its sill
-          const y0 = run.h0 + 1.15;
-          wallDecal(run, s, 0.95, y0, y0 + 1.05, 5, 0.02, 1);
-          put('trim', box(1.05, 0.1, 0.3), run, s, 0.15, y0, 0.8);
-          put('trim', G('nichearch', () => bandGeo(archCurve(0.4, 0.28, false, 5), 0, 0.12, 0, 0.12, { outer: true, ends: true })), run, s, 0, y0 + 0.66, 0.75);
-          for (let k = 0; k < (hi ? 3 : 2); k++) put('bone', G('skull', skullGeo), run, s - 0.28 + k * 0.27, 0.13, y0 + 0.13, 0.9, rng.range(-0.4, 0.4));
-          put('candle', G('cstub', () => new THREE.CylinderGeometry(0.03, 0.035, 0.12, 6)), run, s + 0.38, 0.16, y0 + 0.11);
-          const [fx, fy, fz] = W3(run, s + 0.38, 0.16, y0 + 0.2);
-          flames.push({ x: fx, y: fy, z: fz, size: 0.25, kind: 'candle' });
-        } else if (r < 0.58) {
-          // an iron ring with a length of chain looped down from it
-          const y = run.h0 + rng.range(1.5, 1.9);
-          put('iron', box(0.08, 0.1, 0.05), run, s, 0.025, y + 0.05);
-          put('iron', G('ring', () => new THREE.TorusGeometry(0.11, 0.02, 4, lo ? 8 : 12)), run, s, 0.05, y - 0.07);
-          if (rng.chance(0.5)) chain(run, s + 0.08, 0.06, y - 0.15, run.h0 + 0.05);
-          wallDecal(run, s, 0.5, run.h0 + 0.2, y, 6, 0.017, 0.7);
-        } else if (r < 0.74 && isRoom(run) && run.h1 - run.h0 >= 5.3) {
-          // a gibbet cage hung from the joists, a prisoner's bones slumped in it
-          const d = 1.65, yB = run.h0 + 3.15, ch = 1.3;
-          for (let k = 0; k < (lo ? 6 : 9); k++) {
-            const a = (k / (lo ? 6 : 9)) * Math.PI * 2;
-            put('iron', G('cgbar', () => new THREE.CylinderGeometry(0.018, 0.018, ch, 4)), run, s + Math.cos(a) * 0.42, d + Math.sin(a) * 0.42, yB + ch / 2);
-          }
-          const hoop = G('choop', () => { const t = new THREE.TorusGeometry(0.42, 0.025, 4, lo ? 8 : 14); t.rotateX(Math.PI / 2); return t; });
-          put('iron', hoop, run, s, d, yB + 0.02); put('iron', hoop, run, s, d, yB + ch * 0.55); put('iron', hoop, run, s, d, yB + ch);
-          put('iron', G('cdome', () => new THREE.ConeGeometry(0.44, 0.38, lo ? 8 : 12, 1, true)), run, s, d, yB + ch + 0.19);
-          put('iron', box(0.9, 0.04, 0.9), run, s, d, yB);
-          chain(run, s, d, run.h1 - 0.02, yB + ch + 0.34, !hi);
-          put('bone', G('skull', skullGeo), run, s + 0.1, d - 0.05, yB + 0.14, 1, 0.6);
-          put('bone', G('cbone', () => { const c = new THREE.CylinderGeometry(0.022, 0.022, 0.5, 5); c.rotateZ(1.3); return c; }), run, s - 0.08, d + 0.1, yB + 0.06);
         }
         // straw drifts and drains at the foot of the walls
         if (isRoom(run)) {
@@ -931,7 +954,7 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
         const r2 = rng.next();
         if (r2 < 0.18) {
           // a woodpile: logs laid along the wall, two deep, stacked in a pyramid
-          const log = G('log', () => { const c = new THREE.CylinderGeometry(0.11, 0.11, 1.5, 6); c.rotateZ(Math.PI / 2); return c; });
+          const log = G('log', () => { const c = cylG(0.11, 0.11, 1.5, 6); c.rotateZ(Math.PI / 2); return c; });
           for (const [d, row] of [[0.12, 0], [0.34, 0], [0.23, 1], [0.12, 2], [0.34, 2], [0.23, 3]]) {
             if (lo && row > 1) continue;
             put('bark', log, run, s + rng.range(-0.1, 0.1), d, run.h0 + 0.11 + row * 0.19, 1, rng.range(-0.04, 0.04));
