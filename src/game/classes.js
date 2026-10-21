@@ -2163,10 +2163,12 @@ export const CLASSES = {
           ctx.vfx.shell(v3(p.x, p.y + 1.1, p.z), { element: 'blade', radius: 1.4, life: 0.7, alpha: 0.7 });
           // the ward itself: a circle of runes held up in front of you for its whole window
           {
-            const fd = ctx.flatDir(), bf = fxOf('blade');
-            const w = v3(p.x + fd.x * 1.25, p.y + 1.35, p.z + fd.z * 1.25);
-            ctx.vfx.P.glowAmbient({ x: w.x, y: w.y, z: w.z, r: bf.mid[0] * 0.3, g: bf.mid[1] * 0.3, b: bf.mid[2] * 0.3, life: 0.7, size: 0.3, size2: 1.15, sprite: SPR.RING });
-            ctx.vfx.P.glowAmbient({ x: w.x, y: w.y, z: w.z, r: bf.core[0] * 0.18, g: bf.core[1] * 0.18, b: bf.core[2] * 0.18, life: 0.7, size: 0.85, size2: 0.95, sprite: SPR.RUNE, spin: 2.5 });
+            // your own ward sits lower, further out and smaller, so it frames the
+            // blow you're parrying instead of covering it on the crosshair
+            const fd = ctx.flatDir(), bf = fxOf('blade'), own = ctx.local, d = own ? 1.6 : 1.25, ws = own ? 0.6 : 1;
+            const w = v3(p.x + fd.x * d, p.y + (own ? 1.0 : 1.35), p.z + fd.z * d);
+            ctx.vfx.P.glowAmbient({ x: w.x, y: w.y, z: w.z, r: bf.mid[0] * 0.3, g: bf.mid[1] * 0.3, b: bf.mid[2] * 0.3, life: 0.7, size: 0.3 * ws, size2: 1.15 * ws, sprite: SPR.RING });
+            ctx.vfx.P.glowAmbient({ x: w.x, y: w.y, z: w.z, r: bf.core[0] * 0.18, g: bf.core[1] * 0.18, b: bf.core[2] * 0.18, life: 0.7, size: 0.85 * ws, size2: 0.95 * ws, sprite: SPR.RUNE, spin: 2.5 });
             ctx.vfx.burst(w, { element: 'blade', count: 10, speed: 3, life: 0.3, size: 0.04, stretch: 0.03, drag: 4 });
           }
           // the caster sits inside that shell, so show the ward as a sweep in front of them
