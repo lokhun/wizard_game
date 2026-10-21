@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { G, xf, taper, lathe, tube, deform, bumpy, shaggy, robe, mergeRaw, chainSkin, spikeRing, rng, vnoise, fbm3, clamp, lerp, smooth, bump, easeOut, easeIn, easeInOut, TAU } from './core.js';
 import { twoSided, HDR, RUSTY } from './parts.js';
 import { skullGeo } from '../../world/props.js';
-import { addFx, fxOf, fxSet, softRing, softDisc, softColumn, Rope, aimChain, boneWorld, setBone, glowLevel } from './bossKit.js';
+import { addFx, fxOf, fxSet, fxPos, softRing, softDisc, softColumn, Rope, aimChain, boneWorld, setBone, glowLevel, polyParam } from './bossKit.js';
 
 // ============================================================ Mother of Filth ==
 // A bloated brood-queen of the sewers: a heaving translucent bile sac with a rotting
@@ -77,7 +77,7 @@ export const motherOfFilth = {
     for (let i = 0; i < NDROP; i++) rig.bone('drop' + i, null, 0, 0, 0);
 
     // ---- the sac: heaving translucent membrane, olive with dark veins and bile-yellow blooms
-    const g = G.sph(2.0, 64, 40);
+    const g = G.sph(2.0, 48, 32);
     deform(g, (v) => {
       v.y = (v.y + 2.0) * 0.86;
       const n = vnoise(v.x * 1.2 + 4, v.y * 1.2, v.z * 1.2, 5) - 0.5;
@@ -125,7 +125,7 @@ export const motherOfFilth = {
       const a = R() * TAU, y = 0.3 + R() * 2.5;
       const p = surf(a, y, 0.02);
       const s = 0.05 + R() * 0.1;
-      pc.push(xf(G.sph(s, 8, 6), { x: p.x, y: p.y, z: p.z }));
+      pc.push(xf(G.sph(s, 6, 5), { x: p.x, y: p.y, z: p.z }));
       pg.push(xf(G.sph(s * 0.55, 6, 5), { x: p.x * 1.035, y: p.y, z: p.z * 1.035 }));
     }
     for (let i = 0; i < 16; i++) {
@@ -156,7 +156,7 @@ export const motherOfFilth = {
     for (let i = 0; i < 11; i++) {
       const a = (i / 11) * TAU * 1.3, r = 0.15 + RE() * 0.45, s = 0.17 + RE() * 0.15;
       const p = { x: Math.cos(a) * r * 1.2, y: Math.sin(i * 2.3) * 0.18 + RE() * 0.2, z: Math.sin(a) * r * 0.8 };
-      eg.push(xf(G.sph(s, 12, 9), { ...p, sy: 1.18, rz: (RE() - 0.5) * 0.6 }));
+      eg.push(xf(G.sph(s, 10, 7), { ...p, sy: 1.18, rz: (RE() - 0.5) * 0.6 }));
       emb.push(xf(G.tor(s * 0.4, s * 0.16, 5, 8, Math.PI * 1.5), { ...p, rx: RE() * 3, ry: RE() * 3 }));
       ev.push(xf(G.sph(s * 1.08, 8, 6, 0, TAU, Math.PI * 0.55, Math.PI * 0.45), p));
     }
@@ -181,7 +181,7 @@ export const motherOfFilth = {
       const nearest = (v) => { let b = samp[0], bd = 1e9; for (const sm of samp) { const d = v.distanceToSquared(sm.p); if (d < bd) { bd = d; b = sm; } } return b; };
       const chain = [['base', -0.6], ...Array.from({ length: TSEG }, (_, k) => [`t${t}_${k}`, k])];
       const skin = chainSkin(chain, (v) => nearest(v).u * TSEG);
-      const geo = tube(samp.filter((_, i) => i % 4 === 0).map((sm) => sm.p), (u) => tentRad(t, u), 46, 9);
+      const geo = tube(samp.filter((_, i) => i % 4 === 0).map((sm) => sm.p), (u) => tentRad(t, u), 36, 8);
       deform(geo, (v) => { const sm = nearest(v); const d = v.clone().sub(sm.p); const k = 1 + Math.sin(sm.u * 70) * 0.045 + (vnoise(v.x * 5, v.y * 5, v.z * 5, t) - 0.5) * 0.14; v.copy(sm.p).addScaledVector(d, k); });
       rig.add('base', 'skin', geo, {}, {
         skin,
@@ -197,8 +197,8 @@ export const motherOfFilth = {
         },
       });
       const su = [], sc = [];
-      for (let i = 0; i < 13; i++) {
-        const u = 0.1 + i * 0.065;
+      for (let i = 0; i < 10; i++) {
+        const u = 0.1 + i * 0.085;
         const sm = samp[Math.round(u * N)];
         const b = new THREE.Vector3().crossVectors(sm.tg, sm.n).normalize();
         for (const row of [-1, 1]) {
@@ -207,8 +207,8 @@ export const motherOfFilth = {
           const pos = sm.p.clone().addScaledVector(dir, sm.rad * 0.9);
           const e = new THREE.Euler().setFromQuaternion(new THREE.Quaternion().setFromUnitVectors(UP, dir));
           const r = sm.rad * 0.38;
-          su.push(xf(xf(G.tor(r * 0.72, r * 0.3, 3, 7), { rx: Math.PI / 2, sy: 0.7 }), { x: pos.x, y: pos.y, z: pos.z, rx: e.x, ry: e.y, rz: e.z }));
-          sc.push(xf(xf(G.sph(r * 0.6, 6, 3, 0, TAU, 0, Math.PI / 2), { sy: -0.45 }), { x: pos.x, y: pos.y, z: pos.z, rx: e.x, ry: e.y, rz: e.z }));
+          su.push(xf(xf(G.tor(r * 0.72, r * 0.3, 3, 6), { rx: Math.PI / 2, sy: 0.7 }), { x: pos.x, y: pos.y, z: pos.z, rx: e.x, ry: e.y, rz: e.z }));
+          sc.push(xf(xf(G.sph(r * 0.6, 5, 2, 0, TAU, 0, Math.PI / 2), { sy: -0.45 }), { x: pos.x, y: pos.y, z: pos.z, rx: e.x, ry: e.y, rz: e.z }));
         }
       }
       rig.add('base', 'skin', mergeRaw(su), {}, { c: [0.95, 0.62, 0.55], skin });
@@ -226,7 +226,7 @@ export const motherOfFilth = {
     CHAINS.forEach((_, c) => {
       for (let i = 0; i < CHAIN_N; i++) {
         const links = [];
-        for (let k = 0; k < 3; k++) links.push(xf(G.tor(0.055, 0.016, 4, 8), { y: -k * 0.09 - 0.04, sy: 1.4, ry: (k % 2) * Math.PI / 2 }));
+        for (let k = 0; k < 3; k++) links.push(xf(G.tor(0.055, 0.016, 3, 6), { y: -k * 0.09 - 0.04, sy: 1.4, ry: (k % 2) * Math.PI / 2 }));
         rig.add(`ch${c}_${i}`, 'iron', mergeRaw(links), {}, { c: RUSTY });
       }
     });
@@ -236,7 +236,7 @@ export const motherOfFilth = {
     np[0].set(0, -0.45, -0.35);
     for (let i = 1; i < NECK.length; i++) { acc.add(new THREE.Vector3(...NECK[i])); np.push(acc.clone()); }
     np.push(acc.clone().add(new THREE.Vector3(0, 0.02, 0.15)));
-    const along = (v) => { let best = 0, bd = 1e9; for (let i = 0; i < np.length - 1; i++) { const a = np[i], b = np[i + 1]; const ab = b.clone().sub(a); const t = clamp(v.clone().sub(a).dot(ab) / ab.lengthSq()); const d = v.distanceToSquared(a.clone().addScaledVector(ab, t)); if (d < bd) { bd = d; best = i + t; } } return best; };
+    const along = polyParam(np);
     const neckG = tube(np, (u) => lerp(0.7, 0.42, u) * (1 + Math.sin(u * 40) * 0.04), 24, 14);
     rig.add('neck0', 'skin', bumpy(neckG, 0.03, 4, 7), {}, { cfn: (v) => fleshC(v, 12, [0.4, 0.26, 0.22]), skin: chainSkin([['mass', 0.3], ['neck0', 0.9], ['neck1', 1.8], ['head', 2.7]], along) });
 
@@ -275,7 +275,7 @@ export const motherOfFilth = {
     // a matted, rotting mane over the back of the skull and down the nape
     const mane = G.sph(0.36, 20, 12, 0, TAU, 0, Math.PI * 0.62);
     deform(mane, (v) => { v.z = v.z * 1.25 - 0.12; v.x *= 0.95; if (v.z > 0.05) v.multiplyScalar(1 - smooth(0.05, 0.3, v.z) * 0.25); });
-    rig.add('head', 'fur', shaggy(mane, 0.09, 12, 5, [0, -0.3, -1], 0.9), { y: 0.02, rx: -0.35 }, { cfn: (v) => { const n = vnoise(v.x * 10, v.y * 10, v.z * 10, 3); const k = 0.5 + n * 0.5; return [0.32 * k, 0.28 * k, 0.22 * k]; }, anim: (v) => clamp(-v.z * 2) * 0.4 });
+    rig.add('head', 'skin', shaggy(mane, 0.09, 12, 5, [0, -0.3, -1], 0.9), { y: 0.02, rx: -0.35 }, { cfn: (v) => { const n = vnoise(v.x * 10, v.y * 10, v.z * 10, 3); const k = 0.5 + n * 0.5; return [0.26 * k, 0.21 * k, 0.17 * k]; }, anim: (v) => clamp(-v.z * 2) * 0.4 }); // matted hide on the flesh material (no extra shader)
     const ear = twoSided(deform(new THREE.CircleGeometry(0.22, 10, 0, Math.PI), (v) => { v.z = (v.x * v.x) * 0.8 + vnoise(v.x * 12, v.y * 12, 0, 3) * 0.04; if (vnoise(v.x * 14, v.y * 14, 2, 9) > 0.7) v.multiplyScalar(0.8); }));
     rig.pair('head', 'head', 'skin', ear, { x: 0.27, y: 0.16, z: -0.12, rx: -0.4, ry: 1.0, rz: -0.6 }, { cfn: (v) => fleshC(v, 9, [0.45, 0.25, 0.25]), anim: 0.4 });
     // jaw: twin mandibles, lower incisors, rotten tongue
@@ -320,7 +320,7 @@ export const motherOfFilth = {
     for (let i = 0; i < NDROP; i++) rig.add('drop' + i, 'slime', xf(G.sph(0.05, 6, 5), { sy: 1.8 }), {}, { c: [0.6, 1.2, 0.3] });
 
     // ---- fx: toxic glow on the pool, an impact / burst ring, a geyser column for submerge / emerge
-    addFx(rig, 'pool', 'aura', softDisc(4.4, 40, HDR(FILTH, 0.32), 1.5), { y: 0.07 });
+    addFx(rig, 'pool', 'aura', softDisc(4.4, 32, HDR(FILTH, 0.32), 1.5), { y: 0.07 });
     addFx(rig, 'pool', 'ring', softRing(0.8, 1.0, 48, HDR(FILTH, 1.6), 0.7), { y: 0.1 });
     addFx(rig, 'pool', 'geyser', softColumn(2.2, 2.9, 5, 24, HDR(FILTH, 0.25)), { y: 0 });
     return {};
@@ -612,7 +612,7 @@ function secondary(m, s, dt) {
   const F = fxOf(m), v = st.fxv;
   const pul = 0.85 + 0.15 * Math.sin(m.time * 2.3);
   fxSet(F, 'aura', v.aura * pul, 1);
-  if (F.ring) { F.ring.mesh.position.set(v.ringX, 0.1, v.ringZ); }
+  fxPos(F, 'ring', v.ringX, 0.1, v.ringZ);
   fxSet(F, 'ring', v.ring, v.ringR, 1, v.ringR);
   fxSet(F, 'geyser', v.gey * (0.8 + 0.2 * Math.sin(m.time * 20)), v.geyS, 1 + v.gey * 0.3, v.geyS);
   // glow intensity (eyes, pustules, gems, heart)

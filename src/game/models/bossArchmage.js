@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { G, xf, lathe, tube, deform, robe, panel, mergeRaw, chainSkin, rng, vnoise, fbm3, clamp, lerp, smooth, bump, easeOut, easeIn, easeInOut, TAU } from './core.js';
 import { humanSkeleton, humanoidPose, act2 } from './humanoid.js';
 import { addSkull, addBoneHand, addCrystalStaff, pauldron, hood, twoSided, HDR, GOLDTRIM } from './parts.js';
-import { addFx, fxOf, fxSet, paint, softRing, softDisc, Rope, aimChain, boneWorld, glowLevel } from './bossKit.js';
+import { addFx, fxOf, fxSet, fxRot, paint, softRing, softDisc, Rope, aimChain, boneWorld, glowLevel } from './bossKit.js';
 
 // ============================================================ Archmage Veyrin ==
 // The Court Archmage, long since a lich: a towering archivist in layered violet and
@@ -66,7 +66,7 @@ export const courtArchmage = {
     rig.add('chest', 'cloth', twoSided(outer), { y: -D.spine + 0.15, z: -0.03 }, { c: BLK, anim: (v) => clamp(-v.y / 1.2) * 1.5, cfn: (v) => (v.y < -(D.hipH + 0.2) ? [0.5, 0.38, 0.22] : embroid(v, BLK)), skin: chainSkin([['hips', -1.2], ['chest', -0.1]], (v) => v.y) });
     // ghostly wisps trailing below the hem
     const wisp = robe(0.31, 0.5, 0.5, { seg: 22, rows: 4, folds: 11, foldAmp: 0.25, tatter: 0.8, seed: 17 });
-    rig.add('hips', 'ghost', wisp, { y: -D.hipH + 0.02 }, { cfn: (v) => { const t = clamp(-v.y / 0.5); return [0.35 * (1 - t) + 0.05, 0.25 * (1 - t) + 0.05, 0.6 * (1 - t) + 0.1]; }, anim: (v) => 0.6 + clamp(-v.y / 0.5) * 2.0 });
+    rig.add('hips', 'spirit', wisp, { y: -D.hipH + 0.02 }, { cfn: (v) => { const t = clamp(-v.y / 0.5); return HDR(ARC, 0.35 * (1 - t) ** 1.5); }, anim: (v) => 0.6 + clamp(-v.y / 0.5) * 2.0 });
     rig.add('chest', 'cloth', lathe([[0.17, -0.08], [0.21, 0.14], [0.23, 0.25], [0.14, 0.33], [0.07, 0.35]], 16), { sz: 0.82 }, { c: VIOL, cfn: (v) => embroid(v, VIOL) });
     // ornate front panel with glowing sigils, a belt of chained grimoire clasps
     rig.add('chest', 'gold', panel(0.16, 0.95, { ws: 2, hs: 6, tatter: 0, seed: 1, curve: 0.02 }), { y: 0.3, z: 0.19 }, { c: GOLDC, skin: chainSkin([['hips', -0.6], ['chest', 0.0]], (v) => v.y), anim: (v) => clamp(-v.y - 0.4) * 0.6 });
@@ -285,7 +285,7 @@ function archSecondary(m, s, dt) {
   // fx
   const F = fxOf(m), T = m.time;
   st.sigRot = (st.sigRot ?? 0) + dt * (0.25 + (st.fxSigil ?? 0) * 0.6);
-  if (F.sigil) F.sigil.mesh.rotation.y = st.sigRot;
+  fxRot(F, 'sigil', 0, st.sigRot, 0);
   const dead = s.anim === 'death', dt2 = Math.max(s.t, s.progress * 1.1);
   const age = T - (st.born ?? T);
   let sig = (st.fxSigil ?? 0.2) * (0.85 + 0.15 * Math.sin(T * 3.1));

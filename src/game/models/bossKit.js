@@ -4,10 +4,9 @@ import { clamp } from './core.js';
 // ---------------------------------------------------------------------------
 // Boss kit: tools the five boss models share on top of the rig system.
 //
-//  - FX meshes: a few plain additive meshes hung on bones (shockwave rings, auras,
-//    glow sheets). They are not merged into the rig's material meshes, so each one
-//    can fade on its own; each costs one draw call, so bosses use only a handful.
-//    Materials are cloned per instance on first use.
+//  - FX meshes: a few additive sheets on their own bones (shockwave rings, auras, trails)
+//    that fade on their own. They reuse the rig's material types (no new shaders) and
+//    cost one draw call each, so bosses use only a handful.
 //  - Ropes: verlet chains simulated in world space (so turning and lunging swing
 //    them), aimed back onto bone chains. Chains, capes, slime strands.
 //  - Two-bone arm IK, so a second hand stays on a two-handed haft.
@@ -20,17 +19,14 @@ const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vecto
 const _e = new THREE.Euler();
 
 // ------------------------------------------------------------ fx meshes ----
-const FX_BASE = new Map();
-function fxBaseMat(kind) {
-  if (FX_BASE.has(kind)) return FX_BASE.get(kind);
-  const m = new THREE.MeshBasicMaterial({
-    vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide,
-    blending: kind === 'normal' ? THREE.NormalBlending : THREE.AdditiveBlending, fog: true,
-  });
-  m.name = 'bossfx:' + kind;
-  FX_BASE.set(kind, m);
-  return m;
-}
+// An fx is a rig part on its own bone ('fx_<name>') flagged `own`, so Rig.finish gives it a
+// separate skinned mesh with a clone of a library material every enemy already uses ('glow'
+// by default, the eyes' unlit material, switched to additive blending per instance). Same
+// shader program: nothing new to compile, one extra draw call. It fades with its material
+// opacity and moves, turns and sizes through its bone. Faces are doubled (the material is
+// single-sided) and the RGBA colour attribute (paint, softRing ...) is premultiplied into
+// RGB, since the material has no vertex alpha.
+const FXP = Symbol('fx');
 // colour a geometry per vertex: fn(v: Vector3, i) -> [r,g,b,a]
 export function paint(geo, fn) {
   const p = geo.getAttribute('position');
@@ -40,45 +36,68 @@ export function paint(geo, fn) {
   geo.setAttribute('color', new THREE.BufferAttribute(col, 4));
   return geo;
 }
-// add an fx mesh on a bone; the geometry should already carry an RGBA colour attribute (paint)
 export function addFx(rig, bone, name, geo, o = {}) {
-  const mesh = new THREE.Mesh(geo, fxBaseMat(o.blend ?? 'add'));
-  mesh.name = 'fx:' + name;
-  mesh.userData.fx = name;
-  mesh.renderOrder = o.order ?? 8;
-  mesh.frustumCulled = false;
-  mesh.visible = false;
-  if (o.x || o.y || o.z) mesh.position.set(o.x ?? 0, o.y ?? 0, o.z ?? 0);
-  rig.bones[bone].add(mesh);
-  return mesh;
+  const b = 'fx_' + name;
+  rig.bone(b, bone, o.x ?? 0, o.y ?? 0, o.z ?? 0);
+  const c = geo.getAttribute('color');
+  const n = geo.getAttribute('position').count;
+  const vcol = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const a = c && c.itemSize === 4 ? c.getW(i) : 1;
+    vcol[i * 3] = (c ? c.getX(i) : 1) * a; vcol[i * 3 + 1] = (c ? c.getY(i) : 1) * a; vcol[i * 3 + 2] = (c ? c.getZ(i) : 1) * a;
+  }
+  if (c) geo.deleteAttribute('color');
+  if (!o.mat) {
+    // both faces, so the single-sided material shows it from either side
+    if (!geo.index) geo.setIndex([...Array(n).keys()]);
+    const ix = geo.index.array, two = new Uint32Array(ix.length * 2);
+    two.set(ix);
+    for (let t = 0; t < ix.length; t += 3) { two[ix.length + t] = ix[t]; two[ix.length + t + 1] = ix[t + 2]; two[ix.length + t + 2] = ix[t + 1]; }
+    geo.setIndex(new THREE.BufferAttribute(two, 1));
+  }
+  rig.add(b, o.mat ?? 'glow', geo, {}, { own: name, vcol });
+  return b;
 }
-// per-instance fx handles: { name: { mesh, mat } }. set(name, opacity, scale?) shows / hides.
+// per-instance fx handles: F[name] = { mesh, e (its instance material entry), bone, x, y, z }
 export function fxOf(m) {
-  let F = m.state.fx;
+  let F = m.state[FXP];
   if (F) return F;
-  F = m.state.fx = { list: [] };
+  F = m.state[FXP] = { m };
   m.root.traverse((o) => {
-    if (!o.userData?.fx) return;
-    const mat = o.material.clone();
-    o.material = mat;
+    const n = o.userData?.fx;
+    if (!n || !o.isSkinnedMesh) return;
+    const e = m.mats.find((x) => x.m === o.material);
+    if (e && o.material.isMeshBasicMaterial) {
+      // additive, see-through: blending / depth state only, the compiled program is reused
+      e.transparent = true; e.depthWrite = false;
+      o.material.blending = THREE.AdditiveBlending; o.material.transparent = true; o.material.depthWrite = false; o.material.needsUpdate = true;
+    }
+    const bone = 'fx_' + n, r = m.P.rest[m.P.idx.get(bone)];
     o.castShadow = false;
-    F[o.userData.fx] = { mesh: o, mat };
-    F.list.push(F[o.userData.fx]);
+    o.visible = false;
+    F[n] = { mesh: o, e, bone, x: r.x, y: r.y, z: r.z, a: -1 };
   });
-  const d = m.dispose;
-  m.dispose = function () { for (const f of F.list) f.mat.dispose(); d.call(this); };
   return F;
 }
-// show an fx mesh at opacity a (hidden when ~0), optional uniform / xyz scale
-export function fxSet(F, name, a, sx, sy, sz) {
+// show an fx at opacity a (hidden when ~0), with an optional uniform / xyz scale on its bone
+export function fxSet(F, name, a, sx = 1, sy = sx, sz = sx) {
   const f = F[name];
   if (!f) return;
   const on = a > 0.004;
   f.mesh.visible = on;
-  if (!on) return;
-  f.mat.opacity = Math.min(1, a);
-  if (sx !== undefined) f.mesh.scale.set(Math.max(1e-3, sx), Math.max(1e-3, sy ?? sx), Math.max(1e-3, sz ?? sx));
+  const op = on ? Math.min(1, a) : 0;
+  if (Math.abs(op - f.a) > 0.004) { f.a = op; if (f.e) { f.e.opacity = op; F.m._dirty = true; } }
+  const P = F.m.P, i = P.idx.get(f.bone), o = i * 9, r = P.rest[i];
+  P.tgt[o + 3] = P.cur[o + 3] = f.x - r.x; P.tgt[o + 4] = P.cur[o + 4] = f.y - r.y; P.tgt[o + 5] = P.cur[o + 5] = f.z - r.z;
+  sx = Math.max(1e-3, sx); sy = Math.max(1e-3, sy); sz = Math.max(1e-3, sz);
+  P.tgt[o + 6] = P.cur[o + 6] = sx; P.tgt[o + 7] = P.cur[o + 7] = sy; P.tgt[o + 8] = P.cur[o + 8] = sz;
+  P.bones[i].position.set(f.x, f.y, f.z); P.bones[i].scale.set(sx, sy, sz);
 }
+// move an fx (its bone's local position) / turn it (euler or quaternion); call before fxSet
+export function fxPos(F, name, x, y, z) { const f = F[name]; if (f) { f.x = x; f.y = y; f.z = z; } }
+const _fe = new THREE.Euler();
+export function fxRot(F, name, x, y, z) { const f = F[name]; if (f) snapRot(F.m, f.bone, _fe.set(x, y, z)); }
+export function fxQuat(F, name, q) { const f = F[name]; if (f) snapRot(F.m, f.bone, _fe.setFromQuaternion(q, 'XYZ')); }
 
 // soft ring in the XZ plane (r0..r1) with alpha fading to 0 at both edges, peak at `peak` (0..1 across)
 export function softRing(r0, r1, seg = 48, col = [1, 1, 1], peak = 0.5, rings = 4) {
@@ -157,7 +176,7 @@ export function glowLevel(m, k, key = 'glow') {
   const st = m.state;
   st._glow = st._glow ?? {};
   if (Math.abs((st._glow[key] ?? 1) - k) < 0.02) return;
-  for (const e of m.mats) if (e.key === key) {
+  for (const e of m.mats) if (e.key === key && !e.m.userData.fx) {
     if (!e.base) e.base = e.color.clone();
     e.color.copy(e.base).multiplyScalar(k);
   }
@@ -387,8 +406,9 @@ export function swingTrailGeo(r0, r1, span, col) {
 // lay a swing trail (child of the weapon's parent) in the plane of the swing from the weapon
 // params ax and their spring velocities ax._v; returns how fast the weapon is moving (rad/s)
 const _tY = new THREE.Vector3(), _tV = new THREE.Vector3(), _tU = new THREE.Vector3(), _tM = new THREE.Matrix4();
-export function aimTrail(mesh, ax) {
-  const v = ax._v ?? {}, vt = v.th ?? 0, vp = v.ph ?? 0;
+const _tQ = new THREE.Quaternion(), NOV = {};
+export function aimTrail(F, name, ax) {
+  const v = ax._v ?? NOV, vt = v.th ?? 0, vp = v.ph ?? 0;
   const th = ax.th, ph = ax.ph, ct = Math.cos(th), sT = Math.sin(th), cp = Math.cos(ph), sp = Math.sin(ph);
   _tY.set(sT * cp, sp, ct * cp);
   _tV.set(ct * cp, 0, -sT * cp).multiplyScalar(vt).addScaledVector(_tU.set(-sT * sp, cp, -ct * sp), vp);
@@ -397,8 +417,25 @@ export function aimTrail(mesh, ax) {
     _tV.multiplyScalar(1 / speed);
     _tU.crossVectors(_tY, _tV);
     _tM.makeBasis(_tV, _tU, _tY);
-    mesh.quaternion.setFromRotationMatrix(_tM);
-    mesh.position.set(ax.gx, ax.gy, ax.gz);
+    fxQuat(F, name, _tQ.setFromRotationMatrix(_tM));
+    fxPos(F, name, ax.gx, ax.gy, ax.gz);
   }
   return speed;
+}
+
+// build-time helper: parameter (segment index + fraction) of the closest point on a polyline
+// to v, for skinning tubes along bone chains without allocating per vertex
+export function polyParam(pts) {
+  const n = pts.length - 1, ax = new Float32Array(n * 6), len2 = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const a = pts[i], b = pts[i + 1]; ax.set([a.x, a.y, a.z, b.x - a.x, b.y - a.y, b.z - a.z], i * 6); len2[i] = (b.x - a.x) ** 2 + (b.y - a.y) ** 2 + (b.z - a.z) ** 2 || 1e-9; }
+  return (v) => {
+    let best = 0, bd = 1e9;
+    for (let i = 0; i < n; i++) {
+      const o = i * 6, px = v.x - ax[o], py = v.y - ax[o + 1], pz = v.z - ax[o + 2];
+      const t = clamp((px * ax[o + 3] + py * ax[o + 4] + pz * ax[o + 5]) / len2[i]);
+      const dx = px - ax[o + 3] * t, dy = py - ax[o + 4] * t, dz = pz - ax[o + 5] * t, d = dx * dx + dy * dy + dz * dz;
+      if (d < bd) { bd = d; best = i + t; }
+    }
+    return best;
+  };
 }

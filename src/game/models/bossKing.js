@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { G, xf, lathe, shell, tube, extrude, deform, bumpy, mergeRaw, chainSkin, panel, spikeRing, rng, vnoise, fbm3, clamp, lerp, smooth, bump, easeOut, easeIn, easeInOut, TAU } from './core.js';
 import { humanSkeleton, humanoidPose, act2 } from './humanoid.js';
 import { addPlate, addTabard, hood, pauldron, twoSided, HDR, GOLDTRIM } from './parts.js';
-import { addFx, fxOf, fxSet, paint, softRing, softDisc, softColumn, Rope, aimChain, boneWorld, boneModel, snapRot, setBone, springTo, glowLevel, wield, swingTrailGeo, aimTrail } from './bossKit.js';
+import { addFx, fxOf, fxSet, fxPos, fxRot, paint, softRing, softDisc, softColumn, Rope, aimChain, boneWorld, boneModel, snapRot, setBone, springTo, glowLevel, wield, swingTrailGeo, aimTrail } from './bossKit.js';
 
 // ================================================================= The Hollow King ==
 // The last lord of the Ashen Keep: a towering suit of blackened, gold-chased plate with
@@ -88,7 +88,7 @@ export const hollowKing = {
     deform(tors, (v) => { v.z *= 0.7; });
     rig.add('hips', 'cloth', tors, {}, { c: [0.05, 0.04, 0.05], skin: chainSkin([['hips', 0.0], ['spine', 0.05 + D.spine * 0.45], ['chest', 0.05 + D.spine + D.chest * 0.25]], (v) => v.y) });
     for (const S of ['L', 'R']) { rig.add('arm' + S, 'cloth', G.cyl(0.05, 0.04, D.upper, 8), { y: -D.upper / 2 }, { c: [0.05, 0.04, 0.05] }); rig.add('thigh' + S, 'cloth', G.cyl(0.08, 0.06, D.thigh, 8), { y: -D.thigh / 2 }, { c: [0.05, 0.04, 0.05] }); }
-    const BK = [0.16, 0.15, 0.18];
+    const BK = [0.3, 0.29, 0.34];
     addPlate(rig, D, { mat: 'steel', c: BK, bulk: 1.2, pauldron: 0.18, trim: true, mailC: [0.35, 0.35, 0.4] });
     // great layered pauldrons with gold edges and a crest of spikes
     for (const S of ['L', 'R']) {
@@ -102,7 +102,9 @@ export const hollowKing = {
     const cracks = [];
     const RC = rng(12);
     for (let i = 0; i < 5; i++) { let x = (RC() - 0.5) * 0.18, y = D.chest * (0.2 + RC() * 0.6); for (let k = 0; k < 4; k++) { const nx = x + (RC() - 0.5) * 0.06, ny = y - 0.03 - RC() * 0.04; const d = Math.hypot(nx - x, ny - y); cracks.push(xf(G.box(0.006, d, 0.004), { x: (x + nx) / 2, y: (y + ny) / 2, rz: Math.atan2(-(nx - x), ny - y) })); x = nx; y = ny; } }
-    rig.add('chest', 'glow', mergeRaw(cracks), { z: W * 0.885 }, { c: HDR(HOLLOW, 3.5) });
+    rig.add('chest', 'glow', mergeRaw(cracks), { z: W * 0.885 }, { c: HDR(HOLLOW, 4.5) });
+    // cold light in the joints of the empty armour
+    for (const S of ['L', 'R']) { rig.add('fore' + S, 'glow', xf(G.tor(0.045, 0.006, 3, 12), { rx: Math.PI / 2 }), { y: 0.0 }, { c: HDR(HOLLOW, 2.2) }); rig.add('shin' + S, 'glow', xf(G.tor(0.06, 0.006, 3, 12), { rx: Math.PI / 2 }), { y: 0.02 }, { c: HDR(HOLLOW, 2.2) }); }
     addTabard(rig, D, { c: [0.2, 0.03, 0.1], tatter: 0.35, seed: 9, len: 1.05, w: 0.75, emblem: mergeRaw([xf(G.box(0.16, 0.035, 0.01), {}), ...[-1, 0, 1].map((i) => xf(G.cone(0.025, i === 0 ? 0.1 : 0.07, 4), { x: i * 0.055, y: 0.05 }))]) });
     // ---- the cape: hung from three ropes, it drags on the floor behind him
     const capeG = panel(0.95, CAPE_L * CAPE_N, { ws: 10, hs: 16, tatter: 0.35, seed: 13, curve: 0.18, taperBot: 1.5 });
@@ -148,7 +150,7 @@ export const hollowKing = {
     addFx(rig, 'chest', 'corona', corona, { y: D.chest + 0.45, z: -0.42 });
     const umbra = softDisc(0.66, 48, [0.01, 0.0, 0.02], 0.15);
     umbra.rotateX(Math.PI / 2);
-    addFx(rig, 'chest', 'umbra', umbra, { y: D.chest + 0.45, z: -0.43, blend: 'normal', order: 7 });
+    addFx(rig, 'chest', 'umbra', umbra, { y: D.chest + 0.45, z: -0.43, mat: 'dark' }); // opaque black sun
     addFx(rig, 'chest', 'trail', swingTrailGeo(BLADE0 + 0.3, BLADE1, 2.3, HDR(0xb8d8ff, 0.7)));
     addFx(rig, 'ground', 'ring', softRing(0.78, 1.0, 48, HDR(VOID, 1.6), 0.6), { y: 0.04 });
     addFx(rig, 'ground', 'ascend', softColumn(0.25, 0.55, 3.2, 20, HDR(HOLLOW, 0.8)), { y: 0.5 });
@@ -177,7 +179,7 @@ export const hollowKing = {
     const rising = rt < 1 && !dead;
     if (rising) {
       const stand = smooth(0.0, 0.45, rt);
-      P.apply(SEAT(D), 1 - stand);
+      P.apply(st.seatPose ?? (st.seatPose = SEAT(D)), 1 - stand);
       P.apply(B_ROAR_S, smooth(0.45, 0.65, rt) * (1 - smooth(0.85, 1, rt)));
       P.r('head', Math.sin(T * 43) * 0.04 * bump(0.5, 1, rt));
     }
@@ -217,7 +219,8 @@ export const hollowKing = {
     death: (P, p, m, s) => kingDeath(P, p, m, s), spawn: 'rise', gait: 'plod', armSwing: 0.12, stride: 0.5, knee: 0.7, breath: 0.8, look: 0.4,
     rest: { armR: [-0.45, 0, 0.25], foreR: [-0.85, 0, 0], handR: [0.55, 0, 0], armL: [-0.5, 0, -0.32], foreL: [-1.0, 0, 0] },
     stance: (P, m, s) => { P.apply({ spine: [0.04, 0, 0], thighL: [-0.1, 0, 0.08], thighR: [0.02, 0, -0.08], shinL: [0.14, 0, 0], shinR: [0.1, 0, 0] }); if (s.anim === 'idle' || s.anim === 'move') P.apply(B_REST, 1 - (m.state.moveW ?? 0)); },
-    seated: (P, m) => { P.apply({ head: [0.25, 0, 0], neck: [0.1, 0, 0] }); P.r('head', 0, Math.sin(m.time * 0.2) * 0.15, 0); },
+    // (the throne's seat stands higher than a man's knee: sit up on it, feet forward on its step)
+    seated: (P, m) => { P.apply({ head: [0.25, 0, 0], neck: [0.1, 0, 0], hips: [0, 0, 0, 0, 0.12, 0.02], thighL: [-0.08, 0, 0], thighR: [-0.08, 0, 0], shinL: [-0.3, 0, 0], shinR: [-0.3, 0, 0] }); P.r('head', 0, Math.sin(m.time * 0.2) * 0.15, 0); },
     actions: {
       sweep: act2(B_SWEEP_W, B_SWEEP_S, { hit: 0.3, recover: 0.7, recoverAmt: 0.6 }),
       thrust: act2(B_THRUST_W, B_THRUST_S, { hit: 0.22, recover: 0.7, recoverAmt: 0.6 }),
@@ -339,22 +342,22 @@ function kingFx(m, s, dt, ax, seated, rt) {
   const judg = jt < 4.4 && !dead ? smooth(0, 3.6, jt) * (1 - smooth(4.0, 4.4, jt)) : 0;
   const e = st.ecl, cs = 1 + judg * 0.8 + Math.sin(T * 0.7) * 0.03;
   fxSet(F, 'corona', e * (0.75 + 0.25 * Math.sin(T * 2.1)) + judg * 0.4, cs * (1 + Math.sin(T * 5) * 0.02), cs, 1);
-  fxSet(F, 'umbra', e * 0.95, cs * 0.98, cs * 0.98, 1);
-  if (F.corona) F.corona.mesh.rotation.z = T * 0.15;
+  fxSet(F, 'umbra', e > 0.02 ? 1 : 0, cs * 0.98 * e, cs * 0.98 * e, 1); // opaque: grows rather than fades
+  fxRot(F, 'corona', 0, 0, T * 0.15);
   // sword trail
   const tr = F.trail;
-  const speed = tr && !dead ? aimTrail(tr.mesh, ax) : 0;
+  const speed = tr && !dead ? aimTrail(F, 'trail', ax) : 0;
   st.trailA = (st.trailA ?? 0) + (smooth(3.5, 9, speed) - (st.trailA ?? 0)) * (1 - Math.exp(-(speed > 3.5 ? 30 : 8) * dt));
   fxSet(F, 'trail', st.trailA * 0.85);
   // plunge impact ring
   if (an === 'attack' && at === 'slam' && p >= 0.24 && (st.lastP ?? 1) < 0.24) st.impT = T;
   st.lastP = an === 'attack' ? p : 1;
   const it = st.impT !== undefined ? T - st.impT : 9;
-  if (F.ring) F.ring.mesh.position.set(0, 0.04, 0.7);
+  fxPos(F, 'ring', 0, 0.04, 0.7);
   fxSet(F, 'ring', it < 0.6 ? 1 - it / 0.6 : 0, 0.4 + easeOut(clamp(it / 0.6)) * 3.2);
   // death: the soul streams up out of the armour
   const asc = dead ? bump(1.1, 3.4, dtD) : 0;
-  if (F.ascend) F.ascend.mesh.position.y = 0.5 + smooth(1.1, 3.4, dtD) * 1.5;
+  fxPos(F, 'ascend', 0, 0.5 + smooth(1.1, 3.4, dtD) * 1.5, 0);
   fxSet(F, 'ascend', asc * 0.8, 1 - smooth(1.5, 3.4, dtD) * 0.6, 1 + smooth(1.1, 3.4, dtD), 1 - smooth(1.5, 3.4, dtD) * 0.6);
   glowLevel(m, wake * (1 + e * 0.5 + judg * 1.2) * (dead ? 1 - smooth(1.0, 2.6, dtD) * 0.9 : 1));
 }

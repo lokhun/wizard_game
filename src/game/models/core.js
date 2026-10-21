@@ -519,11 +519,12 @@ export class Rig {
       const su = src.getAttribute('uv');
       const uvS = typeof part.opts.uv === 'number' ? part.opts.uv : (MAT_DEFS[part.mat]?.uv ?? this.uvScale);
       const colFn = part.opts.cfn;
+      const vcol = part.opts.vcol; // optional baked per-vertex RGB (Float32Array)
       const skinFn = part.opts.skin; // fn(local pos in bone space) -> [[boneName, w], ...]
       for (let i = 0; i < cnt; i++) {
         v.fromBufferAttribute(sp, i);
         if (animFn !== undefined) an[i] = typeof animFn === 'function' ? animFn(v) : animFn;
-        if (colFn) { const cc = colFn(v); col[i * 3] = cc[0]; col[i * 3 + 1] = cc[1]; col[i * 3 + 2] = cc[2]; } else { col[i * 3] = c[0]; col[i * 3 + 1] = c[1]; col[i * 3 + 2] = c[2]; }
+        if (vcol) { col[i * 3] = vcol[i * 3]; col[i * 3 + 1] = vcol[i * 3 + 1]; col[i * 3 + 2] = vcol[i * 3 + 2]; } else if (colFn) { const cc = colFn(v); col[i * 3] = cc[0]; col[i * 3 + 1] = cc[1]; col[i * 3 + 2] = cc[2]; } else { col[i * 3] = c[0]; col[i * 3 + 1] = c[1]; col[i * 3 + 2] = c[2]; }
         v.applyMatrix4(local);
         const lx = v.x, ly = v.y, lz = v.z;
         v.applyMatrix4(bone.matrixWorld);
@@ -562,18 +563,22 @@ export class Rig {
       g.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4));
       g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
       g.setIndex(index);
-      if (!byMat.has(part.mat)) byMat.set(part.mat, []);
-      byMat.get(part.mat).push(g);
+      // parts flagged opts.own (boss fx) keep their own mesh so they can fade alone; same material type, so no new shader
+      const gk = part.opts.own ? part.mat + '#' + part.opts.own : part.mat;
+      if (!byMat.has(gk)) byMat.set(gk, []);
+      byMat.get(gk).push(g);
     }
     const skeleton = new THREE.Skeleton(this.boneList);
     const order = { dark: 0, bone: 1, glow: 3, slime: 5, ghost: 6, spirit: 7 };
-    for (const [key, geos] of byMat) {
+    for (const [gk, geos] of byMat) {
       const geo = mergeGeometries(geos, false);
       geos.forEach((g) => g.dispose());
-      const mesh = new THREE.SkinnedMesh(geo, lib(key));
-      mesh.name = 'mesh:' + key;
+      const [key, own] = gk.split('#');
+      const mesh = new THREE.SkinnedMesh(geo, own ? lib(key).clone() : lib(key));
+      mesh.name = 'mesh:' + gk;
       mesh.userData.matKey = key;
-      mesh.renderOrder = order[key] ?? 2;
+      if (own) { mesh.userData.fx = own; mesh.material.userData.fx = own; }
+      mesh.renderOrder = own ? 8 : order[key] ?? 2;
       mesh.bind(skeleton);
       this.root.add(mesh);
     }

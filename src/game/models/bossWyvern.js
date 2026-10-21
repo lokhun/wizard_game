@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { G, xf, tube, deform, bumpy, mergeRaw, chainSkin, rng, vnoise, fbm3, clamp, lerp, smooth, bump, easeOut, easeIn, easeInOut, TAU } from './core.js';
 import { twoSided, HDR } from './parts.js';
-import { addFx, fxOf, fxSet, paint, softRing, softDisc, boneWorld, boneModel, glowLevel } from './bossKit.js';
+import { addFx, fxOf, fxSet, fxPos, fxRot, paint, softRing, softDisc, boneWorld, boneModel, glowLevel, polyParam } from './bossKit.js';
 
 // ==================================================== Gravemaw, the Stone Wyvern ==
 // A gargoyle-wyvern of weathered, lichen-stained stone with magma glowing in its
@@ -81,7 +81,7 @@ export const stoneWyvern = {
     for (let i = 0; i < NECK; i++) { acc.add(new THREE.Vector3(...NECK_OFF[i])); np.push(acc.clone()); }
     np.push(acc.clone().add(new THREE.Vector3(0, 0.12, 0.28)));
     const nchain = [['chest', 0.0], ...Array.from({ length: NECK }, (_, i) => ['neck' + i, i + 1]), ['head', NECK + 1]];
-    const along = (v) => { let best = 0, bd = 1e9; for (let i = 0; i < np.length - 1; i++) { const a = np[i], b = np[i + 1]; const ab = b.clone().sub(a); const t = clamp(v.clone().sub(a).dot(ab) / ab.lengthSq()); const d = v.distanceToSquared(a.clone().addScaledVector(ab, t)); if (d < bd) { bd = d; best = i + t; } } return best; };
+    const along = polyParam(np);
     const neckG = tube(np, (u) => lerp(0.5, 0.24, u) * (1 + Math.sin(u * 60) * 0.03), 40, 12);
     deform(neckG, (v) => { const k = 1 + (v.y > 0 ? 0.0 : 0.08); v.x *= k; });
     rig.add('chest', 'magmastone', bumpy(neckG, 0.02, 6, 4), {}, { cfn: (v) => stoneC({ x: v.x, y: v.y + 2.2, z: v.z }, 5), skin: chainSkin(nchain, along) });
@@ -171,7 +171,7 @@ export const stoneWyvern = {
     cone.rotateX(Math.PI / 2); cone.translate(0, 0, 2.1);
     addFx(rig, 'head', 'flame', paint(cone, (v) => { const t = v.z / 4.2; const a = smooth(0, 0.12, t) * (1 - smooth(0.45, 1, t)); return [1.3 * (1.2 - t), 0.42 * (1 - t * 0.6), 0.08 * (1 - t), a * 0.55]; }), { y: -0.08, z: 0.86 });
     addFx(rig, 'head', 'maw', paint(xf(G.sph(0.26, 12, 8), { sz: 1.4 }), (v) => [2, 0.6, 0.1, 0.45]), { y: -0.08, z: 0.6 });
-    addFx(rig, 'ground', 'gust', softRing(0.6, 1.0, 40, [0.55, 0.52, 0.48], 0.5), { y: 0.05, blend: 'normal' });
+    addFx(rig, 'ground', 'gust', softRing(0.6, 1.0, 40, [0.16, 0.15, 0.14], 0.5), { y: 0.05 });
     addFx(rig, 'ground', 'ring', softRing(0.8, 1.0, 48, HDR(0xffa060, 1.4), 0.65), { y: 0.06 });
     addFx(rig, 'chest', 'core', paint(xf(G.sph(0.9, 16, 12), { sz: 1.3 }), (v) => [3, 0.9, 0.15, 0.35]), { y: -0.05, z: -0.3 });
     addFx(rig, 'ground', 'trail', tailTrail());
@@ -399,10 +399,10 @@ export const stoneWyvern = {
     // wing gusts: a dust ring on the ground under each downstroke while it hovers
     const gu = ((st.flap ?? 0) / TAU + 0.85) % 1;
     fxSet(F, 'gust', fw * (1 - gu) * 0.45 * (fly ? 1 : 0), 1.2 + gu * 4.5);
-    if (F.ring) F.ring.mesh.position.set(ringX, 0.06, ringZ);
+    fxPos(F, 'ring', ringX, 0.06, ringZ);
     fxSet(F, 'ring', ring, ringR, 1, ringR);
     fxSet(F, 'core', st.heatW * (0.25 + 0.15 * Math.sin(T * 3.3)) + (anim === 'windup' && at === 'breath' ? p * 0.3 : 0), 1 + Math.sin(T * 3.3) * 0.05);
-    if (F.trail) F.trail.mesh.rotation.y = m.bones.base.rotation.y;
+    fxRot(F, 'trail', 0, m.bones.base.rotation.y, 0);
     fxSet(F, 'trail', trail * 0.8);
     return rate;
   },

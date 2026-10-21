@@ -4,7 +4,7 @@ import { humanoidPose, act2, ACT } from './humanoid.js';
 import { twoSided, HDR, RUSTY, DARKSTEEL } from './parts.js';
 import { buildHeadsman, HEADSMAN_ANIM } from './dungeon.js';
 import { skullGeo } from '../../world/props.js';
-import { addFx, fxOf, fxSet, paint, softRing, softDisc, Rope, aimChain, boneWorld, boneModel, snapRot, setBone, gripIK, springTo, glowLevel, haftBasis } from './bossKit.js';
+import { addFx, fxOf, fxSet, fxPos, aimTrail, swingTrailGeo, paint, softRing, softDisc, Rope, aimChain, boneWorld, boneModel, snapRot, setBone, gripIK, springTo, glowLevel, haftBasis } from './bossKit.js';
 
 // ================================================================ The Executioner ==
 // The Headsman of the Oubliette: a hulking hooded brute with a crescent greataxe.
@@ -118,10 +118,21 @@ export const executioner = {
       for (let i = 0; i < CH_N; i++) rig.add(`cuff${S}${i}`, 'iron', mergeRaw([xf(G.tor(0.026, 0.008, 4, 8), { y: -0.03, sy: 1.5 }), xf(G.tor(0.026, 0.008, 4, 8), { y: -0.075, sy: 1.5, ry: Math.PI / 2 })]), {}, { c: DARKSTEEL });
     }
     // a string of skulls hung from the belt on a chain
-    rig.bone('troph0', 'hips', 0.27, -0.04, -0.05);
+    rig.bone('troph0', 'hips', 0.2, -0.04, -0.2);
     for (let i = 1; i < TROPHY_N; i++) rig.bone('troph' + i, 'troph' + (i - 1), 0, -TROPHY_L, 0);
     for (let i = 0; i < TROPHY_N; i++) rig.add('troph' + i, 'iron', mergeRaw([xf(G.tor(0.022, 0.007, 4, 8), { y: -0.03, sy: 1.5 }), xf(G.tor(0.022, 0.007, 4, 8), { y: -0.07, sy: 1.5, ry: Math.PI / 2 })]), {}, { c: DARKSTEEL });
     rig.add(`troph${TROPHY_N - 1}`, 'bone', mergeRaw([xf(skullGeo(), { y: -0.14, s: 0.75, ry: 0.4 }), xf(skullGeo(), { y: -0.2, x: 0.05, s: 0.6, ry: -0.9, rz: 0.5 })]), {}, { c: [0.85, 0.78, 0.62] });
+    // a gaol lantern on a short chain at his left hip, a coal burning red inside: it marks him in the dark
+    rig.bone('lant0', 'hips', 0.27, -0.02, 0.08);
+    for (let i = 1; i < TROPHY_N; i++) rig.bone('lant' + i, 'lant' + (i - 1), 0, -TROPHY_L * 0.8, 0);
+    for (let i = 0; i < TROPHY_N; i++) rig.add('lant' + i, 'iron', mergeRaw([xf(G.tor(0.02, 0.006, 4, 8), { y: -0.025, sy: 1.5 }), xf(G.tor(0.02, 0.006, 4, 8), { y: -0.06, sy: 1.5, ry: Math.PI / 2 })]), {}, { c: DARKSTEEL });
+    const lantern = mergeRaw([
+      xf(G.cyl(0.05, 0.06, 0.02, 8), { y: -0.1 }), xf(G.cone(0.065, 0.06, 8), { y: -0.07 }), xf(G.tor(0.015, 0.005, 3, 8), { y: -0.035 }),
+      xf(G.cyl(0.065, 0.065, 0.02, 8), { y: -0.24 }), ...[0, 1, 2, 3].map((k) => xf(G.box(0.008, 0.13, 0.008), { x: Math.sin(k * 1.57 + 0.78) * 0.058, z: Math.cos(k * 1.57 + 0.78) * 0.058, y: -0.17 })),
+    ]);
+    rig.add(`lant${TROPHY_N - 1}`, 'iron', lantern, {}, { c: RUSTY });
+    rig.add(`lant${TROPHY_N - 1}`, 'glow', bumpy(G.ico(0.035, 1), 0.008, 20, 3), { y: -0.2 }, { c: HDR(0xff4a18, 5) });
+    rig.add(`lant${TROPHY_N - 1}`, 'glow', xf(G.cyl(0.05, 0.055, 0.1, 8, true), { y: -0.17 }), {}, { c: HDR(0xff3010, 0.7) });
     // heavier hood: a ragged black mantle over the shoulders and a stitched mouth slit
     const st = [];
     for (let i = 0; i < 5; i++) st.push(xf(G.box(0.006, 0.03, 0.006), { x: -0.024 + i * 0.012, y: 0.06, z: 0.147 }));
@@ -130,9 +141,9 @@ export const executioner = {
     rig.pair('head', 'head', 'glow', xf(G.sph(0.016, 8, 6), { sx: 1.6, sy: 0.7 }), { x: 0.047, y: 0.14, z: 0.143 }, { c: HDR(EYE, 10) });
 
     // ---- fx: swing trail (on the chest), impact ring + dust (on the base), heated edge and drag sparks (on the axe)
-    addFx(rig, 'chest', 'trail', trailGeo(1.15, 2.05, 2.4, HDR(0xffd0b0, 0.55)));
+    addFx(rig, 'chest', 'trail', swingTrailGeo(1.15, 2.05, 2.4, HDR(0xffd0b0, 0.55)));
     addFx(rig, 'base', 'ring', softRing(0.75, 1.0, 40, HDR(0xffc090, 0.9), 0.6), { y: 0.03 });
-    addFx(rig, 'base', 'dust', softDisc(1, 28, [0.3, 0.26, 0.22], 1.2), { y: 0.05, blend: 'normal' });
+    addFx(rig, 'base', 'dust', softDisc(1, 28, [0.13, 0.11, 0.09], 1.2), { y: 0.05 });
     const hot = paint(xf(extrude(ax.outline.filter((_, i) => i > 2 && i < 12).concat([[0.62, 1.7], [0.7, 1.45]]), 0.062, 0, 1), { ry: -Math.PI / 2 }), (v) => { const e = smooth(0.6, 0.84, v.z); return [3.2 * (0.4 + e), 0.9 * (0.3 + e * 0.8), 0.15, 0.25 + e * 0.75]; });
     addFx(rig, 'axe', 'hot', hot);
     const sp = [];
@@ -238,7 +249,6 @@ function deathPose(P, p, m, s) {
 }
 
 // --------------------------------------------------------- weapon + hands ----
-const _X = new THREE.Vector3(), _Y = new THREE.Vector3(), _Z = new THREE.Vector3(), _U = new THREE.Vector3(), _V = new THREE.Vector3();
 const _Mb = new THREE.Matrix4(), _Mc = new THREE.Matrix4(), _Ma = new THREE.Matrix4(), _Q = new THREE.Quaternion(), _E = new THREE.Euler(), _P = new THREE.Vector3(), _S = new THREE.Vector3();
 const _gR = new THREE.Vector3(), _gL = new THREE.Vector3(), _axis = new THREE.Vector3(), _poleR = new THREE.Vector3(), _poleL = new THREE.Vector3();
 function weapon(m, s, dt, ax, wR, dead) {
@@ -302,12 +312,13 @@ const AX_CH = Array.from({ length: CH_N }, () => DOWN), AX_NO = Array.from({ len
 const N_CUFF = { L: Array.from({ length: CH_N }, (_, i) => `cuffL${i}`), R: Array.from({ length: CH_N }, (_, i) => `cuffR${i}`) };
 const N_NOOSE = Array.from({ length: NOOSE_N - 1 }, (_, i) => `noose${i + 1}`);
 const N_TROPH = Array.from({ length: TROPHY_N }, (_, i) => `troph${i}`);
+const N_LANT = Array.from({ length: TROPHY_N }, (_, i) => `lant${i}`);
 const _a = new THREE.Vector3(), _Mw = new THREE.Matrix4();
 function secondary(m, s, dt) {
   const st = m.state;
   if (!st.ropes) {
     const sc = 1.8;
-    st.ropes = { L: new Rope(CH_N, CH_L * sc), R: new Rope(CH_N, CH_L * sc), noose: new Rope(NOOSE_N - 1, NOOSE_L * sc), troph: new Rope(TROPHY_N, TROPHY_L * sc) };
+    st.ropes = { L: new Rope(CH_N, CH_L * sc), R: new Rope(CH_N, CH_L * sc), noose: new Rope(NOOSE_N - 1, NOOSE_L * sc), troph: new Rope(TROPHY_N, TROPHY_L * sc), lant: new Rope(TROPHY_N, TROPHY_L * 0.8 * sc) };
   }
   const R = st.ropes, rs = m.root.scale.x;
   m.root.updateMatrix();
@@ -327,49 +338,19 @@ function secondary(m, s, dt) {
   _a.copy(m.bones.troph0.position).applyMatrix4(_Mw);
   R.troph.step(_a, dt, { damp: 1.2, floor, iters: 2 });
   aimChain(m, N_TROPH, R.troph, AX_TR);
+  boneWorld(m, m.bones.lant0.parent, _Mw);
+  _a.copy(m.bones.lant0.position).applyMatrix4(_Mw);
+  R.lant.step(_a, dt, { damp: 1.4, floor, iters: 2 });
+  aimChain(m, N_LANT, R.lant, AX_TR);
 }
 
 // ------------------------------------------------------------------- fx ----
-function trailGeo(r0, r1, span, col) {
-  const pos = [], c = [], idx = [], A = 24, Rr = 3;
-  for (let i = 0; i <= A; i++) {
-    const u = i / A, a = -u * span;
-    for (let k = 0; k <= Rr; k++) {
-      const v = k / Rr, r = lerp(r0, r1, v);
-      pos.push(Math.sin(a) * r, 0, Math.cos(a) * r);
-      const al = (1 - u) ** 2.2 * Math.sin(Math.PI * (0.15 + v * 0.85)) * (0.4 + 0.6 * v);
-      c.push(col[0], col[1], col[2], al);
-    }
-  }
-  for (let i = 0; i < A; i++) for (let k = 0; k < Rr; k++) { const a = i * (Rr + 1) + k, b = a + Rr + 1; idx.push(a, b, a + 1, b, b + 1, a + 1); }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(c, 4));
-  g.setIndex(idx);
-  return g;
-}
 function effects(m, s, dt, ax, eyeK) {
   const st = m.state, F = fxOf(m);
   // swing trail follows the haft; it shows only when the axe is really moving
-  const v = ax._v ?? {};
-  const wy = Math.abs(v.th ?? 0), wp = Math.abs(v.ph ?? 0);
-  const speed = Math.max(wy, wp);
+  // swing trail in the plane of the swing; it shows only when the axe is really moving
+  const speed = aimTrail(F, 'trail', ax);
   st.trailA = (st.trailA ?? 0) + (smooth(3.5, 9, speed) - (st.trailA ?? 0)) * (1 - Math.exp(-(speed > 3.5 ? 30 : 8) * dt));
-  const tr = F.trail;
-  if (tr && st.trailA > 0.004) {
-    // the trail lies in the plane of the swing: leading edge on the haft, trailing back along -velocity
-    const th = ax.th, ph = ax.ph, ct = Math.cos(th), sT = Math.sin(th), cp = Math.cos(ph), sp = Math.sin(ph);
-    _Y.set(sT * cp, sp, ct * cp);
-    _V.set(ct * cp, 0, -sT * cp).multiplyScalar(v.th ?? 0).addScaledVector(_U.set(-sT * sp, cp, -ct * sp), v.ph ?? 0);
-    if (_V.lengthSq() > 1e-6) {
-      _X.copy(_V).normalize(); // local +X = direction of travel (the geometry trails toward -X)
-      _Z.copy(_Y);
-      _U.crossVectors(_Z, _X);
-      _Mw.makeBasis(_X, _U, _Z);
-      tr.mesh.quaternion.setFromRotationMatrix(_Mw);
-      tr.mesh.position.set(ax.gx, ax.gy, ax.gz);
-    }
-  }
   fxSet(F, 'trail', st.trailA * 0.9);
   // slam impact: ring + dust where the blade meets the floor
   const an = s.anim, at = s.attackType, p = s.progress;
@@ -383,7 +364,7 @@ function effects(m, s, dt, ax, eyeK) {
   }
   st.lastP = an === 'attack' ? p : 1;
   const it = st.imp ? m.time - st.imp.t : 9;
-  if (st.imp && F.ring) { F.ring.mesh.position.set(st.imp.x, 0.03, st.imp.z); F.dust.mesh.position.set(st.imp.x, 0.05, st.imp.z); }
+  if (st.imp) { fxPos(F, 'ring', st.imp.x, 0.03, st.imp.z); fxPos(F, 'dust', st.imp.x, 0.05, st.imp.z); }
   const ru = clamp(it / 0.5), du = clamp(it / 1.4);
   fxSet(F, 'ring', (1 - ru) * (it < 0.5 ? 1 : 0), 0.3 + easeOut(ru) * 1.9);
   fxSet(F, 'dust', (1 - du) * 0.55 * (it < 1.4 ? 1 : 0), 0.4 + easeOut(du) * 1.4);
