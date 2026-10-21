@@ -1,11 +1,16 @@
 import * as THREE from 'three';
-import { worldBox, tf, colorize } from '../render/geo.js';
+import { worldBox, tf, colorize, GeoBuilder } from '../render/geo.js';
 
 // ---------------------------------------------------------------------------
 // Procedural prop library. Each builder returns a list of [materialKey, geo]
 // parts in local space (y=0 is the floor). The level builder merges all props
 // into a handful of large static batches, one per material.
 // ---------------------------------------------------------------------------
+
+// Detail level for the heavier props: low and medium settings get leaner books, chains,
+// bars and flutes (the builder sets this before it builds a floor).
+let leanProps = false;
+export function setPropDetail(quality) { leanProps = quality === 'low' || quality === 'medium'; }
 
 const cyl = (rt, rb, h, seg = 12, open = false) => new THREE.CylinderGeometry(rt, rb, h, seg, 1, open);
 const box = (w, h, d, s = 0.5) => worldBox(w, h, d, s);
@@ -43,12 +48,13 @@ function barrel(r) {
     const t = i / 10;
     pts.push(new THREE.Vector2(0.36 + Math.sin(t * Math.PI) * 0.07, t * 1.0));
   }
-  const body = cylUV(new THREE.LatheGeometry(pts, 16), 2.4, 1);
+  const seg = leanProps ? 10 : 16;
+  const body = cylUV(new THREE.LatheGeometry(leanProps ? pts.filter((_, i) => i % 2 === 0) : pts, seg), 2.4, 1);
   parts.push(['wood', body]);
-  parts.push(['wood', tf(cyl(0.37, 0.37, 0.02, 16), { y: 0.99 })]);
-  for (const y of [0.12, 0.38, 0.62, 0.88]) {
+  parts.push(['wood', tf(cyl(0.37, 0.37, 0.02, seg), { y: 0.99 })]);
+  for (const y of leanProps ? [0.12, 0.88] : [0.12, 0.38, 0.62, 0.88]) {
     const rr = 0.36 + Math.sin(y * Math.PI) * 0.07 + 0.008;
-    parts.push(['iron', tf(cylUV(cyl(rr, rr, 0.05, 16, true), 2, 0.1), { y })]);
+    parts.push(['iron', tf(cylUV(cyl(rr, rr, 0.05, seg, true), 2, 0.1), { y })]);
   }
   return parts;
 }
@@ -103,7 +109,7 @@ function bones(rng) {
 }
 
 export function skullGeo() {
-  const g = sph(0.11, 10, 8);
+  const g = leanProps ? sph(0.11, 7, 5) : sph(0.11, 10, 8);
   const p = g.getAttribute('position');
   for (let i = 0; i < p.count; i++) {
     let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
@@ -134,14 +140,15 @@ function pillarRound() {
 function pillarGrand() {
   const parts = [];
   parts.push(['trim', tf(box(1.9, 0.6, 1.9), { y: 0.3 })]);
-  parts.push(['gold', tf(tor(0.82, 0.07, 6, 20), { y: 0.75, rx: Math.PI / 2 })]);
+  parts.push(['gold', tf(leanProps ? tor(0.82, 0.07, 3, 12) : tor(0.82, 0.07, 6, 20), { y: 0.75, rx: Math.PI / 2 })]);
   // fluted column: ring of thin cylinders around a core
-  parts.push(['trim', tf(cylUV(cyl(0.72, 0.78, 18, 20), 4, 18), { y: 9.6 })]);
-  for (let i = 0; i < 12; i++) {
-    const a = (i / 12) * Math.PI * 2;
-    parts.push(['trim', tf(cyl(0.09, 0.09, 17.5, 6), { x: Math.cos(a) * 0.75, z: Math.sin(a) * 0.75, y: 9.5 })]);
+  parts.push(['trim', tf(cylUV(cyl(0.72, 0.78, 18, leanProps ? 12 : 20), 4, 18), { y: 9.6 })]);
+  const nf = leanProps ? 8 : 12;
+  for (let i = 0; i < nf; i++) {
+    const a = (i / nf) * Math.PI * 2;
+    parts.push(['trim', tf(cyl(0.09, 0.09, 17.5, leanProps ? 4 : 6), { x: Math.cos(a) * 0.75, z: Math.sin(a) * 0.75, y: 9.5 })]);
   }
-  parts.push(['gold', tf(tor(0.82, 0.06, 6, 20), { y: 4.2, rx: Math.PI / 2 })]);
+  parts.push(['gold', tf(leanProps ? tor(0.82, 0.06, 3, 12) : tor(0.82, 0.06, 6, 20), { y: 4.2, rx: Math.PI / 2 })]);
   return parts;
 }
 
@@ -150,7 +157,7 @@ function cellBars(len) {
   const n = Math.floor(len / 0.22);
   for (let i = 0; i <= n; i++) {
     const x = -len / 2 + (i / n) * len;
-    parts.push(['iron', tf(cyl(0.025, 0.025, 3.4, 6), { x, y: 1.7 })]);
+    parts.push(['iron', tf(cyl(0.025, 0.025, 3.4, leanProps ? 4 : 6), { x, y: 1.7 })]);
   }
   parts.push(['iron', tf(box(len, 0.08, 0.06), { y: 0.1 })]);
   parts.push(['iron', tf(box(len, 0.08, 0.06), { y: 1.1 })]);
@@ -164,7 +171,7 @@ function chains(rng) {
     const x = (c - 0.5) * 0.8;
     const links = 10 + Math.floor(rng() * 5);
     for (let i = 0; i < links; i++) {
-      parts.push(['iron', tf(tor(0.045, 0.012, 4, 8), { x, y: 3.2 - i * 0.075, ry: (i % 2) * Math.PI / 2 })]);
+      parts.push(['iron', tf(leanProps ? tor(0.045, 0.012, 3, 5) : tor(0.045, 0.012, 4, 8), { x, y: 3.2 - i * 0.075, ry: (i % 2) * Math.PI / 2 })]);
     }
     parts.push(['iron', tf(tor(0.09, 0.02, 4, 10), { x, y: 3.2 - links * 0.075 - 0.08, rx: Math.PI / 2 })]);
   }
@@ -272,8 +279,8 @@ function mushrooms(rng, glow = false) {
 }
 function pipe() {
   const parts = [];
-  parts.push(['iron', tf(cylUV(cyl(0.3, 0.3, 1.6, 12), 2, 1.6), { y: 2.2, z: -0.1, rx: Math.PI / 2 })]);
-  parts.push(['iron', tf(tor(0.33, 0.05, 6, 12), { y: 2.2, z: 0.6 })]);
+  parts.push(['iron', tf(cylUV(cyl(0.3, 0.3, 1.6, leanProps ? 8 : 12), 2, 1.6), { y: 2.2, z: -0.1, rx: Math.PI / 2 })]);
+  parts.push(['iron', tf(tor(0.33, 0.05, leanProps ? 4 : 6, leanProps ? 8 : 12), { y: 2.2, z: 0.6 })]);
   parts.push(['slime', tf(new THREE.PlaneGeometry(0.4, 2.0), { y: 1.0, z: 0.72 })]);
   return parts;
 }
@@ -346,23 +353,42 @@ function bookshelf(len) {
   parts.push(['wood', tf(box(len, h, 0.06), { y: h / 2 })]);
   for (let x = -len / 2; x <= len / 2 + 0.01; x += 1.0) parts.push(['wood', tf(box(0.08, h, d), { x, y: h / 2 })]);
   const rngL = mulberry(Math.floor(len * 1000));
-  const colors = [0x5a1a14, 0x1d2c44, 0x2a3a1e, 0x4a3218, 0x3c1838, 0x6a5a3a];
+  const colors = [0x5a1a14, 0x1d2c44, 0x2a3a1e, 0x4a3218, 0x3c1838, 0x6a5a3a].map((c) => new THREE.Color(c));
+  // every book is one shared unit box stretched by its matrix, all merged into a single part
+  const books = new GeoBuilder();
+  const book = (w, bh, x, y, z, rz) => {
+    _bq.setFromAxisAngle(_bz, rz);
+    _bm.compose(_bp.set(x, y, z), _bq, _bs.set(w, bh, 0.5));
+    const c = colors[Math.floor(rngL() * colors.length)];
+    books.addGeometry(unitBook(), _bm, [c.r, c.g, c.b]);
+  };
   for (let shelf = 0; shelf < 5; shelf++) {
     const y = 0.1 + shelf * 0.62;
     parts.push(['wood', tf(box(len, 0.05, d), { y })]);
     for (const side of [-1, 1]) {
       let x = -len / 2 + 0.06;
       while (x < len / 2 - 0.1) {
+        if (leanProps) {
+          // runs of books drawn as a few wider blocks
+          const w = Math.min(len / 2 - 0.08 - x, 0.35 + rngL() * 0.45), bh = 0.36 + rngL() * 0.12;
+          book(w, bh, x + w / 2, y + bh / 2 + 0.03, side * 0.45, 0);
+          x += w + 0.01;
+          continue;
+        }
         const w = 0.05 + rngL() * 0.06, bh = 0.32 + rngL() * 0.2;
         if (rngL() < 0.08) { x += 0.2; continue; }
         const lean = rngL() < 0.1 ? 0.25 : 0;
-        parts.push(['leather', colorize(tf(box(w, bh, 0.5, 2), { x: x + w / 2, y: y + bh / 2 + 0.03, z: side * 0.45, rz: lean }), colors[Math.floor(rngL() * colors.length)])]);
+        book(w, bh, x + w / 2, y + bh / 2 + 0.03, side * 0.45, lean);
         x += w + 0.005;
       }
     }
   }
+  parts.push(['leather', books.build()]);
   return parts;
 }
+const _bm = new THREE.Matrix4(), _bq = new THREE.Quaternion(), _bp = new THREE.Vector3(), _bs = new THREE.Vector3(), _bz = new THREE.Vector3(0, 0, 1);
+let _unitBook = null;
+const unitBook = () => (_unitBook ??= worldBox(1, 1, 1, 0.12));
 function mulberry(a) { return function () { let t = (a += 0x6d2b79f5); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 
 function bookPile(rng) {
@@ -464,8 +490,8 @@ function statue(rng, small = false) {
   // robed figure holding a sword
   const robePts = [];
   for (let i = 0; i <= 8; i++) { const t = i / 8; robePts.push(new THREE.Vector2(0.55 - t * 0.3 + Math.sin(t * 3) * 0.05, t * 2.2)); }
-  parts.push(['stone', tf(new THREE.LatheGeometry(robePts, 12), { y: 1.1 * s, sx: s, sy: s, sz: s })]);
-  parts.push(['stone', tf(sph(0.25, 10, 8), { y: (1.1 + 2.45) * s, sx: s, sy: s, sz: s })]);
+  parts.push(['stone', tf(new THREE.LatheGeometry(robePts, leanProps ? 8 : 12), { y: 1.1 * s, sx: s, sy: s, sz: s })]);
+  parts.push(['stone', tf(leanProps ? sph(0.25, 7, 5) : sph(0.25, 10, 8), { y: (1.1 + 2.45) * s, sx: s, sy: s, sz: s })]);
   parts.push(['stone', tf(box(0.9, 0.3, 0.4), { y: (1.1 + 1.9) * s, sx: s, sy: s, sz: s })]);
   parts.push(['stone', tf(box(0.1, 1.6, 0.04), { y: (1.1 + 0.9) * s, z: 0.35 * s, sx: s, sy: s, sz: s })]);
   parts.push(['stone', tf(box(0.4, 0.06, 0.06), { y: (1.1 + 1.6) * s, z: 0.35 * s, sx: s, sy: s, sz: s })]);
@@ -584,6 +610,62 @@ function hayCart(rng) {
   return parts;
 }
 function cart() { return hayCart(Math.random).filter((p) => p[0] !== 'cloth'); }
+// a wagon that lost a wheel: the bed lists onto its axle, the wheel lies in the grass
+function brokenWagon(rng) {
+  const parts = [];
+  const tilt = 0.2 + rng() * 0.1;
+  const bed = [['wood', box(1.4, 0.1, 2.4), 0, 0.62, 0], ['wood', box(0.06, 0.45, 2.4), 0.7, 0.85, 0], ['wood', box(0.06, 0.45, 2.4), -0.7, 0.85, 0], ['wood', box(1.4, 0.45, 0.06), 0, 0.85, -1.2]];
+  for (const [k, g, x, y, z] of bed) parts.push([k, tf(g, { x, y: y - 0.12, z, rz: tilt })]);
+  // the surviving wheel, spokes and hub
+  parts.push(['wood', tf(tor(0.45, 0.06, 5, 12), { x: 0.8, y: 0.5, z: -0.6, ry: Math.PI / 2 })]);
+  for (let k = 0; k < 4; k++) parts.push(['wood', tf(box(0.05, 0.85, 0.05), { x: 0.8, y: 0.5, z: -0.6, rx: (k / 4) * Math.PI })]);
+  parts.push(['iron', tf(cyl(0.08, 0.08, 0.16, 8), { x: 0.8, y: 0.5, z: -0.6, rz: Math.PI / 2 })]);
+  // the lost one, flat in the grass, and a snapped spoke
+  parts.push(['wood', tf(tor(0.45, 0.06, 5, 12), { x: -1.25, y: 0.06, z: 0.5, rx: Math.PI / 2 })]);
+  for (let k = 0; k < 3; k++) parts.push(['wood', tf(box(0.05, 0.85, 0.05), { x: -1.25, y: 0.07, z: 0.5, rx: Math.PI / 2, rz: (k / 3) * Math.PI })]);
+  parts.push(['wood', tf(box(0.05, 0.4, 0.05), { x: -0.6, y: 0.03, z: 1.1, rz: Math.PI / 2, ry: 0.7 })]);
+  // the shafts dropped to the ground, loose boards and spilled sacks
+  for (const s of [-0.35, 0.35]) parts.push(['wood', tf(box(0.08, 0.08, 1.7), { x: s, y: 0.25, z: 1.85, rx: 0.28 })]);
+  parts.push(['wood', tf(box(0.24, 0.04, 1.3), { x: -1.0, y: 0.03, z: -0.9, ry: 0.5 })]);
+  const sackG = jitter(sph(0.28, 8, 6), 0.04, rng); sackG.scale(1, 0.7, 1.2);
+  parts.push(['cloth', colorize(tf(sackG, { x: 0.15, y: 0.7, z: 0.5 }), 0x8a7452)]);
+  return parts;
+}
+// training dummy: a straw man bound to a post on cross feet, arms out, a sack for a head
+function trainingDummy(rng) {
+  const parts = [];
+  for (const r of [0, Math.PI / 2]) parts.push(['wood', tf(box(0.9, 0.1, 0.12), { y: 0.05, ry: r + 0.3 })]);
+  parts.push(['wood', tf(cyl(0.06, 0.07, 2.0, 7), { y: 1.0 })]);
+  parts.push(['wood', tf(box(1.2, 0.09, 0.09), { y: 1.5, rz: (rng() - 0.5) * 0.15 })]);
+  const body = jitter(cyl(0.24, 0.2, 0.75, 9), 0.03, rng);
+  parts.push(['cloth', colorize(tf(body, { y: 1.28 }), 0xa88a4a)]);
+  for (const x of [-0.5, 0.5]) parts.push(['cloth', colorize(tf(jitter(cyl(0.09, 0.08, 0.36, 6), 0.02, rng), { x, y: 1.5, rz: Math.PI / 2 }), 0x9a7c40)]);
+  const head = jitter(sph(0.17, 8, 6), 0.025, rng);
+  parts.push(['cloth', colorize(tf(head, { y: 1.85, sy: 1.1 }), 0x8a7a5a)]);
+  for (const y of [1.05, 1.3, 1.52, 1.72]) parts.push(['cloth', colorize(tf(tor(y === 1.72 ? 0.1 : 0.22, 0.018, 3, 10), { y, rx: Math.PI / 2 }), 0x5a4428)]);
+  // a battered practice shield strapped to its chest
+  if (rng() < 0.6) {
+    parts.push(['wood', tf(cyl(0.28, 0.28, 0.04, 10), { y: 1.3, z: 0.24, rx: Math.PI / 2 })]);
+    parts.push(['iron', tf(tor(0.28, 0.02, 3, 12), { y: 1.3, z: 0.26 })]);
+  }
+  return parts;
+}
+// bales stacked against a wall, bound with twine
+function hayBales(rng) {
+  const parts = [];
+  const bale = (x, y, z, ry) => {
+    const g = jitter(box(1.0, 0.48, 0.52), 0.025, rng);
+    parts.push(['cloth', colorize(tf(g, { x, y: y + 0.24, z, ry }), rng() < 0.5 ? 0xa88c48 : 0x98803e)]);
+    for (const o of [-0.28, 0.28]) parts.push(['cloth', colorize(tf(box(0.03, 0.5, 0.54), { x: x + o * Math.cos(ry), y: y + 0.24, z: z - o * Math.sin(ry), ry }), 0x5a4428)]);
+  };
+  bale(-0.52, 0, 0, (rng() - 0.5) * 0.1);
+  bale(0.52, 0, 0.02, (rng() - 0.5) * 0.1);
+  bale(0.05, 0.48, 0, (rng() - 0.5) * 0.3);
+  if (rng() < 0.5) bale(1.1, 0, 0.75, 1.3);
+  const loose = jitter(sph(0.5, 8, 5), 0.08, rng); loose.scale(1.3, 0.25, 1);
+  parts.push(['cloth', colorize(tf(loose, { x: -0.2, y: 0.03, z: 0.5 }), 0xa89048)]);
+  return parts;
+}
 function ruinPillar(rng) {
   const parts = [];
   const h = 2 + rng() * 5;
@@ -681,7 +763,7 @@ export const PROPS = {
   bucket, hay, rack, cage, skeletonSit, bloodstain, puddle, grate, mushrooms, glowshrooms, pipe, sconce, brazier: () => brazier(false),
   brazierTall: () => brazier(true), brazierFloor, chandelier, candles, candelabra, bookPile, scrolls, armorStand, weaponRack, banner,
   painting, chest, statue, statueSmall: (r) => statue(r, true), well, fountain, tree, deadTree: (r) => tree(r, true), grave, hayCart, cart,
-  ruinPillar, gallows, throne, stainedGlass, shrine, merchant: merchantStall, ladder, stairsDown,
+  ruinPillar, gallows, throne, stainedGlass, shrine, merchant: merchantStall, ladder, stairsDown, brokenWagon, trainingDummy, hayBales,
 };
 export { cellBars, bookshelf };
 

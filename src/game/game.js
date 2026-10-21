@@ -161,7 +161,7 @@ export class Game {
     this.level = level;
     this.biome = level.biome;
     this.collision = new Collision(level);
-    this.built = buildLevel(level, this.texFactory, this.lights);
+    this.built = buildLevel(level, this.texFactory, this.lights, { quality: this.settings?.quality });
     this.critters?.dispose();
     this.critters = this.settings?.quality === 'low' ? null : new Critters(this.scene, level);
     this.scene.add(this.built.group);
