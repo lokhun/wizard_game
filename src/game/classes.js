@@ -1161,7 +1161,14 @@ export const CLASSES = {
           // sigil, and you burn with it for as long as the pact lasts
           ctx.vfx.flash(v3(p.x, p.y + 1.2, p.z), 0xe02030, 30, 8, 0.4);
           ctx.screenTint([1.25, 0.82, 0.82], 0.35);
-          for (let i = 0; i < 36; i++) {
+          // (round your own head the spiral is just red smears on the lens:
+          // the caster sees it from the hand instead)
+          if (ctx.local) {
+            const o = ctx.origin, d = ctx.dir;
+            ctx.vfx.burst(v3(o.x + d.x * 0.8, o.y + d.y * 0.8, o.z + d.z * 0.8), { element: 'blood', count: 3, speed: 1, life: 0.9, size: 0.3, sprite: SPR.RUNE, drag: 3, spin: 2, color: [1.0, 0.06, 0.1] });
+            ctx.vfx.burst(v3(o.x + d.x * 1.2, o.y + d.y * 1.2, o.z + d.z * 1.2), { count: 16, speed: 4, dir: d, spread: 0.7, life: 0.7, size: 0.07, sprite: SPR.DROP, solid: true, gravity: 10, stretch: 0.04, color: [0.3, 0, 0.02], color2: [0.15, 0, 0.01] });
+          }
+          for (let i = 0; i < (ctx.local ? 0 : 36); i++) {
             const a = (i / 36) * Math.PI * 4, r = 0.9 - i * 0.012;
             ctx.vfx.P.glow({ x: p.x + Math.cos(a) * r, y: p.y + 0.1 + i * 0.05, z: p.z + Math.sin(a) * r, vx: -Math.sin(a) * 2.5, vy: 2.2, vz: Math.cos(a) * 2.5, r: 1.1, g: 0.05, b: 0.08, r2: 0.25, g2: 0, b2: 0.02, life: 0.7, size: 0.2, size2: 0.05, sprite: SPR.DROP, drag: 1.2, delay: i * 0.008 });
           }
@@ -1227,6 +1234,23 @@ export const CLASSES = {
             ctx.vfx.P.solid({ x: p.x + Math.cos(a) * 0.8, y: p.y + 1.2, z: p.z + Math.sin(a) * 0.8, vx: Math.cos(a) * sp, vy: e * sp, vz: Math.sin(a) * sp, r: 0.32, g: 0.0, b: 0.02, r2: 0.16, g2: 0, b2: 0.01, life: rand(0.5, 0.8), size: rand(0.06, 0.12), stretch: 0.05, sprite: SPR.DROP, gravity: 14, drag: 1.6 });
             if (i % 2 === 0) ctx.vfx.P.glow({ x: p.x + Math.cos(a) * 0.8, y: p.y + 1.2, z: p.z + Math.sin(a) * 0.8, vx: Math.cos(a) * sp * 1.1, vy: e * sp, vz: Math.sin(a) * sp * 1.1, r: 1.4, g: 0.05, b: 0.08, r2: 0.3, g2: 0, b2: 0.02, life: rand(0.3, 0.45), size: 0.1, stretch: 0.06, sprite: SPR.SPARK, drag: 2.5 });
           }
+          // a crimson mist hangs over the ground afterwards, embers of blood rising through it
+          const mp = v3(p.x, ctx.groundAt(p.x, p.z), p.z);
+          ctx.zone({ pos: mp, radius: 0, life: 2.6, interval: 9, onTick: () => {},
+            visual: (z, dt) => {
+              const k = Math.min(1, z.age / 0.4) * Math.min(1, (z.life - z.age) / 1);
+              const n = emitN(z, 'eM', 9 * k, dt);
+              for (let i = 0; i < n; i++) {
+                const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R * 0.8;
+                ctx.vfx.P.solid({ x: mp.x + Math.cos(a) * r, y: mp.y + 0.3, z: mp.z + Math.sin(a) * r, vx: rand(-0.3, 0.3), vy: rand(0.05, 0.25), vz: rand(-0.3, 0.3), r: 0.2, g: 0.01, b: 0.02, a: 0.35, life: rand(1.5, 2.2), size: 1.4, size2: 2.8, sprite: SPR.SMOKE, drag: 0.6, spin: rand(-0.4, 0.4) });
+              }
+              const ne = emitN(z, 'eE', 22 * k, dt);
+              for (let i = 0; i < ne; i++) {
+                const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R * 0.8;
+                ctx.vfx.P.glow({ x: mp.x + Math.cos(a) * r, y: mp.y + 0.2, z: mp.z + Math.sin(a) * r, vy: rand(0.8, 1.8), r: 1.2, g: 0.04, b: 0.07, r2: 0.3, g2: 0, b2: 0.02, life: rand(0.8, 1.3), size: 0.04, sprite: SPR.EMBER, drag: 0.5 });
+              }
+              ctx.lightAt(tmp.set(mp.x, mp.y + 1, mp.z), 0xe02030, 6 * k, R * 1.5);
+            } });
           for (let i = 0; i < 10; i++) {
             const a = (i / 10) * Math.PI * 2, r = R * 0.55;
             const gx = p.x + Math.cos(a) * r, gz = p.z + Math.sin(a) * r;
