@@ -7,6 +7,11 @@ import { worldBox, tf, colorize } from '../render/geo.js';
 // into a handful of large static batches, one per material.
 // ---------------------------------------------------------------------------
 
+// Detail level for the heavier props: low and medium settings get leaner books, chains,
+// bars and flutes (the builder sets this before it builds a floor).
+let leanProps = false;
+export function setPropDetail(quality) { leanProps = quality === 'low' || quality === 'medium'; }
+
 const cyl = (rt, rb, h, seg = 12, open = false) => new THREE.CylinderGeometry(rt, rb, h, seg, 1, open);
 const box = (w, h, d, s = 0.5) => worldBox(w, h, d, s);
 const sph = (r, ws = 12, hs = 8) => new THREE.SphereGeometry(r, ws, hs);
@@ -43,12 +48,13 @@ function barrel(r) {
     const t = i / 10;
     pts.push(new THREE.Vector2(0.36 + Math.sin(t * Math.PI) * 0.07, t * 1.0));
   }
-  const body = cylUV(new THREE.LatheGeometry(pts, 16), 2.4, 1);
+  const seg = leanProps ? 10 : 16;
+  const body = cylUV(new THREE.LatheGeometry(leanProps ? pts.filter((_, i) => i % 2 === 0) : pts, seg), 2.4, 1);
   parts.push(['wood', body]);
-  parts.push(['wood', tf(cyl(0.37, 0.37, 0.02, 16), { y: 0.99 })]);
-  for (const y of [0.12, 0.38, 0.62, 0.88]) {
+  parts.push(['wood', tf(cyl(0.37, 0.37, 0.02, seg), { y: 0.99 })]);
+  for (const y of leanProps ? [0.12, 0.88] : [0.12, 0.38, 0.62, 0.88]) {
     const rr = 0.36 + Math.sin(y * Math.PI) * 0.07 + 0.008;
-    parts.push(['iron', tf(cylUV(cyl(rr, rr, 0.05, 16, true), 2, 0.1), { y })]);
+    parts.push(['iron', tf(cylUV(cyl(rr, rr, 0.05, seg, true), 2, 0.1), { y })]);
   }
   return parts;
 }
@@ -103,7 +109,7 @@ function bones(rng) {
 }
 
 export function skullGeo() {
-  const g = sph(0.11, 10, 8);
+  const g = leanProps ? sph(0.11, 7, 5) : sph(0.11, 10, 8);
   const p = g.getAttribute('position');
   for (let i = 0; i < p.count; i++) {
     let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
@@ -134,14 +140,15 @@ function pillarRound() {
 function pillarGrand() {
   const parts = [];
   parts.push(['trim', tf(box(1.9, 0.6, 1.9), { y: 0.3 })]);
-  parts.push(['gold', tf(tor(0.82, 0.07, 6, 20), { y: 0.75, rx: Math.PI / 2 })]);
+  parts.push(['gold', tf(leanProps ? tor(0.82, 0.07, 3, 12) : tor(0.82, 0.07, 6, 20), { y: 0.75, rx: Math.PI / 2 })]);
   // fluted column: ring of thin cylinders around a core
-  parts.push(['trim', tf(cylUV(cyl(0.72, 0.78, 18, 20), 4, 18), { y: 9.6 })]);
-  for (let i = 0; i < 12; i++) {
-    const a = (i / 12) * Math.PI * 2;
-    parts.push(['trim', tf(cyl(0.09, 0.09, 17.5, 6), { x: Math.cos(a) * 0.75, z: Math.sin(a) * 0.75, y: 9.5 })]);
+  parts.push(['trim', tf(cylUV(cyl(0.72, 0.78, 18, leanProps ? 12 : 20), 4, 18), { y: 9.6 })]);
+  const nf = leanProps ? 8 : 12;
+  for (let i = 0; i < nf; i++) {
+    const a = (i / nf) * Math.PI * 2;
+    parts.push(['trim', tf(cyl(0.09, 0.09, 17.5, leanProps ? 4 : 6), { x: Math.cos(a) * 0.75, z: Math.sin(a) * 0.75, y: 9.5 })]);
   }
-  parts.push(['gold', tf(tor(0.82, 0.06, 6, 20), { y: 4.2, rx: Math.PI / 2 })]);
+  parts.push(['gold', tf(leanProps ? tor(0.82, 0.06, 3, 12) : tor(0.82, 0.06, 6, 20), { y: 4.2, rx: Math.PI / 2 })]);
   return parts;
 }
 
@@ -150,7 +157,7 @@ function cellBars(len) {
   const n = Math.floor(len / 0.22);
   for (let i = 0; i <= n; i++) {
     const x = -len / 2 + (i / n) * len;
-    parts.push(['iron', tf(cyl(0.025, 0.025, 3.4, 6), { x, y: 1.7 })]);
+    parts.push(['iron', tf(cyl(0.025, 0.025, 3.4, leanProps ? 4 : 6), { x, y: 1.7 })]);
   }
   parts.push(['iron', tf(box(len, 0.08, 0.06), { y: 0.1 })]);
   parts.push(['iron', tf(box(len, 0.08, 0.06), { y: 1.1 })]);
@@ -164,7 +171,7 @@ function chains(rng) {
     const x = (c - 0.5) * 0.8;
     const links = 10 + Math.floor(rng() * 5);
     for (let i = 0; i < links; i++) {
-      parts.push(['iron', tf(tor(0.045, 0.012, 4, 8), { x, y: 3.2 - i * 0.075, ry: (i % 2) * Math.PI / 2 })]);
+      parts.push(['iron', tf(leanProps ? tor(0.045, 0.012, 3, 5) : tor(0.045, 0.012, 4, 8), { x, y: 3.2 - i * 0.075, ry: (i % 2) * Math.PI / 2 })]);
     }
     parts.push(['iron', tf(tor(0.09, 0.02, 4, 10), { x, y: 3.2 - links * 0.075 - 0.08, rx: Math.PI / 2 })]);
   }
@@ -272,8 +279,8 @@ function mushrooms(rng, glow = false) {
 }
 function pipe() {
   const parts = [];
-  parts.push(['iron', tf(cylUV(cyl(0.3, 0.3, 1.6, 12), 2, 1.6), { y: 2.2, z: -0.1, rx: Math.PI / 2 })]);
-  parts.push(['iron', tf(tor(0.33, 0.05, 6, 12), { y: 2.2, z: 0.6 })]);
+  parts.push(['iron', tf(cylUV(cyl(0.3, 0.3, 1.6, leanProps ? 8 : 12), 2, 1.6), { y: 2.2, z: -0.1, rx: Math.PI / 2 })]);
+  parts.push(['iron', tf(tor(0.33, 0.05, leanProps ? 4 : 6, leanProps ? 8 : 12), { y: 2.2, z: 0.6 })]);
   parts.push(['slime', tf(new THREE.PlaneGeometry(0.4, 2.0), { y: 1.0, z: 0.72 })]);
   return parts;
 }
@@ -353,6 +360,13 @@ function bookshelf(len) {
     for (const side of [-1, 1]) {
       let x = -len / 2 + 0.06;
       while (x < len / 2 - 0.1) {
+        if (leanProps) {
+          // runs of books drawn as a few wider blocks
+          const w = Math.min(len / 2 - 0.08 - x, 0.35 + rngL() * 0.45), bh = 0.36 + rngL() * 0.12;
+          parts.push(['leather', colorize(tf(box(w, bh, 0.5, 2), { x: x + w / 2, y: y + bh / 2 + 0.03, z: side * 0.45 }), colors[Math.floor(rngL() * colors.length)])]);
+          x += w + 0.01;
+          continue;
+        }
         const w = 0.05 + rngL() * 0.06, bh = 0.32 + rngL() * 0.2;
         if (rngL() < 0.08) { x += 0.2; continue; }
         const lean = rngL() < 0.1 ? 0.25 : 0;
@@ -464,8 +478,8 @@ function statue(rng, small = false) {
   // robed figure holding a sword
   const robePts = [];
   for (let i = 0; i <= 8; i++) { const t = i / 8; robePts.push(new THREE.Vector2(0.55 - t * 0.3 + Math.sin(t * 3) * 0.05, t * 2.2)); }
-  parts.push(['stone', tf(new THREE.LatheGeometry(robePts, 12), { y: 1.1 * s, sx: s, sy: s, sz: s })]);
-  parts.push(['stone', tf(sph(0.25, 10, 8), { y: (1.1 + 2.45) * s, sx: s, sy: s, sz: s })]);
+  parts.push(['stone', tf(new THREE.LatheGeometry(robePts, leanProps ? 8 : 12), { y: 1.1 * s, sx: s, sy: s, sz: s })]);
+  parts.push(['stone', tf(leanProps ? sph(0.25, 7, 5) : sph(0.25, 10, 8), { y: (1.1 + 2.45) * s, sx: s, sy: s, sz: s })]);
   parts.push(['stone', tf(box(0.9, 0.3, 0.4), { y: (1.1 + 1.9) * s, sx: s, sy: s, sz: s })]);
   parts.push(['stone', tf(box(0.1, 1.6, 0.04), { y: (1.1 + 0.9) * s, z: 0.35 * s, sx: s, sy: s, sz: s })]);
   parts.push(['stone', tf(box(0.4, 0.06, 0.06), { y: (1.1 + 1.6) * s, z: 0.35 * s, sx: s, sy: s, sz: s })]);

@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { GeoBuilder, tf, worldBox } from '../render/geo.js';
 import { T, SOLID, FLOOR, BLOCK, K_MAIN, K_ALT, K_WATER, K_DAIS, ROOM } from './levelgen.js';
-import { PROPS, PROP_FLAMES, CHANDELIER_FLAMES, cellBars, bookshelf } from './props.js';
+import { PROPS, PROP_FLAMES, CHANDELIER_FLAMES, cellBars, bookshelf, setPropDetail } from './props.js';
 import { getBiomeMaterials, getSharedMaterials } from './materials.js';
 import { RNG } from '../core/rng.js';
-import { dressLevel, streamMaterial, streamTexture, glassMaterial } from './dressing.js';
+import { dressLevel, streamMaterial, streamTexture } from './dressing.js';
 
 // ---------------------------------------------------------------------------
 // Turns a generated Level into renderable meshes: floors, walls, ceilings,
@@ -14,6 +14,7 @@ import { dressLevel, streamMaterial, streamTexture, glassMaterial } from './dres
 
 export function buildLevel(level, factory, lightPool, { quality = 'high' } = {}) {
   const biome = level.biome;
+  setPropDetail(quality);
   const mats = getBiomeMaterials(factory, biome);
   const group = new THREE.Group();
   group.name = 'level';
@@ -66,7 +67,7 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     { dx: 0, dy: 1, n: [0, 0, -1] },
     { dx: 0, dy: -1, n: [0, 0, 1] },
   ];
-  const damp = { sewers: [0.66, 0.8, 0.64], dungeon: [0.74, 0.72, 0.68] }[biome.id];
+  const damp = { sewers: [0.66, 0.8, 0.64], dungeon: [0.74, 0.72, 0.68], courtyard: [0.72, 0.8, 0.68] }[biome.id];
   const wallStrip = (b, ax, az, bx, bz, n, y0, y1, uOff, aoA = 1, aoB = 1) => {
     // vertical strip from (ax,az) to (bx,bz); subdivided in height for AO
     const len = Math.hypot(bx - ax, bz - az);
@@ -122,17 +123,7 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
       const tintV = 0.86 + 0.14 * (((x * 73856093) ^ (y * 19349663) ^ (d.dx * 83492791 + d.dy * 4421)) >>> 0) % 1000 / 1000;
       wallStrip(B('wall'), ax, az, bx, bz, d.n, Math.min(h0, 0), h1, u, (endA ? 0.6 : 1) * tintV, (endB ? 0.6 : 1) * tintV);
       wallEdges.push({ ax, az, bx, bz, n: d.n, h0, h1, room: level.roomId[i], corr: level.corrId[i] });
-      // baseboard trim
-      if (!biome.outdoor || true) {
-        const mx = (ax + bx) / 2 + d.n[0] * 0.08, mz = (az + bz) / 2 + d.n[2] * 0.08;
-        const along = d.dx !== 0 ? 0 : 1;
-        const g = worldBox(along ? T : 0.18, 0.35, along ? 0.18 : T);
-        trimB.addGeometry(g, new THREE.Matrix4().makeTranslation(mx, h0 + 0.175, mz), 0.75);
-        if (!biome.outdoor) {
-          const g2 = worldBox(along ? T : 0.3, 0.3, along ? 0.3 : T);
-          trimB.addGeometry(g2, new THREE.Matrix4().makeTranslation((ax + bx) / 2 + d.n[0] * 0.14, h1 - 0.15, (az + bz) / 2 + d.n[2] * 0.14), 0.8);
-        }
-      }
+      // (skirting and the cornice under the ceiling are laid per wall run by the dressing pass)
     }
     // height steps to lower neighbours
     for (const d of dirs) {
@@ -229,9 +220,9 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
       const n = Math.max(2, Math.round(openW / 0.32));
       for (let k = 0; k <= n; k++) {
         const off = -halfW + (k / n) * openW;
-        const g = tf(new THREE.CylinderGeometry(0.035, 0.035, doorH, 6), {});
+        const g = tf(new THREE.CylinderGeometry(0.035, 0.035, doorH, quality === 'high' || quality === 'ultra' ? 6 : 4), {});
         gb.addGeometry(g, new THREE.Matrix4().makeTranslation(horizN ? 0 : off, 0, horizN ? off : 0));
-        const spike = new THREE.ConeGeometry(0.05, 0.25, 6);
+        const spike = new THREE.ConeGeometry(0.05, 0.25, quality === 'high' || quality === 'ultra' ? 6 : 4);
         spike.rotateX(Math.PI);
         gb.addGeometry(spike, new THREE.Matrix4().makeTranslation(horizN ? 0 : off, -doorH / 2 - 0.12, horizN ? off : 0));
       }
@@ -473,13 +464,12 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     meshes.push(mesh);
   }
 
-  // ---------------- dressing extras: falling water (scrolling) and moonlit window glass
+  // ---------------- dressing extras: falling water (scrolling; high quality only)
   if (dressed.streams) {
     const m = new THREE.Mesh(dressed.streams.build(), streamMaterial(biome.id === 'sewers' ? 0x4a5e40 : 0x3a4048));
     m.renderOrder = 5;
     group.add(m);
   }
-  if (dressed.glass) group.add(new THREE.Mesh(dressed.glass.build(), glassMaterial(biome.id === 'throne' ? 0xb8a8e0 : 0xd8dcf0)));
 
   // ---------------- instanced grass: thin moonlit blades in chunks (each chunk culls on its own),
   // swaying in rolling gusts that blow the same way across the whole bailey
@@ -524,7 +514,8 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
       if (level.cells[i] !== FLOOR || level.kind[i] !== K_MAIN) continue;
       const edge = nearWall(x, y);
       const n = Math.round(per * (edge ? 1.5 : 1));
-      const key = Math.floor(x / 40) + ',' + Math.floor(y / 40);
+      // high quality splits the turf into culled chunks; lower settings keep the single draw
+      const key = quality === 'high' || quality === 'ultra' ? Math.floor(x / 40) + ',' + Math.floor(y / 40) : '0';
       let list = chunks.get(key);
       if (!list) chunks.set(key, (list = []));
       for (let k = 0; k < n; k++) {
@@ -584,6 +575,7 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
       const sm = new THREE.Mesh(shaftGeo.build(), shaftMat);
       sm.renderOrder = 6;
       group.add(sm);
+
     }
   }
 

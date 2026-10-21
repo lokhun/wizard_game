@@ -153,11 +153,12 @@ function buildRuns(level, wallEdges) {
 }
 
 export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 'high' }) {
-  const hi = quality === 'high' || quality === 'ultra', lo = quality === 'low';
+  // medium shares the lean geometry with low (both must stay within the old triangle budget)
+  const hi = quality === 'high' || quality === 'ultra', lo = !hi, vlo = quality === 'low';
   const id = biome.id;
   const runs = buildRuns(level, wallEdges);
   const rng = new RNG(level.seed * 131 + level.floorIndex * 17 + 9);
-  const out = { shafts: [], streams: null, glass: null, flames: [] };
+  const out = { shafts: [], streams: null, flames: [] };
   const cache = new Map();
   const G = (key, make) => { let g = cache.get(key); if (!g) cache.set(key, (g = ni(make()))); return g; };
   const box = (w, h, d) => G(`box${w.toFixed(3)},${h.toFixed(3)},${d.toFixed(3)}`, () => worldBox(w, h, d));
@@ -306,6 +307,13 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
   // ======================================================================
   // WALL RUNS: piers / buttresses / columns, plinths, cornices, wainscot
   // ======================================================================
+  // skirting along every run, and a cornice under the ceiling indoors: one long box per run
+  // rather than one per 2 m wall cell
+  for (const run of runs) {
+    const mid = (run.a0 + run.a1) / 2;
+    put('trim', box(run.len, 0.35, 0.18), run, mid, 0.08, run.h0 + 0.175, 0.75);
+    if (!biome.outdoor) put('trim', box(run.len, 0.3, 0.3), run, mid, 0.14, run.h1 - 0.15, 0.8);
+  }
   const runStops = new Map();
   for (const run of runs) {
     if (!tall(run)) continue;
@@ -344,7 +352,8 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
         put('trim', box(1.2, 0.8, 0.38), run, s, 0.19, run.h0 + 0.4, 0.75);
         put('trim', sh, run, s, 0, run.h0 + 0.8 + (H - 1.5) / 2, 0.95);
         const ring = G('tring', () => { const g = new THREE.TorusGeometry(0.43, 0.05, 4, 14, Math.PI); g.rotateX(Math.PI / 2); g.scale(1, 1, 0.82); return g; });
-        put('gold', ring, run, s, 0, run.h0 + 0.86);
+        if (!lo) put('gold', ring, run, s, 0, run.h0 + 0.86);
+        else put('gold', box(0.9, 0.08, 0.36), run, s, 0.18, run.h0 + 0.84);
         if (!lo) put('gold', ring, run, s, 0, run.h0 + 3.2);
         put('gold', box(1.1, 0.35, 0.4), run, s, 0.2, top - 0.52);
         put('trim', box(1.24, 0.35, 0.44), run, s, 0.22, top - 0.17, 0.85);
@@ -454,13 +463,14 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
         const isKey = v === (nV - 1) / 2;
         const gap = lo ? 0 : 0.025;
         const sub = subCurve(curve, (v / nV) * Ltot + gap, ((v + 1) / nV) * Ltot - gap, lo ? 1 : 2);
-        const geo = bandGeo(sub, -0.02, isKey ? 0.78 : 0.56, -0.05, isKey ? 0.3 : 0.2, { outer: true, ends: !lo });
+        // (kept within 0.2 m of the wall so the doorway sigil, floating just in front, is never cut)
+        const geo = bandGeo(sub, -0.02, isKey ? 0.72 : 0.56, -0.05, isKey ? 0.17 : 0.15, { outer: true, ends: !lo });
         const tint = isKey ? 0.95 : 0.78 + ((v * 37) % 7) * 0.025;
         place(isKey && id === 'throne' ? 'gold' : 'trim', geo, 0, spring, 0.02, tint);
       }
       // hood moulding over the ring
       if (!lo) {
-        const hood = G(`hood${hw},${rise},${pointed}`, () => bandGeo(curve, 0.56, 0.72, 0, 0.16, { outer: true, ends: true }));
+        const hood = G(`hood${hw},${rise},${pointed}`, () => bandGeo(curve, 0.56, 0.7, 0, 0.13, { outer: true, ends: true }));
         place('trim', hood, 0, spring, 0.02, 0.7);
       }
     }
@@ -470,7 +480,9 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
   // REALM SET DRESSING in the wall bays
   // ======================================================================
   const streams = new GeoBuilder(); // falling water sheets / drips (one scrolling mesh)
-  const glass = new GeoBuilder(); // moonlit window glass (one unlit mesh)
+  // moonlit leaded glass: panes go into the existing unlit 'glow' batch (merchant potions, fungus)
+  // over a dark iron backing that reads as the leading, so windows cost no extra material or draw
+  const glowOK = hi || level.rooms.some((r) => r.type === ROOM.SHOP) || id === 'sewers';
   const flames = [];
   const floorY = (x, z) => level.floorAt(x, z);
   const walkRun = (run, s, d) => { runPos(run, s, d); return walkAt(_p.x, _p.z); };
@@ -509,22 +521,48 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
     let k = 0;
     for (let y = yTop - 0.05; y > yBot; y -= 0.09, k++) putW('iron', link, x, y, z, k % 2 ? Math.PI / 2 : 0);
   };
+  const leaded = (run, s, hw, y0, spring, rise, curve, col = 1) => {
+    // dark backing: a fan from the rectangle up into the point
+    const g = new GeoBuilder();
+    const V = (x, y) => [x, y, 0.03];
+    const top = spring + rise;
+    quadN(g, V(-hw, y0), V(hw, y0), V(hw, spring), V(-hw, spring), [0, 0, 1], [[0, 0], [1, 0], [1, 1], [0, 1]], 0.12);
+    if (curve) for (let i = 0; i < curve.length - 1; i++) {
+      const a = curve[i], b = curve[i + 1];
+      quadN(g, V(a.x, spring + a.y), V(b.x, spring + b.y), V(b.x * 0.001, top), V(a.x * 0.001, top), [0, 0, 1], [[0, 0], [1, 0], [1, 1], [0, 1]], 0.12);
+    }
+    runPos(run, s, 0); _q.setFromAxisAngle(_up, run.yaw); _m.compose(_p.setY(0), _q, _s.set(1, 1, 1));
+    B('iron').addGeometry(g.build(), _m);
+    if (!glowOK) return;
+    // panes: a grid clipped to the window's outline, brighter toward the head, the odd ruby quarry
+    const archY = (x) => {
+      if (!curve) return spring;
+      const ax = Math.abs(x);
+      for (let i = Math.floor(curve.length / 2); i < curve.length - 1; i++) {
+        const a = curve[i], b = curve[i + 1];
+        if (ax >= a.x && ax <= b.x) return spring + a.y + (b.y - a.y) * ((ax - a.x) / Math.max(1e-6, b.x - a.x));
+      }
+      return spring;
+    };
+    const pg = new GeoBuilder();
+    const cols = Math.max(2, Math.round((hw * 2) / (lo ? 0.42 : 0.24))), pw = (hw * 2) / cols, ph = pw * 1.35, gap = 0.035;
+    const tint = id === 'throne' ? [0.95, 0.8, 1.15] : [0.85, 0.95, 1.1];
+    for (let y = y0; y < top - 0.05; y += ph) for (let c = 0; c < cols; c++) {
+      const xa = -hw + c * pw + gap / 2, xb = xa + pw - gap, ya = y + gap / 2, yb = Math.min(y + ph - gap / 2, top);
+      if (yb > archY(xa) || yb > archY(xb)) continue;
+      const t = (ya - y0) / Math.max(0.1, top - y0), v = (0.75 + rng.next() * 0.4) * col;
+      const ruby = id !== 'dungeon' && rng.chance(0.05);
+      const k = ruby ? [0.2, 0.03, 0.05] : [(0.05 + 0.11 * t) * tint[0], (0.065 + 0.13 * t) * tint[1], (0.11 + 0.17 * t) * tint[2]];
+      const cc = [k[0] * v, k[1] * v, k[2] * v];
+      quadN(pg, [xa, ya, 0.045], [xb, ya, 0.045], [xb, yb, 0.045], [xa, yb, 0.045], [0, 0, 1], undefined, cc);
+    }
+    if (pg.count) B('glow').addGeometry(pg.build(), _m);
+  };
   const lancet = (run, s, w, y0, y1, frameKey, col = 1) => {
     // a tall pointed window: stone jambs, sill, a pointed hood, a mullion, moonlit glass
     const hw = w / 2, rise = Math.min(hw * 1.5, (y1 - y0) * 0.4), spring = y1 - rise;
     const curve = archCurve(hw, rise, true, lo ? 4 : 7);
-    // glass: a fan from the rectangle up into the point
-    const g = new GeoBuilder();
-    const V = (x, y) => [x, y, 0.03];
-    const uvOf = (x, y) => [(x + hw) / w, (y - y0) / (y1 - y0)];
-    quadN(g, V(-hw, y0), V(hw, y0), V(hw, spring), V(-hw, spring), [0, 0, 1], [uvOf(-hw, y0), uvOf(hw, y0), uvOf(hw, spring), uvOf(-hw, spring)]);
-    for (let i = 0; i < curve.length - 1; i++) {
-      const a = curve[i], b = curve[i + 1];
-      quadN(g, V(a.x, spring + a.y), V(b.x, spring + b.y), V(b.x * 0.001, spring + rise), V(a.x * 0.001, spring + rise), [0, 0, 1],
-        [uvOf(a.x, spring + a.y), uvOf(b.x, spring + b.y), uvOf(0, spring + rise), uvOf(0, spring + rise)]);
-    }
-    runPos(run, s, 0); _q.setFromAxisAngle(_up, run.yaw); _m.compose(_p.setY(0), _q, _s.set(1, 1, 1));
-    glass.addGeometry(g.build(), _m, col);
+    leaded(run, s, hw, y0, spring, rise, curve, col);
     // stonework
     for (const sg of [-1, 1]) put(frameKey, box(0.22, spring - y0, 0.26), run, s + sg * (hw + 0.11) * (run.axis === 'x' ? 1 : 1), 0.13, y0 + (spring - y0) / 2, 0.85);
     put(frameKey, box(w + 0.6, 0.18, 0.36), run, s, 0.18, y0 - 0.09, 0.8);
@@ -568,12 +606,12 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
       const st = runStops.get(run) ?? [];
       const mid = (run.a0 + run.a1) / 2;
       // a cast-iron main along some walls, on brackets, flanged at the joints
-      if (run.len >= 6 && rng.chance(isRoom(run) ? 0.4 : 0.55)) {
+      if (run.len >= 6 && rng.chance((isRoom(run) ? 0.4 : 0.55) * (lo ? 0.55 : 1))) {
         const r = rng.range(0.13, 0.2), d = 0.4 + r, y = Math.min(run.h1 - 0.8, run.h0 + rng.range(2.7, 3.3));
         put('iron', G(`pipe${run.len},${r.toFixed(3)}`, () => { const c = cylG(r, r, run.len, lo ? 6 : 10, true); c.rotateZ(Math.PI / 2); return c; }), run, mid, d, y, 0.9);
         const fl = G('fl' + r.toFixed(3), () => { const t = new THREE.TorusGeometry(r + 0.02, 0.035, 4, lo ? 6 : 10); t.rotateY(Math.PI / 2); return t; });
         for (let s = run.a0 + 1.2; s < run.a1 - 0.6; s += 2.4) {
-          put('iron', fl, run, s, d, y);
+          if (!lo) put('iron', fl, run, s, d, y);
           put('iron', box(0.07, 0.07, d), run, s + 0.3, d / 2, y - r - 0.04);
           put('iron', box(0.07, r * 2 + 0.12, 0.05), run, s + 0.3, 0.03, y - 0.02);
           if (rng.chance(0.5)) wallDecal(run, s + 0.3, 0.5, Math.max(run.h0 + 0.3, y - 2.4), y - 0.1, 6, 0.018, 0.85);
@@ -635,7 +673,7 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
 
   // ---------------------------------------------------------------- oubliette
   if (id === 'dungeon') {
-    const cuff = G('cuff', () => { const t = new THREE.TorusGeometry(0.065, 0.018, 4, 8); t.rotateX(Math.PI / 2); return t; });
+    const cuff = G('cuff', () => { const t = new THREE.TorusGeometry(0.065, 0.018, lo ? 3 : 4, lo ? 6 : 8); t.rotateX(Math.PI / 2); return t; });
     const plate = box(0.14, 0.2, 0.04);
     for (const run of runs) {
       if (!tall(run)) continue;
@@ -646,21 +684,18 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
         if (northRun && isRoom(run) && bay.w >= 1.4 && run.h1 - run.h0 >= 5 && rng.chance(0.45)) {
           // a barred light-well high in the wall: the only glimpse of the night outside
           const y1 = run.h1 - 0.85, y0 = y1 - 1.05, hw = 0.42;
-          const g = new GeoBuilder();
-          quadN(g, [-hw, y0, 0.04], [hw, y0, 0.04], [hw, y1, 0.04], [-hw, y1, 0.04], [0, 0, 1], [[0, 0], [1, 0], [1, 1], [0, 1]]);
-          runPos(run, s, 0); _q.setFromAxisAngle(_up, run.yaw); _m.compose(_p.setY(0), _q, _s.set(1, 1, 1));
-          glass.addGeometry(g.build(), _m, 0.55);
+          leaded(run, s, hw, y0, y1, 0, null, 0.55);
           for (const sg of [-1, 1]) put('trim', box(0.24, y1 - y0 + 0.3, 0.3), run, s + sg * (hw + 0.12), 0.15, (y0 + y1) / 2, 0.75);
           put('trim', box(hw * 2 + 0.7, 0.24, 0.36), run, s, 0.18, y0 - 0.12, 0.7);
           put('trim', box(hw * 2 + 0.7, 0.26, 0.32), run, s, 0.16, y1 + 0.13, 0.8);
           for (let k = -1; k <= 1; k++) put('iron', G('wbar', () => new THREE.CylinderGeometry(0.025, 0.025, 1.1, 5)), run, s + k * 0.24, 0.12, (y0 + y1) / 2);
           put('iron', box(hw * 2, 0.05, 0.05), run, s, 0.12, y0 + 0.5);
-          out.shafts.push({ x: s, z: run.line + 0.2, top: y1 - 0.15, w: 0.95 });
+          if (hi) out.shafts.push({ x: s, z: run.line + 0.2, top: y1 - 0.15, w: 0.95 });
           wallDecal(run, s, 1.2, run.h0 + 0.6, y0 - 0.1, 0, 0.017, 0.8);
         }
         // one or two features per bay: manacles, niches, rings, a gibbet cage overhead
         let caged = false;
-        for (const s of bay.w >= 3.6 ? [bay.s0 + bay.w * 0.27, bay.s1 - bay.w * 0.27] : [bay.mid]) {
+        for (const s of hi && bay.w >= 3.6 ? [bay.s0 + bay.w * 0.27, bay.s1 - bay.w * 0.27] : [bay.mid]) {
           const r = rng.next();
           if (r < 0.3) {
             // a pair of manacles hanging from wall plates, rust bleeding below them
@@ -672,7 +707,7 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
             }
             wallDecal(run, s, 1.1, run.h0 + 0.6, run.h0 + 2.25, 6, 0.017, 0.8);
             // now and then the last prisoner is still in them, slumped against the wall
-            if (isRoom(run) && rng.chance(0.4)) for (const [k, g] of PROPS.skeletonSit(() => rng.next())) put(k, ni(g), run, s, 0.1, run.h0, 0.9);
+            if (hi && isRoom(run) && rng.chance(0.4)) for (const [k, g] of PROPS.skeletonSit(() => rng.next())) put(k, ni(g), run, s, 0.1, run.h0, 0.9);
             else if (isRoom(run) && rng.chance(0.4)) put('bone', G('skull', skullGeo), run, s + 0.1, 0.25, run.h0 + 0.09, 1, rng.range(-1, 1));
           } else if (r < 0.44 && bay.w >= 1.3) {
             // an ossuary niche: a dark arched recess with skulls and a guttering candle on its sill
@@ -681,14 +716,14 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
             put('trim', box(1.05, 0.1, 0.3), run, s, 0.15, y0, 0.8);
             put('trim', G('nichearch', () => bandGeo(archCurve(0.4, 0.28, false, 5), 0, 0.12, 0, 0.12, { outer: true, ends: true })), run, s, 0, y0 + 0.66, 0.75);
             for (let k = 0; k < (hi ? 3 : 2); k++) put('bone', G('skull', skullGeo), run, s - 0.28 + k * 0.27, 0.13, y0 + 0.13, 0.9, rng.range(-0.4, 0.4));
-            put('candle', G('cstub', () => new THREE.CylinderGeometry(0.03, 0.035, 0.12, 6)), run, s + 0.38, 0.16, y0 + 0.11);
+            put('bone', G('cstub', () => new THREE.CylinderGeometry(0.03, 0.035, 0.12, 5)), run, s + 0.38, 0.16, y0 + 0.11, [1.3, 1.25, 1.1]);
             const [fx, fy, fz] = W3(run, s + 0.38, 0.16, y0 + 0.2);
             flames.push({ x: fx, y: fy, z: fz, size: 0.25, kind: 'candle' });
           } else if (r < 0.58) {
             // an iron ring with a length of chain looped down from it
             const y = run.h0 + rng.range(1.5, 1.9);
             put('iron', box(0.08, 0.1, 0.05), run, s, 0.025, y + 0.05);
-            put('iron', G('ring', () => new THREE.TorusGeometry(0.11, 0.02, 4, lo ? 8 : 12)), run, s, 0.05, y - 0.07);
+            put('iron', G('ring', () => new THREE.TorusGeometry(0.11, 0.02, lo ? 3 : 4, lo ? 8 : 12)), run, s, 0.05, y - 0.07);
             if (rng.chance(0.5)) chain(run, s + 0.08, 0.06, y - 0.15, run.h0 + 0.05);
             wallDecal(run, s, 0.5, run.h0 + 0.2, y, 6, 0.017, 0.7);
           } else if (r < 0.74 && !caged && isRoom(run) && run.h1 - run.h0 >= 5.3) {
@@ -699,8 +734,8 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
               const a = (k / (lo ? 6 : 9)) * Math.PI * 2;
               put('iron', G('cgbar', () => new THREE.CylinderGeometry(0.018, 0.018, ch, 4)), run, s + Math.cos(a) * 0.42, d + Math.sin(a) * 0.42, yB + ch / 2);
             }
-            const hoop = G('choop', () => { const t = new THREE.TorusGeometry(0.42, 0.025, 4, lo ? 8 : 14); t.rotateX(Math.PI / 2); return t; });
-            put('iron', hoop, run, s, d, yB + 0.02); put('iron', hoop, run, s, d, yB + ch * 0.55); put('iron', hoop, run, s, d, yB + ch);
+            const hoop = G('choop', () => { const t = new THREE.TorusGeometry(0.42, 0.025, lo ? 3 : 4, lo ? 8 : 14); t.rotateX(Math.PI / 2); return t; });
+            put('iron', hoop, run, s, d, yB + 0.02); if (!lo) put('iron', hoop, run, s, d, yB + ch * 0.55); put('iron', hoop, run, s, d, yB + ch);
             put('iron', G('cdome', () => new THREE.ConeGeometry(0.44, 0.38, lo ? 8 : 12, 1, true)), run, s, d, yB + ch + 0.19);
             put('iron', box(0.9, 0.04, 0.9), run, s, d, yB);
             chain(run, s, d, run.h1 - 0.02, yB + ch + 0.34, !hi);
@@ -866,10 +901,20 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
 
   // ---------------------------------------------------------------- hollow throne
   if (id === 'throne') {
+    // gilded edging along the royal runner (the carpet strip down each hall)
+    if (!lo) for (const room of level.rooms) {
+      const x0 = (Math.floor(room.x + room.w / 2) - 1) * T, x1 = x0 + 3 * T;
+      for (const x of [x0 + 0.05, x1 - 0.05]) for (let cz = room.y; cz < room.y + room.h; cz++) {
+        const z = (cz + 0.5) * T;
+        if (!walkAt(x, z)) continue;
+        putW('gold', box(0.1, 0.035, T), x, level.floorAt(x, z) + 0.017, z, 0);
+      }
+    }
     const robe = G('robe', () => {
       const pts = [];
-      for (let i = 0; i <= 8; i++) { const t = i / 8; pts.push(new THREE.Vector2(0.34 - t * 0.17 + Math.sin(t * 3) * 0.03, t * 1.7)); }
-      const g = new THREE.LatheGeometry(pts, lo ? 7 : 11);
+      const np = lo ? 4 : 8;
+      for (let i = 0; i <= np; i++) { const t = i / np; pts.push(new THREE.Vector2(0.34 - t * 0.17 + Math.sin(t * 3) * 0.03, t * 1.7)); }
+      const g = new THREE.LatheGeometry(pts, lo ? 6 : 11);
       g.scale(1, 1, 0.75);
       return g;
     });
@@ -892,12 +937,12 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
           if (northRun) out.shafts.push({ x: s, z: run.line + 0.2, top: y1 - 0.8, w: ww * 1.2 });
         }
         const r = rng.next();
-        if (r < 0.5 && bay.w >= 1.6) {
+        if (r < (lo ? 0.3 : 0.5) && bay.w >= 1.6) {
           // statue niche: dark back, colonnettes, a pointed hood, a corbel and a robed king of old
           const y0 = run.h0 + 1.6, nh = 2.8, hw = 0.72;
           put('trim', box(hw * 2, nh, 0.05), run, s, 0.025, y0 + nh / 2, [0.22, 0.2, 0.24]);
           for (const sg of [-1, 1]) {
-            put('trim', G('ncol', () => new THREE.CylinderGeometry(0.07, 0.07, nh - 0.3, 6)), run, s + sg * (hw - 0.04), 0.16, y0 + (nh - 0.3) / 2);
+            put('trim', G('ncol', () => new THREE.CylinderGeometry(0.07, 0.07, nh - 0.3, lo ? 4 : 6)), run, s + sg * (hw - 0.04), 0.16, y0 + (nh - 0.3) / 2);
             put('gold', G('ncap', () => new THREE.CylinderGeometry(0.11, 0.08, 0.14, 6)), run, s + sg * (hw - 0.04), 0.16, y0 + nh - 0.25);
           }
           put('trim', G('nhood', () => bandGeo(archCurve(hw, 0.9, true, 6), 0, 0.18, 0, 0.26, { outer: true, ends: true })), run, s, 0, y0 + nh - 0.2, 0.85);
@@ -907,8 +952,8 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
           // the statue: robe, shoulders, head, crown and a sword held point-down
           put('stone', robe, run, s, 0.36, y0, 0.9);
           put('stone', box(0.62, 0.2, 0.3), run, s, 0.36, y0 + 1.72, 0.9);
-          put('stone', G('shead', () => new THREE.SphereGeometry(0.16, 8, 6)), run, s, 0.38, y0 + 1.98, 0.9);
-          put('gold', G('crown', () => new THREE.CylinderGeometry(0.15, 0.14, 0.1, 8, 1, true)), run, s, 0.38, y0 + 2.12);
+          put('stone', G('shead', () => (lo ? new THREE.SphereGeometry(0.16, 6, 4) : new THREE.SphereGeometry(0.16, 8, 6))), run, s, 0.38, y0 + 1.98, 0.9);
+          if (!lo) put('gold', G('crown', () => new THREE.CylinderGeometry(0.15, 0.14, 0.1, 8, 1, true)), run, s, 0.38, y0 + 2.12);
           put('stone', box(0.06, 1.2, 0.03), run, s, 0.62, y0 + 0.85, 0.85);
           put('stone', box(0.32, 0.05, 0.05), run, s, 0.62, y0 + 1.42, 0.85);
           // a votive candle at its feet
@@ -942,7 +987,7 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
         if (r < 0.45) {
           // arrow loop: a dark slit in a dressed-stone surround
           const y0 = run.h0 + rng.range(3.4, 4.2), sh = 1.5;
-          wallDecal(run, s, 0.42, y0, y0 + sh, 5, 0.03, 1);
+          put('trim', box(0.3, sh, 0.04), run, s, 0.02, y0 + sh / 2, [0.03, 0.03, 0.035]);
           for (const sg of [-1, 1]) put('trim', box(0.22, sh + 0.2, 0.12), run, s + sg * 0.25, 0.06, y0 + sh / 2, 0.8);
           put('trim', box(0.75, 0.16, 0.16), run, s, 0.08, y0 - 0.08, 0.75);
           put('trim', box(0.75, 0.2, 0.14), run, s, 0.07, y0 + sh + 0.08, 0.8);
@@ -969,8 +1014,8 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
     }
   }
 
-  out.streams = streams.count ? streams : null;
-  out.glass = glass.count ? glass : null;
+  // the scrolling water is its own (additive) mesh: high quality only
+  out.streams = hi && streams.count ? streams : null;
   out.flames = flames;
 
   out.runs = runs;
@@ -1001,43 +1046,8 @@ export function streamMaterial(tint = 0x2a3828) {
     _streamTex = new THREE.CanvasTexture(c);
     _streamTex.wrapT = THREE.RepeatWrapping;
   }
-  return new THREE.MeshBasicMaterial({ map: _streamTex, color: tint, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: true });
+  // same shader variant as the light shafts (map, fog, additive): no extra program to compile
+  return new THREE.MeshBasicMaterial({ map: _streamTex, color: tint, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: true });
 }
 export const streamTexture = () => _streamTex;
 
-// Moonlit leaded glass: diamond quarries, a cold glow toward the head of the window.
-let _glassTex = null;
-export function glassMaterial(tint = 0xffffff) {
-  if (!_glassTex) {
-    const W = 256, H = 512;
-    const c = document.createElement('canvas');
-    c.width = W; c.height = H;
-    const g = c.getContext('2d');
-    const bg = g.createLinearGradient(0, 0, 0, H);
-    bg.addColorStop(0, 'rgb(120,142,186)'); bg.addColorStop(0.35, 'rgb(64,80,118)'); bg.addColorStop(1, 'rgb(18,22,36)');
-    g.fillStyle = bg; g.fillRect(0, 0, W, H);
-    const moon = g.createRadialGradient(W * 0.62, H * 0.22, 4, W * 0.62, H * 0.22, W * 0.7);
-    moon.addColorStop(0, 'rgba(210,225,255,0.75)'); moon.addColorStop(1, 'rgba(210,225,255,0)');
-    g.fillStyle = moon; g.fillRect(0, 0, W, H);
-    // slight per-pane variation, then the leading
-    let seed = 777;
-    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    const q = 32;
-    for (let y = -q; y < H + q; y += q / 2) for (let x = -q; x < W + q; x += q) {
-      const ox = ((y / (q / 2)) % 2) * (q / 2);
-      g.fillStyle = `rgba(${rnd() < 0.08 ? '120,40,60' : '0,0,0'},${rnd() * 0.25})`;
-      g.beginPath(); g.moveTo(x + ox, y - q / 2); g.lineTo(x + ox + q / 2, y); g.lineTo(x + ox, y + q / 2); g.lineTo(x + ox - q / 2, y); g.fill();
-    }
-    g.strokeStyle = 'rgba(8,8,12,0.95)'; g.lineWidth = 3;
-    for (let k = -H; k < W + H; k += q) {
-      g.beginPath(); g.moveTo(k, 0); g.lineTo(k + H / 2, H); g.stroke();
-      g.beginPath(); g.moveTo(k, 0); g.lineTo(k - H / 2, H); g.stroke();
-    }
-    g.lineWidth = 7; g.strokeRect(0, 0, W, H);
-    for (const y of [H * 0.33, H * 0.66]) { g.fillStyle = 'rgba(8,8,12,0.95)'; g.fillRect(0, y - 4, W, 8); }
-    _glassTex = new THREE.CanvasTexture(c);
-    _glassTex.colorSpace = THREE.SRGBColorSpace;
-    _glassTex.anisotropy = 4;
-  }
-  return new THREE.MeshBasicMaterial({ map: _glassTex, color: tint, vertexColors: true, fog: true });
-}
