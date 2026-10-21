@@ -504,6 +504,9 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
         // into the tuft's own frame, so every tuft leans the same way whatever its rotation
         mat3 grassIM = mat3(instanceMatrix);
         transformed += transpose(grassIM) * windW / max(1e-3, dot(grassIM[0], grassIM[0]));`);
+      // both faces of a card take the same (upward-leaning) normal, so no tuft turns black from behind
+      sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>',
+        THREE.ShaderChunk.normal_fragment_begin.replace('gl_FrontFacing ? 1.0 : - 1.0', '1.0'));
     };
     // per-quality density; tufts crowd thicker and taller along the foot of the walls
     const per = quality === 'low' ? 4 : quality === 'medium' ? 6 : 9;
