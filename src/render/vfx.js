@@ -266,7 +266,8 @@ void main(){
   float edge = pow(rb, 3.0);
   float streak = fbm(vec2(a * 3.0 + uSeed, rb * 9.0 - a * 2.0));
   float band = smoothstep(0.0, 0.25, rb) * smoothstep(1.0, 0.86, rb);
-  float tipFade = smoothstep(0.0, 0.08, a) * smoothstep(1.0, 0.85, a);
+  // feather the sweeping head a touch so it isn't a square-cut bar
+  float tipFade = smoothstep(0.0, 0.08, a) * smoothstep(1.0, 0.85, a) * smoothstep(0.0, 0.03, behind);
   float k = trail * band * tipFade * (0.35 + 0.9 * streak) * uAlpha;
   vec3 c = uColor * k * (0.55 + 0.6 * rb) + uCore * edge * trail * smoothstep(0.08, 0.0, behind + 0.02 * streak) * band * tipFade * uAlpha * 1.4;
   c *= smoothstep(0.4, 2.0, vDepth);

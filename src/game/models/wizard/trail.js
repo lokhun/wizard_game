@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 
+const _d0 = new THREE.Vector3(), _d1 = new THREE.Vector3(), _pa = new THREE.Vector3(), _pb = new THREE.Vector3();
+const _q0 = new THREE.Quaternion(), _q1 = new THREE.Quaternion();
+
 // streaks along the swing, brightest at the cutting edge (v = 1)
 let _streak = null;
 function streakTexture() {
@@ -33,7 +36,7 @@ function streakTexture() {
 // few frames, bright at the blade and fading behind it. Points are in the
 // parent's space (the viewmodel root), recorded once per update.
 export class BladeTrail {
-  constructor(parent, color, n = 14) {
+  constructor(parent, color, n = 28) {
     this.n = n;
     this.a = Array.from({ length: n }, () => new THREE.Vector3());
     this.b = Array.from({ length: n }, () => new THREE.Vector3());
@@ -66,11 +69,27 @@ export class BladeTrail {
     for (let i = 0; i < this.count; i++) this.age[i] += dt;
     while (this.count && this.age[this.count - 1] > this.maxAge) this.count--;
     if (active) {
-      // shift history back and record the newest sample at the front
-      const lastA = this.a[this.n - 1], lastB = this.b[this.n - 1];
-      for (let i = this.n - 1; i > 0; i--) { this.a[i] = this.a[i - 1]; this.b[i] = this.b[i - 1]; this.age[i] = this.age[i - 1]; }
-      this.a[0] = lastA.copy(a); this.b[0] = lastB.copy(b); this.age[0] = 0;
-      this.count = Math.min(this.count + 1, this.n);
+      // A fast swing (or a low frame rate) moves the blade a long way between
+      // frames, and one straight quad across that gap reads as a flat slab.
+      // Fill the gap with in-between samples that turn the edge about the hilt,
+      // so the tip sweeps an arc.
+      let steps = 1;
+      if (this.count) {
+        const a0 = this.a[0], b0 = this.b[0];
+        _d0.subVectors(b0, a0); _d1.subVectors(b, a);
+        const l0 = _d0.length(), l1 = _d1.length();
+        if (l0 > 1e-5 && l1 > 1e-5) {
+          _d0.divideScalar(l0); _d1.divideScalar(l1);
+          const ang = Math.acos(Math.max(-1, Math.min(1, _d0.dot(_d1))));
+          steps = Math.min(6, Math.max(1, Math.ceil(ang / 0.12)));
+          for (let s = 1; s < steps; s++) {
+            const t = s / steps;
+            _q0.setFromUnitVectors(_d0, _d1); _q1.identity().slerp(_q0, t);
+            this._push(_pa.lerpVectors(a0, a, t), _pb.copy(_d0).applyQuaternion(_q1).multiplyScalar(l0 + (l1 - l0) * t).add(_pa), dt * (1 - t));
+          }
+        }
+      }
+      this._push(a, b, 0);
     }
     if (this.count < 2) { this.mesh.visible = false; return; }
     this.mesh.visible = true;
@@ -89,6 +108,14 @@ export class BladeTrail {
     this.geo.attributes.position.needsUpdate = true;
     this.geo.attributes.color.needsUpdate = true;
     this.geo.attributes.uv.needsUpdate = true;
+  }
+
+  // record a sample at the front of the history
+  _push(a, b, age) {
+    const lastA = this.a[this.n - 1], lastB = this.b[this.n - 1];
+    for (let i = this.n - 1; i > 0; i--) { this.a[i] = this.a[i - 1]; this.b[i] = this.b[i - 1]; this.age[i] = this.age[i - 1]; }
+    this.a[0] = lastA.copy(a); this.b[0] = lastB.copy(b); this.age[0] = age;
+    this.count = Math.min(this.count + 1, this.n);
   }
 
   dispose() { this.geo.dispose(); this.mesh.material.dispose(); this.mesh.removeFromParent(); }
