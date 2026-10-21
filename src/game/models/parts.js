@@ -79,11 +79,11 @@ export function addSkull(rig, head, jaw, o = {}) {
 // ----------------------------------------------------- skeleton bodies ----
 // Pale, slightly cool bone that stays ivory under warm torchlight (the bone texture is yellow; a
 // blue-leaning tint above 1 neutralises it), with grimy patches and a little per-vertex mottling.
-export const BONE_PALE = [1.16, 1.17, 1.44];
+export const BONE_PALE = [1.34, 1.34, 1.62];
 export function boneShade(c = BONE_PALE, seed = 3, grime = 1) {
   return (v) => {
     const n = vnoise(v.x * 21 + seed, v.y * 21, v.z * 21, seed), d = vnoise(v.x * 63, v.y * 63, v.z * 63, seed + 5);
-    const g = smooth(0.5, 0.8, n) * 0.42 * grime, k = 0.84 + d * 0.24;
+    const g = smooth(0.52, 0.82, n) * 0.34 * grime, k = 0.86 + d * 0.2;
     return [c[0] * k * (1 - g * 0.85), c[1] * k * (1 - g), c[2] * k * (1 - g * 1.3)];
   };
 }

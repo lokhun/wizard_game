@@ -34,7 +34,7 @@ const FK_FIELD = [0.17, 0.21, 0.46], FK_CHARGE = [0.9, 0.84, 0.7];
 function fkWear(v) {
   const n = vnoise(v.x * 9 + 2, v.y * 7, v.z * 9, 61), st = vnoise(v.x * 28, v.y * 3, v.z * 28, 5), d = 0.8 + 0.3 * vnoise(v.x * 40, v.y * 40, v.z * 40, 9);
   const r = smooth(0.42, 0.72, n * 0.75 + st * 0.35);
-  return [lerp(0.4, 0.6, r) * d, lerp(0.4, 0.32, r) * d, lerp(0.43, 0.2, r) * d];
+  return [lerp(0.52, 0.62, r) * d, lerp(0.52, 0.34, r) * d, lerp(0.55, 0.22, r) * d];
 }
 // faded heraldry: a pale chevron on a dark field, torn and stained toward the hem
 function fkHeraldry(v) {
