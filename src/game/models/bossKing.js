@@ -97,15 +97,27 @@ export const hollowKing = {
       rig.add('arm' + S, 'gold', mergeRaw([0, 1, 2, 3].map((i) => xf(G.tor(0.25 * (1.04 + i * 0.07), 0.008, 3, 20), { rx: Math.PI / 2, y: -0.025 - i * 0.04 }))), { x: sx * 0.03, y: 0.02, rz: sx * 0.5, sy: 0.8 }, { c: GOLDTRIM });
       rig.add('arm' + S, 'gold', mergeRaw([0, 1, 2, 3, 4].map((i) => xf(G.cone(0.028, 0.26 - Math.abs(i - 2) * 0.05, 4), { x: sx * (0.0 + i * 0.045), y: 0.2 - Math.abs(i - 2) * 0.02, z: (i - 2) * 0.05, rz: -sx * (0.15 + i * 0.18) }))), {}, { c: GOLDTRIM });
     }
-    // royal heraldry on the breastplate, and soul-light leaking through its cracks
-    rig.add('chest', 'gold', mergeRaw([xf(G.box(0.16, 0.03, 0.012), { y: D.chest * 0.55 }), ...[-1, 0, 1].map((i) => xf(G.cone(0.022, i === 0 ? 0.11 : 0.08, 4), { x: i * 0.06, y: D.chest * 0.55 + 0.06 })), xf(G.tor(0.05, 0.008, 4, 14), { y: D.chest * 0.33 })]), { z: W * 0.86 }, { c: GOLDTRIM });
+    // royal heraldry on the breastplate, and soul-light leaking through its cracks.
+    // Both sit on the plate's real front (the bulky cuirass from addPlate: bulk 1.2)
+    // so nothing is buried inside it.
+    const CW = W * 1.08 * 1.2, CD = 0.72 * 1.15 * 1.2;
+    const PROF = [[-D.spine * 0.75, 0.75], [-D.spine * 0.2, 0.85], [(D.chest + D.spine * 0.75) * 0.45 - D.spine * 0.3, 0.95], [D.chest * 0.8, 0.95], [D.chest + 0.02, 0.55]];
+    const plateR = (y) => { for (let i = 1; i < PROF.length; i++) if (y <= PROF[i][0] || i === PROF.length - 1) { const [y0, r0] = PROF[i - 1], [y1, r1] = PROF[i]; return CW * lerp(r0, r1, clamp((y - y0) / (y1 - y0))); } };
+    const plateZ = (x, y) => { const r = plateR(y); return Math.sqrt(Math.max(0, r * r - x * x)) * CD + Math.max(0, 1 - Math.abs(x) / CW) * 0.035; };
+    const onPlate = (g, x, y, t = {}) => { const e = 0.004, ry = Math.atan(-(plateZ(x + e, y) - plateZ(x - e, y)) / (2 * e)); return xf(xf(g, t), { x, y, z: plateZ(x, y) + 0.004, ry }); };
+    const HY = D.chest * 0.55;
+    rig.add('chest', 'gold', mergeRaw([
+      ...[-0.06, -0.02, 0.02, 0.06].map((x) => onPlate(G.box(0.042, 0.03, 0.012), x, HY)),
+      ...[-1, 0, 1].map((i) => onPlate(G.cone(0.022, i === 0 ? 0.11 : 0.08, 4), i * 0.06, HY + 0.06)),
+      onPlate(G.tor(0.05, 0.008, 4, 14), 0, D.chest * 0.33),
+    ]), {}, { c: GOLDTRIM });
     const cracks = [];
     const RC = rng(12);
-    for (let i = 0; i < 5; i++) { let x = (RC() - 0.5) * 0.18, y = D.chest * (0.2 + RC() * 0.6); for (let k = 0; k < 4; k++) { const nx = x + (RC() - 0.5) * 0.06, ny = y - 0.03 - RC() * 0.04; const d = Math.hypot(nx - x, ny - y); cracks.push(xf(G.box(0.006, d, 0.004), { x: (x + nx) / 2, y: (y + ny) / 2, rz: Math.atan2(-(nx - x), ny - y) })); x = nx; y = ny; } }
-    rig.add('chest', 'glow', mergeRaw(cracks), { z: W * 0.885 }, { c: HDR(HOLLOW, 4.5) });
+    for (let i = 0; i < 5; i++) { let x = (RC() - 0.5) * 0.2, y = D.chest * (0.15 + RC() * 0.6); for (let k = 0; k < 4; k++) { const nx = x + (RC() - 0.5) * 0.06, ny = y - 0.03 - RC() * 0.04; const d = Math.hypot(nx - x, ny - y); cracks.push(onPlate(G.box(0.006, d, 0.004), (x + nx) / 2, (y + ny) / 2, { rz: Math.atan2(-(nx - x), ny - y) })); x = nx; y = ny; } }
+    rig.add('chest', 'glow', mergeRaw(cracks), {}, { c: HDR(HOLLOW, 4.5) });
     // cold light in the joints of the empty armour
     for (const S of ['L', 'R']) { rig.add('fore' + S, 'glow', xf(G.tor(0.045, 0.006, 3, 12), { rx: Math.PI / 2 }), { y: 0.0 }, { c: HDR(HOLLOW, 2.2) }); rig.add('shin' + S, 'glow', xf(G.tor(0.06, 0.006, 3, 12), { rx: Math.PI / 2 }), { y: 0.02 }, { c: HDR(HOLLOW, 2.2) }); }
-    addTabard(rig, D, { c: [0.2, 0.03, 0.1], tatter: 0.35, seed: 9, len: 1.05, w: 0.75, emblem: mergeRaw([xf(G.box(0.16, 0.035, 0.01), {}), ...[-1, 0, 1].map((i) => xf(G.cone(0.025, i === 0 ? 0.1 : 0.07, 4), { x: i * 0.055, y: 0.05 }))]) });
+    addTabard(rig, D, { c: [0.2, 0.03, 0.1], tatter: 0.35, seed: 9, top: -D.spine * 0.62, depth: plateZ(0, -D.spine * 0.62) / (W * 0.62) + 0.06, len: 0.95, w: 0.75, emblem: mergeRaw([xf(G.box(0.16, 0.035, 0.01), {}), ...[-1, 0, 1].map((i) => xf(G.cone(0.025, i === 0 ? 0.1 : 0.07, 4), { x: i * 0.055, y: 0.05 }))]) });
     // ---- the cape: hung from three ropes, it drags on the floor behind him
     const capeG = panel(0.95, CAPE_L * CAPE_N, { ws: 10, hs: 16, tatter: 0.35, seed: 13, curve: 0.18, taperBot: 1.5 });
     xf(capeG, { y: D.chest - 0.01, z: -0.2, ry: Math.PI, rx: 0.06 });

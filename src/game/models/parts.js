@@ -611,15 +611,18 @@ export function addTabard(rig, D, o = {}) {
   const W = D.shoulderW;
   const len = o.len ?? (D.spine + D.thigh * 0.9 + 0.3);
   const c = o.c ?? [0.4, 0.06, 0.06];
+  // o.top: hang from lower down (e.g. a belt under a bulky breastplate) instead of the shoulders
+  const top = o.top ?? D.chest * 0.85;
+  const flutter0 = o.top === undefined ? D.chest * 0.6 : len * 0.15; // panel-local: the still part under the hanger
   for (const [z, ry, sd] of [[1, 0, 2], [-1, Math.PI, 5]]) {
     const pg = panel(W * (o.w ?? 0.95), len, { ws: 5, hs: 8, tatter: o.tatter ?? 0.25, seed: sd + (o.seed ?? 0), curve: 0.06 });
-    rig.add('chest', 'cloth', pg, { y: D.chest * 0.85, z: z * W * 0.62 * (o.depth ?? 1), ry, rx: z * 0.05 }, {
+    rig.add('chest', 'cloth', pg, { y: top, z: z * W * 0.62 * (o.depth ?? 1), ry, rx: z * 0.05 }, {
       c: o.cfn ? undefined : c, cfn: o.cfn,
-      anim: (v) => clamp((-v.y - D.chest * 0.6) / len) * 1.2,
+      anim: (v) => clamp((-v.y - flutter0) / len) * 1.2,
       skin: chainSkin([['hips', -D.spine - 0.4], ['spine', -D.spine * 0.5], ['chest', 0.0]], (v) => v.y),
     });
   }
-  if (o.emblem) rig.add('chest', o.emblemMat ?? 'gold', o.emblem, { y: D.chest * 0.45, z: W * 0.62 * (o.depth ?? 1) + 0.025 }, { c: o.emblemC ?? GOLDTRIM });
+  if (o.emblem) rig.add('chest', o.emblemMat ?? 'gold', o.emblem, { y: o.top === undefined ? D.chest * 0.45 : top - 0.16, z: W * 0.62 * (o.depth ?? 1) + 0.025 }, { c: o.emblemC ?? GOLDTRIM });
 }
 // bat / gargoyle wing: spread in the horizontal plane, leading edge along +X,
 // membrane trailing back (-Z). Flap = rotation about Z, fold = rotation about Y.
