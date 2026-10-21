@@ -322,7 +322,7 @@ export const motherOfFilth = {
     // ---- fx: toxic glow on the pool, an impact / burst ring, a geyser column for submerge / emerge
     addFx(rig, 'pool', 'aura', softDisc(4.4, 32, HDR(FILTH, 0.32), 1.5), { y: 0.07 });
     addFx(rig, 'pool', 'ring', softRing(0.8, 1.0, 48, HDR(FILTH, 1.6), 0.7), { y: 0.1 });
-    addFx(rig, 'pool', 'geyser', softColumn(2.2, 2.9, 5, 24, HDR(FILTH, 0.25)), { y: 0 });
+    addFx(rig, 'pool', 'geyser', softColumn(2.2, 2.9, 5, 24, HDR(FILTH, 0.16)), { y: 0 });
     return {};
   },
 

@@ -144,7 +144,7 @@ export const hollowKing = {
     rig.add('blade', 'glow', xf(G.oct(0.035), { sy: 1.4 }), { y: BLADE0 - 0.02, z: 0 }, { c: HDR(VOID, 5) });
     rig.socket('muzzle', 'blade', 0, BLADE0 + 0.14, 0); // spells gather at the hilt
     // ---- fx: soul-fire over the crown, the eclipse (corona + black sun), sword trail, impact ring, the soul leaving
-    addFx(rig, 'crown', 'soul', softColumn(0.11, 0.17, 0.42, 16, HDR(HOLLOW, 0.5)), { y: 0.05 });
+    addFx(rig, 'crown', 'soul', softColumn(0.1, 0.15, 0.3, 16, HDR(HOLLOW, 0.32)), { y: 0.05 });
     const corona = softRing(0.62, 1.0, 64, HDR(0xc090ff, 2.2), 0.25);
     corona.rotateX(Math.PI / 2);
     addFx(rig, 'chest', 'corona', corona, { y: D.chest + 0.45, z: -0.42 });
@@ -153,7 +153,7 @@ export const hollowKing = {
     addFx(rig, 'chest', 'umbra', umbra, { y: D.chest + 0.45, z: -0.43, mat: 'dark' }); // opaque black sun
     addFx(rig, 'chest', 'trail', swingTrailGeo(BLADE0 + 0.3, BLADE1, 2.3, HDR(0xb8d8ff, 0.7)));
     addFx(rig, 'ground', 'ring', softRing(0.78, 1.0, 48, HDR(VOID, 1.6), 0.6), { y: 0.04 });
-    addFx(rig, 'ground', 'ascend', softColumn(0.25, 0.55, 3.2, 20, HDR(HOLLOW, 0.8)), { y: 0.5 });
+    addFx(rig, 'ground', 'ascend', softColumn(0.25, 0.55, 3.2, 20, HDR(HOLLOW, 0.45)), { y: 0.5 });
     return D;
   },
   onFx(m, kind, extra) {
@@ -337,7 +337,7 @@ function kingFx(m, s, dt, ax, seated, rt) {
   const soul = (seated ? 0.35 : 0.65) * wake * (dead ? 1 - smooth(1.0, 2.2, dtD) : 1) + (rt < 1 ? bump(0.4, 1, rt) * 0.6 : 0);
   fxSet(F, 'soul', soul * (0.8 + 0.2 * Math.sin(T * 13) * Math.sin(T * 7.7)), 1 + Math.sin(T * 9) * 0.05, 1 + soul * 0.6 + Math.sin(T * 11) * 0.08, 1);
   // the eclipse
-  st.ecl = (st.ecl ?? 0) + ((st.eclipse && !dead ? 1 : 0) - (st.ecl ?? 0)) * (1 - Math.exp(-0.7 * dt));
+  st.ecl = (st.ecl ?? 0) + ((st.eclipse && !dead ? 1 : 0) - (st.ecl ?? 0)) * (1 - Math.exp(-(dead ? 2.5 : 0.7) * dt));
   const jt = st.judgT !== undefined ? T - st.judgT : 9;
   const judg = jt < 4.4 && !dead ? smooth(0, 3.6, jt) * (1 - smooth(4.0, 4.4, jt)) : 0;
   const e = st.ecl, cs = 1 + judg * 0.8 + Math.sin(T * 0.7) * 0.03;
