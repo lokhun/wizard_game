@@ -112,8 +112,9 @@ void main(){
   c += uMid * pow(1.0 - f, 4.0) * uRim;
   // a soft limb (fire) or a crisp one (energy)
   c *= mix(smoothstep(0.0, 0.5, f), 1.0, min(uRim, 1.0));
-  // close to the lens it dims instead of filling the screen
-  c *= mix(0.3, 1.0, smoothstep(0.6, 3.5, vDepth));
+  // close to the lens (just leaving your hand) it dims instead of filling the
+  // screen - bloom would otherwise smear it over the whole view
+  c *= mix(0.1, 1.0, smoothstep(0.8, 4.0, vDepth));
   gl_FragColor = vec4(c, 1.0);
 }`;
 
@@ -1084,20 +1085,25 @@ export class VFX {
     const fx = fxOf(element);
     const hot = element === 'fire' || element === 'enemyFire';
     const x = pos.x, y = pos.y, z = pos.z;
-    this.P.glow({ x, y, z, r: fx.mid[0] * 0.45, g: fx.mid[1] * 0.45, b: fx.mid[2] * 0.45, life: 0.12, size: 0.7 * scale, size2: 0.25, sprite: SPR.GLOW });
+    // a hit landing on you (or right in front of the lens) would be a white
+    // sheet over the whole view - the damage vignette already says you were hit
+    const camD = this.camera.position.distanceTo(pos);
+    const nk = camD < 2 ? Math.max(0.06, (camD - 0.4) / 1.6) ** 1.5 : 1;
+    const gm = 0.45 * nk, cm = 0.55 * nk, rm = 0.5 * nk;
+    this.P.glow({ x, y, z, r: fx.mid[0] * gm, g: fx.mid[1] * gm, b: fx.mid[2] * gm, life: 0.12, size: 0.7 * scale, size2: 0.25, sprite: SPR.GLOW });
     // the hit itself: a crisp star that pops open and is gone in a blink, and a
     // thin shock ring around it - both still read at range, where sparks are
     // sub-pixel, and neither lingers long enough to hide the target
     const matter = hot || element === 'earth' || element === 'blood' || element === 'poison' || element === 'enemyGreen' || element === 'physical';
     // the hit marks grow a little with distance so a hit across the room still registers
     const far = Math.min(1.8, Math.max(1, this.camera.position.distanceTo(pos) / 7)) * scale;
-    this.P.glow({ x, y, z, r: fx.core[0] * 0.55, g: fx.core[1] * 0.55, b: fx.core[2] * 0.55, life: 0.14, size: 0.5 * far, size2: 1.15 * far, sprite: matter ? SPR.GLOW : SPR.STAR });
-    if (!matter) this.P.glow({ x, y, z, r: fx.mid[0] * 0.5, g: fx.mid[1] * 0.5, b: fx.mid[2] * 0.5, r2: fx.end[0] * 0.5, g2: fx.end[1] * 0.5, b2: fx.end[2] * 0.5, life: 0.22, size: 0.2 * far, size2: 1.5 * far, sprite: SPR.RING });
-    else if (hot) this.P.glow({ x, y, z, vy: 1.2, r: fx.mid[0] * 0.45, g: fx.mid[1] * 0.45, b: fx.mid[2] * 0.45, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2], life: 0.35, size: 0.35 * scale, size2: 0.9 * scale, sprite: SPR.SMOKE, spin: 2 });
+    this.P.glow({ x, y, z, r: fx.core[0] * cm, g: fx.core[1] * cm, b: fx.core[2] * cm, life: 0.14, size: 0.5 * far, size2: 1.15 * far, sprite: matter ? SPR.GLOW : SPR.STAR });
+    if (!matter) this.P.glow({ x, y, z, r: fx.mid[0] * rm, g: fx.mid[1] * rm, b: fx.mid[2] * rm, r2: fx.end[0] * rm, g2: fx.end[1] * rm, b2: fx.end[2] * rm, life: 0.22, size: 0.2 * far, size2: 1.5 * far, sprite: SPR.RING });
+    else if (hot) this.P.glow({ x, y, z, vy: 1.2, r: fx.mid[0] * gm, g: fx.mid[1] * gm, b: fx.mid[2] * gm, r2: fx.end[0] * nk, g2: fx.end[1] * nk, b2: fx.end[2] * nk, life: 0.35, size: 0.35 * scale, size2: 0.9 * scale, sprite: SPR.SMOKE, spin: 2 });
     // few small sparks, cooling over their life (orange -> deep red for fire)
     this.burst(pos, { element, count: Math.round(7 * scale), speed: 5 * scale, life: 0.35, size: 0.04 * scale, sprite: SPR.SPARK, gravity: hot || element === 'earth' ? 7 : 1, stretch: 0.015,
       color: scaleC(fx.mid, 1.1, _sc), color2: fx.end });
-    this.flash(pos, fx.light, 10 * scale, 6 * scale, 0.15);
+    this.flash(pos, fx.light, 10 * scale * nk, 6 * scale, 0.15);
     switch (element) {
       case 'fire': case 'enemyFire':
         this.burst(pos, { element, count: Math.round(4 * scale), speed: 1.8, life: 0.45, size: 0.3 * scale, sprite: SPR.FLAME, upward: 0.5, size2: 0.05, drag: 3, color: scaleC(fx.mid, 0.8, _sc), color2: fx.end });
@@ -1170,7 +1176,8 @@ export class VFX {
     const camD = Math.max(0.3, this.camera.position.distanceTo(pos));
     const tanHalf = Math.tan(THREE.MathUtils.degToRad((this.camera.fov ?? 78) * 0.5));
     const cover = radius / (camD * tanHalf);
-    const dim = cover > 0.45 ? Math.max(0.3, Math.pow(0.45 / cover, 0.7)) : 1;
+    // (many additive layers overlap at the heart, so this has to bite hard close up)
+    const dim = cover > 0.4 ? Math.max(0.15, 0.4 / cover) : 1;
     const gk = 0.55 * dim;
     this.P.glow({ x: pos.x, y: pos.y, z: pos.z, r: fx.mid[0] * gk, g: fx.mid[1] * gk, b: fx.mid[2] * gk, life: 0.2, size: radius * 0.85, size2: radius * 0.35, sprite: SPR.GLOW });
     // the moment of release: a white-hot heart for a blink, and a shock ring

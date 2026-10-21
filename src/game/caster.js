@@ -277,22 +277,29 @@ function burningGround(game, zz, dt) {
   // catches fast, then gutters out over the last third of its life
   const k = Math.min(1, zz.age / 0.15) * Math.min(1, (zz.life - zz.age) / (zz.life * 0.35));
   zz.eF = (zz.eF ?? 0) + Math.min(170, 15 * R * R + 20) * k * dt;
+  // standing in the fire (or looking back down a Blazing Step trail) puts
+  // hundreds of these right against the lens, where they stack into a white
+  // sheet: the ones rising around the eye burn low and small
+  const cam = game.renderer.camera.position;
   for (; zz.eF >= 1; zz.eF--) {
     const a = Math.random() * Math.PI * 2, u = Math.sqrt(Math.random()), r = u * R;
     const heat = 1 - u * 0.75;
     const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+    const dc = Math.hypot(x - cam.x, cy + 0.6 - cam.y, z - cam.z);
+    const nk = dc < 3 ? Math.max(0.1, (dc - 0.6) / 2.4) : 1, ns = 0.5 + 0.5 * nk;
     if (Math.random() < 0.55) {
       // ragged glowing puffs rolling up off the floor (the body of the fire)
+      const pk = 0.5 * nk, ek = 0.8 * nk;
       vfx.P.glow({ x, y: cy + 0.15, z, vx: rand(-0.2, 0.2), vy: rand(0.5, 1.2) * (0.6 + heat), vz: rand(-0.2, 0.2),
-        r: fx.mid[0] * 0.5, g: fx.mid[1] * 0.5, b: fx.mid[2] * 0.5, r2: fx.end[0] * 0.8, g2: fx.end[1] * 0.8, b2: fx.end[2] * 0.8,
-        life: rand(0.4, 0.8), size: rand(0.35, 0.7) * (0.6 + 0.6 * heat), size2: rand(0.6, 1.0) * (0.6 + 0.6 * heat), sprite: SPR.SMOKE, drag: 1, spin: rand(-1.5, 1.5) });
+        r: fx.mid[0] * pk, g: fx.mid[1] * pk, b: fx.mid[2] * pk, r2: fx.end[0] * ek, g2: fx.end[1] * ek, b2: fx.end[2] * ek,
+        life: rand(0.4, 0.8), size: rand(0.35, 0.7) * (0.6 + 0.6 * heat) * ns, size2: rand(0.6, 1.0) * (0.6 + 0.6 * heat) * ns, sprite: SPR.SMOKE, drag: 1, spin: rand(-1.5, 1.5) });
     } else {
       // and licking tongues, hotter toward the heart
       const hot = Math.random() < 0.3 * heat;
-      const c0 = hot ? fx.core : fx.mid, ck = hot ? 0.5 : 0.7;
+      const c0 = hot ? fx.core : fx.mid, ck = (hot ? 0.5 : 0.7) * nk;
       vfx.P.glow({ x, y: cy + 0.04, z, vx: rand(-0.25, 0.25), vy: rand(0.8, 1.8) * (0.6 + heat), vz: rand(-0.25, 0.25),
-        r: c0[0] * ck, g: c0[1] * ck, b: c0[2] * ck, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2],
-        life: rand(0.3, 0.6), size: rand(0.2, 0.5) * (0.6 + 0.7 * heat), size2: 0.06, sprite: SPR.FLAME, drag: 1.2, spin: rand(1, 3) });
+        r: c0[0] * ck, g: c0[1] * ck, b: c0[2] * ck, r2: fx.end[0] * nk, g2: fx.end[1] * nk, b2: fx.end[2] * nk,
+        life: rand(0.3, 0.6), size: rand(0.2, 0.5) * (0.6 + 0.7 * heat) * ns, size2: 0.06, sprite: SPR.FLAME, drag: 1.2, spin: rand(1, 3) });
     }
   }
   zz.eE = (zz.eE ?? 0) + (4 + 3 * R) * k * dt;

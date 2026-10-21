@@ -401,10 +401,11 @@ class ParticleLayer {
 export class Particles {
   constructor(scene) {
     this.atlas = makeAtlas();
-    // glows dim to 30% right in front of the lens (muzzles, trails leaving the
-    // focus); smoke and debris vanish entirely within ~0.7 m so puffs never
-    // turn into flat discs over the screen
-    this.add = new ParticleLayer(24000, this.atlas, true, [0.6, 3.5, 0.2], 0.5);
+    // glows dim to 8% right in front of the lens (muzzles, trails leaving the
+    // focus, fire you stand in - dozens of them stack up there and bloom into a
+    // white sheet); smoke and debris vanish entirely within ~0.7 m so puffs
+    // never turn into flat discs over the screen
+    this.add = new ParticleLayer(24000, this.atlas, true, [0.6, 3.5, 0.08], 0.5);
     this.alpha = new ParticleLayer(8000, this.atlas, false, [0.7, 2.4, 0.0], 0.7);
     scene.add(this.add.mesh);
     scene.add(this.alpha.mesh);

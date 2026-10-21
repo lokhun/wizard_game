@@ -400,7 +400,11 @@ const RIM_CHUNK = `
     // use the smooth geometric normal, not the bumpy mapped one, so only true silhouette edges catch it
     // abs(): the back of double-sided cloth faces away from the eye and would otherwise rim-light whole
     float ndv = clamp(abs(dot(normalize(vNormal), normalize(vViewPosition))), 0.0, 1.0);
-    totalEmissiveRadiance += uRim * pow(1.0 - ndv, 4.0) * 1.6;
+    float edge = pow(1.0 - ndv, 4.0);
+    totalEmissiveRadiance += uRim * edge * 1.6;
+    // status / faction tint (burning, chilled, elite, summoned): mostly at the
+    // silhouette with a faint fill, so the body keeps its torch-lit shading
+    totalEmissiveRadiance += uTint * (0.3 + pow(1.0 - ndv, 2.0) * 2.2);
   }
 #endif
 `;
@@ -420,7 +424,7 @@ export function patchInstanceMaterial(mat, U, feats) {
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, U, RIM);
     if (keyBits.includes('R')) {
-      sh.fragmentShader = 'uniform vec3 uRim;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + RIM_CHUNK);
+      sh.fragmentShader = 'uniform vec3 uRim, uTint;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + RIM_CHUNK);
     }
     sh.vertexShader = 'attribute float aAnim;\nuniform float uTime, uFlutter, uFlutterSpeed, uWobble;\nuniform vec3 uDrag;\n' +
       sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + VCHUNK);
@@ -678,7 +682,7 @@ export class EnemyInstance {
     // uniforms shared by this instance's patched materials
     this.U = {
       uTime: { value: 0 }, uFlutter: { value: spec.flutter ?? 0.03 }, uFlutterSpeed: { value: 1 }, uWobble: { value: 0 },
-      uDrag: { value: new THREE.Vector3() }, uCrack: { value: new THREE.Color(spec.crackColor ?? 0xff5a10).multiplyScalar(spec.crackIntensity ?? 3) },
+      uDrag: { value: new THREE.Vector3() }, uTint: { value: new THREE.Color(0, 0, 0) }, uCrack: { value: new THREE.Color(spec.crackColor ?? 0xff5a10).multiplyScalar(spec.crackIntensity ?? 3) },
       uCrackLo: { value: 0.045 }, uCrackHi: { value: 0.012 },
     };
     // per-instance materials
@@ -755,6 +759,8 @@ export class EnemyInstance {
   _applyMats() {
     const f = this._flash, tk = this._tintK, tc = this._tint;
     const op = this._opacity;
+    // lit materials take the tint's glow through the rim chunk (uTint), not as flat emissive
+    if (tc) this.U.uTint.value.copy(tc).multiplyScalar(tk * 0.22); else this.U.uTint.value.setRGB(0, 0, 0);
     for (const e of this.mats) {
       const m = e.m;
       m.color.copy(e.color);
@@ -763,7 +769,6 @@ export class EnemyInstance {
         if (f > 0) m.color.lerp(_white, f * 0.5);
       } else {
         m.emissive.copy(e.em);
-        if (tc) m.emissive.r += tc.r * tk * 0.22, m.emissive.g += tc.g * tk * 0.22, m.emissive.b += tc.b * tk * 0.22;
         if (f > 0) { m.emissive.r += f * 0.5; m.emissive.g += f * 0.47; m.emissive.b += f * 0.44; }
         m.emissiveIntensity = 1;
       }

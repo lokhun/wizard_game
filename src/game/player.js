@@ -230,7 +230,8 @@ export class LocalPlayer {
     const g = this.game;
     g.audio?.play('impact_blade');
     g.audio?.play('crit');
-    g.vfx.impact(this.eye.clone().add(this.forward().multiplyScalar(0.8)), 'blade', 1.2);
+    // the clash sits out between you and the blow, not on the lens
+    g.vfx.impact(this.eye.clone().add(this.forward().multiplyScalar(1.6)), 'blade', 1.1);
     this.addCharge(2, 5);
     this.parries = (this.parries ?? 0) + 1; // read by the Riposte augment
     this.parryT = Math.max(this.parryT, 0.15);
