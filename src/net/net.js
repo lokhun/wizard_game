@@ -1,4 +1,7 @@
-import { Peer } from 'peerjs';
+// PeerJS and its WebRTC shims (~75 KB minified) load on the first host or
+// join: solo players never download them
+let peerjs = null;
+const loadPeer = () => (peerjs ??= import('peerjs').catch((e) => { peerjs = null; throw e; }));
 
 // ---------------------------------------------------------------------------
 // Peer-to-peer co-op over WebRTC (PeerJS). One player hosts and shares a
@@ -83,7 +86,7 @@ export class Net {
 
   // ------------------------------------------------------------- hosting
   host() {
-    return new Promise((resolve, reject) => {
+    return loadPeer().then(({ Peer }) => new Promise((resolve, reject) => {
       const attempt = (tries) => {
         const code = makeCode();
         const peer = new Peer(PREFIX + code, peerOptions());
@@ -105,7 +108,7 @@ export class Net {
         peer.on('disconnected', () => { if (!this.closed) peer.reconnect(); });
       };
       attempt(3);
-    });
+    }));
   }
 
   _accept(conn) {
@@ -147,7 +150,7 @@ export class Net {
 
   // ------------------------------------------------------------- joining
   join(code) {
-    return new Promise((resolve, reject) => {
+    return loadPeer().then(({ Peer }) => new Promise((resolve, reject) => {
       const peer = new Peer(undefined, peerOptions());
       let done = false;
       const timer = setTimeout(() => { if (!done) { done = true; reject(new Error('Timed out. Check the code, or the host may be behind a strict firewall.')); peer.destroy(); } }, 15000);
@@ -182,7 +185,7 @@ export class Net {
           reject(new Error(err.type === 'peer-unavailable' ? 'No party found with that code.' : `Connection failed (${err.type ?? err.message}).`));
         }
       });
-    });
+    }));
   }
 
   // ------------------------------------------------------------- sending
