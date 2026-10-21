@@ -53,7 +53,7 @@
       inp.down.clear(); inp.mouse.left = false; inp.mouse.right = false;
       if (g.ended) break;
       // take a tome from any pedestal
-      for (const it of g.interactables) if (it.kind === 'pedestal' && !it.usedBy.has(g.player.id)) { const { rollTomes } = await import('/src/game/upgrades.js'); const c = rollTomes(g.player, 3, it.minRarity); g.grantTome(c[0]); it.usedBy.add(g.player.id); }
+      for (const it of g.interactables) if (it.kind === 'pedestal' && !it.usedBy.has(g.player.id)) { const { rollTomes } = window.__upgrades ?? await import('/src/game/upgrades.js'); const c = rollTomes(g.player, 3, it.minRarity); g.grantTome(c[0]); it.usedBy.add(g.player.id); }
       log.push(`[down=${g.player.downed} dead=${g.player.dead} sr=${g.player.selfRevives} ended=${g.ended}] F${floor} ${room.type} t=${t.toFixed(0)}s hp=${Math.round(g.player.hp)}/${g.player.maxHp} kills=${g.stats.kills} dmg=${Math.round(g.stats.damage)} tomes=${g.player.upgrades.length} boss=${(()=>{const b=g.actors.list?.find?.((a)=>a.boss)??[...(g.actors.actors??[])].find((a)=>a.boss);return b?Math.round(b.hp)+'/'+b.maxHp+' ph'+(b.brain?.phase)+' hostiles='+g.actors.hostiles().length:'none'})()}`);
     }
     if (g.ended) { log.push('ENDED victory=' + (g.floorIndex >= 4)); break; }

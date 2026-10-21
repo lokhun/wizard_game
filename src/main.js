@@ -107,7 +107,7 @@ async function boot() {
   if (q.get('screen')) testScreen(q.get('screen'));
   if (q.get('test')) window.__screen = (which, arg) => { ui.closeAllModals(); if (which === 'menu') showMenu(); else testScreen(which, arg); };
   // test hook: pretend the pointer is locked so automated tests can drive input
-  if (q.get('test')) { input.locked = true; Object.defineProperty(input, 'locked', { get: () => true, set: () => {} }); window.__input = input; window.__THREE = THREE; // test scripts (scripts/glare.js) need math classes
+  if (q.get('test')) { input.locked = true; Object.defineProperty(input, 'locked', { get: () => true, set: () => {} }); window.__input = input; window.__THREE = THREE; import('./game/upgrades.js').then((m) => { window.__upgrades = m; }); // test scripts need math classes and tome rolls (dev and production builds alike)
     // advance the simulation without rendering (fast, deterministic tests)
     window.__sim = (sec, step = 1 / 30, each) => { for (let t = 0; t < sec; t += step) { each?.(t); game.update(step); input.endFrame(); } };
   }
