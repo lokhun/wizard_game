@@ -71,6 +71,12 @@ const _sc = [0, 0, 0], _sc2 = [0, 0, 0], _rc = [0, 0, 0];
 const _flameC = new THREE.Color();
 const scaleC = (c, k, out) => { out[0] = c[0] * k; out[1] = c[1] * k; out[2] = c[2] * k; return out; };
 
+// The view vector of a vertex sitting at the eye (a beam or aim line ending
+// on the player) is zero, and normalize(0) gives Inf/NaN that gets smeared
+// across the triangle into a white-out. Fall back to "facing the camera".
+const SAFE_V = /* glsl */ `
+vec3 safeV(vec3 v){ float l = length(v); return l > 1e-4 ? v / l : vec3(0.0, 0.0, 1.0); }`;
+
 // cheap value noise shared by the volume shaders below
 const NOISE_GLSL = /* glsl */ `
 float vh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -85,11 +91,12 @@ float fbm(vec2 p){ float a = 0.5, s = 0.0; for (int i = 0; i < 4; i++) { s += a 
 // element: the colours are uniforms, the clock a shared uniform object.
 const ORB_VERT = /* glsl */ `
 varying vec3 vN; varying vec3 vV; varying vec3 vP; varying float vDepth;
+${SAFE_V}
 void main(){
   vP = normalize(position);
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   vN = normalize(normalMatrix * normal);
-  vV = normalize(-mv.xyz);
+  vV = safeV(-mv.xyz);
   vDepth = -mv.z;
   gl_Position = projectionMatrix * mv;
 }`;
@@ -186,12 +193,13 @@ void main(){
 
 const BEAM_VERT = /* glsl */ `
 varying vec2 vUv; varying vec3 vN; varying vec3 vV; varying float vDepth; varying vec3 vAx;
+${SAFE_V}
 void main(){
   vUv = uv;
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   vN = normalize(normalMatrix * normal);
   vAx = (modelViewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz; // the beam's axis (local +Y) in view space
-  vV = normalize(-mv.xyz);
+  vV = safeV(-mv.xyz);
   vDepth = -mv.z;
   gl_Position = projectionMatrix * mv;
 }`;
@@ -271,6 +279,7 @@ void main(){
 const FUNNEL_VERT = /* glsl */ `
 uniform float uTime; uniform float uR0; uniform float uR1; uniform float uH; uniform float uSnake; uniform float uSpin;
 varying vec2 vUv; varying float vFacing; varying float vDepth;
+${SAFE_V}
 void main(){
   vUv = uv;
   float y = position.y + 0.5;
@@ -281,7 +290,7 @@ void main(){
   p.z += cos(y * 2.7 + uTime * 1.9) * uSnake * y;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   vec3 n = normalize(normalMatrix * vec3(cos(a), 0.0, sin(a)));
-  vFacing = abs(dot(n, normalize(-mv.xyz)));
+  vFacing = abs(dot(n, safeV(-mv.xyz)));
   vDepth = -mv.z;
   gl_Position = projectionMatrix * mv;
 }`;
@@ -308,11 +317,12 @@ void main(){
 const CONE_VERT = /* glsl */ `
 uniform float uTime;
 varying vec2 vUv; varying float vFacing; varying float vDepth;
+${SAFE_V}
 void main(){
   vUv = uv;
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   vec3 n = normalize(normalMatrix * normal);
-  vFacing = abs(dot(n, normalize(-mv.xyz)));
+  vFacing = abs(dot(n, safeV(-mv.xyz)));
   vDepth = -mv.z;
   gl_Position = projectionMatrix * mv;
 }`;
