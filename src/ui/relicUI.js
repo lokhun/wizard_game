@@ -69,7 +69,10 @@ export function relicListHTML(p, compact = false) {
     const c = relicColor(r.def);
     return `<div class="rrow${r.def.cursed ? ' cursed' : ''}" style="--rc:${c}">${iconSVG(r.def.icon, c, compact ? 20 : 22, { glow: false })}<div><b>${esc(r.def.name)}</b>${r.def.cursed ? '<em>Cursed</em>' : ''}${r.def.set ? `<i>${esc(SETS[r.def.set].name)}</i>` : ''}<span>${esc(r.def.desc)}</span></div></div>`;
   }).join('');
-  return `<div class="subtitle" style="margin-bottom:6px">Relics</div><div class="rlist">${rows}</div>${sets ? `<div class="subtitle" style="margin:10px 0 4px">Sets</div>${sets}` : ''}`;
+  const setsHTML = sets ? `<div class="subtitle" style="margin:${compact ? '0 0 4px' : '10px 0 4px'}">Sets</div>${sets}` : '';
+  const relicsHTML = `<div class="subtitle" style="margin:${compact && sets ? '10px' : '0'} 0 6px">Relics</div><div class="rlist">${rows}</div>`;
+  // Tab: sets first (what the build adds up to), then the relics, in a tighter type
+  return compact ? `<div class="compact">${setsHTML}${relicsHTML}</div>` : relicsHTML + setsHTML;
 }
 
 // a relic offered in a choice (treasure, elite lectern, shrine)
@@ -78,7 +81,7 @@ export function relicCard(r, i, owned) {
   const have = S ? setCounts(owned)[d.set] ?? 0 : 0;
   return `<div class="tome card relic${d.cursed ? ' cursed' : ''}" data-i="${i}" style="--rc:${c}">
     <div class="rar" style="color:${c}">${d.cursed ? 'Cursed Relic' : 'Relic'}</div>
-    ${S ? `<div class="augtag" style="color:${S.color};border-color:${S.color}88">${esc(S.name)} set · ${have + 1}/3</div>` : ''}
+    ${S ? `<div class="augtag" style="color:${S.color};border-color:${S.color}88">${esc(S.name)} set · ${Math.min(3, have + 1)}/3</div>` : ''}
     <div class="ticon" style="box-shadow:0 0 30px ${c}55">${iconSVG(d.icon, c, 54)}</div>
     <div class="tname">${esc(d.name)}</div>
     <div class="tdesc">${esc(d.desc)}</div>

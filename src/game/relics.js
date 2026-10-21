@@ -417,9 +417,11 @@ export class RelicRuntime {
         g.spells.zone({ life: 3, interval: 0.4, local,
           visual: (z, dt) => {
             const fade = Math.min(1, (3 - z.age) * 2);
-            for (let i = 0, m = Math.round(len * 14 * dt * fade + Math.random()); i < m; i++) {
-              const k2 = Math.random(), x = ax + (bx - ax) * k2 + rand(-0.3, 0.3), zz = az + (bz - az) * k2 + rand(-0.3, 0.3);
-              P.glow({ x, y: g.groundY(x, zz) + 0.05, z: zz, vx: rand(-0.3, 0.3), vy: rand(1.2, 2.6), vz: rand(-0.3, 0.3), r: fx.mid[0] * 0.75, g: fx.mid[1] * 0.75, b: fx.mid[2] * 0.75, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2], life: rand(0.35, 0.7), size: rand(0.25, 0.45), size2: 0.06, sprite: SPR.FLAME, drag: 1.5, spin: 1.5 });
+            // a hedge of flame tongues along the path, licking up out of a low glow
+            for (let i = 0, m = Math.round((len + 1) * 30 * dt * fade + Math.random()); i < m; i++) {
+              const k2 = Math.random(), x = ax + (bx - ax) * k2 + rand(-0.35, 0.35), zz = az + (bz - az) * k2 + rand(-0.35, 0.35), gy = g.groundY(x, zz);
+              P.glow({ x, y: gy + 0.05, z: zz, vx: rand(-0.3, 0.3), vy: rand(1.4, 3), vz: rand(-0.3, 0.3), r: fx.mid[0] * 0.85, g: fx.mid[1] * 0.85, b: fx.mid[2] * 0.85, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2], life: rand(0.4, 0.75), size: rand(0.4, 0.7), size2: 0.1, sprite: SPR.FLAME, drag: 1.5, spin: 1.5 });
+              if (i % 3 === 0) P.glow({ x, y: gy + 0.08, z: zz, r: fx.mid[0] * 0.3, g: fx.mid[1] * 0.3, b: fx.mid[2] * 0.3, life: 0.5, size: 0.9, size2: 0.6, sprite: SPR.GLOW });
             }
             g.lights.request(mid, fx.light, 7 * fade, 7);
           },
@@ -483,8 +485,9 @@ export class RelicRuntime {
       }
       case 'bell': {
         const fx = fxOf('necrotic'), c = V(at.x, at.y + 1, at.z);
-        vfx.ring(at, 7, fx.mid, 0.8, 0.08);
-        g.spells.after(0.15, () => vfx.ring(at, 5, fx.core, 0.6, 0.1));
+        // (the wide ring sweeps right under you: kept dim so it reads as a wave, not a wall)
+        vfx.ring(at, 7, [fx.mid[0] * 0.45, fx.mid[1] * 0.45, fx.mid[2] * 0.45], 0.8, 0.06);
+        g.spells.after(0.15, () => vfx.ring(at, 4.5, [fx.core[0] * 0.5, fx.core[1] * 0.5, fx.core[2] * 0.5], 0.6, 0.08));
         vfx.dustWave(at, 7, { color: [0.04, 0.08, 0.04], alpha: 0.4, glow: [fx.mid[0] * 0.5, fx.mid[1] * 0.5, fx.mid[2] * 0.5] });
         vfx.explosion(c, 'necrotic', 2.2, { groundY: at.y, shakeScale: 0.5 });
         au?.play('shockwave', { pos: c, volume: 0.8 });
@@ -523,7 +526,8 @@ export class RelicRuntime {
         const fx = fxOf('time'), gy = g.groundY(at.x, at.z);
         vfx.ring({ x: at.x, y: gy, z: at.z }, 18, fx.mid, 1.2, 0.04);
         vfx.ring({ x: at.x, y: gy, z: at.z }, 4, fx.core, 0.9, 0.12);
-        vfx.burst(V(at.x, gy + 1, at.z), { element: 'time', count: 30, speed: 6, life: 1.2, size: 0.25, sprite: SPR.RING, drag: 3, jitter: 1 });
+        // the rings fly out low along the floor: from chest height they burst on the lens (glare.js)
+        vfx.burst(V(at.x, gy + 0.3, at.z), { element: 'time', count: 18, speed: 7, life: 1.1, size: 0.2, sprite: SPR.RING, drag: 2.5, dir: V(0, 0.15, 0), spread: 3, color: [fx.mid[0] * 0.6, fx.mid[1] * 0.6, fx.mid[2] * 0.6] });
         au?.play('cast_time_big', { pos: local ? undefined : at, volume: 0.8 });
         break;
       }

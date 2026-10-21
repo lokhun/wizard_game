@@ -283,3 +283,6 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .tome.cursed { border: 2px double #e0306a; background: linear-gradient(180deg, #24101a, #0b0608); box-shadow: inset 0 0 40px rgba(160,20,60,0.25); }
 .tome.cursed .tname { color: #ffb8cc; }
 .tome.cursed:hover { box-shadow: 0 0 34px rgba(224,48,106,0.55), inset 0 0 40px rgba(160,20,60,0.3); }
+.relic-tab .compact .rrow { font-size: 11.5px; line-height: 1.25; }
+.relic-tab .compact .rlist { gap: 4px; }
+.relic-tab .compact .rsetrow { font-size: 11.5px; }
