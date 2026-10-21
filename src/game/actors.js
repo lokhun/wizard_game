@@ -9,6 +9,8 @@ import { Pathing } from './pathing.js';
 import { getEnemyModel } from './models.js';
 import { BossBrain } from './bosses.js';
 
+const _frustum = new THREE.Frustum(), _m4 = new THREE.Matrix4(), _sph = new THREE.Sphere();
+
 // ---------------------------------------------------------------------------
 // Actors: enemies, bosses and allied summons. The host runs AI and owns HP;
 // clients interpolate snapshots. Damage to players is always resolved by the
@@ -402,6 +404,12 @@ export class ActorManager {
   update(dt) {
     const g = this.g;
     let listDirty = false;
+    // animation LOD: what the camera can't see poses every 4th frame, distant
+    // actors every 2nd (the skipped time is carried, so nothing drifts)
+    const cam = g.renderer.camera;
+    cam.updateMatrixWorld();
+    _frustum.setFromProjectionMatrix(_m4.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+    this._frame = (this._frame ?? 0) + 1;
     // past the cap, the oldest bodies sink early
     const ages = [];
     for (const a of this.list) if (a.dead && !a.sinkT && !a.boss) ages.push(a.deadT);
@@ -470,7 +478,18 @@ export class ActorManager {
         const frozen = (a.mask & ST.frozen) !== 0;
         const animDt = frozen ? 0 : dt * (a.mask & ST.slow ? 0.5 : 1);
         a.animT += animDt;
-        m.update(animDt, { anim: a.anim, t: a.animT, speed: a.moveSpeed ?? 0, progress: a.progress, attackType: a.attackType });
+        a._poseDt = (a._poseDt ?? 0) + animDt;
+        let every = 1;
+        if (!a.boss) {
+          _sph.center.set(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z);
+          _sph.radius = Math.max(a.height, a.radius * 2) * 0.75 + 0.5;
+          if (!_frustum.intersectsSphere(_sph)) every = 4;
+          else if ((a.pos.x - cam.position.x) ** 2 + (a.pos.z - cam.position.z) ** 2 > 900) every = 2;
+        }
+        if (every === 1 || (this._frame + a.id) % every === 0 || a.anim !== a._posedAnim) {
+          m.update(a._poseDt, { anim: a.anim, t: a.animT, speed: a.moveSpeed ?? 0, progress: a.progress, attackType: a.attackType });
+          a._poseDt = 0; a._posedAnim = a.anim;
+        }
         if ((a.moveSpeed ?? 0) > 0.5 && a.pos.y < 0) g.wadeFx(a, a.moveSpeed, dt, a.radius ?? 0.5);
         if (a.hitFlash > 0) { m.flash?.(a.hitFlash); a.hitFlash = 0; }
         // status tint

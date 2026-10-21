@@ -453,38 +453,25 @@ export class UI {
     const W = cvs.width, H = cvs.height;
     g.clearRect(0, 0, W, H);
     const scale = big ? Math.min(W / (L.W * T) * 1.9, H / (L.H * T) * 1.9) : 3.2;
-    const cx = big ? (this._mmCenter ??= this._levelCenter(L)) : { x: p.pos.x, z: p.pos.z };
+    if (this._mmCenterL !== L) { this._mmCenterL = L; this._mmCenter = this._levelCenter(L); }
+    const cx = big ? this._mmCenter : p.pos;
     g.save();
     g.translate(W / 2, H / 2);
     if (!big) g.rotate(p.yaw);
     g.translate(-cx.x * scale, -cx.z * scale);
-    const known = new Set();
-    for (const r of L.rooms) if (r.visited) { known.add(r.id); for (const n of r.neighbors) known.add(n); }
-    // corridors
-    g.fillStyle = 'rgba(150,130,100,0.35)';
-    for (const c of L.corridors) {
-      if (!(L.rooms[c.a].visited || L.rooms[c.b].visited)) continue;
-      for (const i of c.cells) { const x = i % L.W, y = Math.floor(i / L.W); g.fillRect(x * T * scale, y * T * scale, T * scale + 0.5, T * scale + 0.5); }
-    }
+    // rooms and corridors only change when a room is discovered or a fight
+    // starts/ends: drawn once into an offscreen layer, blitted every frame
+    const layer = this._mmLayer(game, L);
+    g.drawImage(layer.c, 0, 0, layer.c.width * scale / layer.s, layer.c.height * scale / layer.s);
     for (const r of L.rooms) {
-      if (!known.has(r.id)) continue;
-      const x = r.x * T * scale, y = r.y * T * scale, w = r.w * T * scale, hh = r.h * T * scale;
-      g.fillStyle = r.visited ? (game.director.active?.room === r ? 'rgba(160,40,30,0.55)' : 'rgba(120,100,75,0.45)') : 'rgba(60,50,40,0.3)';
-      g.fillRect(x, y, w, hh);
-      g.strokeStyle = r.visited ? 'rgba(226,196,138,0.8)' : 'rgba(226,196,138,0.3)';
-      g.lineWidth = 1.5;
-      g.strokeRect(x, y, w, hh);
+      if (!layer.known.has(r.id)) continue;
       const icon = r.type === ROOM.BOSS ? '☠' : r.type === ROOM.SHOP ? '⚖' : r.type === ROOM.SHRINE ? '✚' : r.type === ROOM.TREASURE ? '♦' : r.type === ROOM.ELITE ? '★' : r.type === ROOM.TRIAL ? '⧗' : '';
-      if (icon) {
-        g.save();
-        g.translate(x + w / 2, y + hh / 2);
-        if (!big) g.rotate(-p.yaw);
-        g.fillStyle = r.type === ROOM.BOSS ? '#ff6050' : '#f0d090';
-        g.font = `${big ? 22 : 18}px serif`;
-        g.textAlign = 'center'; g.textBaseline = 'middle';
-        g.fillText(icon, 0, 0);
-        g.restore();
-      }
+      if (!icon) continue;
+      g.save();
+      g.translate((r.x + r.w / 2) * T * scale, (r.y + r.h / 2) * T * scale);
+      if (!big) g.rotate(-p.yaw);
+      this._blitText(g, this._textBitmap(icon, `${big ? 22 : 18}px serif`, r.type === ROOM.BOSS ? '#ff6050' : '#f0d090', { lw: 0 }), 0, 0);
+      g.restore();
     }
     // enemies in current encounter
     g.fillStyle = '#ff4030';
@@ -507,6 +494,36 @@ export class UI {
     drawP(p, '#fff4d8');
     g.restore();
   }
+  _mmLayer(game, L) {
+    const active = game.director.active?.room?.id ?? -1;
+    let key = active + ':';
+    for (const r of L.rooms) if (r.visited) key += r.id + ',';
+    const c0 = this._mmL;
+    if (c0 && c0.L === L && c0.key === key) return c0;
+    const S = 3.2; // px per metre in the layer
+    const c = c0?.L === L ? c0.c : document.createElement('canvas');
+    c.width = Math.ceil(L.W * T * S); c.height = Math.ceil(L.H * T * S);
+    const g = c.getContext('2d');
+    g.clearRect(0, 0, c.width, c.height);
+    const known = new Set();
+    for (const r of L.rooms) if (r.visited) { known.add(r.id); for (const n of r.neighbors) known.add(n); }
+    g.fillStyle = 'rgba(150,130,100,0.35)';
+    for (const co of L.corridors) {
+      if (!(L.rooms[co.a].visited || L.rooms[co.b].visited)) continue;
+      for (const i of co.cells) { const x = i % L.W, y = Math.floor(i / L.W); g.fillRect(x * T * S, y * T * S, T * S + 0.5, T * S + 0.5); }
+    }
+    for (const r of L.rooms) {
+      if (!known.has(r.id)) continue;
+      const x = r.x * T * S, y = r.y * T * S, w = r.w * T * S, hh = r.h * T * S;
+      g.fillStyle = r.visited ? (active === r.id ? 'rgba(160,40,30,0.55)' : 'rgba(120,100,75,0.45)') : 'rgba(60,50,40,0.3)';
+      g.fillRect(x, y, w, hh);
+      g.strokeStyle = r.visited ? 'rgba(226,196,138,0.8)' : 'rgba(226,196,138,0.3)';
+      g.lineWidth = 1.5;
+      g.strokeRect(x, y, w, hh);
+    }
+    this._mmL = { L, key, c, s: S, known };
+    return this._mmL;
+  }
   _levelCenter(L) {
     let minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
     for (const r of L.rooms) { minX = Math.min(minX, r.x * T); maxX = Math.max(maxX, (r.x + r.w) * T); minZ = Math.min(minZ, r.y * T); maxZ = Math.max(maxZ, (r.y + r.h) * T); }
@@ -515,13 +532,85 @@ export class UI {
 
   // ---------------------------------------------------------------- 2D overlay
   _project(pos) {
-    const v = new THREE.Vector3(pos.x, pos.y, pos.z).project(this.renderer.camera);
+    const v = (this._pv ??= new THREE.Vector3()).set(pos.x, pos.y, pos.z).project(this.renderer.camera);
     if (v.z > 1 || v.z < -1) return null;
     return { x: (v.x * 0.5 + 0.5) * innerWidth, y: (-v.y * 0.5 + 0.5) * innerHeight, z: v.z };
   }
 
+  // Text drawn into a small canvas once (font, outline and glow included) and
+  // blitted with drawImage after that. Per-frame fillText/strokeText with an
+  // animated font size (and shadowBlur glows) cost ~2 ms a frame in a fight.
+  _textBitmap(text, font, fill, { stroke = 'rgba(0,0,0,0.85)', lw = 3, glow = 0 } = {}) {
+    const key = text + '|' + font + '|' + fill + '|' + lw + '|' + glow;
+    const cache = (this._tb ??= new Map());
+    let b = cache.get(key);
+    if (b) return b;
+    // packed into shared atlas pages (shelf packing): creating a canvas per
+    // text cost several ms each on some machines
+    const pad = Math.ceil(lw + glow + 2);
+    const A = (this._atlas ??= { pages: [], x: 0, y: 0, row: 0 });
+    let page = A.pages[A.pages.length - 1];
+    if (!page) page = this._atlasPage();
+    page.g.font = font;
+    const w = Math.ceil(page.g.measureText(text).width) + pad * 2;
+    const px = parseFloat(/(\d+(?:\.\d+)?)px/.exec(font)?.[1] ?? 16);
+    const h = Math.ceil(px * 1.3) + pad * 2;
+    const P = 1024;
+    if (A.x + w > P) { A.x = 0; A.y += A.row + 1; A.row = 0; }
+    if (A.y + h > P) {
+      // page full: start another; past a few pages, start over (rare: the
+      // cache only holds distinct texts, digits and short labels)
+      if (A.pages.length >= 4) { A.pages.length = 0; cache.clear(); }
+      page = this._atlasPage();
+      A.x = 0; A.y = 0; A.row = 0;
+      page.g.font = font;
+    }
+    const g = page.g, x0 = A.x, y0 = A.y;
+    g.save();
+    g.beginPath(); g.rect(x0, y0, w, h); g.clip();
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    if (lw) { g.lineWidth = lw; g.strokeStyle = stroke; g.lineJoin = 'round'; g.strokeText(text, x0 + w / 2, y0 + h / 2); }
+    if (glow) { g.shadowColor = fill; g.shadowBlur = glow; }
+    g.fillStyle = fill;
+    g.fillText(text, x0 + w / 2, y0 + h / 2);
+    g.restore();
+    A.x += w + 1; A.row = Math.max(A.row, h);
+    b = { c: page.c, sx: x0, sy: y0, w, h, pad };
+    cache.set(key, b);
+    return b;
+  }
+  _atlasPage() {
+    const c = document.createElement('canvas');
+    c.width = c.height = 1024;
+    const page = { c, g: c.getContext('2d') };
+    this._atlas.pages.push(page);
+    return page;
+  }
+  // Damage numbers change on every merged hit, so they're composed from cached
+  // per-digit bitmaps (ten per style) instead of a fresh bitmap per value.
+  _blitNumber(g, text, font, fill, x, y, scale = 1) {
+    const bs = this._numBits ??= [];
+    let adv = 0;
+    for (let i = 0; i < text.length; i++) { const b = this._textBitmap(text[i], font, fill); bs[i] = b; adv += b.w - b.pad * 2; }
+    let cx = x - (adv * scale) / 2;
+    for (let i = 0; i < text.length; i++) {
+      const b = bs[i], a = (b.w - b.pad * 2) * scale;
+      this._blitText(g, b, cx + a / 2, y, scale);
+      cx += a;
+    }
+  }
+  // blit a cached text bitmap centred at x, with its baseline-ish at y
+  _blitText(g, b, x, y, scale = 1) {
+    const w = b.w * scale, h = b.h * scale;
+    g.drawImage(b.c, b.sx, b.sy, b.w, b.h, x - w / 2, y - h * 0.62, w, h);
+  }
+
   _draw2d(dt, game) {
     const g = this.ctx;
+    // nothing drawn last frame and nothing to draw now: leave the canvas alone
+    const busy = this.numbers.length || this.floats.length || game.remotes.size || game.pings?.length || game.actors.list.length;
+    if (!busy && !this._2dDirty) return;
+    this._2dDirty = !!busy;
     g.clearRect(0, 0, innerWidth, innerHeight);
     const cam = this.renderer.camera;
     // enemy health bars (only damaged or elite/boss nearby)
@@ -546,12 +635,10 @@ export class UI {
       g.fillRect(s.x - w / 2, s.y, w * Math.max(0, a.hp / a.maxHp), hgt);
       if (a.shieldHp > 0) { g.fillStyle = '#ffe080'; g.fillRect(s.x - w / 2, s.y - 3, w * Math.min(1, a.shieldHp / a.maxHp), 2); }
       if (a.elite) {
-        g.font = '600 11px Cinzel, serif';
-        g.textAlign = 'center';
-        g.fillStyle = '#ffb050';
         const label = (a.affix ? a.affix[0].toUpperCase() + a.affix.slice(1) + ' ' : '') + a.def.name;
-        const lw = g.measureText(label).width / 2 + 6;
-        g.fillText(label, Math.max(lw, Math.min(innerWidth - lw, s.x)), s.y - 5);
+        const b = this._textBitmap(label, '600 11px Cinzel, serif', '#ffb050', { lw: 0 });
+        const lw = b.w / 2 + 2;
+        this._blitText(g, b, Math.max(lw, Math.min(innerWidth - lw, s.x)), s.y - 9);
       }
       // status pips
       let px = s.x - w / 2;
@@ -564,14 +651,9 @@ export class UI {
     for (const r of game.remotes.values()) {
       const s = this._project({ x: r.pos.x, y: r.pos.y + 2.25, z: r.pos.z });
       if (!s) continue;
-      g.font = '600 13px Cinzel, serif';
-      g.textAlign = 'center';
-      g.fillStyle = r.downed ? '#ff5050' : hex(r.meta.color2 ?? r.meta.color);
-      g.shadowColor = '#000'; g.shadowBlur = 4;
-      g.fillText(r.name + (r.downed ? ' — DOWNED' : ''), s.x, s.y);
+      this._blitText(g, this._textBitmap(r.name + (r.downed ? ' — DOWNED' : ''), '600 13px Cinzel, serif', r.downed ? '#ff5050' : hex(r.meta.color2 ?? r.meta.color), { stroke: 'rgba(0,0,0,0.7)', lw: 3 }), s.x, s.y - 4);
       g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(s.x - 24, s.y + 5, 48, 4);
       g.fillStyle = '#d03030'; g.fillRect(s.x - 24, s.y + 5, 48 * Math.max(0, r.hp / r.maxHp), 4);
-      g.shadowBlur = 0;
       if (r.downed) {
         g.strokeStyle = '#ffd860'; g.lineWidth = 3;
         g.beginPath(); g.arc(s.x, s.y + 26, 12, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (r.reviveProgress ?? 0)); g.stroke();
@@ -587,15 +669,10 @@ export class UI {
       const k = n.t / n.life;
       const pop = n.t < 0.12 ? 1 + (1 - n.t / 0.12) * (n.crit ? 0.9 : 0.4) : 1;
       g.globalAlpha = k > 0.6 ? 1 - (k - 0.6) / 0.4 : 1;
-      // bigger hits read bigger
-      const size = (n.dot ? 13 : (n.crit ? 22 : 15) + Math.min(10, Math.log2(1 + n.amount / 12) * 2.5)) * pop;
-      g.font = `${n.crit ? 700 : 600} ${size}px Cinzel, serif`;
-      g.textAlign = 'center';
-      g.lineWidth = 3;
-      g.strokeStyle = 'rgba(0,0,0,0.85)';
-      g.strokeText(n.text, s.x + n.ox, s.y);
-      g.fillStyle = n.color;
-      g.fillText(n.text, s.x + n.ox, s.y);
+      // bigger hits read bigger; the size is rounded so a merged number only
+      // re-renders its bitmap when it visibly grows, and the pop is a scale
+      const size = Math.round(n.dot ? 13 : (n.crit ? 22 : 15) + Math.min(10, Math.log2(1 + n.amount / 12) * 2.5));
+      this._blitNumber(g, n.text, `${n.crit ? 700 : 600} ${size}px Cinzel, serif`, n.color, s.x + n.ox, s.y, pop);
       g.globalAlpha = 1;
     }
     // floating texts (reactions etc.)
@@ -608,14 +685,7 @@ export class UI {
       if (!s) continue;
       g.globalAlpha = f.t > 1 ? 1 - (f.t - 1) / 0.4 : 1;
       const pop = f.t < 0.15 ? 1 + (1 - f.t / 0.15) * 0.8 : 1;
-      g.font = `700 ${(f.big ? 22 : 15) * pop}px Cinzel, serif`;
-      g.textAlign = 'center';
-      g.lineWidth = 4; g.strokeStyle = 'rgba(0,0,0,0.9)';
-      g.strokeText(f.text, s.x, s.y);
-      g.fillStyle = f.color;
-      g.shadowColor = f.color; g.shadowBlur = 12;
-      g.fillText(f.text, s.x, s.y);
-      g.shadowBlur = 0;
+      this._blitText(g, this._textBitmap(f.text, `700 ${f.big ? 22 : 15}px Cinzel, serif`, f.color, { stroke: 'rgba(0,0,0,0.9)', lw: 4, glow: 12 }), s.x, s.y, pop);
       g.globalAlpha = 1;
     }
     // pings
