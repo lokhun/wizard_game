@@ -8,6 +8,8 @@ import * as THREE from 'three';
 // distance-based fade so lights never pop in or out.
 // FX: transient requests (projectiles, explosions) submitted every frame.
 
+const FX_BUDGET = 60, FX_CLUSTER_R2 = 3 * 3;
+
 export class LightPool {
   constructor(scene, { torchCount = 10, fxCount = 8 } = {}) {
     this.scene = scene;
@@ -100,6 +102,21 @@ export class LightPool {
       r.score = r.intensity / (1 + (dx * dx + dy * dy + dz * dz) * 0.02);
     }
     reqs.sort((a, b) => b.score - a.score);
+    // Overlapping blasts (a fireball, the burn it leaves, the deaths it causes)
+    // would add their light up and wash the room white. Lights within a few
+    // metres share a budget: one blast keeps its full strength, a pile-up
+    // gets no brighter than the strongest of them plus a little.
+    const m = Math.min(reqs.length, this.fxLights.length);
+    for (let i = 0; i < m; i++) {
+      const a = reqs[i];
+      let sum = 0, top = 0;
+      for (let j = 0; j < m; j++) {
+        const b = reqs[j];
+        const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+        if (dx * dx + dy * dy + dz * dz < FX_CLUSTER_R2) { sum += b.intensity; if (b.intensity > top) top = b.intensity; }
+      }
+      a.k = sum > 0 ? Math.min(1, Math.max(FX_BUDGET, top * 1.25) / sum) : 1;
+    }
     for (let i = 0; i < this.fxLights.length; i++) {
       const l = this.fxLights[i];
       const r = reqs[i];
@@ -107,7 +124,7 @@ export class LightPool {
 
       l.position.set(r.x, r.y, r.z);
       if (r.color.isColor) l.color.copy(r.color); else l.color.setHex(r.color);
-      l.intensity = r.intensity;
+      l.intensity = r.intensity * r.k;
       l.distance = r.range;
     }
     reqs.length = 0;

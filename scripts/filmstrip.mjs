@@ -18,7 +18,7 @@ for (let i = 0; i < +frames; i++) {
   await page.evaluate(`window.__sim(${step}, 1/30, window.__each); null`);
   await page.waitForTimeout(700);
   const f = `${out}_${i}.png`;
-  await page.screenshot({ path: f });
+  await page.screenshot({ path: f, timeout: 180000 }); // slow on a loaded machine
   files.push(f);
 }
 await browser.close();
