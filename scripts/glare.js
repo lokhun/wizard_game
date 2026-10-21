@@ -3,7 +3,7 @@
 // (stacked additive effects + bloom right at the lens). Run with smoke.mjs:
 //   node scripts/smoke.mjs "?autostart=pyromancer&test=1&quality=high&floor=1&seed=77" out.png 3000 scripts/glare.js
 // Reports the baseline (median), the worst samples with what was just cast,
-// and how many samples went over 2.2x the baseline.
+// and how many samples went over 2.2x the baseline. ?stop=N: see below.
 (async () => {
   while (!window.__game || window.__game.menuMode || !window.__game.player || window.__game.loadingFloor) await new Promise((r) => setTimeout(r, 200));
   const g = window.__game, p = g.player, inp = window.__input;
@@ -43,15 +43,24 @@
         inp.mouse.left = slot === 'primary';
       });
       samples.push({ t: +g.time.toFixed(2), slot: last, l: lum() });
+      if (stopAt && samples[samples.length - 1].l > stopAt) throw samples[samples.length - 1];
     }
     inp.mouse.left = inp.mouse.right = false;
   };
-  for (let round = 0; round < (+new URLSearchParams(location.search).get('rounds') || 1); round++) {
-    run('primary', null, 1.2);
-    run('ability1', 'KeyQ', 1.6);
-    run('secondary', null, 1.6);
-    run('ability2', 'KeyE', 1.6);
-    run('ultimate', 'KeyR', 3);
+  // ?stop=N freezes the world on the first sample brighter than N, so the
+  // closing screenshot shows that very frame
+  const stopAt = +new URLSearchParams(location.search).get('stop') || 0;
+  try {
+    for (let round = 0; round < (+new URLSearchParams(location.search).get('rounds') || 1); round++) {
+      run('primary', null, 1.2);
+      run('ability1', 'KeyQ', 1.6);
+      run('secondary', null, 1.6);
+      run('ability2', 'KeyE', 1.6);
+      run('ultimate', 'KeyR', 3);
+    }
+  } catch (hit) {
+    if (!hit || hit.l === undefined) throw hit;
+    return { stopped: hit, cls: p.classId };
   }
   window.__freeze = false;
   const ls = samples.map((s) => s.l).sort((a, b) => a - b);
