@@ -633,7 +633,8 @@ export function createViewModel(classId, ctx) {
         trail.update(dt, cutting, _ta, _tb);
       }
     }
-    const sigCharge = s.downed ? 0 : chargeK;
+    // a charged ultimate keeps a faint circle turning at the focus
+    const sigCharge = s.downed ? 0 : Math.max(chargeK, power * 0.32);
     if (sigils.busy(sigCharge)) sigils.update(dt, muzzle, sigCharge);
   }
 
