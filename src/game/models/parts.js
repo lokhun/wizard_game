@@ -576,29 +576,30 @@ export function addPlate(rig, D, o = {}) {
   const mat = o.mat ?? 'steel', c = o.c ?? BLACKSTEEL, tc = o.trimC ?? GOLDTRIM, trimMat = o.trimMat ?? 'gold';
   const b = o.bulk ?? 1;
   const W = D.shoulderW;
+  const PC = { c, cfn: o.cfn }; // o.cfn: optional per-vertex colour (wear, rust) on the plates
   // cuirass + backplate
-  rig.add('chest', mat, cuirass(D, { w: 1.08 * b, depth: 1.15 * b, low: 0.75 }), {}, { c });
+  rig.add('chest', mat, cuirass(D, { w: 1.08 * b, depth: 1.15 * b, low: 0.75 }), {}, PC);
   if (o.trim) rig.add('chest', trimMat, mergeRaw([xf(G.tor(W * 0.55, 0.012, 4, 18), { rx: Math.PI / 2, y: D.chest - 0.01, sz: 0.8 }), xf(G.tor(W * 0.8 * b, 0.012, 4, 20), { rx: Math.PI / 2, y: -D.spine * 0.7, sz: 0.75 })]), {}, { c: tc });
   // gorget
-  rig.add('neck', mat, lathe([[0.09 * b, -0.04], [0.085 * b, 0.02], [0.07 * b, 0.07]], 12), { y: -0.0 }, { c });
+  rig.add('neck', mat, lathe([[0.09 * b, -0.04], [0.085 * b, 0.02], [0.07 * b, 0.07]], 12), { y: -0.0 }, PC);
   // faulds: 3 overlapping hoops on the hips
-  for (let i = 0; i < 3; i++) rig.add('hips', mat, shell([[W * (0.84 + i * 0.05) * b, -0.06 - i * 0.06], [W * (0.8 + i * 0.05) * b, -0.0 - i * 0.06]], 0.008, 16), { sz: 0.78 }, { c });
+  for (let i = 0; i < 3; i++) rig.add('hips', mat, shell([[W * (0.84 + i * 0.05) * b, -0.06 - i * 0.06], [W * (0.8 + i * 0.05) * b, -0.0 - i * 0.06]], 0.008, 16), { sz: 0.78 }, PC);
   // tassets
-  rig.pair('hips', 'hips', mat, mergeRaw([xf(G.box(0.16, 0.2, 0.012), { y: -0.1 }), xf(G.box(0.16, 0.012, 0.02), { y: -0.2 })]), { x: W * 0.42 * b, y: -0.16, z: W * 0.62 * b, rx: 0.12, ry: 0.35 }, { c });
+  rig.pair('hips', 'hips', mat, mergeRaw([xf(G.box(0.16, 0.2, 0.012), { y: -0.1 }), xf(G.box(0.16, 0.012, 0.02), { y: -0.2 })]), { x: W * 0.42 * b, y: -0.16, z: W * 0.62 * b, rx: 0.12, ry: 0.35 }, PC);
   for (const S of ['L', 'R']) {
     const sx = S === 'L' ? 1 : -1;
     const pr = (o.pauldron ?? 0.12) * b;
-    rig.add('arm' + S, mat, pauldron(pr, 3), { x: sx * 0.02, y: 0.0, rz: sx * 0.45, sy: 0.85 }, { c });
+    rig.add('arm' + S, mat, pauldron(pr, 3), { x: sx * 0.02, y: 0.0, rz: sx * 0.45, sy: 0.85 }, PC);
     if (o.trim) rig.add('arm' + S, trimMat, xf(G.tor(pr * 1.17, 0.009, 4, 16), { rx: Math.PI / 2 }), { x: sx * 0.02, y: -0.1, rz: sx * 0.45, sy: 0.85 }, { c: tc });
-    rig.add('arm' + S, mat, limbPlate(0.062 * b, 0.055 * b, D.upper * 0.6), { y: -D.upper * 0.28 }, { c });
-    rig.add('fore' + S, mat, couter(0.055 * b), { y: 0.0, z: -0.0 }, { c });
-    rig.add('fore' + S, mat, limbPlate(0.056 * b, 0.048 * b, D.fore * 0.75), { y: -D.fore * 0.15 }, { c });
+    rig.add('arm' + S, mat, limbPlate(0.062 * b, 0.055 * b, D.upper * 0.6), { y: -D.upper * 0.28 }, PC);
+    rig.add('fore' + S, mat, couter(0.055 * b), { y: 0.0, z: -0.0 }, PC);
+    rig.add('fore' + S, mat, limbPlate(0.056 * b, 0.048 * b, D.fore * 0.75), { y: -D.fore * 0.15 }, PC);
     // gauntlet with flared cuff
-    rig.add('hand' + S, mat, mergeRaw([lathe([[0.065 * b, 0.04], [0.05 * b, -0.02]], 10), xf(G.box(0.085 * b, 0.09, 0.05 * b), { y: -0.06 }), xf(G.box(0.08 * b, 0.05, 0.05 * b), { y: -0.12, z: 0.02, rx: -0.9 })]), {}, { c });
-    rig.add('thigh' + S, mat, limbPlate(0.092 * b, 0.075 * b, D.thigh * 0.75), { y: -D.thigh * 0.12 }, { c });
-    rig.add('shin' + S, mat, mergeRaw([xf(G.sph(0.06 * b, 10, 8, 0, TAU, 0, Math.PI * 0.55), { rx: Math.PI / 2 + 0.2, z: 0.02 }), xf(G.cone(0.05 * b, 0.07, 6), { z: 0.03, x: sx * 0.05, rz: -sx * Math.PI / 2, sy: 0.5 })]), { y: 0.0 }, { c });
-    rig.add('shin' + S, mat, limbPlate(0.07 * b, 0.055 * b, D.shin * 0.85), { y: -D.shin * 0.1 }, { c });
-    rig.add('foot' + S, mat, mergeRaw([xf(G.sph(0.06, 10, 6, 0, TAU, 0, Math.PI / 2), { sx: 1.15, sy: 0.9, sz: 2.0, y: -0.075, z: 0.05 }), xf(G.box(0.12, 0.02, 0.24), { y: -0.075, z: 0.05 })]), { s: b }, { c });
+    rig.add('hand' + S, mat, mergeRaw([lathe([[0.065 * b, 0.04], [0.05 * b, -0.02]], 10), xf(G.box(0.085 * b, 0.09, 0.05 * b), { y: -0.06 }), xf(G.box(0.08 * b, 0.05, 0.05 * b), { y: -0.12, z: 0.02, rx: -0.9 })]), {}, PC);
+    rig.add('thigh' + S, mat, limbPlate(0.092 * b, 0.075 * b, D.thigh * 0.75), { y: -D.thigh * 0.12 }, PC);
+    rig.add('shin' + S, mat, mergeRaw([xf(G.sph(0.06 * b, 10, 8, 0, TAU, 0, Math.PI * 0.55), { rx: Math.PI / 2 + 0.2, z: 0.02 }), xf(G.cone(0.05 * b, 0.07, 6), { z: 0.03, x: sx * 0.05, rz: -sx * Math.PI / 2, sy: 0.5 })]), { y: 0.0 }, PC);
+    rig.add('shin' + S, mat, limbPlate(0.07 * b, 0.055 * b, D.shin * 0.85), { y: -D.shin * 0.1 }, PC);
+    rig.add('foot' + S, mat, mergeRaw([xf(G.sph(0.06, 10, 6, 0, TAU, 0, Math.PI / 2), { sx: 1.15, sy: 0.9, sz: 2.0, y: -0.075, z: 0.05 }), xf(G.box(0.12, 0.02, 0.24), { y: -0.075, z: 0.05 })]), { s: b }, PC);
   }
   if (o.mail !== false) {
     rig.add('hips', 'mail', robe(W * 0.75 * b, W * 0.95 * b, D.thigh * 0.85, { seg: 16, rows: 3, folds: 6, foldAmp: 0.03, tatter: 0.04, seed: 2 }), { y: -0.03, sz: 0.85 }, { c: o.mailC ?? [0.9, 0.9, 0.95], skin: chainSkin([['hips', -0.15], ['thighL', -0.4]], (v) => -v.y) });

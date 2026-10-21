@@ -459,7 +459,7 @@ export const royalGuard = {
     addSkeletonBody(rig, D, { c: [0.85, 0.82, 0.72], grip: { R: true, L: true }, armored: true });
     const BK = [0.2, 0.2, 0.23];
     addPlate(rig, D, { mat: 'steel', c: BK, bulk: 1.1, pauldron: 0.14, trim: true, mailC: [0.45, 0.45, 0.5] });
-    addTabard(rig, D, { c: [0.06, 0.05, 0.06], tatter: 0.15, seed: 4, len: 0.95, w: 0.8, emblem: mergeRaw([xf(G.box(0.14, 0.03, 0.01), {}), ...[-1, 0, 1].map((i) => xf(G.cone(0.02, 0.07, 4), { x: i * 0.05, y: 0.045 }))]), cfn: (v) => (Math.abs(v.x) > 0.17 ? GOLDTRIM : [0.06, 0.05, 0.06]) });
+    addTabard(rig, D, { c: [0.06, 0.05, 0.06], tatter: 0.15, seed: 4, len: 0.95, w: 0.8, depth: 2.05, emblem: mergeRaw([xf(G.box(0.14, 0.03, 0.01), {}), ...[-1, 0, 1].map((i) => xf(G.cone(0.02, 0.07, 4), { x: i * 0.05, y: 0.045 }))]), cfn: (v) => (Math.abs(v.x) > 0.17 ? GOLDTRIM : [0.06, 0.05, 0.06]) });
     // skull under an open-faced, crested helm
     addSkull(rig, 'head', 'jaw', { eye: RG_EYE, eyeK: 7, c: [0.85, 0.82, 0.72] });
     const helm = shell([[0.135, 0.06], [0.14, 0.13], [0.13, 0.2], [0.09, 0.25], [0.001, 0.27]], 0.01, 16);
