@@ -196,14 +196,15 @@ function coneChannel({ el, range, angle, dmg, interval = 0.12, st, sound, max = 
       // the jet: ragged glowing puffs born at the hand and hurled down the
       // cone, swelling and cooling as they go (streaked along their flight so
       // it reads as a stream, not a cluster of upright tongues)
-      const n = emitN(S, 'eF', 150, dt);
+      // (seen down its own length the jet overlaps itself: the caster gets fewer, darker puffs)
+      const n = emitN(S, 'eF', ctx.local ? 105 : 150, dt);
       for (let i = 0; i < n; i++) {
         const t = (ctx.local ? 0.1 : 0.04) + Math.pow(Math.random(), 1.6) * 0.45;
         const w = Math.tan(angle) * 0.75;
         const sx = d.x + rand(-1, 1) * w, sy = d.y + rand(-0.7, 0.7) * w, sz = d.z + rand(-1, 1) * w;
         const L = t * range, sp = range * rand(1.5, 2.1);
         const hot = t < 0.16;
-        const c0 = hot ? fx.core : fx.mid, k0 = hot ? 0.32 : 0.48;
+        const c0 = hot ? fx.core : fx.mid, k0 = (hot ? 0.3 : 0.45) * (ctx.local ? 0.75 : 1);
         ctx.vfx.P.glowAmbient({ x: o.x + sx * L, y: o.y + sy * L, z: o.z + sz * L, vx: sx * sp, vy: sy * sp + 0.8, vz: sz * sp,
           r: c0[0] * k0, g: c0[1] * k0, b: c0[2] * k0, r2: fx.end[0] * 0.9, g2: fx.end[1] * 0.9, b2: fx.end[2] * 0.9,
           life: rand(0.32, 0.46), size: 0.1 + t * 0.7, size2: 0.9 + Math.random() * 0.7, sprite: SPR.SMOKE, drag: 1.4, stretch: 0.025, spin: rand(-3, 3) });
@@ -311,6 +312,16 @@ export const CLASSES = {
             const p = v3(start.x + dir.x * i * 1.6, ctx.groundAt(start.x + dir.x * i * 1.6, start.z + dir.z * i * 1.6), start.z + dir.z * i * 1.6);
             ctx.after(i * 0.035, () => ctx.zone({ pos: p, radius: 1.3, life: 3, interval: 0.3, el: 'fire', dmg: 5, st: { burn: [2, 4] }, flames: true }));
           }
+          // a gout of flame where you burst out, and a flare where you land
+          ctx.vfx.burst(v3(start.x, start.y + 0.8, start.z), { element: 'fire', count: 12, speed: 4, life: 0.5, size: 0.5, size2: 0.1, sprite: SPR.SMOKE, drag: 3, upward: 0.6, color: [0.8, 0.32, 0.08], color2: [0.25, 0.03, 0] });
+          ctx.after(0.24, () => {
+            const q = ctx.casterPos();
+            const gp = v3(q.x, ctx.groundAt(q.x, q.z), q.z);
+            ctx.vfx.ring(gp, 2.2, fxOf('fire').mid, 0.35, 0.12);
+            ctx.vfx.burst(v3(gp.x, gp.y + 0.3, gp.z), { element: 'fire', count: 14, speed: 5, upward: 0.4, life: 0.45, size: 0.4, size2: 0.08, sprite: SPR.SMOKE, drag: 3.5, color: [0.8, 0.32, 0.08], color2: [0.25, 0.03, 0] });
+            ctx.vfx.burst(v3(gp.x, gp.y + 0.3, gp.z), { element: 'fire', count: 10, speed: 6, upward: 1, life: 0.8, size: 0.03, sprite: SPR.EMBER, gravity: 6, color: [1.5, 0.45, 0.06], color2: [0.4, 0.03, 0] });
+            ctx.vfx.flash(v3(gp.x, gp.y + 1, gp.z), 0xff6a20, 14, 7, 0.3);
+          });
         },
       },
       ultimate: {
