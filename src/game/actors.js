@@ -429,6 +429,17 @@ export class ActorManager {
           if (a.deadT > sinkAt) {
             a.sinkT = (a.sinkT ?? 0) + dt;
             a.model.root.position.y = a.pos.y - a.sinkT * 0.7;
+            // the body crumbles as it goes: dark ash lifting off, a few dying embers
+            const cam = g.renderer.camera.position;
+            if (a.sinkT < 1.1 && (cam.x - a.pos.x) ** 2 + (cam.z - a.pos.z) ** 2 < 700) {
+              const n = Math.min(3, Math.floor(dt * 34 * Math.min(2, a.radius * 2) + Math.random()));
+              const r = a.radius * 0.9, top = Math.max(0.15, a.height * 0.35 - a.sinkT * 0.7);
+              for (let k = 0; k < n; k++) {
+                const x = a.pos.x + rand(-r, r), z = a.pos.z + rand(-r, r), y = a.pos.y + rand(0.05, top);
+                g.vfx.P.solid({ x, y, z, vx: rand(-0.2, 0.2), vy: rand(0.3, 0.8), vz: rand(-0.2, 0.2), r: 0.13, g: 0.12, b: 0.105, a: 0.55, life: rand(0.8, 1.4), size: 0.16, size2: 0.7, sprite: SPR.SMOKE, drag: 1.5 });
+                if (Math.random() < 0.45) g.vfx.P.glow({ x, y, z, vx: rand(-0.4, 0.4), vy: rand(0.5, 1.4), vz: rand(-0.4, 0.4), r: 1.2, g: 0.45, b: 0.12, r2: 0.2, g2: 0.03, b2: 0, life: rand(0.5, 1.1), size: 0.025, sprite: SPR.EMBER, drag: 1 });
+              }
+            }
           }
         }
         if ((a.sinkT ?? 0) > 1.4 || (!a.model && a.deadT > 2.6)) { this.remove(a); listDirty = false; }
