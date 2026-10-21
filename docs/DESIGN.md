@@ -40,6 +40,8 @@ How the research in `RESEARCH.md` turned into the game.
   - Shared gold drops.
   - Every living player recovers 15% health (a breath of respite), and health orbs pull in from 5 m.
 - **After a boss falls:** the party gets a heal, a tome pedestal with better odds, and a portal to the next realm.
+- **Shrines** offer Mending (full heal), Fortitude (+30 max health) and a bargain in their realm's character: the Drowned Idol's Pact of Blood (30% health for an epic tome), the Gaoler's Chains of Fate (15 max health for a relic), the Fallen Guard's Oath (+1 dash charge), the Archivist's Insight or Transmutation (2 rerolls, or trade your newest tome for an epic), and the Hollow Crown's Price (40% health for a legendary tome).
+- **The last kill** of a fight plays in half a second of eased slow motion with a warm wash of light.
 - **Pacing:** a bot with perfect aim (that never dodges) clears rooms in 10–25 s and bosses in about 40–80 s. Human players should land at roughly 30–60 s per room and 2–4 min per boss.
 
 ## Scaling
@@ -114,7 +116,8 @@ The target pace is quicker than Dark and Darker, nowhere near a boomer shooter, 
 - **Replication:**
   - Player state is sent at 20 Hz.
   - Actor snapshots are sent at 15 Hz and interpolated on clients.
-  - Spells are replicated as cast events and replayed for visuals with the same code path.
+  - Spells are replicated as cast events and replayed for visuals with the same code path, starting from the caster avatar's staff tip.
+  - Player state and snapshots travel on a second, unordered data channel with sequence numbers (stale ones dropped), so one lost packet never stalls the stream; events stay on the reliable channel.
 
 ## Visual tech
 - **Textures:**
@@ -130,3 +133,11 @@ The target pace is quicker than Dark and Darker, nowhere near a boomer shooter, 
   - First person: every cast blooms a class-specific rune circle at the staff tip or casting hand; charging holds a smaller one. Blades leave a streaked trail, and chained Spellblade cuts alternate forehand and backhand to match the world slash. Standing still a while plays small idle fidgets (a palm-up finger flex, a staff turn, a regrip).
   - Third person (what co-op partners see): layered per-class costumes with faces, world-space cloth chains for skirts, capes, scarves and trinkets, and full idle, strafing walk, cast, downed and dead animation. Each avatar bakes into one skinned mesh per material (15–23 draw calls).
 - **Particles:** a GPU particle system where motion is evaluated in the vertex shader (2 layers, 32k particles). It drives flames, sparks, smoke, runes, snow and blood.
+
+## Performance rules
+- **No shader compiles after load.** A compile is a visible freeze (worst on Windows/ANGLE). Each floor load prewarms everything that can appear: the realm's enemies, bosses and summons, projectile visuals, effect pools, drops, reward pedestal, portal and ground eruptions. It compiles against the composer's HDR target (compiling against the canvas gives different program keys), in parallel on the driver (`KHR_parallel_shader_compile`) behind a loading veil. `scripts/hitch.js` traces frames and reports any program compiled after load.
+  - The warm set is kept alive until the next floor: three.js destroys a program when its last material is disposed, so cleaning up the last enemy of a type would otherwise make the next wave recompile.
+  - Never create materials at cast time, never change a material's defines or maps at runtime, and never add a `THREE.Light`: borrow one from the fixed light pool (`lights.request`, `vfx.flash`). Changing the light count recompiles every lit material in the scene.
+- **No uploads in play.** The prewarm draws one frame with culling off so every texture and buffer reaches the GPU at load.
+- **Dynamic resolution** steps the render scale down in 10% steps while the frame rate stays under ~48 fps and back up after sustained headroom; a first visit starts integrated GPUs on Medium quality.
+- **Hosting:** the build writes brotli and gzip copies of every asset (about 0.46 MB to download); `.htaccess` / `_headers` set year-long caching on the hashed assets.
