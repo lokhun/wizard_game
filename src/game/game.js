@@ -175,6 +175,7 @@ export class Game {
     this.biome = level.biome;
     this.collision = new Collision(level);
     this.built = buildLevel(level, this.texFactory, this.lights, { quality: this.settings?.quality });
+    this.texFactory.endFloor(); // the last realm's own wall and floor textures
     this.critters?.dispose();
     this.critters = this.settings?.quality === 'low' ? null : new Critters(this.scene, level);
     this.scene.add(this.built.group);

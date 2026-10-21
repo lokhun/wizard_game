@@ -529,6 +529,14 @@ export class TextureFactory {
     this.scene.add(this.quad);
     this.cache = new Map();
     this.maxAniso = renderer.capabilities.getMaxAnisotropy();
+    // A realm's own walls and floors are 1024² sets (~17 MB of GPU memory
+    // each) that no other realm uses: kept forever they piled up to hundreds
+    // of MB by the last floor. Requests scoped to a floor are freed once the
+    // next floor is built without them; any other request pins the set.
+    this.pinned = new Set();
+    this.floorKeys = new Set();
+    this.lastFloorKeys = new Set();
+    this.targets = new Map(); // texture -> its render target (an RT texture is only freed with its target)
   }
 
   _render(frag, size, srgb, seed) {
@@ -555,12 +563,15 @@ export class TextureFactory {
     this.renderer.render(this.scene, this.camera);
     this.renderer.setRenderTarget(prevRT);
     mat.dispose();
+    this.targets.set(rt.texture, rt);
     return rt.texture;
   }
 
-  // Returns { map, normalMap, ormMap } for a named surface
-  get(name, size = 1024, seed = 1) {
+  // Returns { map, normalMap, ormMap } for a named surface. scope 'floor':
+  // only the current floor's materials use it (see endFloor).
+  get(name, size = 1024, seed = 1, scope = null) {
     const key = `${name}:${size}:${seed}`;
+    if (scope === 'floor') this.floorKeys.add(key); else this.pinned.add(key);
     if (this.cache.has(key)) return this.cache.get(key);
     if (!SURFS[name]) throw new Error('unknown surface ' + name);
     const ns = NORMAL_STRENGTH[name] ?? 1;
@@ -573,12 +584,25 @@ export class TextureFactory {
     return set;
   }
 
+  // Called once a floor is built (and the previous one disposed): frees the
+  // floor-scoped sets the previous floor used and this one doesn't.
+  endFloor() {
+    for (const key of this.lastFloorKeys) {
+      if (this.floorKeys.has(key) || this.pinned.has(key)) continue;
+      const set = this.cache.get(key);
+      this.cache.delete(key);
+      for (const t of set ? Object.values(set) : []) { this.targets.get(t)?.dispose(); this.targets.delete(t); }
+    }
+    this.lastFloorKeys = this.floorKeys;
+    this.floorKeys = new Set();
+  }
+
   static get surfaces() { return Object.keys(SURFS); }
 }
 
 // Build a MeshStandardMaterial from a procedural surface.
 export function makeSurfaceMaterial(factory, name, opts = {}) {
-  const t = factory.get(name, opts.size ?? 1024, opts.seed ?? 1);
+  const t = factory.get(name, opts.size ?? 1024, opts.seed ?? 1, opts.scope);
   const mat = new THREE.MeshStandardMaterial({
     map: t.map,
     normalMap: t.normalMap,

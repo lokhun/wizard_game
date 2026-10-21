@@ -309,8 +309,34 @@ void main(){
 }
 `;
 
+function makeMaterial(atlas, additive, near, maxAng) {
+  const uniforms = {
+    uTime: { value: 0 },
+    uAtlas: { value: atlas },
+    uFogDensity: { value: 0.04 },
+    uFogColor: { value: new THREE.Color(0x05070a) },
+    uNear: { value: new THREE.Vector3(...near) },
+    uMaxAng: { value: maxAng },
+  };
+  const mat = new THREE.ShaderMaterial({
+    vertexShader: VERT,
+    fragmentShader: additive ? FRAG_ADD : FRAG_ALPHA,
+    uniforms,
+    transparent: true,
+    depthWrite: false,
+    blending: additive ? THREE.CustomBlending : THREE.NormalBlending,
+  });
+  if (additive) {
+    mat.blendSrc = THREE.OneFactor;
+    mat.blendDst = THREE.OneFactor;
+    mat.blendEquation = THREE.AddEquation;
+  }
+  return mat;
+}
+
 class ParticleLayer {
-  constructor(capacity, atlas, additive, near, maxAng) {
+  // share: another layer whose material (and so program and uniforms) this one draws with
+  constructor(capacity, atlas, additive, near, maxAng, share = null) {
     this.capacity = capacity;
     const geo = new THREE.InstancedBufferGeometry();
     const quad = new THREE.PlaneGeometry(1, 1);
@@ -328,41 +354,41 @@ class ParticleLayer {
     for (let i = 0; i < capacity; i++) this.a.iTime.array[i * 4] = -1e6;
     for (const [k, v] of Object.entries(this.a)) geo.setAttribute(k, v);
     this.attrs = Object.values(this.a);
-    geo.instanceCount = capacity;
-    this.uniforms = {
-      uTime: { value: 0 },
-      uAtlas: { value: atlas },
-      uFogDensity: { value: 0.04 },
-      uFogColor: { value: new THREE.Color(0x05070a) },
-      uNear: { value: new THREE.Vector3(...near) },
-      uMaxAng: { value: maxAng },
-    };
-    const mat = new THREE.ShaderMaterial({
-      vertexShader: VERT,
-      fragmentShader: additive ? FRAG_ADD : FRAG_ALPHA,
-      uniforms: this.uniforms,
-      transparent: true,
-      depthWrite: false,
-      blending: additive ? THREE.CustomBlending : THREE.NormalBlending,
-    });
-    if (additive) {
-      mat.blendSrc = THREE.OneFactor;
-      mat.blendDst = THREE.OneFactor;
-      mat.blendEquation = THREE.AddEquation;
-    }
+    const mat = share ? share.mesh.material : makeMaterial(atlas, additive, near, maxAng);
+    this.uniforms = mat.uniforms;
     this.mesh = new THREE.Mesh(geo, mat);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = additive ? 20 : 10;
+    // Only the live part of the ring is drawn: every instance costs a vertex
+    // shader run for all four corners even when dead, and a fight rarely has
+    // more than a few thousand of the 36k alive. Live particles lie in ring
+    // order between tail (oldest that may still live) and head. Unwrapped,
+    // that is [tail, head) and the first `head` instances are drawn; once the
+    // dead run before tail outgrows the live span, head restarts at 0 and the
+    // draw covers [0, end) until the old run [tail, end) has died out.
+    this.dieAt = new Float64Array(capacity);
     this.head = 0;
-    this.dirtyMin = Infinity;
-    this.dirtyMax = -1;
+    this.tail = 0;
+    this.end = 0;
     this.wrapped = false;
+    geo.instanceCount = 0;
+    this.geo = geo;
+    // dirty slots as runs [start, end): an early restart at 0 makes two runs
+    // a frame, and one min..max range would re-upload everything between them
+    this.runs = [];
+    this.runEnd = -1;
   }
 
   spawn(time, o) {
-    const i = this.head;
-    this.head = (this.head + 1) % this.capacity;
-    if (this.head === 0) this.wrapped = true;
+    if (!this.wrapped && (this.head >= this.capacity || this.tail > this.head - this.tail + 256)) { this.end = this.head; this.head = 0; this.wrapped = true; }
+    if (this.wrapped && this.head === this.tail) {
+      // the new run caught up with the old one: all of [0, end) may be live,
+      // so carry on after it; a full ring overwrites the oldest particle
+      if (this.end < this.capacity) { this.tail = 0; this.head = this.end; this.wrapped = false; }
+      else if (++this.tail >= this.end) { this.tail = 0; this.wrapped = false; }
+    }
+    const i = this.head++;
+    this.dieAt[i] = time + (o.delay || 0) + (o.life ?? 1);
     const A = this.a;
     let j = i * 3;
     A.iPos.array[j] = o.x; A.iPos.array[j + 1] = o.y; A.iPos.array[j + 2] = o.z;
@@ -377,26 +403,36 @@ class ParticleLayer {
     A.iPhys.array[j + 2] = o.spin || 0; A.iPhys.array[j + 3] = o.stretch || 0;
     j = i * 2;
     A.iMisc.array[j] = o.sprite ?? 0; A.iMisc.array[j + 1] = o.rot ?? Math.random() * 6.28;
-    if (i < this.dirtyMin) this.dirtyMin = i;
-    if (i > this.dirtyMax) this.dirtyMax = i;
+    if (i === this.runEnd) this.runs[this.runs.length - 1] = ++this.runEnd;
+    else { this.runs.push(i, i + 1); this.runEnd = i + 1; }
   }
 
   flush(time) {
     this.uniforms.uTime.value = time;
-    if (this.dirtyMax < 0) return;
-    const min = this.dirtyMin, max = this.dirtyMax;
-    // append (don't replace) the range: several updates can run before the
+    const D = this.dieAt;
+    while ((this.wrapped || this.tail < this.head) && D[this.tail] < time) {
+      if (++this.tail >= this.end && this.wrapped) { this.tail = 0; this.wrapped = false; }
+    }
+    if (!this.wrapped && this.tail === this.head) this.tail = this.head = 0;
+    this.geo.instanceCount = this.wrapped ? this.end : this.head;
+    const R = this.runs;
+    if (!R.length) return;
+    // append (don't replace) the ranges: several updates can run before the
     // next render (hitches, fixed-step catch-up, tests) and three only clears
-    // the ranges once it has uploaded them
+    // them once it has uploaded them; a long stretch without a render
+    // (headless tests) collapses them into one whole-buffer upload
     for (const attr of this.attrs) {
       const n = attr.itemSize;
-      attr.addUpdateRange(min * n, (max - min + 1) * n);
+      if (attr.updateRanges.length > 48) { attr.clearUpdateRanges(); attr.addUpdateRange(0, attr.array.length); }
+      else if (attr.updateRanges.length !== 1 || attr.updateRanges[0].count !== attr.array.length) for (let k = 0; k < R.length; k += 2) attr.addUpdateRange(R[k] * n, (R[k + 1] - R[k]) * n);
       attr.needsUpdate = true;
     }
-    this.dirtyMin = Infinity;
-    this.dirtyMax = -1;
+    R.length = 0;
+    this.runEnd = -1;
   }
 }
+
+const LONG = 0.6; // seconds: glows outliving this go to the long-lived ring
 
 export class Particles {
   constructor(scene) {
@@ -405,9 +441,14 @@ export class Particles {
     // focus, fire you stand in - dozens of them stack up there and bloom into a
     // white sheet); smoke and debris vanish entirely within ~0.7 m so puffs
     // never turn into flat discs over the screen
-    this.add = new ParticleLayer(24000, this.atlas, true, [0.6, 3.5, 0.08], 0.5);
+    this.add = new ParticleLayer(20000, this.atlas, true, [0.6, 3.5, 0.08], 0.5);
+    // long-lived glows (embers, ambient motes, lingering auras) get their own
+    // ring with the same material: mixed into the main one, each held the
+    // drawn window open for seconds behind it
+    this.addLong = new ParticleLayer(8192, this.atlas, true, null, 0, this.add);
     this.alpha = new ParticleLayer(8000, this.atlas, false, [0.7, 2.4, 0.0], 0.7);
     scene.add(this.add.mesh);
+    scene.add(this.addLong.mesh);
     scene.add(this.alpha.mesh);
     this.time = 0;
   }
@@ -418,14 +459,15 @@ export class Particles {
     }
   }
   // additive (glowing) particle
-  glow(o) { this.add.spawn(this.time, o); }
+  glow(o) { ((o.life ?? 1) + (o.delay || 0) > LONG ? this.addLong : this.add).spawn(this.time, o); }
   // additive particle that ignores the near-camera fade (ambient fire)
-  glowAmbient(o) { o.sprite = (o.sprite ?? 0) + 16; this.add.spawn(this.time, o); }
+  glowAmbient(o) { o.sprite = (o.sprite ?? 0) + 16; this.glow(o); }
   // alpha-blended (smoke, debris, blood)
   solid(o) { this.alpha.spawn(this.time, o); }
   update(time) {
     this.time = time;
     this.add.flush(time);
+    this.addLong.flush(time);
     this.alpha.flush(time);
   }
 }

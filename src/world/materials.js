@@ -149,8 +149,9 @@ export function getSharedMaterials(factory) {
   return m;
 }
 
+// (their textures are floor-scoped: freed when a floor that doesn't use them is built)
 export function getBiomeMaterials(factory, biome) {
-  const S = (n, o) => makeSurfaceMaterial(factory, n, o);
+  const S = (n, o) => makeSurfaceMaterial(factory, n, { ...o, scope: 'floor' });
   const m = { ...getSharedMaterials(factory) };
   m.wall = S(biome.wall, { vertexColors: true });
   m.floor = S(biome.floor, { vertexColors: true });
