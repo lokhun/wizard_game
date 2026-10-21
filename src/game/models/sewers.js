@@ -158,11 +158,13 @@ export const slime = {
       anim: (v) => smooth(0.05, 0.4, v.y),
       cfn: (v) => { const k = 0.45 + v.y * 0.7; return [0.22 * k, 0.75 * k, 0.12 * k]; },
     });
-    // murky inner core, drips oozing down the flanks
-    rig.add('body', 'slime', deform(G.sph(0.3, 14, 10), (v) => { v.y = v.y * 0.75 + 0.33; }), {}, { c: [0.06, 0.2, 0.04], anim: 0.6 });
+    // fat drips bulging down the flanks (half sunk into the surface)
     const drips = [];
-    for (let i = 0; i < 9; i++) { const a = (i / 9) * TAU + 0.3, r = 0.5 + (i % 3) * 0.03, y0 = 0.25 + (i % 4) * 0.06; drips.push(tube([[Math.sin(a) * r * 0.92, y0, Math.cos(a) * r * 0.92], [Math.sin(a) * r * 1.0, y0 - 0.1, Math.cos(a) * r * 1.0], [Math.sin(a) * r * 1.02, y0 - 0.17 - (i % 2) * 0.05, Math.cos(a) * r * 1.02]], (u) => 0.03 * (1 - u * 0.5), 4, 5)); }
-    rig.add('body', 'slime', mergeRaw(drips), {}, { c: [0.25, 0.85, 0.15], anim: (v) => clamp(0.4 - v.y) * 1.5 });
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * TAU + 0.3, y = 0.16 + (i % 4) * 0.07, r = Math.sqrt(Math.max(0, 0.52 * 0.52 - (y - 0.5) ** 2)) * 1.06;
+      drips.push(xf(G.sph(0.034 + (i % 3) * 0.006, 6, 5), { x: Math.sin(a) * r, y, z: Math.cos(a) * r, sy: 2.1, sx: 0.85 }));
+    }
+    rig.add('body', 'slime', mergeRaw(drips), {}, { c: [0.25, 0.8, 0.14], anim: (v) => smooth(0.05, 0.4, v.y) });
     // glowing nucleus
     rig.add('body', 'spirit', G.sph(0.16, 14, 10), { y: 0.42 }, { c: HDR(0x5aff2a, 0.22) });
     // floating debris: skull, bones, rusty blade, coins
@@ -343,7 +345,7 @@ export const ghoul = {
       if (n > 0.6) return [0.28 * k, 0.3 * k, 0.21 * k];
       return [GHOUL_SKIN[0] * k, GHOUL_SKIN[1] * k, GHOUL_SKIN[2] * k];
     };
-    addFleshBody(rig, D, { c: GHOUL_SKIN, cfn: rot, gaunt: 0.75, muscle: 1.3, torsoW: 1.14, depth: 1.12, claws: 0.09, toeClaws: true, clawC: [0.12, 0.1, 0.08], ribC: [0.48, 0.55, 0.48], hunch: 0.14, seed: 5, rough: 1.8, veins: true, veinC: [0.25, 0.32, 0.3], hand: { c: [0.3, 0.33, 0.28], m: 1.08, claws: 0.1, fingerLen: 1.5, curl: 0.55, clawC: [0.1, 0.08, 0.07] } });
+    addFleshBody(rig, D, { c: GHOUL_SKIN, cfn: rot, limbSeg: 10, gaunt: 0.75, muscle: 1.3, torsoW: 1.14, depth: 1.12, claws: 0.09, toeClaws: true, clawC: [0.12, 0.1, 0.08], ribC: [0.48, 0.55, 0.48], hunch: 0.14, seed: 5, rough: 1.8, veins: true, veinC: [0.25, 0.32, 0.3], hand: { c: [0.3, 0.33, 0.28], m: 1.08, claws: 0.1, fingerLen: 1.5, curl: 0.55, clawC: [0.1, 0.08, 0.07] } });
     ghoulHead(rig, { c: GHOUL_SKIN, cfn: rot, hair: 10, s: 1.12 });
     const torsoSkin = chainSkin([['hips', 0.0], ['spine', 0.05 + D.spine * 0.45], ['chest', 0.05 + D.spine + D.chest * 0.25]], (v) => v.y);
     // hump of knotted muscle over the shoulders, knobbly spine
@@ -422,7 +424,7 @@ export const bilespitter = {
       if (n < 0.3) return [0.5 * k, 0.4 * k, 0.3 * k];
       return [0.47 * k, 0.52 * k, 0.32 * k];
     };
-    addFleshBody(rig, D, { c: BILE_SKIN, cfn: hide, muscle: 1.75, seed: 9, rough: 1.6, belly: 0.12, bellyY: 0.1, depth: 1.28, torsoW: 1.15, hunch: 0.07, veins: true, veinC: [0.3, 0.35, 0.2], hand: { m: 1.1 } });
+    addFleshBody(rig, D, { c: BILE_SKIN, cfn: hide, limbSeg: 10, muscle: 1.75, seed: 9, rough: 1.6, belly: 0.12, bellyY: 0.1, depth: 1.28, torsoW: 1.15, hunch: 0.07, veins: true, veinC: [0.3, 0.35, 0.2], hand: { m: 1.1 } });
     // fat: a hump across the upper back, rolls over the hips, a sagging double chin
     rig.add('chest', 'skin', bumpy(xf(G.sph(0.17, 12, 8), { sx: 1.35, sy: 0.75, sz: 0.8 }), 0.012, 8, 6), { y: D.chest * 0.78, z: -0.07, rx: -0.25 }, { cfn: hide });
     rig.pair('hips', 'hips', 'skin', bumpy(xf(G.sph(0.11, 10, 7), { sx: 0.8, sy: 0.65, sz: 1.2 }), 0.01, 8, 2), { x: 0.2, y: 0.07, z: 0.02 }, { cfn: hide });
@@ -438,7 +440,7 @@ export const bilespitter = {
       v.x += Math.sin(v.y * 9) * 0.01; // asymmetry
       v.z += Math.max(0, vnoise(v.x * 8, v.y * 8, v.z * 8, 4) - 0.55) * 0.03; // lumps
     };
-    const sac = deform(bumpy(G.sph(0.25, 24, 18), 0.01, 7, 2), sacShape);
+    const sac = deform(bumpy(G.sph(0.25, 20, 14), 0.01, 7, 2), sacShape);
     rig.add('belly', 'skin', sac, { z: 0.02 }, {
       anim: 0.25,
       cfn: (v) => { const c0 = hide(v); const tight = clamp((v.z - 0.12) * 5); const n = vnoise(v.x * 30, v.y * 30, v.z * 30, 8); const g = n > 0.75 ? 0.4 : 0; return [c0[0] * (1 + tight * 0.15) - g * 0.1, c0[1] * (1 + tight * 0.2) + g * 0.15, c0[2] * (1 - tight * 0.2)]; },

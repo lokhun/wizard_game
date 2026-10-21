@@ -83,7 +83,7 @@ export const grimoire = {
     rig.bone('lower', 'spine', 0, -0.01, 0);
     rig.bone('pageA', 'spine', 0, 0, 0); rig.bone('pageB', 'spine', 0, 0, 0);
     rig.bone('runes', 'book', 0, 0, 0);
-    const W = 0.46, Dp = 0.36;
+    const W = 0.52, Dp = 0.4;
     const LEATHER = [0.45, 0.12, 0.14], PAGE = [0.95, 0.85, 0.62];
     for (const [b, sg] of [['upper', 1], ['lower', -1]]) {
       const cv = G.box(W + 0.04, 0.026, Dp + 0.02, 4, 1, 4);
@@ -121,6 +121,13 @@ export const grimoire = {
       ring.push(xf(G.box(0.008, 0.07, 0.003), { ...at }), xf(G.box(0.04, 0.008, 0.003), { ...at, y: 0.02 + (i % 3) * 0.012 }), xf(G.box(0.006, 0.03, 0.003), { ...at, x: at.x + Math.sin(a) * 0.015, z: at.z - Math.cos(a) * 0.015, y: -0.025, rz: 0.6 }));
     }
     rig.add('runes', 'spirit', mergeRaw(ring), {}, { c: HDR(RUNE, 1.1) });
+    // a long black tongue lolling out over the fore-edge teeth
+    rig.add('lower', 'leather', tube([[0, 0.0, Dp * 0.45], [0, 0.01, Dp * 0.85], [0.01, -0.04, Dp + 0.08], [0.03, -0.16, Dp + 0.1], [0.02, -0.25, Dp + 0.06]], (u) => 0.03 * (1 - u * 0.7), 10, 5), {}, { c: [0.75, 0.22, 0.26], anim: (v) => clamp((Dp - v.z) * -3 + 0.6) * 1.2 });
+    // a broken chain and padlock swinging from the clasp
+    const lk = [];
+    for (let i = 0; i < 4; i++) lk.push(xf(G.tor(0.016, 0.005, 3, 6), { x: W * 0.3, y: -0.06 - i * 0.03, z: Dp + 0.01, ry: (i % 2) * Math.PI / 2, sy: 1.3 }));
+    lk.push(xf(G.box(0.05, 0.055, 0.02), { x: W * 0.3, y: -0.2, z: Dp + 0.01 }), xf(G.tor(0.016, 0.006, 3, 8, Math.PI), { x: W * 0.3, y: -0.172, z: Dp + 0.01 }));
+    rig.add('lower', 'gold', mergeRaw(lk), {}, { c: [0.7, 0.55, 0.38], anim: (v) => clamp(-v.y * 5) * 0.8 });
     rig.socket('muzzle', 'book', 0, 0, 0.18);
     return {};
   },
@@ -174,6 +181,7 @@ export const grimoire = {
     }
     P.r('upper', -open); P.r('lower', open * 0.55);
     P.s('runes', Math.max(0.001, runeS));
+    glowLevel(m, anim === 'windup' ? 1 + 0.8 * smooth(0, 1, p) : anim === 'death' ? 1 - 0.85 * p : 1);
     return rate;
   },
 };

@@ -449,7 +449,7 @@ export const jailer = {
   build(rig) {
     const D = humanSkeleton(rig, { thigh: 0.52, shin: 0.5, ankle: 0.08, hipW: 0.17, spine: 0.25, chest: 0.45, neck: 0.08, shoulderW: 0.36, shoulderDrop: 0.08, upper: 0.42, fore: 0.4 });
     rig.bone('flail', 'handR', 0, -0.07, 0.55);
-    addFleshBody(rig, D, { c: JL_SKIN, cfn: jlSkin, muscle: 2.05, belly: 0.15, bellyY: 0.15, depth: 1.25, seed: 21, torsoW: 1.14, hunch: 0.05, veins: true, veinC: [0.36, 0.24, 0.24], grip: { R: true, L: true } });
+    addFleshBody(rig, D, { c: JL_SKIN, cfn: jlSkin, limbSeg: 10, muscle: 2.05, belly: 0.15, bellyY: 0.15, depth: 1.25, seed: 21, torsoW: 1.14, hunch: 0.05, veins: true, veinC: [0.36, 0.24, 0.24], grip: { R: true, L: true } });
     const LEA = [0.62, 0.45, 0.33];
     // leather apron, braces and belt
     rig.add('chest', 'leather', deform(panel(0.56, 1.2, { ws: 6, hs: 8, tatter: 0.1, seed: 3, curve: 0.24, taperBot: 0.85 }), (v) => { v.z += clamp(-v.y, 0, 0.5) * 0.17; }), { y: D.chest * 0.78, z: 0.29 }, {

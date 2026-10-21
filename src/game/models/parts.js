@@ -149,7 +149,7 @@ export function addSkeletonBody(rig, D, o = {}) {
     const pts = [[0.022, yb, zb + 0.004], [w * 0.62, yb + 0.004, zb - 0.012], [w, yb - drop * 0.25, -0.02], [w * 0.93, yb - drop * 0.6, 0.045]];
     if (i < 5) pts.push([w * 0.55, yb - drop * 0.95, zf - 0.006], [0.024, yb - drop * 0.8, zf + 0.008]);
     else pts.push([w * 0.68, yb - drop * 0.95, zf - 0.03]);
-    ribs.push(tube(pts, (u) => 0.012 * th * (1 - u * 0.3), 7, 4));
+    ribs.push(tube(pts, (u) => 0.012 * th * (1 - u * 0.3), 6, 4));
   }
   const ribG = mergeRaw(ribs);
   rig.pair('chest', 'chest', mat, ribG, { s }, B);
@@ -181,7 +181,7 @@ export function addSkeletonBody(rig, D, o = {}) {
     // foot: talus, heel, metatarsals fanning into toes (sole at the floor, y = -ankle)
     const fy = -(D.ankle ?? 0.07);
     const ft = [xf(G.sph(0.03, 6, 5), { y: fy + 0.04, z: -0.008, sx: 0.85, sz: 1.3 }), xf(G.sph(0.028, 6, 4), { y: fy + 0.026, z: -0.045, sx: 0.8, sz: 1.15 })];
-    for (let k = 0; k < 4; k++) { const x = (k - 1.5) * 0.018; ft.push(tube([[x * 0.5, fy + 0.03, 0.0], [x, fy + 0.016, 0.07], [x * 1.15, fy + 0.008, 0.12]], (u) => 0.0085 * th * (1 - u * 0.35), 4, 4)); }
+    for (let k = 0; k < 3; k++) { const x = (k - 1) * 0.024; ft.push(tube([[x * 0.5, fy + 0.03, 0.0], [x, fy + 0.016, 0.07], [x * 1.15, fy + 0.008, 0.12]], (u) => 0.0095 * th * (1 - u * 0.35), 3, 4)); }
     rig.add('foot' + S, mat, mergeRaw(ft), { s }, B);
     addBoneHand(rig, 'hand' + S, sd, { mat, c, cfn, s, th, grip: o.grip?.[S] });
   }
