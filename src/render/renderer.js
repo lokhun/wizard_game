@@ -152,6 +152,13 @@ export class Renderer {
     // above 1.0 so lit stone, skin and pale enemies never glow, and a modest
     // strength so a burst of spells can't fog the whole frame white.
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.45, 0.5, BLOOM_THRESHOLD);
+    // A handful of non-finite or absurdly hot pixels (a degenerate sliver of
+    // some effect edge-on to the lens) would otherwise be blurred across the
+    // whole frame as a white-out. Bloom's input drops them / caps them at 16.
+    const hp = this.bloom.materialHighPassFilter;
+    hp.fragmentShader = hp.fragmentShader.replace('vec4 texel = texture2D( tDiffuse, vUv );', `vec4 texel = texture2D( tDiffuse, vUv );
+			float hm = max( texel.r, max( texel.g, texel.b ) );
+			if ( !( hm < 16.0 ) ) texel.rgb = hm < 1e30 ? texel.rgb * ( 16.0 / hm ) : vec3( 0.0 );`);
     this.composer.addPass(this.bloom);
 
     this.grade = new ShaderPass(GradeShader);
