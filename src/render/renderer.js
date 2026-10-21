@@ -5,35 +5,12 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
-import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 
-// Final grading pass: grim color grade, vignette, film grain, chromatic
-// aberration and a red damage vignette. Runs in linear HDR before tonemapping.
-const GradeShader = {
-  uniforms: {
-    tDiffuse: { value: null },
-    uTime: { value: 0 },
-    uVignette: { value: 0.62 },
-    uGrain: { value: 0.045 },
-    uDamage: { value: 0 },
-    uHeal: { value: 0 },
-    uAberration: { value: 0.0015 },
-    uLift: { value: new THREE.Vector3(0.006, 0.008, 0.014) },
-    uGain: { value: new THREE.Vector3(1.04, 0.99, 0.92) },
-    uSaturation: { value: 0.86 },
-    uDesat: { value: 0 },
-    uTint: { value: new THREE.Vector3(1, 1, 1) },
-    uFlash: { value: new THREE.Vector3(0, 0, 0) },
-    uDash: { value: 0 },
-    uDashCol: { value: new THREE.Vector3(1, 1, 1) },
-    uRes: { value: new THREE.Vector2(1, 1) },
-  },
-  vertexShader: /* glsl */ `
-    varying vec2 vUv;
-    void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
-  `,
-  fragmentShader: /* glsl */ `
-    uniform sampler2D tDiffuse;
+// Final grading: grim color grade, vignette, film grain, chromatic aberration
+// and a red damage vignette, in linear HDR. SCENE(uv) is the HDR frame;
+// FINISH runs after the grade (tone mapping and sRGB in the fused pass).
+const GRADE_MAIN = /* glsl */ `
     uniform float uTime, uVignette, uGrain, uDamage, uHeal, uAberration, uSaturation, uDesat, uDash;
     uniform vec3 uLift, uGain, uTint, uFlash, uDashCol;
     uniform vec2 uRes;
@@ -45,16 +22,16 @@ const GradeShader = {
       float r2 = dot(dc, dc);
       float ab = uAberration + uDamage * 0.006;
       vec3 col;
-      col.r = texture2D(tDiffuse, uv - dc * ab * (1.0 + r2 * 4.0)).r;
-      col.g = texture2D(tDiffuse, uv).g;
-      col.b = texture2D(tDiffuse, uv + dc * ab * (1.0 + r2 * 4.0)).b;
+      col.r = SCENE(uv - dc * ab * (1.0 + r2 * 4.0)).r;
+      col.g = SCENE(uv).g;
+      col.b = SCENE(uv + dc * ab * (1.0 + r2 * 4.0)).b;
       // dash: the edges of the view smear toward the centre and class-tinted
       // speed streaks race outward; the centre stays sharp so aim is kept
       float dashEdge = 0.0;
       if (uDash > 0.002) {
         dashEdge = smoothstep(0.12, 0.62, length(dc)) * uDash;
         vec3 acc = col;
-        for (int i = 1; i <= 4; i++) acc += texture2D(tDiffuse, uv - dc * (float(i) * 0.035 * dashEdge)).rgb;
+        for (int i = 1; i <= 4; i++) acc += SCENE(uv - dc * (float(i) * 0.035 * dashEdge));
         col = mix(col, acc * 0.2, min(1.0, dashEdge * 1.4));
       }
       // lift / gain grade (warm highlights, cool shadows)
@@ -82,9 +59,65 @@ const GradeShader = {
       float g = hash(uv * uRes + fract(uTime * 13.37) * 100.0) - 0.5;
       col += g * uGrain * (0.35 + l);
       gl_FragColor = vec4(max(col, 0.0), 1.0);
+      FINISH
     }
+`;
+
+// as a composer pass (Ultra, where GTAO sits in the chain)
+const GradeShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    uTime: { value: 0 },
+    uVignette: { value: 0.62 },
+    uGrain: { value: 0.045 },
+    uDamage: { value: 0 },
+    uHeal: { value: 0 },
+    uAberration: { value: 0.0015 },
+    uLift: { value: new THREE.Vector3(0.006, 0.008, 0.014) },
+    uGain: { value: new THREE.Vector3(1.04, 0.99, 0.92) },
+    uSaturation: { value: 0.86 },
+    uDesat: { value: 0 },
+    uTint: { value: new THREE.Vector3(1, 1, 1) },
+    uFlash: { value: new THREE.Vector3(0, 0, 0) },
+    uDash: { value: 0 },
+    uDashCol: { value: new THREE.Vector3(1, 1, 1) },
+    uRes: { value: new THREE.Vector2(1, 1) },
+  },
+  vertexShader: /* glsl */ `
+    varying vec2 vUv;
+    void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+  `,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse;
+    #define SCENE(uv) texture2D(tDiffuse, uv).rgb
+    #define FINISH
+    ${GRADE_MAIN}
   `,
 };
+
+// The fused final pass: bloom added (as UnrealBloomPass blends it: plain rgb,
+// its blend is premultiplied ONE/ONE),
+// the grade, then exactly OutputPass's ACES tone mapping and sRGB encoding.
+const FINAL_VERT = /* glsl */ `
+  precision highp float;
+  uniform mat4 modelViewMatrix;
+  uniform mat4 projectionMatrix;
+  attribute vec3 position;
+  attribute vec2 uv;
+  varying vec2 vUv;
+  void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+`;
+const FINAL_FRAG = /* glsl */ `
+  precision highp float;
+  uniform sampler2D tDiffuse;
+  uniform sampler2D tBloom;
+  #include <tonemapping_pars_fragment>
+  #include <colorspace_pars_fragment>
+  vec3 bloomAt(vec2 uv){ return texture2D(tBloom, uv).rgb; }
+  #define SCENE(uv) (texture2D(tDiffuse, uv).rgb + bloomAt(uv))
+  #define FINISH gl_FragColor.rgb = ACESFilmicToneMapping(gl_FragColor.rgb); gl_FragColor = sRGBTransferOETF(gl_FragColor);
+  ${GRADE_MAIN}
+`;
 
 const BLOOM_THRESHOLD = 1.05;
 const BLOOM_SCALE = 0.6;
@@ -127,27 +160,20 @@ export class Renderer {
     window.addEventListener('resize', () => this.resize());
   }
 
+  // Low / Medium / High: one fused chain instead of the composer's ping-pong.
+  // The scene and viewmodel render into the HDR target (4x MSAA on High),
+  // bloom builds its blur mips from it, and one final pass adds the bloom,
+  // grades, tone maps and writes sRGB to the canvas (to SMAA's input on
+  // Medium). The composer spent four more full-screen passes on the same
+  // result - bloom blended back into the frame, grade and output each through
+  // their own target, on High every one of them 4x multisampled and resolved.
+  // Ultra keeps the composer, since GTAO sits mid-chain.
   _buildComposer() {
     const r = this.renderer;
     const size = r.getSize(new THREE.Vector2());
     const msaa = this.quality === 'high' || this.quality === 'ultra';
-    const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: msaa ? 4 : 0 });
-    this.composer = new EffectComposer(r, rt);
-    this.renderPass = new RenderPass(this.scene, this.camera);
-    this.composer.addPass(this.renderPass);
-
-    if (this.quality === 'ultra') {
-      this.gtao = new GTAOPass(this.scene, this.camera, size.x, size.y);
-      this.gtao.output = GTAOPass.OUTPUT.Default;
-      this.gtao.blendIntensity = 0.85;
-      this.gtao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.5, thickness: 1.5, scale: 1.0 });
-      this.composer.addPass(this.gtao);
-    }
-
-    // viewmodel layer: clear depth then render hands/staff on top
-    this.viewPass = new ViewModelPass(this.viewScene, this.viewCamera);
-    this.composer.addPass(this.viewPass);
-
+    const fused = this.quality !== 'ultra';
+    this.fused = fused;
     // Bloom only catches genuinely hot pixels (magic cores, flames): threshold
     // above 1.0 so lit stone, skin and pale enemies never glow, and a modest
     // strength so a burst of spells can't fog the whole frame white.
@@ -159,16 +185,49 @@ export class Renderer {
     hp.fragmentShader = hp.fragmentShader.replace('vec4 texel = texture2D( tDiffuse, vUv );', `vec4 texel = texture2D( tDiffuse, vUv );
 			float hm = max( texel.r, max( texel.g, texel.b ) );
 			if ( !( hm < 16.0 ) ) texel.rgb = hm < 1e30 ? texel.rgb * ( 16.0 / hm ) : vec3( 0.0 );`);
+    // viewmodel layer: clear depth then render hands/staff on top
+    this.viewPass = new ViewModelPass(this.viewScene, this.viewCamera);
+    if (fused) {
+      this.sceneRT = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: msaa ? 4 : 0 });
+      this.finalMat = new THREE.RawShaderMaterial({
+        name: 'FinalShader',
+        uniforms: { ...THREE.UniformsUtils.clone(GradeShader.uniforms), tBloom: { value: null }, toneMappingExposure: { value: 1 } },
+        defines: { ACES_FILMIC_TONE_MAPPING: '', SRGB_TRANSFER: '' },
+        vertexShader: FINAL_VERT, fragmentShader: FINAL_FRAG,
+        depthTest: false, depthWrite: false,
+      });
+      this.finalQuad = new FullScreenQuad(this.finalMat);
+      this.grade = { uniforms: this.finalMat.uniforms };
+      // SMAA (Medium only) is 46 KB of embedded lookup textures: fetched on
+      // demand, the frame goes straight to the canvas until it arrives
+      if (this.quality === 'medium') {
+        import('three/addons/postprocessing/SMAAPass.js').then(({ SMAAPass }) => {
+          this.ldrRT = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, depthBuffer: false });
+          this.smaa = new SMAAPass();
+          this.smaa.renderToScreen = true;
+          this.resize();
+        }).catch((e) => console.warn('SMAA unavailable', e));
+      }
+      return;
+    }
+    const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: msaa ? 4 : 0 });
+    this.composer = new EffectComposer(r, rt);
+    this.renderPass = new RenderPass(this.scene, this.camera);
+    this.composer.addPass(this.renderPass);
+    this.gtao = new GTAOPass(this.scene, this.camera, size.x, size.y);
+    this.gtao.output = GTAOPass.OUTPUT.Default;
+    this.gtao.blendIntensity = 0.85;
+    this.gtao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.5, thickness: 1.5, scale: 1.0 });
+    this.composer.addPass(this.gtao);
+    this.composer.addPass(this.viewPass);
     this.composer.addPass(this.bloom);
-
     this.grade = new ShaderPass(GradeShader);
     this.composer.addPass(this.grade);
     this.composer.addPass(new OutputPass());
-    if (this.quality === 'medium') {
-      this.smaa = new SMAAPass(size.x, size.y);
-      this.composer.addPass(this.smaa);
-    }
   }
+
+  // the HDR target the scene renders into (what shaders must be compiled against)
+  get hdrTarget() { return this.fused ? this.sceneRT : this.composer.readBuffer; }
 
   setGrade(g) {
     const u = this.grade.uniforms;
@@ -201,14 +260,22 @@ export class Renderer {
     this.viewCamera.aspect = w / h;
     this.viewCamera.updateProjectionMatrix();
     const pr = this.renderer.getPixelRatio();
-    this.composer.setPixelRatio(pr);
-    this.composer.setSize(w, h);
+    if (this.fused) {
+      // the sizes the composer gave its targets and passes
+      const W = w * pr, H = h * pr;
+      this.sceneRT.setSize(W, H);
+      this.bloom.setSize(W, H);
+      this.ldrRT?.setSize(W, H);
+      this.smaa?.setSize(W, H);
+    } else {
+      this.composer.setPixelRatio(pr);
+      this.composer.setSize(w, h);
+    }
     this.grade.uniforms.uRes.value.set(w * pr, h * pr);
   }
 
   // Compile every material in both scenes exactly as a real frame would: into
-  // the composer's HDR target (linear output, tone mapping left to the output
-  // pass). Compiling against the canvas gives different program keys (sRGB +
+  // the HDR target (linear output, tone mapping left to the final pass). Compiling against the canvas gives different program keys (sRGB +
   // ACES baked in), so every "prewarmed" shader was compiled again mid-fight.
   //
   // With upload, it then draws one frame of everything with culling off:
@@ -223,7 +290,7 @@ export class Renderer {
   async compileScenes({ upload = false, timeout = 20000 } = {}) {
     const r = this.renderer;
     const prev = r.getRenderTarget();
-    r.setRenderTarget(this.composer.readBuffer);
+    r.setRenderTarget(this.hdrTarget);
     let ready = null;
     try {
       if (r.extensions.has('KHR_parallel_shader_compile')) ready = Promise.all([r.compileAsync(this.scene, this.camera), r.compileAsync(this.viewScene, this.viewCamera)]);
@@ -232,7 +299,7 @@ export class Renderer {
     // never hang a load on a driver that doesn't report back
     if (ready) await Promise.race([ready, new Promise((res) => setTimeout(res, timeout))]);
     if (!upload) return;
-    r.setRenderTarget(this.composer.readBuffer);
+    r.setRenderTarget(this.hdrTarget);
     const culled = [];
     try {
       this.scene.traverse((o) => { if (o.frustumCulled && (o.isMesh || o.isPoints || o.isSprite || o.isLine)) { o.frustumCulled = false; culled.push(o); } });
@@ -251,9 +318,71 @@ export class Renderer {
     const info = this.renderer.info;
     info.autoReset = false;
     info.reset();
-    this.composer.render();
+    if (this.fused) this._renderFused();
+    else this.composer.render();
     this.lastStats = { calls: info.render.calls, tris: info.render.triangles, geos: info.memory.geometries, tex: info.memory.textures, programs: info.programs?.length };
   }
+
+  _renderFused() {
+    const r = this.renderer, rt = this.sceneRT;
+    // (the scene's colour background clears the target)
+    r.setRenderTarget(rt);
+    r.render(this.scene, this.camera);
+    this.viewPass.render(r, null, rt);
+    this.bloomMips(rt);
+    const u = this.finalMat.uniforms;
+    u.tDiffuse.value = rt.texture;
+    u.tBloom.value = this.bloom.renderTargetsHorizontal[0].texture;
+    u.toneMappingExposure.value = r.toneMappingExposure;
+    r.setRenderTarget(this.smaa ? this.ldrRT : null);
+    this.finalQuad.render(r);
+    if (this.smaa) this.smaa.render(r, null, this.ldrRT);
+  }
+
+  bloomMips(input) { bloomMips(this.bloom, this.renderer, input); }
+}
+
+// UnrealBloomPass.render up to its composite (bright pass, blurred mips,
+// mixed into renderTargetsHorizontal[0]), without blending the result back
+// over the input: the final pass adds it while grading.
+function bloomMips(b, r, input) {
+  r.getClearColor(b._oldClearColor);
+  b._oldClearAlpha = r.getClearAlpha();
+  const oldAutoClear = r.autoClear;
+  r.autoClear = false;
+  r.setClearColor(b.clearColor, 0);
+  const q = b._fsQuad;
+  b.highPassUniforms.tDiffuse.value = input.texture;
+  b.highPassUniforms.luminosityThreshold.value = b.threshold;
+  q.material = b.materialHighPassFilter;
+  r.setRenderTarget(b.renderTargetBright);
+  r.clear();
+  q.render(r);
+  let src = b.renderTargetBright;
+  for (let i = 0; i < b.nMips; i++) {
+    const m = b.separableBlurMaterials[i];
+    q.material = m;
+    m.uniforms.colorTexture.value = src.texture;
+    m.uniforms.direction.value = UnrealBloomPass.BlurDirectionX;
+    r.setRenderTarget(b.renderTargetsHorizontal[i]);
+    r.clear();
+    q.render(r);
+    m.uniforms.colorTexture.value = b.renderTargetsHorizontal[i].texture;
+    m.uniforms.direction.value = UnrealBloomPass.BlurDirectionY;
+    r.setRenderTarget(b.renderTargetsVertical[i]);
+    r.clear();
+    q.render(r);
+    src = b.renderTargetsVertical[i];
+  }
+  q.material = b.compositeMaterial;
+  b.compositeMaterial.uniforms.bloomStrength.value = b.strength;
+  b.compositeMaterial.uniforms.bloomRadius.value = b.radius;
+  b.compositeMaterial.uniforms.bloomTintColors.value = b.bloomTintColors;
+  r.setRenderTarget(b.renderTargetsHorizontal[0]);
+  r.clear();
+  q.render(r);
+  r.setClearColor(b._oldClearColor, b._oldClearAlpha);
+  r.autoClear = oldAutoClear;
 }
 
 // Renders a second scene on top of the main one after clearing depth.
