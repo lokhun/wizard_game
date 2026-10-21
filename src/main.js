@@ -15,6 +15,7 @@ import { Net } from './net/net.js';
 import { handleGameMessage } from './net/netgame.js';
 import { setModelModules, getAvatar } from './game/models.js';
 import { CLASS_IDS, CLASS_META } from './game/classMeta.js';
+import { sigilTexture } from './game/models/wizard/sigil.js';
 import { TextureFactory } from './render/textures.js';
 
 // Optional modules (resolved at build time; missing files are simply skipped)
@@ -161,18 +162,37 @@ function updateBackdrop(dt) {
     const ax = b.show.x, az = b.show.z;
     const ag = game.groundY(ax, az);
     const angle = b.show.dir + Math.sin(b.t * 0.15) * 0.18;
-    const camPos = new THREE.Vector3(ax + Math.sin(angle) * 3.4, ag + 1.6, az + Math.cos(angle) * 3.4);
+    // a touch low and close: the wizard reads larger and more heroic
+    const camPos = new THREE.Vector3(ax + Math.sin(angle) * 3.0, ag + 1.35, az + Math.cos(angle) * 3.0);
     if (!b.snapped) { cam.position.copy(camPos); b.snapped = true; }
     cam.position.lerp(camPos, 1 - Math.exp(-dt * 3));
     // frame the wizard in the gap between the class grid and the detail panel
     const side = new THREE.Vector3(Math.cos(angle), 0, -Math.sin(angle));
-    const look = new THREE.Vector3(ax, ag + 1.05, az).addScaledVector(side, -0.12);
+    const look = new THREE.Vector3(ax, ag + 1.1, az).addScaledVector(side, -0.12);
     cam.lookAt(look);
     menuAvatar.root.position.set(ax, ag, az);
     menuAvatar.root.rotation.y = angle + Math.sin(b.t * 0.3) * 0.25;
-    menuAvatar.update(dt, { anim: Math.floor(b.t / 5) % 3 === 2 ? 'cast' : 'idle', t: b.t, speed: 0, pitch: 0, castProgress: (b.t % 5) / 5, strafe: 0 });
     const fwd = new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle));
-    game.lights.request(new THREE.Vector3(ax, ag + 2.6, az).addScaledVector(fwd, 1.8).addScaledVector(side, -1.2), 0xffb070, 30, 10);
+    const cc = CLASS_META[selectedClass].color;
+    // picking a class: the wizard casts, its rune circle flaring at its feet
+    let anim = Math.floor(b.t / 5) % 3 === 2 ? 'cast' : 'idle', castP = (b.t % 5) / 5;
+    if (b.flourish !== undefined) {
+      const f0 = b.flourish;
+      b.flourish += dt;
+      anim = 'cast'; castP = Math.min(1, b.flourish / 1.1);
+      if (f0 < 0.38 && b.flourish >= 0.38) {
+        const at = new THREE.Vector3(ax, ag, az);
+        game.vfx.groundSigil(at, sigilTexture(selectedClass), cc, 1.6, 1.6);
+        const c = new THREE.Color(cc);
+        game.vfx.burst(at.clone().add(new THREE.Vector3(0, 1.1, 0)).addScaledVector(fwd, 0.5), { count: 28, speed: 3.5, upward: 0.6, life: 0.9, size: 0.06, sprite: 0, color: [c.r * 3, c.g * 3, c.b * 3] });
+        game.vfx.flash(at.clone().add(new THREE.Vector3(0, 1.4, 0)).addScaledVector(fwd, 0.8), cc, 26, 8, 0.5);
+        const el = CLASS_META[selectedClass].element ?? 'arcane';
+        audio?.play(`cast_${el === 'necrotic' ? 'shadow' : el}_big`, { volume: 0.5 });
+      }
+      if (b.flourish > 1.5) b.flourish = undefined;
+    }
+    menuAvatar.update(dt, { anim, t: b.t, speed: 0, pitch: 0, castProgress: castP, strafe: 0 });
+    game.lights.request(new THREE.Vector3(ax, ag + 2.2, az).addScaledVector(fwd, 2.0).addScaledVector(side, -0.9), 0xffb070, 42, 10);
     game.lights.request(new THREE.Vector3(ax, ag + 1.0, az).addScaledVector(fwd, 1.6).addScaledVector(side, 1.4), 0xc0b0ff, 8, 6);
     game.lights.request(new THREE.Vector3(ax, ag + 1.8, az).addScaledVector(fwd, -1.4).addScaledVector(side, 1.0), CLASS_META[selectedClass].color, 24, 6);
     if (Math.random() < dt * 20) {
@@ -225,6 +245,7 @@ function showSelect(lobbyInfo) {
       settings.lastClass = id;
       saveSettings();
       placeMenuAvatar();
+      if (game.backdrop) game.backdrop.flourish = 0; // the chosen wizard shows off a cast
       audio?.play('ui_click');
       if (net) {
         if (net.isHost) { const me = lobby.players.find((p) => p.host); me.classId = id; pushRoster(); }

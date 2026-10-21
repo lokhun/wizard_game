@@ -488,6 +488,13 @@ export class Game {
     const realDt = dt;
     // hit-stop slows the world very briefly on big hits
     if (this.vfx.hitstop > 0) dt *= 0.15;
+    // eased slow motion (the last kill of a fight), counted in real time
+    if (this.slow) {
+      this.slow.t += realDt;
+      const u = this.slow.t / this.slow.dur;
+      if (u >= 1) this.slow = null;
+      else dt *= this.slow.k + (1 - this.slow.k) * u * u;
+    }
     this.time += dt;
     this.stats.time += realDt;
     const input = this.input;
@@ -1221,9 +1228,17 @@ export class Game {
     }
   }
 
+  // the world runs at k of normal speed, easing back over dur seconds
+  slowMo(dur, k) { if (!this.slow || this.slow.k > k) this.slow = { t: 0, dur, k }; }
+
   onRoomCleared(room) {
     this.audio?.setMusic('explore');
     this.audio?.play('room_clear');
+    // the last kill lands heavy: a breath of slow motion and a warm wash of light
+    if (room.type !== ROOM.BOSS) {
+      this.slowMo(0.55, 0.22);
+      this.screenTint([1.12, 1.06, 0.96], 0.5);
+    }
     if (room.type === ROOM.BOSS) return; // handled by boss death
     if (room.type === ROOM.TRIAL) this.ui?.banner(room.trialWon ? 'TRIAL CONQUERED' : 'CHAMBER CLEARED', room.trialWon ? 'An epic tome is yours' : 'Too slow — a lesser reward', room.trialWon ? '#ffcf60' : '#e8c070');
     else this.ui?.banner('CHAMBER CLEARED', room.type === ROOM.ELITE ? 'A rare tome awaits' : 'Claim your reward', '#e8c070');

@@ -59,7 +59,9 @@
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   await wait(4000);
   // walk into a combat room
-  const room = g.level.rooms.find((r) => r.type === 'combat' && r.main) ?? g.level.rooms.find((r) => r.type === 'combat');
+  // ?room=boss walks into the boss arena instead (intro, phases, adds)
+  const want = new URLSearchParams(location.search).get('room') ?? 'combat';
+  const room = g.level.rooms.find((r) => r.type === want && r.main) ?? g.level.rooms.find((r) => r.type === want);
   tag = 'enter';
   p.pos.set(room.cx, g.groundY(room.cx, room.cz), room.cz);
   await wait(7000);
