@@ -560,8 +560,21 @@ export class LocalPlayer {
     }
     // horizontal collision
     const res = g.collision.move(this.pos.x, this.pos.z, this.pos.y, vx * dt, vz * dt, RADIUS);
-    const moved = Math.hypot(res.x - this.pos.x, res.z - this.pos.z);
+    let moved = Math.hypot(res.x - this.pos.x, res.z - this.pos.z);
     this.pos.x = res.x; this.pos.z = res.z;
+    // big bodies (bosses, brutes) are solid: walking into one put the camera
+    // inside its mesh. Dashes still cut through.
+    if (this.dashT <= 0) {
+      for (const a of g.actors.hostiles()) {
+        if (!(a.boss || a.radius >= 0.9)) continue;
+        const dx = this.pos.x - a.pos.x, dz = this.pos.z - a.pos.z, rr = a.radius + 0.55, d2 = dx * dx + dz * dz;
+        if (d2 >= rr * rr || this.pos.y > a.pos.y + a.height || this.pos.y + 1.7 < a.pos.y) continue;
+        const d = Math.sqrt(d2), nx = d > 1e-3 ? dx / d : Math.sin(this.yaw), nz = d > 1e-3 ? dz / d : Math.cos(this.yaw);
+        const r2 = g.collision.move(this.pos.x, this.pos.z, this.pos.y, nx * (rr - d), nz * (rr - d), RADIUS);
+        moved = Math.max(0, moved - Math.hypot(r2.x - this.pos.x, r2.z - this.pos.z));
+        this.pos.x = r2.x; this.pos.z = r2.z;
+      }
+    }
     // vertical
     this.pos.y += this.vel.y * dt;
     const ground = g.groundY(this.pos.x, this.pos.z);

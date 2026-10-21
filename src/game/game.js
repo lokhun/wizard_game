@@ -714,9 +714,14 @@ export class Game {
     // reaction effects
     if (res.reaction) {
       const R = REACTIONS[res.reaction];
-      this.ui?.floatText(pos.clone().add(_v.set(0, 0.6, 0)), R.name, R.color, true);
-      this.audio?.play('reaction', { pos });
-      this.vfx.explosion(pos, H.el === 'lightning' ? 'lightning' : H.el, 2.2, { groundY: this.groundY(pos.x, pos.z), shakeScale: 0.5 });
+      // fast hitters re-trigger a reaction several times a second: the name,
+      // sound and blast play once per target per beat, the damage every time
+      if (!(this.time - (a._rxT ?? -9) < 0.7)) {
+        a._rxT = this.time;
+        this.ui?.floatText(pos.clone().add(_v.set(0, 0.6, 0)), R.name, R.color, true);
+        this.audio?.play('reaction', { pos });
+        this.vfx.explosion(pos, H.el === 'lightning' ? 'lightning' : H.el, 2.2, { groundY: this.groundY(pos.x, pos.z), shakeScale: 0.5 });
+      } else this.vfx.impact(pos, H.el, 1.2);
       if (res.aoe) this.spells.damageArea(pos, res.aoe.radius, { dmg: res.aoe.dmg, el: res.aoe.el, st: res.aoe.st, noReact: true, src: p.id, tag: 'reaction' });
       if (res.chain) {
         const hitSet = new Set([a.id]);
