@@ -58,8 +58,11 @@ A first-person, co-op wizard roguelike for the browser. Fight your way up from t
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
+npm run dev        # http://localhost:5173 - for editing; slow to load, not representative
+npm run build && npm run preview   # http://localhost:4173 - the real, optimised game
 ```
+
+Judge performance with the **preview** build: the dev server serves hundreds of unbundled, unminified modules.
 
 ## Building for your website (lokhunproject)
 
@@ -71,7 +74,27 @@ This produces a fully static `dist/` folder: `index.html` plus hashed JS, CSS an
 
 1. Upload the **contents** of `dist/` to any folder on your site, for example `https://lokhunproject.com/arcane-ascent/`.
    - The build uses relative paths (`base: './'`), so it works from any sub-path.
+   - Include the hidden `.htaccess` file (some FTP clients hide dotfiles).
 2. That's it. There is nothing to run server-side.
+
+### Hosting efficiently
+
+Your server only sends the files once per player (about 0.5 MB compressed); after that, everything runs in the players' browsers on their own GPUs, and co-op traffic goes directly between players. So a basic host serves many players easily, as long as files are compressed and cached:
+
+- **Compression:** the build writes a brotli (`.br`) and gzip (`.gz`) copy next to every JS/CSS/HTML file (1.8 MB of code becomes about 0.46 MB). Serve those instead of the raw files:
+  - Apache (most shared hosting): the included `.htaccess` does it.
+  - Netlify / Cloudflare Pages / Vercel: they compress automatically; `_headers` sets caching.
+  - nginx:
+    ```nginx
+    location /arcane-ascent/ {
+      gzip_static on;          # serves the .gz files
+      brotli_static on;        # needs ngx_brotli; otherwise gzip is used
+      location ~ /assets/ { add_header Cache-Control "public, max-age=31536000, immutable"; }
+    }
+    location = /arcane-ascent/index.html { add_header Cache-Control "no-cache"; }
+    ```
+- **Caching:** files in `assets/` have content hashes in their names, so they are cached for a year and never re-downloaded. `index.html` always revalidates, so a new upload reaches players immediately.
+- A CDN in front (e.g. Cloudflare's free plan) makes first loads fast worldwide.
 
 To embed it in an existing page, use an iframe. Pointer lock needs the `allow` attribute:
 
@@ -91,6 +114,7 @@ To embed it in an existing page, use an iframe. Pointer lock needs the `allow` a
 Connections are direct, browser-to-browser, over WebRTC:
 
 - The host's browser runs the enemies, so the host should be the player with the best computer and connection.
+- Traffic is small, about 8 KB/s per player. Enemy and player positions go over an unordered channel, so a lost packet never holds up the newer updates behind it; events (casts, hits, pickups) go over a reliable one.
 - To find each other, browsers use the free public PeerJS signalling server (`0.peerjs.com`) and Google's public STUN servers. No game data passes through them.
 
 ### Optional: your own signalling or TURN servers

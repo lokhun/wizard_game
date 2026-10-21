@@ -48,6 +48,15 @@ export class Net {
     this.peer = null;
     this.conns = new Map(); // host: playerId -> DataConnection
     this.hostConn = null;
+    // A second, unordered channel per player for the 15-20 Hz state stream
+    // (enemy snapshots, player positions). On the reliable ordered channel a
+    // single lost packet held every later snapshot back until it was resent,
+    // which showed as enemies stuttering and rubber-banding on real networks.
+    // Events (casts, hits, pickups, rooms) stay on the reliable one.
+    this.fast = new Map(); // host: playerId -> unordered DataConnection
+    this.fastConn = null; // client -> host
+    this.seq = 0;
+    this.lastSeq = new Map(); // `${from}:${type}` -> newest seq seen
     this.id = null;
     this.code = null;
     this.handlers = new Set();
@@ -60,6 +69,16 @@ export class Net {
   }
 
   on(fn) { this.handlers.add(fn); return () => this.handlers.delete(fn); }
+  // state messages carry a sequence number; on the unordered channel an old
+  // one can arrive after a newer one, and is simply dropped
+  _stale(msg, from) {
+    if (msg.q === undefined) return false;
+    const k = (msg.id ?? from) + ':' + msg.t;
+    const last = this.lastSeq.get(k);
+    if (last !== undefined && msg.q <= last && last - msg.q < 1e6) return true;
+    this.lastSeq.set(k, msg.q);
+    return false;
+  }
   _emit(msg, from) { this.rx[msg.t] = (this.rx[msg.t] ?? 0) + 1; for (const h of this.handlers) { try { h(msg, from); } catch (e) { console.error('net handler', e); } } }
 
   // ------------------------------------------------------------- hosting
@@ -91,11 +110,7 @@ export class Net {
 
   _accept(conn) {
     const pid = 'p' + conn.peer.slice(-6);
-    conn.on('open', () => {
-      this.conns.set(pid, conn);
-      conn.pid = pid;
-    });
-    conn.on('data', (msg) => {
+    const onData = (msg) => {
       if (!msg || typeof msg !== 'object') return;
       // routing: targeted messages from clients
       if (msg.to && msg.to !== 'host') {
@@ -103,12 +118,26 @@ export class Net {
         if (c?.open) c.send({ ...msg, from: pid });
         return;
       }
+      if (this._stale(msg, pid)) return;
       if (msg.relay) {
-        // forward to all other clients as well
-        for (const [id, c] of this.conns) if (id !== pid && c.open) c.send({ ...msg, from: pid });
+        // forward to all other clients as well (state over their fast channel)
+        const fwd = { ...msg, from: pid };
+        for (const [id, c] of this.conns) if (id !== pid && c.open) (msg.q !== undefined && this.fast.get(id)?.open ? this.fast.get(id) : c).send(fwd);
       }
       this._emit(msg, pid);
+    };
+    if (conn.metadata?.fast) {
+      conn.on('open', () => this.fast.set(pid, conn));
+      conn.on('data', onData);
+      conn.on('close', () => { if (this.fast.get(pid) === conn) this.fast.delete(pid); });
+      conn.on('error', () => {});
+      return;
+    }
+    conn.on('open', () => {
+      this.conns.set(pid, conn);
+      conn.pid = pid;
     });
+    conn.on('data', onData);
     conn.on('close', () => {
       this.conns.delete(pid);
       this.onPeerLeft?.(pid);
@@ -134,9 +163,16 @@ export class Net {
           this.id = 'p' + peer.id.slice(-6);
           resolve();
         });
-        conn.on('data', (msg) => { if (msg && typeof msg === 'object') this._emit(msg, msg.from ?? 'host'); });
+        const onData = (msg) => { if (msg && typeof msg === 'object' && !this._stale(msg, msg.from ?? 'host')) this._emit(msg, msg.from ?? 'host'); };
+        conn.on('data', onData);
         conn.on('close', () => { if (!this.closed) this.onDisconnect?.(); });
         conn.on('error', (e) => console.warn('conn error', e));
+        // the unordered state channel; until (unless) it opens, state goes over the reliable one
+        const fast = peer.connect(PREFIX + code.toUpperCase(), { reliable: false, serialization: 'json', metadata: { fast: 1 } });
+        fast.on('open', () => { this.fastConn = fast; });
+        fast.on('data', onData);
+        fast.on('close', () => { if (this.fastConn === fast) this.fastConn = null; });
+        fast.on('error', () => {});
       });
       peer.on('error', (err) => {
         if (!done) {
@@ -181,6 +217,18 @@ export class Net {
     this.broadcastOrSend(msg);
   }
 
+  // latest-wins state: over the unordered channel where it's open
+  sendState(msg) {
+    msg.q = this.seq++;
+    if (this.isHost) {
+      const m = { ...msg, from: 'host' };
+      for (const [id, c] of this.conns) if (c.open) (this.fast.get(id)?.open ? this.fast.get(id) : c).send(m);
+    } else {
+      const c = this.fastConn?.open ? this.fastConn : this.hostConn;
+      if (c?.open) c.send({ ...msg, relay: 1 });
+    }
+  }
+
   get peerCount() { return this.isHost ? this.conns.size : 1; }
 
   // periodic replication (called by the game every frame)
@@ -191,14 +239,14 @@ export class Net {
       this.stateT = 0;
       const s = { t: 'ps', id: p.id, p: [r2(p.pos.x), r2(p.pos.y), r2(p.pos.z)], y: r3(p.yaw), pi: r3(p.pitch), hp: Math.ceil(p.hp), mh: p.maxHp, sh: Math.ceil(p.shield),
         dn: p.downed ? 1 : 0, dd: p.dead ? 1 : 0, u: Math.floor(p.ult), g: Math.floor(p.gold), lv: game.floorIndex };
-      this.broadcastOrSend(s);
+      this.sendState(s);
     }
     if (this.isHost) {
       this.snapT += dt;
       if (this.snapT >= 1 / 15) {
         this.snapT = 0;
         const snap = game.actors.snapshot();
-        if (snap.length) this.broadcast({ t: 'snap', a: snap });
+        if (snap.length) this.sendState({ t: 'snap', a: snap });
       }
     }
   }
@@ -207,7 +255,9 @@ export class Net {
     this.closed = true;
     try { this.peer?.destroy(); } catch { /* ignore */ }
     this.conns.clear();
+    this.fast.clear();
     this.hostConn = null;
+    this.fastConn = null;
   }
 }
 
