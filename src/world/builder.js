@@ -4,6 +4,7 @@ import { T, SOLID, FLOOR, BLOCK, K_MAIN, K_ALT, K_WATER, K_DAIS, ROOM } from './
 import { PROPS, PROP_FLAMES, CHANDELIER_FLAMES, cellBars, bookshelf } from './props.js';
 import { getBiomeMaterials, getSharedMaterials } from './materials.js';
 import { RNG } from '../core/rng.js';
+import { dressLevel, streamMaterial, streamTexture, glassMaterial } from './dressing.js';
 
 // ---------------------------------------------------------------------------
 // Turns a generated Level into renderable meshes: floors, walls, ceilings,
@@ -11,7 +12,7 @@ import { RNG } from '../core/rng.js';
 // Static geometry is merged into one mesh per material.
 // ---------------------------------------------------------------------------
 
-export function buildLevel(level, factory, lightPool) {
+export function buildLevel(level, factory, lightPool, { quality = 'high' } = {}) {
   const biome = level.biome;
   const mats = getBiomeMaterials(factory, biome);
   const group = new THREE.Group();
@@ -65,6 +66,7 @@ export function buildLevel(level, factory, lightPool) {
     { dx: 0, dy: 1, n: [0, 0, -1] },
     { dx: 0, dy: -1, n: [0, 0, 1] },
   ];
+  const damp = { sewers: [0.66, 0.8, 0.64], dungeon: [0.74, 0.72, 0.68] }[biome.id];
   const wallStrip = (b, ax, az, bx, bz, n, y0, y1, uOff, aoA = 1, aoB = 1) => {
     // vertical strip from (ax,az) to (bx,bz); subdivided in height for AO
     const len = Math.hypot(bx - ax, bz - az);
@@ -79,6 +81,12 @@ export function buildLevel(level, factory, lightPool) {
       else c *= 1 - 0.25 * Math.max(0, (yy - y0 - 4) / Math.max(1, y1 - y0 - 4));
       return c;
     };
+    // rising damp: the foot of sewer and dungeon walls is stained darker (greener in the sewers)
+    const C = (c, yy) => {
+      if (!damp) return c;
+      const k = 1 - Math.min(1, Math.max(0, (yy - y0 - 0.2) / 1.3));
+      return [c * (1 + (damp[0] - 1) * k), c * (1 + (damp[1] - 1) * k), c * (1 + (damp[2] - 1) * k)];
+    };
     for (let s = 0; s < hs.length - 1; s++) {
       const ya = hs[s], yb = hs[s + 1];
       const ca = shade(ya), cb = shade(yb);
@@ -86,13 +94,12 @@ export function buildLevel(level, factory, lightPool) {
       b.quad(
         [bx, ya, bz], [ax, ya, az], [ax, yb, az], [bx, yb, bz], n,
         [[(uOff + len) * 0.5, ya * 0.5], [uOff * 0.5, ya * 0.5], [uOff * 0.5, yb * 0.5], [(uOff + len) * 0.5, yb * 0.5]],
-        [ca * aoB, ca * aoA, cb * aoA, cb * aoB],
+        [C(ca * aoB, ya), C(ca * aoA, ya), C(cb * aoA, yb), C(cb * aoB, yb)],
       );
     }
   };
 
   const trimB = B('trim');
-  const pilasters = [];
   const wallEdges = [];
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     if (!walkLike(x, y)) continue;
@@ -114,7 +121,7 @@ export function buildLevel(level, factory, lightPool) {
       const endB = isSolid(x + px * (d.dx === 1 || d.dy === -1 ? -1 : 1), y + py * (d.dx === 1 || d.dy === -1 ? -1 : 1));
       const tintV = 0.86 + 0.14 * (((x * 73856093) ^ (y * 19349663) ^ (d.dx * 83492791 + d.dy * 4421)) >>> 0) % 1000 / 1000;
       wallStrip(B('wall'), ax, az, bx, bz, d.n, Math.min(h0, 0), h1, u, (endA ? 0.6 : 1) * tintV, (endB ? 0.6 : 1) * tintV);
-      wallEdges.push({ ax, az, bx, bz, n: d.n, h0, h1 });
+      wallEdges.push({ ax, az, bx, bz, n: d.n, h0, h1, room: level.roomId[i], corr: level.corrId[i] });
       // baseboard trim
       if (!biome.outdoor || true) {
         const mx = (ax + bx) / 2 + d.n[0] * 0.08, mz = (az + bz) / 2 + d.n[2] * 0.08;
@@ -126,9 +133,6 @@ export function buildLevel(level, factory, lightPool) {
           trimB.addGeometry(g2, new THREE.Matrix4().makeTranslation((ax + bx) / 2 + d.n[0] * 0.14, h1 - 0.15, (az + bz) / 2 + d.n[2] * 0.14), 0.8);
         }
       }
-      // pilaster every few cells along long walls (deterministic by position)
-      const along = d.dx !== 0 ? y : x;
-      if (along % 3 === 0 && level.roomId[i] >= 0) pilasters.push({ x: ax, z: az, n: d.n, h0, h1 });
     }
     // height steps to lower neighbours
     for (const d of dirs) {
@@ -176,41 +180,6 @@ export function buildLevel(level, factory, lightPool) {
     }
   }
 
-  // pilasters (half columns against walls)
-  for (const p of pilasters) {
-    const g = worldBox(0.7, p.h1 - p.h0, 0.7);
-    trimB.addGeometry(g, new THREE.Matrix4().makeTranslation(p.x + p.n[0] * 0.2, p.h0 + (p.h1 - p.h0) / 2, p.z + p.n[2] * 0.2), 0.85);
-    const cap = worldBox(0.95, 0.35, 0.95);
-    trimB.addGeometry(cap, new THREE.Matrix4().makeTranslation(p.x + p.n[0] * 0.25, p.h0 + 0.18, p.z + p.n[2] * 0.25), 0.7);
-  }
-
-  // ---------------- ceiling beams / arches across rooms
-  if (!biome.outdoor) {
-    for (const room of level.rooms) {
-      const horiz = room.w > room.h;
-      const span = horiz ? room.h : room.w;
-      const len = horiz ? room.w : room.h;
-      for (let k = 2; k < len - 1; k += 3) {
-        if (biome.ceilingMat === 'wood') {
-          const g = worldBox(horiz ? 0.4 : span * T, 0.5, horiz ? span * T : 0.4);
-          const cx = horiz ? (room.x + k) * T : room.cx, cz = horiz ? room.cz : (room.y + k) * T;
-          B('wood').addGeometry(g, new THREE.Matrix4().makeTranslation(cx, room.ceil - 0.25, cz), 0.8);
-        } else {
-          // stone rib arch
-          const r = span * T / 2;
-          const arc = new THREE.TorusGeometry(r, 0.3, 6, 18, Math.PI);
-          const cx = horiz ? (room.x + k) * T : room.cx, cz = horiz ? room.cz : (room.y + k) * T;
-          const m = new THREE.Matrix4().compose(
-            new THREE.Vector3(cx, room.ceil - Math.min(r, 3.5) * 1.0, cz),
-            new THREE.Quaternion().setFromEuler(new THREE.Euler(0, horiz ? Math.PI / 2 : 0, 0)),
-            new THREE.Vector3(1, Math.min(r, 3.5) / r, 1),
-          );
-          trimB.addGeometry(arc, m, 0.8);
-        }
-      }
-    }
-  }
-
   // ---------------- outdoor wall caps with crenellations
   if (biome.outdoor) {
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -244,18 +213,12 @@ export function buildLevel(level, factory, lightPool) {
     const bx = door.x - door.nx * T / 2, bz = door.z - door.ny * T / 2;
     const corrCeil = biome.outdoor ? 6 : biome.ceilCorr;
     const doorH = Math.min(corrCeil, 6);
-    const halfW = door.width / 2;
-    // frame jambs
-    for (const s of [-1, 1]) {
-      const jx = bx + (horizN ? 0 : s * (halfW + 0.3)), jz = bz + (horizN ? s * (halfW + 0.3) : 0);
-      const g = worldBox(horizN ? 0.9 : 0.7, doorH + 0.4, horizN ? 0.7 : 0.9);
-      trimB.addGeometry(g, new THREE.Matrix4().makeTranslation(jx - door.nx * 0.25, doorH / 2, jz - door.ny * 0.25), 0.8);
-    }
-    const lintel = worldBox(horizN ? 0.9 : door.width + 1.6, 0.7, horizN ? door.width + 1.6 : 0.9);
-    trimB.addGeometry(lintel, new THREE.Matrix4().makeTranslation(bx - door.nx * 0.25, doorH + 0.1, bz - door.ny * 0.25), 0.8);
+    const openW = new Set(door.cells).size * T + 0.4; // door.cells may repeat a cell
+    const halfW = openW / 2;
+    // (arched portals around the opening come from the dressing pass)
     if (biome.outdoor) {
       // gatehouse bridge across the passage
-      const bridge = worldBox(horizN ? 3 : door.width + 1, 4, horizN ? door.width + 1 : 3);
+      const bridge = worldBox(horizN ? 3 : openW + 1.6, 4, horizN ? openW + 1.6 : 3);
       trimB.addGeometry(bridge, new THREE.Matrix4().makeTranslation(bx + door.nx * 1.0, doorH + 2.4, bz + door.ny * 1.0), 0.85);
     }
     // portcullis (only for rooms that lock)
@@ -263,9 +226,9 @@ export function buildLevel(level, factory, lightPool) {
     let mesh = null;
     if (locks) {
       const gb = new GeoBuilder();
-      const n = Math.max(2, Math.round(door.width / 0.32));
+      const n = Math.max(2, Math.round(openW / 0.32));
       for (let k = 0; k <= n; k++) {
-        const off = -halfW + (k / n) * door.width;
+        const off = -halfW + (k / n) * openW;
         const g = tf(new THREE.CylinderGeometry(0.035, 0.035, doorH, 6), {});
         gb.addGeometry(g, new THREE.Matrix4().makeTranslation(horizN ? 0 : off, 0, horizN ? off : 0));
         const spike = new THREE.ConeGeometry(0.05, 0.25, 6);
@@ -274,7 +237,7 @@ export function buildLevel(level, factory, lightPool) {
       }
       for (let k = 0; k < 5; k++) {
         const yy = -doorH / 2 + 0.3 + k * (doorH - 0.6) / 4;
-        const g = worldBox(horizN ? 0.06 : door.width, 0.07, horizN ? door.width : 0.06);
+        const g = worldBox(horizN ? 0.06 : openW, 0.07, horizN ? openW : 0.06);
         gb.addGeometry(g, new THREE.Matrix4().makeTranslation(0, yy, 0));
       }
       mesh = new THREE.Mesh(gb.build(), mats.iron);
@@ -286,8 +249,12 @@ export function buildLevel(level, factory, lightPool) {
     doors.push({ door, mesh, y: mesh ? mesh.position.y : 0, target: mesh ? mesh.position.y : 0, doorH });
   }
 
+  // ---------------- architecture & wall dressing (piers, vaults, portals, realm set dressing)
+  const decal = new GeoBuilder(); // wall/floor grime decals (one transparent atlas mesh)
+  const dressed = dressLevel({ level, biome, mats, B, wallEdges, decal, quality });
+
   // ---------------- props
-  const flames = []; // {x,y,z,size,kind}
+  const flames = [...dressed.flames]; // {x,y,z,size,kind}
   const tmpM = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const addParts = (parts, x, y, z, rot, scale = 1) => {
@@ -308,7 +275,15 @@ export function buildLevel(level, factory, lightPool) {
       if (p.type !== 'chest') addParts(PROPS[p.type](r01), p.x, fy, p.z, p.rot ?? 0);
       continue;
     }
-    const fn = PROPS[p.type];
+    // the bailey's stores and drill yard: some carts are wrecks, some racks are straw men, hay comes baled
+    let type = p.type;
+    if (biome.outdoor) {
+      const hv = ((Math.floor(p.x * 7.3) * 73856093) ^ (Math.floor(p.z * 5.1) * 19349663)) >>> 0;
+      if (type === 'cart' && hv % 3 !== 0) type = 'brokenWagon';
+      else if (type === 'weaponRack' && hv % 2 === 0) type = 'trainingDummy';
+      else if (type === 'hay') type = 'hayBales';
+    }
+    const fn = PROPS[type];
     if (!fn) continue;
     const rot = p.rot ?? 0;
     addParts(fn(r01), p.x, p.type === 'chandelier' ? p.y : fy, p.z, rot);
@@ -332,9 +307,9 @@ export function buildLevel(level, factory, lightPool) {
 
   // ---------------- wall grime: moss, water stains, cracks and smears (one merged mesh)
   if (!biome.outdoor && wallEdges.length) {
-    const grime = new GeoBuilder();
+    const grime = decal;
     const gr = new RNG(level.seed * 11 + 5);
-    // atlas columns: 0 water stain, 1 moss drip, 2 cracks, 3 blood smear
+    // atlas columns (of 8): 0 water stain, 1 moss drip, 2 cracks, 3 blood smear
     const pool = { sewers: [0, 1, 1, 0, 2], dungeon: [0, 2, 2, 3, 0], keep: [0, 2, 0], throne: [2, 0] }[biome.id] ?? [0, 2];
     const density = biome.id === 'sewers' ? 0.32 : biome.id === 'dungeon' ? 0.26 : 0.14;
     for (const e of wallEdges) {
@@ -350,14 +325,14 @@ export function buildLevel(level, factory, lightPool) {
       let top, bot;
       if (kind === 0 || kind === 1) { top = e.h1 - gr.range(0, 0.6); bot = Math.max(e.h0 + 0.05, top - gr.range(1.6, Math.min(3.6, e.h1 - e.h0))); }
       else { const mid = e.h0 + gr.range(0.6, 2.2); top = mid + w * 0.6; bot = mid - w * 0.6; }
-      const u0 = kind * 0.25, flip = gr.next() < 0.5;
-      const ua = flip ? u0 + 0.25 : u0, ub = flip ? u0 : u0 + 0.25;
+      const u0 = kind * 0.125, flip = gr.next() < 0.5;
+      const ua = flip ? u0 + 0.125 : u0, ub = flip ? u0 : u0 + 0.125;
       const t = gr.range(0.75, 1.0);
       grime.quad([mx + dx * w * 0.5, bot, mz + dz * w * 0.5], [mx - dx * w * 0.5, bot, mz - dz * w * 0.5], [mx - dx * w * 0.5, top, mz - dz * w * 0.5], [mx + dx * w * 0.5, top, mz + dz * w * 0.5], e.n,
         [[ub, 1], [ua, 1], [ua, 0], [ub, 0]], [t, t, t, t]);
     }
-    if (grime.count) { const m = new THREE.Mesh(grime.build(), grimeMaterial()); m.renderOrder = 2; group.add(m); }
   }
+  if (decal.count) { const m = new THREE.Mesh(decal.build(), grimeMaterial()); m.renderOrder = 2; group.add(m); }
 
   // ---------------- ivy hanging from the bailey walls (one alpha-tested mesh)
   if (biome.outdoor && wallEdges.length) {
@@ -498,83 +473,100 @@ export function buildLevel(level, factory, lightPool) {
     meshes.push(mesh);
   }
 
-  // ---------------- instanced grass tufts swaying in the wind (courtyard)
+  // ---------------- dressing extras: falling water (scrolling) and moonlit window glass
+  if (dressed.streams) {
+    const m = new THREE.Mesh(dressed.streams.build(), streamMaterial(biome.id === 'sewers' ? 0x4a5e40 : 0x3a4048));
+    m.renderOrder = 5;
+    group.add(m);
+  }
+  if (dressed.glass) group.add(new THREE.Mesh(dressed.glass.build(), glassMaterial(biome.id === 'throne' ? 0xb8a8e0 : 0xd8dcf0)));
+
+  // ---------------- instanced grass: thin moonlit blades in chunks (each chunk culls on its own),
+  // swaying in rolling gusts that blow the same way across the whole bailey
   let grassMat = null;
   if (biome.outdoor) {
-    const blade = new GeoBuilder();
     const rg = new RNG(level.seed + 77);
-    // curved two-segment blades; normals lean sideways so moonlight doesn't light them like floor
-    for (let b = 0; b < 9; b++) {
-      const a = rg.range(0, Math.PI * 2), r = rg.range(0, 0.14);
-      const bx = Math.cos(a) * r, bz = Math.sin(a) * r;
-      const h = rg.range(0.26, 0.58), w = rg.range(0.022, 0.04);
-      const lean = rg.range(0.06, 0.2), dir = rg.range(0, Math.PI * 2);
-      const dx = Math.cos(dir), dz = Math.sin(dir);
-      const nx = dx * 0.75, ny = 0.66, nz = dz * 0.75;
-      const dry = rg.next() < 0.3;
-      const c0 = [0.035, 0.045, 0.02], c1 = dry ? [0.2, 0.17, 0.08] : [0.11, 0.14, 0.05], c2 = dry ? [0.3, 0.26, 0.12] : [0.17, 0.21, 0.08];
-      const mx = bx + dx * lean * 0.3, mz = bz + dz * lean * 0.3, mw = w * 0.7;
-      const v0 = blade.vert(bx - dz * w, 0, bz + dx * w, nx, ny, nz, 0, 0, c0);
-      blade.vert(bx + dz * w, 0, bz - dx * w, nx, ny, nz, 1, 0, c0);
-      blade.vert(mx - dz * mw, h * 0.55, mz + dx * mw, nx, ny, nz, 0, 0.55, c1);
-      blade.vert(mx + dz * mw, h * 0.55, mz - dx * mw, nx, ny, nz, 1, 0.55, c1);
-      blade.vert(bx + dx * lean, h, bz + dz * lean, nx, ny, nz, 0.5, 1, c2);
-      blade.tri(v0, v0 + 1, v0 + 3); blade.tri(v0, v0 + 3, v0 + 2);
-      blade.tri(v0 + 2, v0 + 3, v0 + 4);
+    // a tuft is three crossed cards, each painted with dozens of thin blades (alpha-tested):
+    // dense-looking turf for a handful of triangles. Darker at the root, as if shaded by itself.
+    const card = new GeoBuilder();
+    for (let k = 0; k < 3; k++) {
+      const a = (k / 3) * Math.PI + 0.3, cx = Math.cos(a) * 0.45, cz = Math.sin(a) * 0.45;
+      const nx = -Math.sin(a) * 0.35, nz = Math.cos(a) * 0.35, ny = 0.87;
+      const v0 = card.vert(-cx, 0, -cz, nx, ny, nz, 0, 0, 0.45);
+      card.vert(cx, 0, cz, nx, ny, nz, 1, 0, 0.45);
+      card.vert(cx, 0.52, cz, nx, ny, nz, 1, 1, 1);
+      card.vert(-cx, 0.52, -cz, nx, ny, nz, 0, 1, 1);
+      card.quadIdx(v0, v0 + 1, v0 + 2, v0 + 3);
     }
-    const geo = blade.build();
-    grassMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide });
+    const geo = card.build();
+    grassMat = new THREE.MeshStandardMaterial({ map: grassCardTexture(), alphaTest: 0.42, vertexColors: true, roughness: 0.85, side: THREE.DoubleSide });
     grassMat.userData.time = { value: 0 };
     grassMat.onBeforeCompile = (sh) => {
       sh.uniforms.uTime = grassMat.userData.time;
       sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
         vec4 wp = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-        float sway = sin(uTime * 1.7 + wp.x * 0.35 + wp.z * 0.21) * 0.6 + sin(uTime * 3.1 + wp.x * 0.9) * 0.25;
-        transformed.x += sway * uv.y * 0.12;
-        transformed.z += sway * uv.y * 0.05;`);
+        // gust fronts roll across the yard; each blade also flutters on its own
+        float gust = 0.5 + 0.5 * sin(dot(wp.xz, vec2(0.11, 0.06)) - uTime * 1.15);
+        gust = gust * gust * (0.6 + 0.4 * sin(uTime * 0.37 + wp.z * 0.05));
+        float flutter = sin(uTime * 3.4 + wp.x * 1.9 + wp.z * 1.3 + position.x * 23.0 + position.z * 17.0);
+        float bend = uv.y * uv.y;
+        vec3 windW = vec3(0.07 + gust * 0.2 + flutter * 0.025, -gust * 0.05, 0.03 + gust * 0.07 + flutter * 0.015) * bend;
+        // into the tuft's own frame, so every tuft leans the same way whatever its rotation
+        mat3 grassIM = mat3(instanceMatrix);
+        transformed += transpose(grassIM) * windW / max(1e-3, dot(grassIM[0], grassIM[0]));`);
     };
-    const spots = [];
+    // per-quality density; tufts crowd thicker and taller along the foot of the walls
+    const per = quality === 'low' ? 4 : quality === 'medium' ? 6 : 9;
+    const chunks = new Map();
+    const nearWall = (x, y) => isSolid(x + 1, y) || isSolid(x - 1, y) || isSolid(x, y + 1) || isSolid(x, y - 1);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const i = level.idx(x, y);
       if (level.cells[i] !== FLOOR || level.kind[i] !== K_MAIN) continue;
-      const n = 10;
+      const edge = nearWall(x, y);
+      const n = Math.round(per * (edge ? 1.5 : 1));
+      const key = Math.floor(x / 40) + ',' + Math.floor(y / 40);
+      let list = chunks.get(key);
+      if (!list) chunks.set(key, (list = []));
       for (let k = 0; k < n; k++) {
         const px = (x + rg.next()) * T, pz = (y + rg.next()) * T;
         if (level.colliders.some((c) => c.r && (c.x - px) ** 2 + (c.z - pz) ** 2 < (c.r + 0.3) ** 2)) continue;
-        spots.push([px, pz]);
+        list.push([px, pz, edge]);
       }
     }
-    const inst = new THREE.InstancedMesh(geo, grassMat, spots.length);
-    const m4 = new THREE.Matrix4(), qq = new THREE.Quaternion(), sc = new THREE.Vector3();
-    spots.forEach(([px, pz], i) => {
-      qq.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rg.range(0, Math.PI * 2));
-      const k = rg.range(0.7, 1.5);
-      sc.set(k, k * rg.range(0.8, 1.3), k);
-      m4.compose(new THREE.Vector3(px, level.floorAt(px, pz), pz), qq, sc);
-      inst.setMatrixAt(i, m4);
-      inst.setColorAt(i, sc.set(rg.range(0.75, 1.15), rg.range(0.8, 1.1), rg.range(0.7, 1.0)));
-    });
-    inst.receiveShadow = true;
-    group.add(inst);
+    const m4 = new THREE.Matrix4(), qq = new THREE.Quaternion(), sc = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), pv = new THREE.Vector3(), col = new THREE.Color();
+    for (const spots of chunks.values()) {
+      if (!spots.length) continue;
+      const inst = new THREE.InstancedMesh(geo, grassMat, spots.length);
+      spots.forEach(([px, pz, edge], i) => {
+        qq.setFromAxisAngle(up, rg.range(0, Math.PI * 2));
+        // patchy meadow: low-frequency clumps of lush, thin and withered grass
+        const patch = 0.5 + 0.5 * Math.sin(px * 0.23 + Math.sin(pz * 0.17) * 2.1) * Math.sin(pz * 0.21 + 1.3);
+        const k = rg.range(0.7, 1.25) * (0.75 + patch * 0.5) * (edge ? 1.2 : 1);
+        sc.set(k, k * rg.range(0.6, 1.4) * (edge ? 1.25 : 1), k);
+        m4.compose(pv.set(px, level.floorAt(px, pz), pz), qq, sc);
+        inst.setMatrixAt(i, m4);
+        const dryP = Math.max(0, 0.35 - patch * 0.5) + (rg.next() < 0.08 ? 0.5 : 0);
+        col.setRGB(0.85 + rg.range(-0.12, 0.12) + dryP * 0.6, 0.95 + rg.range(-0.1, 0.12) + dryP * 0.25, 0.9 + rg.range(-0.1, 0.1) - dryP * 0.2);
+        inst.setColorAt(i, col);
+      });
+      inst.computeBoundingSphere();
+      inst.receiveShadow = true;
+      group.add(inst);
+    }
   }
 
-  // ---------------- light shafts (keep halls, throne room): soft additive beams
-  if (biome.id === 'keep' || biome.id === 'throne') {
+  // ---------------- light shafts from the dressing's north windows: soft additive beams
+  if (dressed.shafts.length) {
     const shaftGeo = new GeoBuilder();
-    const rs = new RNG(level.seed + 31);
-    for (const room of level.rooms) {
-      if (room.type === 'start' || (biome.id === 'keep' && room.layout !== 'hall' && room.layout !== 'library')) continue;
-      const n = room.type === 'boss' ? 4 : 2;
-      for (let k = 0; k < n; k++) {
-        // beam enters high on the north wall and slants down into the room
-        const x = (room.x + 2 + rs.next() * (room.w - 4)) * T;
-        const z0 = room.y * T + 0.2, top = room.ceil - 0.6;
-        const len = Math.min(room.h * T * 0.8, top * 1.4);
-        const w = rs.range(1.2, 2.2);
-        const z1 = z0 + len * 0.6, bottom = 0.05;
-        shaftGeo.quad([x - w / 2, top, z0], [x + w / 2, top, z0], [x + w / 2 + 0.3, bottom, z1], [x - w / 2 - 0.3, bottom, z1], [0, 0, 1], [[0, 1], [1, 1], [1, 0], [0, 0]]);
-        shaftGeo.quad([x, top, z0 - w / 2 + 0.01], [x, top, z0 + w / 2], [x + 0.2, bottom, z1 + w / 2], [x + 0.2, bottom, z1 - w / 2], [1, 0, 0], [[0, 1], [1, 1], [1, 0], [0, 0]]);
-      }
+    // each beam falls from a moonlit window high on a north wall, slanting down into the room
+    for (const sh of dressed.shafts) {
+      const room = level.roomAt(sh.x, sh.z + 1);
+      if (!room || room.type === 'start') continue;
+      const { x, w, top } = sh, z0 = sh.z;
+      const len = Math.min(room.h * T * 0.8, top * 1.4);
+      const z1 = z0 + len * 0.6, bottom = 0.05;
+      shaftGeo.quad([x - w / 2, top, z0], [x + w / 2, top, z0], [x + w / 2 + 0.3, bottom, z1], [x - w / 2 - 0.3, bottom, z1], [0, 0, 1], [[0, 1], [1, 1], [1, 0], [0, 0]]);
+      shaftGeo.quad([x, top, z0 - w / 2 + 0.01], [x, top, z0 + w / 2], [x + 0.2, bottom, z1 + w / 2], [x + 0.2, bottom, z1 - w / 2], [1, 0, 0], [[0, 1], [1, 1], [1, 0], [0, 0]]);
     }
     if (shaftGeo.count) {
       const c = document.createElement('canvas');
@@ -587,7 +579,7 @@ export function buildLevel(level, factory, lightPool) {
       side.addColorStop(0, 'rgba(0,0,0,1)'); side.addColorStop(0.3, 'rgba(0,0,0,0)'); side.addColorStop(0.7, 'rgba(0,0,0,0)'); side.addColorStop(1, 'rgba(0,0,0,1)');
       gx.globalCompositeOperation = 'destination-out'; gx.fillStyle = side; gx.fillRect(0, 0, 64, 128);
       const tex = new THREE.CanvasTexture(c);
-      const col = biome.id === 'throne' ? new THREE.Color(0.22, 0.12, 0.32) : new THREE.Color(0.2, 0.16, 0.11);
+      const col = biome.id === 'throne' ? new THREE.Color(0.22, 0.12, 0.32) : biome.id === 'dungeon' ? new THREE.Color(0.07, 0.09, 0.14) : new THREE.Color(0.14, 0.15, 0.2);
       const shaftMat = new THREE.MeshBasicMaterial({ map: tex, color: col, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: true });
       const sm = new THREE.Mesh(shaftGeo.build(), shaftMat);
       sm.renderOrder = 6;
@@ -664,6 +656,7 @@ export function buildLevel(level, factory, lightPool) {
         }
       }
       if (sky) sky.material.uniforms.uTime.value = time;
+      if (dressed.streams) streamTexture().offset.y = time * 1.3;
       if (grassMat) grassMat.userData.time.value = time;
     },
     hideBreakable(b) {
@@ -694,10 +687,12 @@ export function buildLevel(level, factory, lightPool) {
 }
 
 let _soot = null, _web = null, _ivy = null, _grime = null;
-// Wall grime atlas, four columns drawn from the top (v=0) down: water stain, moss drip, cracks, blood smear.
+// Grime decal atlas, eight 256x512 columns drawn from the top (v=0) down:
+// 0 water stain, 1 moss drip, 2 cracks, 3 blood smear, 4 straw, 5 dark arched opening,
+// 6 rust streak, 7 scattered parchment.
 function grimeMaterial() {
   if (_grime) return _grime;
-  const W = 1024, H = 512, cw = W / 4;
+  const W = 2048, H = 512, cw = W / 8;
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
   const g = c.getContext('2d');
@@ -756,6 +751,57 @@ function grimeMaterial() {
     }
     for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(50,4,4,${0.4 + rnd() * 0.5})`; g.beginPath(); g.arc(x0 + cw * 0.2 + rnd() * cw * 0.6, H * 0.15 + rnd() * H * 0.3, 1 + rnd() * 5, 0, Math.PI * 2); g.fill(); }
   }
+  // 4: straw - a loose drift of dry stalks, densest in the middle
+  {
+    const x0 = cw * 4;
+    g.save(); g.beginPath(); g.rect(x0, 0, cw, H); g.clip();
+    g.lineCap = 'round';
+    for (let i = 0; i < 1500; i++) {
+      const r = Math.sqrt(rnd()) * 0.5, a = rnd() * Math.PI * 2;
+      const x = x0 + cw / 2 + Math.cos(a) * r * cw * 0.86, y = H / 2 + Math.sin(a) * r * H * 0.9;
+      const len = 14 + rnd() * 34, ang = rnd() * Math.PI;
+      const v = 0.55 + rnd() * 0.45;
+      g.strokeStyle = `rgba(${150 * v | 0},${118 * v | 0},${56 * v | 0},${0.55 + rnd() * 0.45})`;
+      g.lineWidth = 1 + rnd() * 1.8;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(ang) * len, y + Math.sin(ang) * len); g.stroke();
+    }
+    g.restore();
+  }
+  // 5: a dark arched opening (culverts, niches) with a soft sooty rim
+  {
+    const x0 = cw * 5, m = 26;
+    const path = () => { g.beginPath(); g.moveTo(x0 + m, H - 4); g.lineTo(x0 + m, H * 0.42); g.arc(x0 + cw / 2, H * 0.42, cw / 2 - m, Math.PI, 0); g.lineTo(x0 + cw - m, H - 4); g.closePath(); };
+    g.save(); g.shadowColor = 'rgba(0,0,0,0.9)'; g.shadowBlur = 18;
+    path(); g.fillStyle = 'rgba(3,2,2,0.97)'; g.fill(); g.restore();
+    const gr = g.createLinearGradient(0, H * 0.2, 0, H);
+    gr.addColorStop(0, 'rgba(0,0,0,0.6)'); gr.addColorStop(1, 'rgba(14,12,10,0)');
+    path(); g.fillStyle = gr; g.fill();
+  }
+  // 6: rust streaks bleeding down from iron fittings
+  {
+    const x0 = cw * 6;
+    for (let i = 0; i < 12; i++) {
+      const x = x0 + cw * 0.3 + rnd() * cw * 0.4, w = 3 + rnd() * 12, len = H * (0.3 + rnd() * 0.7);
+      const gr = g.createLinearGradient(0, 0, 0, len);
+      gr.addColorStop(0, 'rgba(92,40,12,0.85)'); gr.addColorStop(0.5, 'rgba(70,30,10,0.45)'); gr.addColorStop(1, 'rgba(50,22,8,0)');
+      g.fillStyle = gr; g.beginPath(); g.moveTo(x - w, 0); g.quadraticCurveTo(x - w * 0.2, len * 0.7, x, len); g.quadraticCurveTo(x + w * 0.2, len * 0.7, x + w, 0); g.fill();
+    }
+  }
+  // 7: scattered parchment leaves with faded lines of script
+  {
+    const x0 = cw * 7;
+    g.save(); g.beginPath(); g.rect(x0, 0, cw, H); g.clip();
+    for (let i = 0; i < 9; i++) {
+      const x = x0 + 40 + rnd() * (cw - 80), y = 50 + rnd() * (H - 100), a = rnd() * Math.PI;
+      g.save(); g.translate(x, y); g.rotate(a);
+      const v = 0.75 + rnd() * 0.25;
+      g.fillStyle = `rgba(${196 * v | 0},${176 * v | 0},${134 * v | 0},0.96)`; g.fillRect(-30, -40, 60, 80);
+      g.fillStyle = 'rgba(60,40,24,0.55)';
+      for (let l = 0; l < 9; l++) g.fillRect(-24, -32 + l * 8, 30 + rnd() * 18, 2);
+      g.restore();
+    }
+    g.restore();
+  }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
@@ -799,6 +845,37 @@ function ivyMaterial() {
   t.anisotropy = 4;
   _ivy = new THREE.MeshStandardMaterial({ map: t, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85, vertexColors: true });
   return _ivy;
+}
+// Grass card: ~80 tapering blades on a transparent ground, grey-green under the moon,
+// a few straw-pale dead stalks. Bottom of the canvas is the root (v = 0 with flipY).
+let _grassCard = null;
+function grassCardTexture() {
+  if (_grassCard) return _grassCard;
+  const W = 256, H = 160;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  let seed = 24680;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 90; i++) {
+    const x0 = 6 + rnd() * (W - 12), h = H * (0.3 + rnd() * 0.68), w = 2 + rnd() * 3.2, bend = (rnd() - 0.5) * 50;
+    const dry = rnd() < 0.12, pale = rnd() < 0.3;
+    const tip = dry ? [176, 160, 112] : pale ? [150, 172, 146] : [104, 136, 96];
+    const grd = g.createLinearGradient(0, H, 0, H - h);
+    grd.addColorStop(0, 'rgb(22,32,24)');
+    grd.addColorStop(0.55, `rgb(${tip[0] * 0.6 | 0},${tip[1] * 0.6 | 0},${tip[2] * 0.6 | 0})`);
+    grd.addColorStop(1, `rgb(${tip[0]},${tip[1]},${tip[2]})`);
+    g.fillStyle = grd;
+    g.beginPath();
+    g.moveTo(x0 - w, H);
+    g.quadraticCurveTo(x0 - w * 0.6 + bend * 0.3, H - h * 0.55, x0 + bend, H - h);
+    g.quadraticCurveTo(x0 + w * 0.6 + bend * 0.3, H - h * 0.55, x0 + w, H);
+    g.fill();
+  }
+  _grassCard = new THREE.CanvasTexture(c);
+  _grassCard.colorSpace = THREE.SRGBColorSpace;
+  _grassCard.anisotropy = 4;
+  return _grassCard;
 }
 function sootMaterial() {
   if (_soot) return _soot;

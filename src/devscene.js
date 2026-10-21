@@ -16,7 +16,7 @@ export async function devScene() {
   const lights = new LightPool(R.scene);
   const particles = new Particles(R.scene);
   const level = generateLevel(seed, floor);
-  const built = buildLevel(level, tex, lights);
+  const built = buildLevel(level, tex, lights, { quality: params.get('q') ?? 'high' });
   R.scene.add(built.group);
   const b = level.biome;
   R.scene.fog = new THREE.FogExp2(b.fog.color, b.fog.density);

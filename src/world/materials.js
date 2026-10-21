@@ -156,7 +156,7 @@ export function getBiomeMaterials(factory, biome) {
   m.floor = S(biome.floor, { vertexColors: true });
   m.floorAlt = S(biome.floorAlt, { vertexColors: true });
   m.ceiling = biome.ceilingMat ? S(biome.ceilingMat, { vertexColors: true, color: 0x8a8070 }) : null;
-  m.trim = S(biome.trimMat === 'gold' ? 'castleWall' : biome.trimMat, { vertexColors: true, color: biome.trimMat === 'gold' ? 0xd8d0c0 : 0xffffff });
+  m.trim = S(biome.trimMat === 'gold' ? 'castleWall' : biome.trimMat, { vertexColors: true, color: biome.trimTint ?? (biome.trimMat === 'gold' ? 0xd8d0c0 : 0xffffff) });
   m.water = makeWaterMaterial(factory, biome.id === 'sewers' ? 0x14200c : 0x0a1418);
   m.channelBed = S('dirt', { vertexColors: true, color: 0x606850 });
   return m;
