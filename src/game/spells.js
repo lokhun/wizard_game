@@ -89,6 +89,15 @@ export class SpellRuntime {
     this.tracerMats = new Map();
   }
 
+  // one of each projectile visual (core sprite, orb, tracer, every mesh), for
+  // shader prewarming: materials differ per element only by colour, so one each
+  // compiles them all
+  warmObjects() {
+    const out = [new THREE.Sprite(this._spriteMat('arcane')), new THREE.Mesh(this.tracerGeo, this._tracerMat('arcane'))];
+    for (const def of Object.values(this.meshCache)) out.push(new THREE.Mesh(def.geo, def.mat ?? this._orbMat('arcane')));
+    return out;
+  }
+
   _tracerMat(el) {
     if (this.tracerMats.has(el)) return this.tracerMats.get(el);
     const fx = fxOf(el);

@@ -24,9 +24,25 @@ const optional = import.meta.glob(['./audio/audio.js', './game/enemyModels.js', 
 // settings
 // ---------------------------------------------------------------------------
 const SETTINGS_KEY = 'arcane-ascent-settings';
-const defaults = { master: 0.8, music: 0.55, sfx: 0.85, sensitivity: 1, fov: 80, shake: 1, quality: 'high', invertY: false, name: '', lastClass: 'pyromancer', showFps: false };
+const defaults = { master: 0.8, music: 0.55, sfx: 0.85, sensitivity: 1, fov: 80, shake: 1, quality: 'high', invertY: false, name: '', lastClass: 'pyromancer', showFps: false, dynamicRes: true };
 let settings = { ...defaults };
-try { settings = { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; } catch { /* ignore */ }
+let saved = null;
+try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null'); settings = { ...defaults, ...(saved ?? {}) }; } catch { /* ignore */ }
+// First visit: start at a quality the GPU can carry. Integrated / mobile GPUs
+// begin on Medium, software renderers on Low; dynamic resolution handles the rest.
+if (!saved?.quality) settings.quality = guessQuality();
+function guessQuality() {
+  try {
+    const gl = document.createElement('canvas').getContext('webgl2');
+    if (!gl) return 'low';
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const name = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    if (/swiftshader|llvmpipe|software|basic render/i.test(name)) return 'low';
+    if (/intel|uhd|iris|mali|adreno|powervr|videocore/i.test(name) && !/arc/i.test(name)) return 'medium';
+    return 'high';
+  } catch { return 'high'; }
+}
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* ignore */ } };
 if (!settings.name) settings.name = ['Morvain', 'Elsabeth', 'Corvin', 'Ysolde', 'Thadric', 'Isolde', 'Varian', 'Maelis', 'Orin', 'Seraphine'][Math.floor(Math.random() * 10)];
 const q = new URLSearchParams(location.search);
@@ -39,6 +55,7 @@ if (q.get('quality')) settings.quality = q.get('quality');
 const canvas = document.getElementById('game');
 const renderer = new Renderer(canvas, settings.quality);
 renderer.baseFov = settings.fov;
+renderer.noRender = NORENDER;
 const input = new Input(canvas);
 input.invertY = settings.invertY;
 let audio = null;
@@ -443,6 +460,27 @@ const perf = { frames: 0, t: 0, warned: false, fps: 60 };
 const fpsEl = document.createElement('div');
 fpsEl.style.cssText = 'position:fixed;right:8px;top:4px;z-index:60;font:12px monospace;color:#9a8;pointer-events:none;text-shadow:0 1px 2px #000';
 document.body.appendChild(fpsEl);
+// Dynamic resolution: steps the render scale down while the frame rate stays
+// low and creeps back up after a long stretch at full speed. A level that just
+// failed is not retried for a while, so it never oscillates.
+const dyn = { low: 0, high: 0, holdUntil: 0, failedAt: 1.1 };
+function adaptResolution(fps) {
+  if (settings.dynamicRes === false) renderer.setResScale(1);
+  if (settings.dynamicRes === false || NORENDER || mode !== 'run' || !game || game.paused) { dyn.low = dyn.high = 0; return; }
+  const now = performance.now() / 1000, k = renderer.resScale;
+  if (fps < 48) { dyn.low++; dyn.high = 0; } else if (fps >= 57) { dyn.high++; dyn.low = 0; } else { dyn.low = dyn.high = 0; }
+  if (dyn.low >= 2 && k > 0.5) {
+    dyn.failedAt = k; dyn.holdUntil = now + 25;
+    renderer.setResScale(k - 0.1);
+    dyn.low = 0;
+  } else if (dyn.high >= 8 && k < 1) {
+    const next = Math.min(1, k + 0.1);
+    if (next < dyn.failedAt - 0.01 || now > dyn.holdUntil) renderer.setResScale(next);
+    dyn.high = 0;
+  }
+}
+
+let veil = false;
 function loop(now) {
   requestAnimationFrame(loop);
   let dt = (now - last) / 1000;
@@ -451,13 +489,22 @@ function loop(now) {
   if (perf.t >= 1) {
     perf.fps = perf.frames / perf.t;
     perf.frames = 0; perf.t = 0;
-    fpsEl.textContent = settings.showFps ? `${Math.round(perf.fps)} fps · ${renderer.lastStats?.calls ?? 0} calls` : '';
-    if (mode === 'run' && !perf.warned && perf.fps < 35 && game && game.time > 8 && settings.quality !== 'low' && !NORENDER) {
+    fpsEl.textContent = settings.showFps ? `${Math.round(perf.fps)} fps · ${renderer.lastStats?.calls ?? 0} calls${renderer.resScale < 1 ? ` · ${Math.round(renderer.resScale * 100)}% res` : ''}` : '';
+    adaptResolution(perf.fps);
+    if (mode === 'run' && !perf.warned && perf.fps < 35 && renderer.resScale <= 0.55 && game && game.time > 8 && settings.quality !== 'low' && !NORENDER) {
       perf.warned = true;
       ui.toast(`Running at ${Math.round(perf.fps)} fps — try a lower Graphics quality in Settings (Esc)`, '#ff9040');
     }
   }
   if (dt > 0.05) dt = 0.05;
+  // a floor's shaders are still compiling: hold everything behind the veil
+  // (rendering now would compile them synchronously, which is the freeze)
+  if (game?.loadingFloor && !game.menuMode) {
+    if (!veil) { veil = true; ui.loading(0.85, 'Preparing the realm…'); }
+    input.endFrame();
+    return;
+  }
+  if (veil) { veil = false; ui.hideLoading(); }
   if (game) {
     if (game.menuMode) {
       game.time += dt;

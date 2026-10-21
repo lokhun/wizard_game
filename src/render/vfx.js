@@ -542,6 +542,15 @@ export class VFX {
     this._warm[3].material = this._warm[3].userData.glow;
     for (const m of this._warm) { m.userData.fc = m.frustumCulled; m.visible = true; m.frustumCulled = false; if (m.material.uniforms?.uAlpha) m.material.uniforms.uAlpha.value = 0; else m.material.opacity = 0; }
     this._warmFrames = 3;
+    // ultimate ground sigils; a placeholder map from the start keeps the shader
+    // the same once a class texture is swapped in
+    const ph = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+    ph.needsUpdate = true;
+    this.sigilPool = this._pool(4, () => {
+      const m = new THREE.Mesh(this.planeGeo, new THREE.MeshBasicMaterial({ map: ph, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+      m.renderOrder = 2;
+      return m;
+    });
     // lightning bolts
     this.boltPool = this._pool(28, () => {
       const g = new THREE.BufferGeometry();
@@ -679,14 +688,9 @@ export class VFX {
   // A big rune circle flaring open on the ground (ultimates). map: the caster's
   // sigil texture, white on black; color: class colour.
   groundSigil(pos, map, color, radius = 2.6, life = 1.8) {
-    this.sigilPool ??= this._pool(4, () => {
-      const m = new THREE.Mesh(this.planeGeo, new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
-      m.renderOrder = 2;
-      return m;
-    });
     const m = this.sigilPool.get();
     const mat = m.material;
-    if (mat.map !== map) { mat.map = map; mat.needsUpdate = true; }
+    mat.map = map; // always mapped (placeholder at creation), so swapping never recompiles
     const col = new THREE.Color(color).multiplyScalar(1.6);
     m.position.set(pos.x, (pos.y ?? 0) + 0.05, pos.z);
     const spin = Math.random() < 0.5 ? -1 : 1, rot0 = Math.random() * Math.PI * 2;

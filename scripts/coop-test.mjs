@@ -16,7 +16,7 @@ const mk = async (tag) => {
 const host = await mk('host');
 await host.goto(`http://localhost:${PORT}/?${peerQ}`);
 await host.waitForFunction(() => document.querySelector('#bHost'), null, { timeout: 120000 });
-await host.click('#bHost');
+await host.$eval('#bHost', (b) => b.click()); // DOM click: actionability checks crawl on a loaded machine
 await host.waitForFunction(() => document.querySelector('#lobbyCode')?.textContent?.length >= 5, null, { timeout: 60000 });
 const code = await host.$eval('#lobbyCode', (e) => e.textContent);
 console.log('party code', code);
@@ -25,11 +25,11 @@ await client.goto(`http://localhost:${PORT}/?${peerQ}&join=${code}`);
 await client.waitForFunction(() => document.querySelector('#lobbyPlayers')?.children.length >= 2, null, { timeout: 120000 });
 console.log('client sees lobby:', await client.$eval('#lobbyPlayers', (e) => e.textContent.replace(/\s+/g, ' ')));
 // client picks a class then readies; host starts
-await client.click('.card[data-id="lightbinder"]');
-await client.click('#bGo');
+await client.$eval('.card[data-id="lightbinder"]', (b) => b.click());
+await client.$eval('#bGo', (b) => b.click());
 await host.waitForTimeout(1500);
 console.log('host lobby:', await host.$eval('#lobbyPlayers', (e) => e.textContent.replace(/\s+/g, ' ')));
-await host.click('#bGo');
+await host.$eval('#bGo', (b) => b.click());
 await host.waitForFunction(() => window.__game && !window.__game.menuMode && window.__game.remotes.size === 1, null, { timeout: 120000 });
 await client.waitForFunction(() => window.__game && !window.__game.menuMode && window.__game.remotes.size === 1, null, { timeout: 120000 });
 console.log('both in run');
@@ -39,6 +39,7 @@ await host.waitForTimeout(4000);
 console.log('host lastPs', await host.evaluate(() => JSON.stringify(window.__lastPs)), 'floor', await host.evaluate(() => window.__game.floorIndex), 'remotes', await host.evaluate(() => JSON.stringify([...window.__game.remotes.keys()])));
 console.log('client lastPs', await client.evaluate(() => JSON.stringify(window.__lastPs)), 'remotes', await client.evaluate(() => JSON.stringify([...window.__game.remotes.keys()])), 'me', await client.evaluate(() => window.__game.player.id));
 console.log('host rx', await host.evaluate(() => JSON.stringify(window.__net?.rx)), 'client rx', await client.evaluate(() => JSON.stringify(window.__net?.rx)));
+console.log('fast channel', 'host:', await host.evaluate(() => window.__net?.fast?.size ?? -1), 'client:', await client.evaluate(() => !!window.__net?.fastConn?.open));
 // host walks into a combat room; client follows via teleport
 await host.evaluate(() => { const g = window.__game; const r = g.level.rooms.find((x) => x.type === 'combat'); g.player.pos.set(r.cx, 0, r.cz); });
 await host.waitForTimeout(12000);

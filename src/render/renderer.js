@@ -99,7 +99,9 @@ export class Renderer {
       powerPreference: 'high-performance',
       stencil: false,
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality === 'low' ? 0.85 : quality === 'medium' ? 1 : quality === 'high' ? 1.25 : 1.5));
+    this.maxRatio = Math.min(window.devicePixelRatio, quality === 'low' ? 0.85 : quality === 'medium' ? 1 : quality === 'high' ? 1.25 : 1.5);
+    this.resScale = 1; // dynamic resolution (see setResScale)
+    this.renderer.setPixelRatio(this.maxRatio);
     // synchronous shader error checks dominate warm-up; only pay for them in test runs
     this.renderer.debug.checkShaderErrors = new URLSearchParams(location.search).has('test');
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -173,6 +175,16 @@ export class Renderer {
     this.bloom.threshold = Math.max(BLOOM_THRESHOLD, g.bloomThreshold ?? 0);
   }
 
+  // Dynamic resolution: render fewer pixels when the GPU can't keep up, so a
+  // weaker GPU gets a slightly softer image instead of a stuttering one.
+  setResScale(k) {
+    k = Math.max(0.5, Math.min(1, k));
+    if (Math.abs(k - this.resScale) < 0.01) return;
+    this.resScale = k;
+    this.renderer.setPixelRatio(this.maxRatio * k);
+    this.resize();
+  }
+
   resize() {
     const w = window.innerWidth, h = window.innerHeight;
     this.renderer.setSize(w, h, false);
@@ -184,6 +196,46 @@ export class Renderer {
     this.composer.setPixelRatio(pr);
     this.composer.setSize(w, h);
     this.grade.uniforms.uRes.value.set(w * pr, h * pr);
+  }
+
+  // Compile every material in both scenes exactly as a real frame would: into
+  // the composer's HDR target (linear output, tone mapping left to the output
+  // pass). Compiling against the canvas gives different program keys (sRGB +
+  // ACES baked in), so every "prewarmed" shader was compiled again mid-fight.
+  //
+  // With upload, it then draws one frame of everything with culling off:
+  // compile() doesn't upload geometry or textures, and three.js only does that
+  // the first time an object is actually drawn - so a room's walls, props and
+  // textures used to upload the moment you first looked into it.
+  //
+  // Compiling uses KHR_parallel_shader_compile where the browser has it: the
+  // driver builds every program at once on its own threads while the page
+  // stays responsive (behind the loading veil), and the promise resolves once
+  // they're all ready. Without the extension it still works, just serially.
+  async compileScenes({ upload = false, timeout = 20000 } = {}) {
+    const r = this.renderer;
+    const prev = r.getRenderTarget();
+    r.setRenderTarget(this.composer.readBuffer);
+    let ready = null;
+    try {
+      if (r.extensions.has('KHR_parallel_shader_compile')) ready = Promise.all([r.compileAsync(this.scene, this.camera), r.compileAsync(this.viewScene, this.viewCamera)]);
+      else { r.compile(this.scene, this.camera); r.compile(this.viewScene, this.viewCamera); }
+    } finally { r.setRenderTarget(prev); }
+    // never hang a load on a driver that doesn't report back
+    if (ready) await Promise.race([ready, new Promise((res) => setTimeout(res, timeout))]);
+    if (!upload) return;
+    r.setRenderTarget(this.composer.readBuffer);
+    const culled = [];
+    try {
+      this.scene.traverse((o) => { if (o.frustumCulled && (o.isMesh || o.isPoints || o.isSprite || o.isLine)) { o.frustumCulled = false; culled.push(o); } });
+      const auto = r.autoClear;
+      r.autoClear = true;
+      r.render(this.scene, this.camera);
+      r.autoClear = auto;
+    } finally {
+      for (const o of culled) o.frustumCulled = true;
+      r.setRenderTarget(prev);
+    }
   }
 
   render(time) {

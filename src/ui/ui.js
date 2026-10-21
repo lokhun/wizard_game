@@ -76,6 +76,7 @@ export class UI {
   hideLoading() {
     const el = document.getElementById('loading');
     if (!el) return;
+    el.id = ''; // a loading() during the fade starts a fresh veil instead of reviving this one
     el.style.opacity = 0;
     setTimeout(() => el.remove(), 900);
   }
@@ -255,6 +256,7 @@ export class UI {
         <div class="row">Screen shake <input type="range" min="0" max="1.5" step="0.05" id="sShake" value="${settings.shake}"></div>
         <div class="row">Graphics quality <select id="sQual"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="ultra">Ultra (AO)</option></select></div>
         <div class="row">Invert mouse Y <input type="checkbox" id="sInv" ${settings.invertY ? 'checked' : ''}></div>
+        <div class="row">Dynamic resolution <input type="checkbox" id="sDyn" ${settings.dynamicRes !== false ? 'checked' : ''}></div>
         <div class="row">Show FPS <input type="checkbox" id="sFps" ${settings.showFps ? 'checked' : ''}></div>
         <div style="color:var(--text-dim);font-size:12px">Quality changes apply on the next page load.</div>
         <button class="btn" id="bClose">Done</button>
@@ -262,7 +264,7 @@ export class UI {
     m.querySelector('#sQual').value = settings.quality;
     const bind = (id, key, num = true) => m.querySelector(id).addEventListener('input', (e) => { settings[key] = e.target.type === 'checkbox' ? e.target.checked : num ? +e.target.value : e.target.value; onChange(settings); });
     bind('#sMaster', 'master'); bind('#sMusic', 'music'); bind('#sSfx', 'sfx'); bind('#sSens', 'sensitivity'); bind('#sFov', 'fov'); bind('#sShake', 'shake');
-    bind('#sQual', 'quality', false); bind('#sInv', 'invertY', false); bind('#sFps', 'showFps', false);
+    bind('#sQual', 'quality', false); bind('#sInv', 'invertY', false); bind('#sFps', 'showFps', false); bind('#sDyn', 'dynamicRes', false);
     m.querySelector('#sQual').addEventListener('change', (e) => { settings.quality = e.target.value; onChange(settings); });
     m.querySelector('#bClose').onclick = () => { this._closeModal(m); onBack?.(); };
   }

@@ -29,10 +29,9 @@ export function makeChest(game, p) {
   lid.position.set(0, 0, 0);
   hinge.add(lid);
   root.add(hinge);
-  // glow from inside
-  const glow = new THREE.PointLight(0xffb040, 0, 4, 1.5);
-  glow.position.set(0, 0.8, 0);
-  root.add(glow);
+  // glow from inside: borrowed from the light pool (adding a light of its own
+  // would change the light count and recompile every shader in the scene)
+  const glowAt = new THREE.Vector3(p.x, y + 0.8, p.z);
   game.scene.add(root);
   let open = 0, opening = false;
   const it = {
@@ -46,7 +45,7 @@ export function makeChest(game, p) {
     update(dt, t) {
       if (opening) open = Math.min(1, open + dt * 2.5);
       hinge.rotation.x = -open * 1.9;
-      glow.intensity = open * (4 + Math.sin(t * 8) * 0.5);
+      if (open > 0.01) game.lights.request(glowAt, 0xffb040, open * (4 + Math.sin(t * 8) * 0.5), 4);
       if (!opening && Math.random() < dt * 3) game.vfx.P.glow({ x: p.x + rand(-0.5, 0.5), y: y + 0.7, z: p.z + rand(-0.3, 0.3), vy: 0.4, r: 2.5, g: 1.8, b: 0.5, life: 1, size: 0.05, sprite: SPR.STAR });
     },
     dispose() { game.scene.remove(root); },
@@ -85,9 +84,7 @@ export function makePedestal(game, pos, minRarity = 0) {
   book.add(pages);
   book.position.y = 1.75;
   root.add(book);
-  const light = new THREE.PointLight(0xffd080, 0, 6, 1.5);
-  light.position.y = 1.9;
-  root.add(light);
+  const lightAt = pos.clone().add(new THREE.Vector3(0, 1.9, 0)); // pooled light, see makeChest
   game.scene.add(root);
   root.scale.setScalar(0.01);
   let appear = 0;
@@ -105,7 +102,7 @@ export function makePedestal(game, pos, minRarity = 0) {
       ring.rotation.set(Math.PI / 2 + Math.sin(t) * 0.3, t * 0.8, 0);
       ring2.rotation.set(Math.PI / 2 - Math.sin(t * 1.3) * 0.4, -t, 0.5);
       ringMat.opacity = used ? 0.15 : 0.9;
-      light.intensity = used ? 0.5 : 5 + Math.sin(t * 3);
+      game.lights.request(lightAt, 0xffd080, (used ? 0.5 : 5 + Math.sin(t * 3)) * appear, 6);
       if (!used && Math.random() < dt * 12) {
         const a = Math.random() * Math.PI * 2;
         game.vfx.P.glow({ x: pos.x + Math.cos(a) * 0.6, y: pos.y + 1.3, z: pos.z + Math.sin(a) * 0.6, vx: -Math.cos(a) * 0.3, vy: 0.8, vz: -Math.sin(a) * 0.3, r: 3, g: 2.4, b: 1, life: 1, size: 0.06, sprite: SPR.STAR });
@@ -150,9 +147,7 @@ export function makePortal(game, pos) {
   const arch = new THREE.Mesh(new THREE.TorusGeometry(1.75, 0.18, 8, 32), new THREE.MeshStandardMaterial({ color: 0x40384a, roughness: 0.6, emissive: 0x401060, emissiveIntensity: 0.8 }));
   arch.position.y = 2;
   root.add(arch);
-  const light = new THREE.PointLight(0xa060ff, 12, 12, 1.5);
-  light.position.y = 2;
-  root.add(light);
+  const lightAt = pos.clone().add(new THREE.Vector3(0, 2, 0)); // pooled light, see makeChest
   game.scene.add(root);
   const snd = game.audio?.loop('loop_portal', { pos });
   game.vfx.explosion(pos.clone().add(new THREE.Vector3(0, 2, 0)), 'arcane', 4);
@@ -163,7 +158,7 @@ export function makePortal(game, pos) {
       const cam = game.renderer.camera.position;
       disc.lookAt(cam.x, pos.y + 2, cam.z);
       arch.lookAt(cam.x, pos.y + 2, cam.z);
-      light.intensity = 10 + Math.sin(t * 4) * 3;
+      game.lights.request(lightAt, 0xa060ff, 10 + Math.sin(t * 4) * 3, 12);
       if (Math.random() < dt * 30) {
         const a = Math.random() * Math.PI * 2;
         game.vfx.P.glow({ x: pos.x + Math.cos(a) * 1.7, y: pos.y + 2 + Math.sin(a) * 1.7, z: pos.z, vx: -Math.cos(a) * 1.5, vy: -Math.sin(a) * 1.5, r: 1.6, g: 0.8, b: 3, life: 0.9, size: 0.08, sprite: SPR.SPARK });

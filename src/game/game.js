@@ -17,6 +17,7 @@ import { getViewModel, preloadEnemies, getEnemyModel, getAvatar, setEnemyRim } f
 import { Critters } from '../world/critters.js';
 import { rollTomes, rollRelics, RARITY, TOMES } from './upgrades.js';
 import { makeChest, makePedestal, makePortal } from './interactables.js';
+import { warmEruptionMeshes } from './caster.js';
 import { CLASS_META } from './classMeta.js';
 import { sigilTexture } from './models/wizard/sigil.js';
 import { ENEMY_DEFS, BOSS_DEFS } from './enemyDefs.js';
@@ -241,39 +242,80 @@ export class Game {
     this._prewarm(level);
   }
 
-  // Compile shaders for everything that will appear on this floor (enemy
-  // models, projectile meshes, effect pools) so first appearances don't hitch.
-  _prewarm(level) {
-    const tmp = [];
+  // Compile shaders for everything that can appear on this floor (enemy and
+  // summon models, projectile meshes, effect pools, drops, reward pedestals,
+  // the portal, ground eruptions) so nothing compiles mid-fight. A program
+  // compile is a visible freeze, worst on Windows where ANGLE translates to D3D.
+  //
+  // The warm objects are then kept (out of the scene) until the next floor's
+  // prewarm: three.js destroys a program as soon as no live material uses it,
+  // so disposing them would throw the work away - and so would the last
+  // skeleton of a wave being cleaned up, making the next wave recompile.
+  //
+  // Async: the floor waits behind the loading veil (loadingFloor) until it's
+  // done, and the main loop neither updates nor renders meanwhile - a render
+  // now would force the very compiles this is spreading out.
+  async _prewarm(level) {
+    const token = (this._warmToken = (this._warmToken ?? 0) + 1);
+    this.loadingFloor = true;
+    const scene = this.scene;
+    const kids = new Set(scene.children);
+    const undo = [], extra = [], hold = [];
+    let added = [];
     try {
       const b = level.biome;
-      const types = [...new Set([...b.enemies, ...b.elites, b.boss].map((t) => ENEMY_DEFS[t]?.model ?? BOSS_DEFS[t]?.model ?? t))];
+      const types = new Set([...b.enemies, ...(b.elites ?? []), b.boss, 'skeletonMinion', 'spiritWolf']);
+      const models = [...new Set([...types].map((t) => ENEMY_DEFS[t]?.model ?? BOSS_DEFS[t]?.model ?? t))];
       const cam = this.renderer.camera;
       const front = cam.position.clone().add(new THREE.Vector3(0, 0, -3).applyQuaternion(cam.quaternion));
-      for (const t of types) {
+      const place = (o) => { o.position.copy(front); scene.add(o); extra.push(o); return o; };
+      for (const t of models) {
         const m = getEnemyModelSafe(t, this);
         if (!m) continue;
-        m.root.position.copy(front);
-        this.scene.add(m.root);
-        tmp.push(() => { this.scene.remove(m.root); m.dispose?.(); });
+        if (this.shadowsOn) m.root.traverse((o) => { if (o.isMesh && !o.material?.transparent) o.castShadow = true; });
+        place(m.root);
+        hold.push(() => m.dispose?.());
       }
-      for (const key of Object.keys(this.spells.meshCache)) {
-        const def = this.spells.meshCache[key];
-        const mesh = new THREE.Mesh(def.geo, def.mat ?? this.spells._orbMat('arcane'));
-        mesh.position.copy(front);
-        this.scene.add(mesh);
-        tmp.push(() => this.scene.remove(mesh));
-      }
-      for (const pool of [this.vfx.ringPool, this.vfx.telePool, this.vfx.beamPool, this.vfx.shellPool, this.vfx.decalPool, this.vfx.boltPool]) {
-        const it = pool.items[0];
-        if (it.visible) continue;
+      for (const o of this.spells.warmObjects()) place(o);
+      for (const o of warmEruptionMeshes()) place(o);
+      for (const t of ['gold', 'health']) place(makeDropMesh(t));
+      // rewards build themselves into the scene (swept up below); mute their
+      // arrival bursts and the portal hum while they're only being compiled
+      const vfxExplosion = this.vfx.explosion, vfxDecal = this.vfx.decal, audio = this.audio;
+      this.vfx.explosion = () => {}; this.vfx.decal = () => ({ visible: false }); this.audio = null;
+      try {
+        const ped = makePedestal(this, front.clone(), 0);
+        const portal = makePortal(this, front.clone());
+        hold.push(() => { ped.dispose?.(); portal.dispose?.(); });
+      } finally { this.vfx.explosion = vfxExplosion; this.vfx.decal = vfxDecal; this.audio = audio; }
+      for (const pool of [this.vfx.ringPool, this.vfx.telePool, this.vfx.beamPool, this.vfx.shellPool, this.vfx.slashPool, this.vfx.funnelPool, this.vfx.conePool, this.vfx.boltPool, this.vfx.sigilPool]) {
+        const it = pool?.items[0];
+        if (!it || it.visible) continue;
         it.visible = true;
-        tmp.push(() => { it.visible = false; });
+        undo.push(() => { it.visible = false; });
       }
-      this.renderer.renderer.compile(this.scene, cam);
-      this.renderer.renderer.compile(this.renderer.viewScene, this.renderer.viewCamera);
+      // decals swap between a lit and a glowing material
+      const dec = this.vfx.decalPool.items;
+      for (const [i, key] of [[0, 'lit'], [1, 'glow']]) {
+        const d = dec[i];
+        if (d.visible || !d.userData[key]) continue;
+        const was = d.material;
+        d.material = d.userData[key]; d.visible = true;
+        undo.push(() => { d.material = was; d.visible = false; });
+      }
+      // exactly what the prewarm put in the scene, fixed now: anything spawned
+      // while the compile runs is left alone
+      added = scene.children.filter((o) => !kids.has(o));
+      await this.renderer.compileScenes({ upload: !this.renderer.noRender });
     } catch (e) { console.warn('prewarm failed', e); }
-    for (const f of tmp) f();
+    for (const f of undo) { try { f(); } catch { /* already gone */ } }
+    for (const o of added) scene.remove(o);
+    for (const o of extra) scene.remove(o);
+    // release the previous floor's set only now, so shared programs never drop to zero users
+    for (const f of this._warmHold ?? []) { try { f(); } catch { /* already gone */ } }
+    this._warmHold = hold;
+    this._prewarmPrograms = this.renderer.renderer.info.programs.length; // tests compare against this
+    if (token === this._warmToken) this.loadingFloor = false;
   }
 
   _tutorialTips() {

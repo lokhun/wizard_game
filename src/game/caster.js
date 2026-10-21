@@ -37,6 +37,12 @@ function ensureGeo() {
   tentacleMat = new THREE.MeshStandardMaterial({ color: 0x2a1030, roughness: 0.35, metalness: 0.1, emissive: 0x3a0870, emissiveIntensity: 0.25 });
 }
 
+// one mesh per eruption material, for shader prewarming at floor load
+export function warmEruptionMeshes() {
+  ensureGeo();
+  return [new THREE.Mesh(spikeGeo, spikeMat), new THREE.Mesh(thornGeo, thornMat), new THREE.Mesh(tentacleGeo, tentacleMat)];
+}
+
 export function makeCtx(game, caster, o) {
   ensureGeo();
   const local = !!o.local;
