@@ -128,6 +128,7 @@ export function handleGameMessage(game, msg, from) {
     case 'victory': if (!game.isHost) game.victory(); break;
     case 'defeat': if (!game.isHost) game.defeat(); break;
     case 'ping': game.addPing?.(msg); break;
+    case 'enc': game.encounters?.onNet(msg, from); break;
     default: break;
   }
 }

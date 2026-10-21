@@ -437,6 +437,7 @@ export class SpellRuntime {
       }
       if (wallHit) {
         if (p.onWall) p.onWall(p, p.pos);
+        g.encounters?.wallHit(p); // secret walls crack under spells
         if (!p.aoe) g.vfx.impact(p.pos, p.el, 0.8);
         g.audio?.play('impact_' + soundEl(p.el), { pos: p.pos, volume: 0.6 });
         this.kill(p, p.pos);

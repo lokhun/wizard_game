@@ -35,6 +35,17 @@ How the research in `RESEARCH.md` turned into the game.
 - **Trial rooms:** an optional gilded side door (sigil ⧗) on some floors.
   - Inside: a denser fight with more champions and a 45 s clock (+3 s per realm).
   - Clear it in time for an Epic-or-better tome and triple gold; if the clock runs out, you still fight your way out for an ordinary reward.
+- **Encounters** (`game/encounters.js`) keep floors from repeating. The level generator picks them from the floor seed, so every peer agrees; the host runs them.
+  - *Room modifiers* on up to 1 fight on the first floor and 2 later, never the first fight. Each has its own door sigil, shows from the doorway and is announced on entry:
+    - **Darkness** (◐): the torches gutter, then go out when the doors lock; your own light grows. Rare tome.
+    - **Blood Moon** (◉): red torches and grade; foes hit 35% harder but drop 2.5× gold.
+    - **Haunted** (☽): specters seep out of the walls through the fight and drift through stone. Rare tome.
+    - **Arcane Surge** (✦): every cooldown runs 60% faster for you and 50% faster for them.
+    - **Powder Store** (✹): 7–10 kegs on the floor, fuses fizzing.
+  - *Champions* hold about half the elite chambers (sigil ♛): a named elite (Gorvath the Unbroken…) with an affix and a trait (Warcaller, Thunderous, Juggernaut, Venomous), +50% health and a health bar. Guaranteed Epic tome, a relic chest and double gold.
+  - *Mimics*: about a third of treasure chests. Tells: no glitter, the lid lifts a crack every few seconds, two fang tips hang below the seam, the odd drop of drool. Opening it, standing over it or hitting it (×1.5 unaware) wakes it; the vault locks. Killing it frees its hoard (a relic chest), a Rare tome and a health orb.
+  - *Bargains*: most floors have a third side room, a **Blood Altar** (♰: pay 35% health for an Epic tome, take a curse — the next 2 fights each gain an elite — for a relic now, or bleed for gold) or a **Gambler** (⚄: wager gold for a tome of random rarity, price rising each roll, or double-or-nothing).
+  - *Secret rooms* on ~60% of floors: a vault in an empty block, joined to a room by a passage sealed with a cracked wall. Tells: glowing cracks, a whistling draught, dust drifting out and the warm light of the brazier behind. Any spell or blast that hits it brings it down onto a relic chest.
 - **After a combat room is cleared:**
   - A tome pedestal appears. Each player takes 1 of 3 Arcane Tomes; rarity scales the numbers ×1 / 1.3 / 1.6 / 2.0, and players get 1 reroll per floor.
   - Shared gold drops.

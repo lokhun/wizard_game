@@ -465,7 +465,7 @@ export class UI {
     g.drawImage(layer.c, 0, 0, layer.c.width * scale / layer.s, layer.c.height * scale / layer.s);
     for (const r of L.rooms) {
       if (!layer.known.has(r.id)) continue;
-      const icon = r.type === ROOM.BOSS ? '☠' : r.type === ROOM.SHOP ? '⚖' : r.type === ROOM.SHRINE ? '✚' : r.type === ROOM.TREASURE ? '♦' : r.type === ROOM.ELITE ? '★' : r.type === ROOM.TRIAL ? '⧗' : '';
+      const icon = r.type === ROOM.BOSS ? '☠' : r.type === ROOM.SHOP ? '⚖' : r.type === ROOM.SHRINE ? '✚' : r.type === ROOM.TREASURE ? '♦' : r.type === ROOM.ELITE ? '★' : r.type === ROOM.TRIAL ? '⧗' : r.type === ROOM.ALTAR ? '♰' : r.type === ROOM.GAMBLER ? '⚄' : r.type === ROOM.SECRET ? '♦' : '';
       if (!icon) continue;
       g.save();
       g.translate((r.x + r.w / 2) * T * scale, (r.y + r.h / 2) * T * scale);
