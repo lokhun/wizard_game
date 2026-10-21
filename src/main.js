@@ -85,7 +85,7 @@ async function boot() {
   window.__game = game;
   // warm up the procedural textures used everywhere
   await frame();
-  for (const s of ['dungeonWall', 'flagstone', 'wood', 'iron', 'sewerWall', 'cobble']) { game.texFactory.get(s, s === 'iron' ? 512 : 1024, 1); }
+  for (const s of ['dungeonWall', 'flagstone', 'wood', 'iron', 'sewerWall', 'cobble']) { game.texFactory.get(s, s === 'iron' ? 512 : 1024, 1, 'floor'); } // (floor-scoped: a later realm frees what it doesn't use)
   ui.loading(0.7, 'Opening the sewers');
   await frame();
   startBackdrop();
