@@ -43,6 +43,7 @@ export class Game {
     this.texFactory = new TextureFactory(renderer.renderer);
     const q = settings.quality ?? 'high';
     this.lights = new LightPool(this.scene, q === 'low' ? { torchCount: 5, fxCount: 4 } : q === 'medium' ? { torchCount: 7, fxCount: 5 } : q === 'high' ? { torchCount: 9, fxCount: 6 } : { torchCount: 12, fxCount: 8 });
+    this.lights.settings = settings; // "Reduce flashing" softens flashes
     this.particles = new Particles(this.scene);
     this.vfx = new VFX(this.scene, renderer.camera, this.particles, this.lights);
     this.spells = new SpellRuntime(this);

@@ -170,7 +170,11 @@ export class Renderer {
     }
   }
 
+  // "Reduce flashing" (settings): bloom at a bit over half strength
+  setCalm(b) { this.calm = !!b; if (this._grade) this.setGrade(this._grade); }
+
   setGrade(g) {
+    this._grade = g;
     const u = this.grade.uniforms;
     if (g.lift) u.uLift.value.set(...g.lift);
     if (g.gain) u.uGain.value.set(...g.gain);
@@ -179,7 +183,7 @@ export class Renderer {
     if (g.exposure !== undefined) this.renderer.toneMappingExposure = g.exposure;
     // biome grades author bloom around 0.6-0.85 for the old, softer setup;
     // scale into the readable range (~0.36-0.5) rather than editing biomes
-    if (g.bloom !== undefined) this.bloom.strength = g.bloom * BLOOM_SCALE;
+    if (g.bloom !== undefined) this.bloom.strength = g.bloom * BLOOM_SCALE * (this.calm ? 0.55 : 1);
     this.bloom.threshold = Math.max(BLOOM_THRESHOLD, g.bloomThreshold ?? 0);
   }
 

@@ -543,7 +543,10 @@ export class LocalPlayer {
 
     // jump
     if (this.grounded) this.jumpsLeft = st.doubleJump ? 2 : 1;
-    if (allowMove && input.was('jump') && this.jumpsLeft > 0) {
+    // a jump pressed just before landing still happens on touchdown
+    this.jumpBuf = allowMove && input.was('jump') ? 0.15 : Math.max(0, (this.jumpBuf ?? 0) - dt);
+    if (this.jumpBuf > 0 && this.jumpsLeft > 0) {
+      this.jumpBuf = 0;
       this.vel.y = 7.6 * st.jumpPower;
       this.grounded = false;
       this.jumpsLeft--;

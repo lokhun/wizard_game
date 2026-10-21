@@ -25,7 +25,7 @@ const optional = import.meta.glob(['./audio/audio.js', './game/enemyModels.js', 
 // settings
 // ---------------------------------------------------------------------------
 const SETTINGS_KEY = 'arcane-ascent-settings';
-const defaults = { master: 0.8, music: 0.55, sfx: 0.85, sensitivity: 1, fov: 80, shake: 1, quality: 'high', invertY: false, name: '', lastClass: 'pyromancer', showFps: false, dynamicRes: true };
+const defaults = { master: 0.8, music: 0.55, sfx: 0.85, sensitivity: 1, fov: 80, shake: 1, quality: 'high', invertY: false, name: '', lastClass: 'pyromancer', showFps: false, dynamicRes: true, calm: false };
 let settings = { ...defaults };
 let saved = null;
 try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null'); settings = { ...defaults, ...(saved ?? {}) }; } catch { /* ignore */ }
@@ -110,6 +110,7 @@ function applyVolumes() {
   audio?.setVolumes({ master: settings.master, sfx: settings.sfx, music: settings.music, ambience: settings.music * 0.9 + 0.1 });
   input.invertY = settings.invertY;
   renderer.baseFov = settings.fov;
+  renderer.setCalm(settings.calm);
 }
 
 // first user gesture starts audio

@@ -57,6 +57,7 @@ export class LightPool {
 
   // a timed flash (explosions, impacts)
   flash(pos, color, intensity, range = 8, life = 0.25) {
+    if (this.settings?.calm) intensity *= 0.45; // "Reduce flashing"
     this.flashes.push({ x: pos.x, y: pos.y, z: pos.z, color: new THREE.Color(color), intensity, range, life, t: 0 });
   }
 
