@@ -35,7 +35,11 @@ A first-person, co-op wizard roguelike for the browser. Fight your way up from t
   - Barrels and crates can be destroyed.
   - Champion enemies carry affixes: hasted, vampiric, volatile or shielded.
   - Boss intro cinematics, and fallen co-op players spectate their teammates.
-  - Winning unlocks **Ascension** difficulty levels.
+- **Reasons to come back:**
+  - A **run summary** on every victory and defeat: time, realm, kills, damage, your biggest hit, the build you bound, what killed you and a chronicle of every fight. In co-op, every wizard gets a column.
+  - A persistent **Codex**: 30 feats with in-run toasts, per-wizard records (wins, best realm, fastest victory, highest heat), a bestiary and lifetime totals.
+  - **Pacts of Ascension**, unlocked by your first victory: 11 difficulty modifiers (tougher, faster or more numerous foes, enraged bosses, scant healing, no rerolls...) that add heat, recorded per wizard.
+  - The **Daily Rite**: one seed, one wizard and one set of pacts for everyone each day, with a best result and a streak.
 
 ## Controls
 
@@ -162,6 +166,7 @@ src/
   audio/               procedural Web Audio sound effects and generative music
   net/                 PeerJS transport + in-run message handling
   ui/                  DOM HUD, menus, icons, styles
+  meta/                run tracking (game.events), profile, feats, pacts, daily rite, run summary, codex
 docs/RESEARCH.md       design research that shaped the game
 tools/                 model viewers (npm run dev, then open /tools/models.html or /tools/wizards.html)
 ```
@@ -174,5 +179,6 @@ The automated tests use these URL parameters:
 - `&floor=2`: start on a later realm.
 - `&quality=low|medium|high|ultra`: set graphics quality.
 - `&test=1`: expose `window.__game`, `window.__input` and `window.__sim(seconds)`, which advances the game without rendering.
+- `?screen=summary&demo=win|loss|coop`, `?screen=codex&tab=0-3`, `?screen=pacts|daily|select`: open a meta screen directly; add `&profile=demo` to fill the profile with sample progress (test browsers only: it overwrites the stored profile). With `test=1`, `window.__screen(name, arg)` switches between them.
 
 `scripts/coop-test.mjs` runs a two-browser co-op session against a local PeerJS server (`npx peerjs --port 9000 --path /wizard --host 127.0.0.1`).

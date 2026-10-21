@@ -159,6 +159,7 @@ export class LocalPlayer {
     g.vfx.addShake(Math.min(0.5, 0.15 + dmg / this.maxHp));
     g.audio?.play('hurt', { volume: 0.8 });
     g.ui?.damageDirection(fromPos, this);
+    g.events?.emit('hurt', dmg, el, opts, fromPos);
     if (this.stats.thorns && opts.attacker) g.hitActor(opts.attacker, { dmg: this.stats.thorns, el: 'physical', src: this.id }, opts.attacker.pos);
     if (this.hp <= 0) this._goDown();
     this.recomputeStats();

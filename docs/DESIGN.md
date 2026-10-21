@@ -44,6 +44,13 @@ How the research in `RESEARCH.md` turned into the game.
 - **The last kill** of a fight plays in half a second of eased slow motion with a warm wash of light.
 - **Pacing:** a bot with perfect aim (that never dodges) clears rooms in 10–25 s and bosses in about 40–80 s. Human players should land at roughly 30–60 s per room and 2–4 min per boss.
 
+## Meta progression
+- **The run summary** is the end of every run: animated count-ups, "new record" stamps against the profile, the build, a per-room chronicle (type, time, damage taken) and what killed you. Each machine gathers its own player's numbers and sends them to the party when the run ends (`rsum`), so co-op shows a column per wizard.
+- **The profile** is one versioned localStorage blob (`src/meta/profile.js`), sanitised on load and kept in memory first, so blocked or full storage only costs persistence. The old run totals are folded in once.
+- **Feats** (30) listen to the run tracker, which digests the game's event bus (`game.events`: hit, kill, hurt, roomLock, roomClear, bossDown, floor, tome, relic, end...). Combat code only emits; nothing in it knows about feats. God-mode runs record nothing.
+- **Pacts of Ascension** unlock after the first win. Each pact sets one knob on `game.difficulty` (enemy health/damage/speed/count, champion rate and affixes, room-clear healing, shop prices, boss phase thresholds, rerolls, health orbs); enemy definitions are never touched. The host's pacts travel in the `start` message. Highest heat cleared is kept per wizard.
+- **The Daily Rite** derives seed, wizard and pacts (heat 3-5) from the UTC date, so everyone gets the same rite with nothing to fetch. It records a best result and a streak of consecutive days.
+
 ## Scaling
 - **Enemy health per floor:** ×1 / 1.65 / 2.5 / 3.5 / 4.8. This applies to regular and elite enemies only.
 - **Boss health** is tuned per boss in `BOSS_DEFS` (5,760 / 9,360 / 17,500 / 23,000 / 36,000; tomes stack up late, so the last three are beefier) and does not get the floor multiplier.
