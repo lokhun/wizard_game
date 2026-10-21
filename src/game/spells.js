@@ -157,6 +157,8 @@ export class SpellRuntime {
     cres.rotateZ(-Math.PI * 0.45);
     cres.rotateX(Math.PI / 2);
     cres.rotateY(-Math.PI / 2);
+    // canted, so from behind it reads as a curved blade rather than a flat bar
+    cres.rotateZ(0.55);
     // (fades hard near the lens: leaving the hand it was a white bar across the view)
     M.crescent = { geo: cres, mat: nearFade(new THREE.MeshBasicMaterial({ color: new THREE.Color(0.8, 1.2, 1.15), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }), new THREE.Vector4(0.8, 7.0, 0.12, 0.45)) };
     const orb = new THREE.SphereGeometry(0.25, 16, 12);

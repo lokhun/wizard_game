@@ -1505,7 +1505,7 @@ export const CLASSES = {
               // a black maw ringed in violet: dark enough that enemies stay visible against it
               if (emitN(z, 'eC', 24, dt)) {
                 ctx.vfx.P.solid({ x: z.pos.x, y: z.pos.y, z: z.pos.z, r: 0, g: 0, b: 0, a: 0.85, life: 0.15, size: 1.6, sprite: SPR.GLOW });
-                ctx.vfx.P.glow({ x: z.pos.x, y: z.pos.y, z: z.pos.z, r: 0.3, g: 0.05, b: 0.55, life: 0.15, size: 2.2 + Math.sin(z.age * 30) * 0.2, sprite: SPR.RING, rot: -z.age * 5 });
+                ctx.vfx.P.glow({ x: z.pos.x, y: z.pos.y, z: z.pos.z, r: 0.2, g: 0.03, b: 0.38, life: 0.15, size: 2.4 + Math.sin(z.age * 30) * 0.2, sprite: SPR.RING, rot: -z.age * 5 });
               }
               // a whirlpool of violet light round the maw
               const nd = emitN(z, 'eD', 110, dt);
@@ -2263,9 +2263,19 @@ export const CLASSES = {
           // a wall of grey dust shoved forward (dust reads on bright floors too)
           // (seen from its own apex the gust volume is a grey ball in your face:
           // the caster gets a faint one pushed further out, the streaks carry it)
-          ctx.vfx.cone({ element: 'wind', hot: [0.55, 0.7, 0.68], mid: [0.4, 0.52, 0.5], cool: [0.1, 0.14, 0.14], speed: 7, alpha: ctx.local ? 0.4 : 1.2,
+          ctx.vfx.cone({ element: 'wind', hot: [0.55, 0.7, 0.68], mid: [0.4, 0.52, 0.5], cool: [0.1, 0.14, 0.14], speed: 7, alpha: ctx.local ? 0.25 : 0.8,
             life: 0.45, origin: o.clone().addScaledVector(d, ctx.local ? 1.8 : 0.8), dir: d, len: ctx.aoe(9) * 0.9, radius: Math.tan(0.6) * ctx.aoe(9) * 0.75 });
+          // the streaks: for partners a spray down the cone; for the caster a
+          // tunnel of streaks bursting out round the edge of the view (seen
+          // straight down their flight they bunched into a ball of fluff)
+          const su = tmp.set(-d.z, 0, d.x).normalize(), sw = tmp2.crossVectors(su, d).normalize();
           for (let i = 0; i < 46; i++) {
+            if (ctx.local) {
+              const a = Math.random() * Math.PI * 2, r = rand(0.7, 1.6), f0 = rand(1.2, 3.2);
+              const ox = su.x * Math.cos(a) * r + sw.x * Math.sin(a) * r, oy = su.y * Math.cos(a) * r + sw.y * Math.sin(a) * r, oz = su.z * Math.cos(a) * r + sw.z * Math.sin(a) * r;
+              ctx.vfx.P.glow({ x: o.x + d.x * f0 + ox, y: o.y + d.y * f0 + oy, z: o.z + d.z * f0 + oz, vx: d.x * 22 + ox * 6, vy: d.y * 22 + oy * 6, vz: d.z * 22 + oz * 6, r: 0.55, g: 0.72, b: 0.72, life: 0.4, size: 0.16, sprite: SPR.WISP, stretch: 0.05, drag: 3 });
+              continue;
+            }
             const sx = d.x + rand(-0.4, 0.4), sy = d.y + rand(-0.2, 0.3), sz = d.z + rand(-0.4, 0.4);
             const f0 = rand(0.8, 2.5);
             ctx.vfx.P.glow({ x: o.x + d.x * f0, y: o.y + d.y * f0, z: o.z + d.z * f0, vx: sx * 24, vy: sy * 24, vz: sz * 24, r: 0.65, g: 0.85, b: 0.85, life: 0.45, size: 0.22, sprite: SPR.WISP, stretch: 0.035, drag: 3 });
