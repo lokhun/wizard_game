@@ -853,7 +853,12 @@ export class ActorManager {
     }
     let moveDir = null;
     if (dist > wantDist) {
-      const los = dist < 25 && g.collision.los(a.pos.x, a.pos.y + 0.8, a.pos.z, tp.x, tp.y + 0.8, tp.z);
+      // line of sight to the target, re-checked a few times a second per actor
+      if (!(a._mvLosT > g.time) || a._mvLosTgt !== tgt) {
+        a._mvLosT = g.time + 0.1 + Math.random() * 0.1; a._mvLosTgt = tgt;
+        a._losMove = dist < 25 && g.collision.los(a.pos.x, a.pos.y + 0.8, a.pos.z, tp.x, tp.y + 0.8, tp.z);
+      }
+      const los = a._losMove && dist < 25;
       if (los) moveDir = { x: dx / dist, z: dz / dist };
       else {
         const f = this.pathing.field(tp.x, tp.z, g.time);
