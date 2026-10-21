@@ -275,6 +275,13 @@ export class Game {
         if (this.shadowsOn) m.root.traverse((o) => { if (o.isMesh && !o.material?.transparent) o.castShadow = true; });
         place(m.root);
         hold.push(() => m.dispose?.());
+        // spawning and dying bodies fade, which switches their materials to
+        // transparent - a different program - so warm a faded copy too
+        const f = getEnemyModelSafe(t, this);
+        if (!f?._applyMats) { f?.dispose?.(); continue; }
+        f._opacity = 0.5; f._applyMats();
+        place(f.root);
+        hold.push(() => f.dispose?.());
       }
       for (const o of this.spells.warmObjects()) place(o);
       for (const o of warmEruptionMeshes()) place(o);
