@@ -219,44 +219,80 @@ export const hound = {
   },
   pose: quadPose,
   anim: { gait: 'trot', stride: 1.3, legAmp: 0.55, lift: 1.0, tailSway: 0.12, tailDroop: 0.2, lean: 0.03, neckDown: 0.25, breath: 2.6, rate: 14,
-    extra: (P, m, s, dt, k) => { if (!k.action && !k.dead) P.r('jaw', 0.12 + Math.sin(m.time * 3.1) * 0.06); P.r('neck', 0.2); P.r('head', -0.15); },
+    extra: (P, m, s, dt, k) => {
+      if (!k.action && !k.dead) P.r('jaw', 0.12 + Math.sin(m.time * 3.1) * 0.06); P.r('neck', 0.2); P.r('head', -0.15);
+      // the furnace inside stokes up through a wind-up (eyes, maw), and gutters as it dies
+      const heat = s.anim === 'windup' ? 1 + 1.2 * smooth(0, 1, s.progress) : k.dead ? 1 - 0.85 * s.progress : 1;
+      glowLevel(m, heat);
+      const st = m.state; st.crack0 = st.crack0 ?? m.U.uCrack.value.clone();
+      m.U.uCrack.value.copy(st.crack0).multiplyScalar(0.6 + 0.4 * heat + (heat > 1 ? 0.3 * Math.sin(m.time * 30) * (heat - 1) : 0));
+      if (!k.action && !k.dead) P.r('front', 0, 0, Math.sin(m.time * 1.7) * 0.03); // a low, prowling sway
+    },
   },
 };
 
 // ---------------------------------------------------------------- gargoyle ----
+// A rain-spout gargoyle torn off the battlements: squat, craggy and hunched, carved muscle under
+// lichen and rain streaks, a horned brute's head with a gaping spout-maw, a ridge of stone spines,
+// heavy crooked wings and a spade tail. It crouches like the statue it was before it lunges.
 const GARG_EYE = 0xffc23a;
+const GS = [0.88, 0.87, 0.85];
+function gStone(v) {
+  const n = vnoise(v.x * 8 + 5, v.y * 8, v.z * 8, 71), l = vnoise(v.x * 3, v.y * 3, v.z * 3, 12), d = 0.78 + 0.3 * vnoise(v.x * 30, v.y * 30, v.z * 30, 4);
+  const streak = smooth(0.55, 0.85, vnoise(v.x * 26, v.y * 2.5, v.z * 26, 19)) * 0.3; // rain streaks
+  const moss = smooth(0.62, 0.8, l * 0.8 + n * 0.3);
+  const k = d * (1 - streak);
+  return [lerp(GS[0], 0.38, moss) * k, lerp(GS[1], 0.48, moss) * k, lerp(GS[2], 0.3, moss) * k];
+}
+const GA_CLAW = act2(
+  { armR: [-2.6, 0, -0.7], armL: [-2.6, 0, 0.7], foreR: [-0.7, 0, 0], foreL: [-0.7, 0, 0], handR: [-0.4, 0, 0], handL: [-0.4, 0, 0], chest: [-0.35, 0, 0], neck: [0.2, 0, 0], head: [0.2, 0, 0], jaw: [0.7, 0, 0], base: [0, 0, 0, 0, 0.35, -0.3] },
+  { armR: [-0.7, 0, 0.5], armL: [-0.7, 0, -0.5], foreR: [-0.2, 0, 0], foreL: [-0.2, 0, 0], handR: [0.4, 0, 0], handL: [0.4, 0, 0], chest: [0.55, 0, 0], spine: [0.3, 0, 0], head: [-0.2, 0, 0], jaw: [0.85, 0, 0], base: [0.3, 0, 0, 0, -0.35, 0.6] },
+  { hit: 0.3, tremble: 0.03 },
+);
+const GA_SLAM = act2(
+  { armR: [-2.9, 0, -0.3], armL: [-2.9, 0, 0.3], foreR: [-0.5, 0, 0], foreL: [-0.5, 0, 0], chest: [-0.4, 0, 0], head: [0.25, 0, 0], jaw: [0.6, 0, 0], base: [0, 0, 0, 0, 0.55, 0] },
+  { armR: [-0.4, 0, 0.3], armL: [-0.4, 0, -0.3], chest: [0.6, 0, 0], spine: [0.3, 0, 0], base: [0, 0, 0, 0, -0.55, 0.3], thighL: [-1.0, 0, 0], thighR: [-1.0, 0, 0], shinL: [1.6, 0, 0], shinR: [1.6, 0, 0], jaw: [0.8, 0, 0] },
+  { hit: 0.22, tremble: 0.035 },
+);
+// dive (charge): wings swept back and folded, body pitched head-down like a stooping hawk
+const GA_DIVE = act2(
+  { chest: [-0.3, 0, 0], spine: [-0.15, 0, 0], head: [0.3, 0, 0], armL: [-2.2, 0, 0.6], armR: [-2.2, 0, -0.6], foreL: [-0.9, 0, 0], foreR: [-0.9, 0, 0], jaw: [0.6, 0, 0], base: [-0.3, 0, 0, 0, 0.45, -0.25] },
+  { chest: [0.5, 0, 0], spine: [0.4, 0, 0], head: [-0.6, 0, 0], neck: [-0.3, 0, 0], armL: [-2.6, 0, 0.3], armR: [-2.6, 0, -0.3], foreL: [-0.2, 0, 0], foreR: [-0.2, 0, 0], jaw: [0.9, 0, 0], thighL: [0.6, 0, 0], thighR: [0.6, 0, 0], shinL: [0.2, 0, 0], shinR: [0.2, 0, 0], base: [0.6, 0, 0, 0, -0.1, 0.2] },
+  { hit: 0.2, recover: 0.8, tremble: 0.04 },
+);
 export const gargoyle = {
   id: 'gargoyle', height: 2.0, radius: 0.5, flying: true, eyeColor: GARG_EYE, defaultAttack: 'claw', attackTypes: ['claw', 'slam'],
   build(rig) {
-    const D = humanSkeleton(rig, { thigh: 0.36, shin: 0.36, ankle: 0.08, spine: 0.14, chest: 0.3, neck: 0.06, shoulderW: 0.2, upper: 0.3, fore: 0.3, jaw: [0.035, 0.06] });
-    wingBones(rig, 'chest', 0.09, D.chest * 0.8, -0.12, 0.85, 0.42);
+    const D = humanSkeleton(rig, { thigh: 0.34, shin: 0.38, ankle: 0.09, hipW: 0.13, spine: 0.14, chest: 0.32, neck: 0.06, shoulderW: 0.23, upper: 0.32, fore: 0.32, jaw: [0.035, 0.06] });
+    wingBones(rig, 'chest', 0.1, D.chest * 0.8, -0.14, 1.0, 0.42);
     let prev = 'hips';
     for (let i = 0; i < 6; i++) { rig.bone('tail' + i, prev, 0, i === 0 ? -0.02 : -0.02, i === 0 ? -0.12 : -0.12, { rate: 0.7 }); prev = 'tail' + i; }
-    const ST = [0.95, 0.92, 0.88];
-    addFleshBody(rig, D, { mat: 'stone', c: ST, muscle: 1.5, seed: 41, rough: 3, hunch: 0.06, claws: 0.07, toeClaws: true, clawC: 0x2a2826, torsoW: 1.05 });
-    // head: brutish snout, horns, ears, fangs
-    const hd = deform(G.sph(0.11, 16, 12), (v) => { v.z *= 1.1; if (v.y > 0.03 && v.z > 0.04) v.z += 0.015; if (v.y < -0.02) v.x *= 0.9; });
-    rig.add('head', 'stone', bumpy(hd, 0.008, 10, 5), { y: 0.1, z: 0.02 }, { c: ST });
-    rig.add('head', 'stone', bumpy(xf(G.box(0.12, 0.07, 0.1), { y: 0.05, z: 0.09 }), 0.004, 12, 2), {}, { c: ST });
-    rig.add('head', 'stone', xf(G.box(0.15, 0.03, 0.04), { y: 0.15, z: 0.1, rx: 0.3 }), {}, { c: ST }); // brow
-    rig.pair('head', 'head', 'stone', tube([[0.06, 0.17, 0.03], [0.12, 0.25, -0.01], [0.13, 0.33, -0.08], [0.1, 0.38, -0.16]], (u) => 0.028 * (1 - u * 0.85), 12, 6), {}, { c: [0.45, 0.43, 0.42] });
-    rig.pair('head', 'head', 'stone', xf(G.cone(0.04, 0.13, 4), { sz: 0.35 }), { x: 0.1, y: 0.13, z: -0.0, rz: -1.0, ry: -0.3 }, { c: ST });
-    rig.pair('head', 'head', 'dark', G.sph(0.02, 8, 6), { x: 0.04, y: 0.12, z: 0.11, sz: 0.6 });
-    rig.pair('head', 'head', 'glow', G.sph(0.014, 8, 6), { x: 0.042, y: 0.12, z: 0.122 }, { c: HDR(GARG_EYE, 7) });
-    rig.add('head', 'dark', G.box(0.09, 0.02, 0.05), { y: 0.035, z: 0.12 });
-    rig.pair('head', 'head', 'stone', G.cone(0.012, 0.05, 4), { x: 0.035, y: 0.02, z: 0.13, rx: Math.PI }, { c: [0.75, 0.72, 0.68] });
-    rig.add('jaw', 'stone', xf(G.box(0.1, 0.03, 0.09), { z: 0.045 }), {}, { c: ST });
-    rig.pair('jaw', 'jaw', 'stone', G.cone(0.012, 0.05, 4), { x: 0.04, y: 0.03, z: 0.08 }, { c: [0.75, 0.72, 0.68] });
-    // back spines
-    rig.add('chest', 'stone', mergeRaw([0, 1, 2, 3].map((i) => xf(G.cone(0.025, 0.09, 4), { y: 0.05 + i * 0.07, z: -0.15, rx: -1.0 }))), {}, { c: [0.45, 0.43, 0.42] });
-    // stone wings
-    addWing(rig, 1, { span: 0.85, mat: 'stone', c: [0.5, 0.48, 0.46], boneC: [0.7, 0.68, 0.64], claw: true, fingers: 4, flutter: 0 });
-    addWing(rig, -1, { span: 0.85, mat: 'stone', c: [0.5, 0.48, 0.46], boneC: [0.7, 0.68, 0.64], claw: true, fingers: 4, flutter: 0 });
-    // spade tail
+    const ST = { cfn: gStone };
+    addFleshBody(rig, D, { mat: 'stone', c: GS, cfn: gStone, muscle: 1.75, seed: 41, rough: 3.5, hunch: 0.13, abs: true, claws: 0.085, toeClaws: true, clawC: 0x2a2826, torsoW: 1.18, depth: 1.12, hand: { m: 1.15, fingerLen: 1.2 } });
+    // head: brutish snout, heavy brow, curling ram horns, swept ears, a gaping spout-maw full of fangs
+    const hd = deform(G.sph(0.115, 14, 10), (v) => { v.z *= 1.15; if (v.y > 0.03 && v.z > 0.04) v.z += 0.018; if (v.y < -0.02) v.x *= 0.92; });
+    rig.add('head', 'stone', bumpy(hd, 0.01, 10, 5), { y: 0.1, z: 0.02 }, ST);
+    rig.add('head', 'stone', bumpy(xf(G.box(0.13, 0.075, 0.11, 2, 2, 2), { y: 0.05, z: 0.1 }), 0.006, 12, 2), {}, ST);
+    rig.add('head', 'stone', xf(G.box(0.17, 0.035, 0.05), { y: 0.155, z: 0.105, rx: 0.35 }), {}, ST); // brow
+    rig.pair('head', 'head', 'stone', tube([[0.06, 0.17, 0.03], [0.14, 0.22, -0.03], [0.17, 0.15, -0.12], [0.13, 0.07, -0.1], [0.1, 0.1, -0.03]], (u) => 0.034 * (1 - u * 0.75), 12, 5), {}, { c: [0.5, 0.48, 0.46] });
+    rig.pair('head', 'head', 'stone', xf(G.cone(0.045, 0.15, 4), { sz: 0.35 }), { x: 0.11, y: 0.15, z: -0.01, rz: -1.05, ry: -0.35 }, ST);
+    rig.pair('head', 'head', 'dark', G.sph(0.022, 8, 6), { x: 0.042, y: 0.125, z: 0.115, sz: 0.6 });
+    rig.pair('head', 'head', 'glow', xf(G.sph(0.015, 8, 6), { sx: 1.3, sy: 0.75 }), { x: 0.044, y: 0.125, z: 0.127, rz: -0.25 }, { c: HDR(GARG_EYE, 7) });
+    rig.add('head', 'dark', G.box(0.1, 0.03, 0.06), { y: 0.035, z: 0.13 });
+    rig.add('head', 'stone', mergeRaw([-1, -0.5, 0.5, 1].map((x) => xf(G.cone(0.012, 0.055, 4), { x: x * 0.04, y: 0.02, z: 0.15, rx: Math.PI }))), {}, { c: [0.75, 0.72, 0.68] });
+    rig.add('jaw', 'stone', xf(G.box(0.11, 0.035, 0.1), { z: 0.05 }), {}, ST);
+    rig.add('jaw', 'stone', mergeRaw([-1, -0.4, 0.4, 1].map((x) => xf(G.cone(0.012, 0.05, 4), { x: x * 0.042, y: 0.035, z: 0.085 }))), {}, { c: [0.75, 0.72, 0.68] });
+    // ridge of stone spines down the back, cracked shoulder plates
+    rig.add('chest', 'stone', mergeRaw([0, 1, 2, 3, 4].map((i) => xf(G.cone(0.03, 0.12 - i * 0.012, 4), { y: 0.05 + i * 0.065, z: -0.17 - Math.sin(i / 4 * Math.PI) * 0.02, rx: -1.0 }))), {}, { c: [0.45, 0.43, 0.42] });
+    rig.add('spine', 'stone', mergeRaw([0, 1].map((i) => xf(G.cone(0.025, 0.08, 4), { y: 0.03 + i * 0.07, z: -0.14, rx: -1.1 }))), {}, { c: [0.45, 0.43, 0.42] });
+    rig.pair('arm' + 'L', 'arm' + 'R', 'stone', bumpy(xf(G.sph(0.085, 9, 6, 0, TAU, 0, Math.PI * 0.6), { sx: 1.2, sz: 1.1 }), 0.01, 9, 3), { x: 0.02, y: 0.02, rz: 0.35 }, ST);
+    // heavy crooked stone wings and a spade tail
+    addWing(rig, 1, { span: 1.0, mat: 'stone', c: [0.5, 0.48, 0.46], boneC: [0.68, 0.66, 0.62], claw: true, fingers: 4, flutter: 0, us: 16 });
+    addWing(rig, -1, { span: 1.0, mat: 'stone', c: [0.5, 0.48, 0.46], boneC: [0.68, 0.66, 0.62], claw: true, fingers: 4, flutter: 0, us: 16 });
     const pts = []; for (let i = 0; i <= 6; i++) pts.push([0, -0.02 - i * 0.02, -0.1 - i * 0.12]);
     const chain = [['hips', 0.08], ...Array.from({ length: 6 }, (_, i) => ['tail' + i, 0.12 + i * 0.12])];
-    rig.add('hips', 'stone', tube(pts, (u) => 0.045 * (1 - u * 0.75), 24, 6), {}, { c: ST, skin: chainSkin(chain, (v) => -v.z) });
-    rig.add('tail5', 'stone', xf(G.cone(0.07, 0.16, 4), { z: -0.12, rx: -Math.PI / 2, sx: 1, sy: 0.3 }), {}, { c: ST });
+    rig.add('hips', 'stone', tube(pts, (u) => 0.05 * (1 - u * 0.75), 16, 6), {}, { cfn: gStone, skin: chainSkin(chain, (v) => -v.z) });
+    rig.add('tail5', 'stone', xf(G.cone(0.08, 0.18, 4), { z: -0.12, rx: -Math.PI / 2, sx: 1, sy: 0.3 }), {}, ST);
     rig.socket('muzzle', 'head', 0, 0.05, 0.16);
     return D;
   },
@@ -266,38 +302,33 @@ export const gargoyle = {
     spawn: (P, p, m) => {
       // statue awakening: crouched on the ground, trembles, then launches upward
       const k = 1 - smooth(0.55, 1, p);
-      P.apply({ hips: [0.3, 0, 0, 0, -0.42, 0], thighL: [-1.7, 0, 0.3], thighR: [-1.7, 0, -0.3], shinL: [2.4, 0, 0], shinR: [2.4, 0, 0], spine: [0.4, 0, 0], chest: [0.2, 0, 0], head: [-0.4, 0, 0], armL: [-0.6, 0, 0.3], armR: [-0.6, 0, -0.3], foreL: [-0.9, 0, 0], foreR: [-0.9, 0, 0] }, k);
-      P.p('base', 0, -0.55 * k, 0);
+      P.apply(GA_PERCH, k);
+      P.p('base', 0, -0.5 * k, 0);
       const tr = bump(0.15, 0.55, p) * 0.03;
       P.r('chest', Math.sin(m.time * 60) * tr, Math.sin(m.time * 47) * tr);
       flapWings(P, m.time * 9, 0.8 * smooth(0.5, 0.8, p), 0.1, k);
       return 14;
     },
-    stance: (P, m, s) => P.apply({ thighL: [-0.6, 0, 0.15], thighR: [-0.4, 0, -0.15], shinL: [1.1, 0, 0], shinR: [0.9, 0, 0], footL: [0.4, 0, 0], footR: [0.4, 0, 0], spine: [0.25, 0, 0], chest: [0.15, 0, 0], neck: [-0.2, 0, 0], head: [-0.2, 0, 0], armL: [-0.3, 0, 0], armR: [-0.3, 0, 0], foreL: [-0.6, 0, 0], foreR: [-0.6, 0, 0] }),
-    actions: {
-      claw: act2(
-        { armR: [-2.5, 0, -0.6], armL: [-2.5, 0, 0.6], foreR: [-0.6, 0, 0], foreL: [-0.6, 0, 0], chest: [-0.3, 0, 0], head: [0.2, 0, 0], jaw: [0.6, 0, 0], base: [0, 0, 0, 0, 0.35, -0.3] },
-        { armR: [-0.7, 0, 0.5], armL: [-0.7, 0, -0.5], foreR: [-0.2, 0, 0], foreL: [-0.2, 0, 0], chest: [0.5, 0, 0], spine: [0.3, 0, 0], head: [-0.2, 0, 0], jaw: [0.8, 0, 0], base: [0.3, 0, 0, 0, -0.35, 0.6] },
-        { hit: 0.3 },
-      ),
-      slam: act2(
-        { armR: [-2.9, 0, -0.3], armL: [-2.9, 0, 0.3], foreR: [-0.5, 0, 0], foreL: [-0.5, 0, 0], chest: [-0.35, 0, 0], base: [0, 0, 0, 0, 0.5, 0] },
-        { armR: [-0.4, 0, 0.3], armL: [-0.4, 0, -0.3], chest: [0.6, 0, 0], spine: [0.3, 0, 0], base: [0, 0, 0, 0, -0.55, 0.3], thighL: [-1.0, 0, 0], thighR: [-1.0, 0, 0], shinL: [1.6, 0, 0], shinR: [1.6, 0, 0] },
-        { hit: 0.22 },
-      ),
-    },
+    stance: (P) => P.apply(GA_STANCE),
+    stagger: { spine: [-0.3, 0.15, 0.1], chest: [-0.25, 0.2, 0], head: [-0.4, -0.3, 0.2], jaw: [0.6, 0, 0], armL: [0.4, 0, 0.7], armR: [0.4, 0, -0.7], base: [0, 0, 0, 0, 0.15, -0.25] },
+    actions: { claw: GA_CLAW, swing: GA_CLAW, slam: GA_SLAM, charge: GA_DIVE },
     extra: (P, m, s, dt, k) => {
       const dead = s.anim === 'death', sp = s.anim === 'spawn';
       if (!dead && !sp) {
+        const dive = s.attackType === 'charge' && k.action;
         const fast = k.action ? 1.5 : 1 + k.w * 0.4;
-        m.state.flap = (m.state.flap ?? 0) + dt * 8.5 * fast;
-        flapWings(P, m.state.flap, 0.75, 0.15, 0);
-        P.p('base', 0, Math.sin(m.state.flap) * 0.06, 0);
+        m.state.flap = (m.state.flap ?? 0) + dt * (dive && s.anim === 'attack' ? 2 : 7.5 * fast);
+        flapWings(P, m.state.flap, dive ? 0.25 : 0.8, 0.15, dive ? 0.7 : 0);
+        P.p('base', 0, Math.sin(m.state.flap) * 0.07, 0);
       } else if (dead) flapWings(P, 0, 0.3, -0.4 * s.progress, 0.6 * s.progress);
       for (let i = 0; i < 6; i++) P.r('tail' + i, 0.25 + Math.sin(m.time * 2 - i * 0.6) * 0.08, Math.sin(m.time * 1.4 - i * 0.7) * 0.15, 0);
+      glowLevel(m, s.anim === 'windup' ? 1 + smooth(0, 1, s.progress) : dead ? 1 - 0.9 * s.progress : 1);
     },
   },
 };
+const GA_PERCH = { hips: [0.3, 0, 0, 0, -0.42, 0], thighL: [-1.7, 0, 0.3], thighR: [-1.7, 0, -0.3], shinL: [2.4, 0, 0], shinR: [2.4, 0, 0], spine: [0.4, 0, 0], chest: [0.2, 0, 0], head: [-0.4, 0, 0], armL: [-0.6, 0, 0.3], armR: [-0.6, 0, -0.3], foreL: [-0.9, 0, 0], foreR: [-0.9, 0, 0] };
+// hunched, knees drawn up under it, long arms hanging, head jutting
+const GA_STANCE = { thighL: [-0.75, 0, 0.18], thighR: [-0.55, 0, -0.18], shinL: [1.25, 0, 0], shinR: [1.05, 0, 0], footL: [0.45, 0, 0], footR: [0.45, 0, 0], spine: [0.3, 0, 0], chest: [0.2, 0, 0], neck: [-0.25, 0, 0], head: [-0.25, 0, 0], armL: [-0.35, 0, 0.12], armR: [-0.35, 0, -0.12], foreL: [-0.55, 0, 0], foreR: [-0.55, 0, 0] };
 
 // ------------------------------------------------------------ battlePriest ----
 const HOLY = 0xffd27a;

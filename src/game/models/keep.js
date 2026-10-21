@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { G, xf, taper, lathe, shell, tube, deform, bumpy, robe, panel, mergeRaw, chainSkin, spikeRing, rng, vnoise, clamp, lerp, smooth, bump, easeOut, easeIn, easeInOut, TAU } from './core.js';
 import { humanSkeleton, humanoidPose, act2, ACT } from './humanoid.js';
+import { glowLevel } from './bossKit.js';
 import {
   addSkull, addSkeletonBody, addFleshBody, addFleshHand, addBoneHand, addPlate, addTabard, greatHelm, hood, addWing, wingBones, flapWings, addHalberd, addCrystalStaff, addTowerShield, bookGeo,
   pauldron, rivets, HDR, STEEL, RUSTY, DARKSTEEL, BLACKSTEEL, GOLDTRIM,
@@ -366,6 +367,11 @@ export const imp = {
       for (let i = 0; i < 6; i++) P.r('tail' + i, 0.35 - i * 0.05 + Math.sin(m.time * 3 - i * 0.7) * 0.15, Math.sin(m.time * 2.1 - i * 0.6) * 0.25, 0);
       if (!k.action) P.r('jaw', 0.2 + Math.sin(m.time * 4) * 0.08);
       if (!k.action && !dead) m.setOrb(0.25 + Math.sin(m.time * 5) * 0.05);
+      // the little furnace stokes up before it throws (eyes, grin and every crack brighten)
+      const heat = s.anim === 'windup' ? 1 + smooth(0, 1, s.progress) : dead ? 1 - 0.8 * s.progress : 1;
+      glowLevel(m, heat);
+      const st = m.state; st.crack0 = st.crack0 ?? m.U.uCrack.value.clone();
+      m.U.uCrack.value.copy(st.crack0).multiplyScalar(0.7 + 0.3 * heat);
     },
   },
 };

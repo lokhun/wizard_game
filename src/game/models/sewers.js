@@ -479,6 +479,9 @@ export const bilespitter = {
     rig.pair('head', 'head', 'glow', G.sph(0.01, 6, 5), { x: 0.036, y: 0.125, z: 0.096 }, { c: HDR(0xd8ff40, 5) });
     for (let i = 0; i < 9; i++) { const a = (i / 8 - 0.5) * 2.2; rig.add('head', 'bone', G.cone(0.007, 0.022, 4), { x: Math.sin(a) * 0.045, y: 0.07, z: 0.06 + Math.cos(a) * 0.04, rx: Math.PI }, { c: 0xb0a060 }); }
     addMonsterJaw(rig, 'jaw', { c: [0.6, 0.6, 0.4], s: 1.25, teeth: 9 });
+    // bile welling in the throat (flares with the gut through a wind-up)
+    rig.add('head', 'glow', xf(G.box(0.06, 0.03, 0.03), {}), { y: 0.068, z: 0.07 }, { c: HDR(BILE, 1.6) });
+    rig.add('jaw', 'glow', xf(G.box(0.05, 0.01, 0.06), {}), { y: 0.004, z: 0.06 }, { c: HDR(BILE, 1.3) });
     // drool
     rig.add('jaw', 'slime', tube([[0.02, 0, 0.1], [0.025, -0.08, 0.11], [0.02, -0.16, 0.1]], (u) => 0.008 * (1 - u * 0.5), 6, 4), {}, { c: [0.5, 1.2, 0.3], anim: 1 });
     // filthy butcher's apron under the gut, rope belt, ragged breeches held up by braces, wrist wraps
@@ -508,6 +511,7 @@ export const bilespitter = {
       ),
     },
     extra: (P, m, s, dt, k) => {
+      glowLevel(m, s.anim === 'windup' ? 1 + 1.3 * smooth(0, 1, s.progress) : s.anim === 'death' ? 1 - 0.7 * s.progress : 1 + 0.12 * Math.sin(m.time * 2.6));
       // the gut breathes and wobbles a beat behind each heavy step; a waddling roll of the hips
       P.s('belly', 1.12 + Math.sin(m.time * 2.6) * 0.035 + Math.abs(Math.sin(k.ph)) * 0.04 * k.w);
       P.r('belly', Math.sin(k.ph * 2 - 1.2) * 0.05 * k.w, 0, Math.sin(k.ph - 0.8) * 0.05 * k.w);
