@@ -230,6 +230,25 @@ export const ENEMY_DEFS = {
     aura: { radius: 9, dmg: 1.3, speed: 1.15 },
   },
 
+  // ----------------------------------------------------------- ENCOUNTERS (any realm, see encounters.js)
+  // a treasure chest that bites: lies dormant until opened or struck, then hops after you
+  mimic: {
+    name: 'Mimic', hp: 230, speed: 4.8, dmg: 15, cost: 8, ai: 'melee', poise: 90, gold: 14, sound: 'mimic_growl', deathSound: 'mimic_death', hitSound: 'enemy_hit',
+    attacks: [
+      { id: 'chomp', kind: 'lunge', range: 2.4, arc: 1.5, windup: 0.5, recover: 0.75, anim: 'chomp', leap: 8 },
+      { id: 'pounce', kind: 'nova', radius: 3.4, windup: 0.95, recover: 1.0, anim: 'pounce', cd: 7, dmgMult: 1.3, st: { stun: 0.4 } },
+      { id: 'tongue', kind: 'melee', range: 4.6, arc: 0.5, windup: 0.6, recover: 0.8, anim: 'tongue', cd: 3.5, kb: -6, st: { slow: 1.5 } },
+    ],
+    // never wakes to sight or proximity, only to being struck or opened
+    lurk: true,
+  },
+  // haunted rooms: spirits that drift through walls and pillars
+  specter: {
+    name: 'Restless Specter', hp: 40, speed: 3.4, dmg: 9, cost: 2, ai: 'flyer', poise: 10, gold: 1, sound: 'ghost_wail', deathSound: 'ghost_wail', undead: true, flying: true, model: 'wraith', tint: 0x7fd8ff, scale: 0.85,
+    attacks: [{ id: 'touch', kind: 'melee', range: 2.0, arc: 1.6, windup: 0.55, recover: 0.7, anim: 'swing', st: { slow: 1.2 } }],
+    resist: { physical: 0.5, poison: 0.65, blood: 0.7 }, phase: true,
+  },
+
   // ----------------------------------------------------------- ALLIES (summons)
   skeletonMinion: {
     name: 'Risen Servant', hp: 80, speed: 5.0, dmg: 14, cost: 0, ai: 'melee', poise: 30, model: 'skeleton', ally: true, tint: 0x40ff60,

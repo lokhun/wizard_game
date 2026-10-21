@@ -689,7 +689,8 @@ export class ActorManager {
       }
     }
     if (mx || mz) {
-      let r = g.collision.move(a.pos.x, a.pos.z, a.pos.y, mx, mz, Math.min(a.radius, 0.9));
+      // spirits (def.phase) drift straight through walls and pillars
+      let r = a.def.phase ? { x: a.pos.x + mx, z: a.pos.z + mz } : g.collision.move(a.pos.x, a.pos.z, a.pos.y, mx, mz, Math.min(a.radius, 0.9));
       // sentries are leashed to their room, so doors never lock them out of their own fight
       if (a.homeRoom && g.level.roomAt(r.x, r.z) !== a.homeRoom) r = { x: a.pos.x, z: a.pos.z };
       a.moveSpeed = Math.hypot(r.x - a.pos.x, r.z - a.pos.z) / dt;
@@ -745,6 +746,8 @@ export class ActorManager {
 
     if (a.dormant) {
       a.anim = 'idle';
+      // lurkers (mimics) lie perfectly still and wake only when struck or opened
+      if (def.lurk) return out;
       // sentries glance about; they notice a player who comes close or into plain view
       a.yaw += Math.sin(g.time * 0.4 + a.id) * dt * 0.15;
       a.dormantT = (a.dormantT ?? 0) - dt;

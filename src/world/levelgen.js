@@ -21,7 +21,10 @@ const BLOCKSZ = 20; // macro block size in cells
 export const ROOM = {
   START: 'start', COMBAT: 'combat', ELITE: 'elite', TREASURE: 'treasure',
   SHRINE: 'shrine', SHOP: 'shop', BOSS: 'boss', EXIT: 'exit', TRIAL: 'trial',
+  ALTAR: 'altar', GAMBLER: 'gambler', SECRET: 'secret',
 };
+// combat-room modifiers (see game/encounters.js): announced on entry, visible in the world
+export const ROOM_MODS = ['darkness', 'bloodmoon', 'haunted', 'surge', 'powder'];
 
 export class Level {
   constructor(W, H, biome) {
@@ -65,9 +68,13 @@ export class Level {
   }
 }
 
-export function generateLevel(seed, floorIndex) {
+// force: optional list of encounter names to put on every eligible room (test hook, ?enc=)
+export function generateLevel(seed, floorIndex, force = null) {
   const biome = BIOMES[floorIndex];
   const rng = new RNG(seed * 7919 + floorIndex * 104729);
+  // encounters roll on their own stream so the layout itself doesn't depend on them
+  const er = new RNG(seed * 7919 + floorIndex * 104729 + 911);
+  const F = (k) => !!force?.includes(k);
   const isFinal = biome.id === 'throne';
 
   // --- macro path
@@ -120,7 +127,7 @@ export function generateLevel(seed, floorIndex) {
   const blocks = new Map();
   const mkRoom = (mx, my, type, depth, parent) => {
     const big = type === ROOM.BOSS;
-    const small = type === ROOM.TREASURE || type === ROOM.SHRINE || type === ROOM.SHOP || type === ROOM.START;
+    const small = type === ROOM.TREASURE || type === ROOM.SHRINE || type === ROOM.SHOP || type === ROOM.START || type === ROOM.ALTAR || type === ROOM.GAMBLER;
     let w, h;
     if (big) { w = BLOCKSZ - 2; h = BLOCKSZ - 2; }
     else if (small) { w = rng.int(7, 10); h = rng.int(7, 10); }
@@ -168,7 +175,11 @@ export function generateLevel(seed, floorIndex) {
   // --- branches
   // optional side rooms: always a treasure vault, then a trial or a shrine
   const sideTypes = [ROOM.TREASURE, rng.chance(0.5) ? ROOM.TRIAL : ROOM.SHRINE, ROOM.SHRINE, ROOM.ELITE];
-  let branches = biome.branches;
+  const sides = sideTypes.slice(0, biome.branches);
+  // and on most floors a bargain: a blood altar or a gambler
+  const bargain = F('altar') ? ROOM.ALTAR : F('gambler') ? ROOM.GAMBLER : biome.branches && er.chance(0.7) ? er.pick([ROOM.ALTAR, ROOM.GAMBLER]) : null;
+  if (bargain) sides.push(bargain);
+  let branches = sides.length;
   const candidates = rng.shuffle(mainRooms.slice(1, -2));
   for (const host of candidates) {
     if (branches <= 0) break;
@@ -176,11 +187,33 @@ export function generateLevel(seed, floorIndex) {
     for (const [dx, dy] of dirs) {
       const nx = host.mx + dx, ny = host.my + dy;
       if (nx < 0 || ny < 0 || nx >= MW || ny >= MH || blocks.has(nx + ',' + ny)) continue;
-      const side = mkRoom(nx, ny, sideTypes[(biome.branches - branches) % sideTypes.length], host.depth + 0.5, host.id);
+      const side = mkRoom(nx, ny, sides[sides.length - branches], host.depth + 0.5, host.id);
       side.main = false;
       branches--;
       break;
     }
+  }
+
+  // --- encounters: what makes this floor's rooms different from the last one's
+  // room modifiers on a few fights (never the first one on a floor, unless forced for a test)
+  // (tests: ?enc=<mod> puts one on every fight, ?enc=mods deals them out in turn)
+  const forcedMod = ROOM_MODS.find((m) => F(m));
+  const usedMods = new Set();
+  const dealt = force?.find((k) => k.startsWith('mods'));
+  let deal = dealt ? +dealt.slice(4) || 0 : 0; // ?enc=mods3 starts the deal at the fourth
+  for (const r of mainRooms) {
+    if (r.type !== ROOM.COMBAT) continue;
+    if (forcedMod) { r.mod = forcedMod; continue; }
+    if (dealt) { r.mod = ROOM_MODS[deal++ % ROOM_MODS.length]; continue; }
+    if (r.order < 2 || usedMods.size >= (floorIndex === 0 ? 1 : 2) || !er.chance(floorIndex === 0 ? 0.3 : 0.4)) continue;
+    const pool = ROOM_MODS.filter((m) => !usedMods.has(m) && !(m === 'darkness' && biome.outdoor));
+    r.mod = er.pick(pool);
+    usedMods.add(r.mod);
+  }
+  for (const r of level.rooms) {
+    // a named champion holds some elite chambers; some treasure chests have teeth
+    if (r.type === ROOM.ELITE) r.champ = F('champion') || er.chance(0.5);
+    if (r.type === ROOM.TREASURE) r.mimic = F('mimic') || er.chance(floorIndex === 0 ? 0.2 : 0.33);
   }
 
   // --- corridors
@@ -272,6 +305,9 @@ export function generateLevel(seed, floorIndex) {
   for (const room of level.rooms) decorateRoom(level, room, rng.fork('room' + room.id));
   for (const corr of level.corridors) decorateCorridor(level, corr, rng.fork('corr' + corr.id));
 
+  // --- a secret room behind a cracked wall on most floors (carved last: it must fit around everything else)
+  if (F('secret') || er.chance(0.6)) carveSecret(level, er.fork('secret'), blocks, MW, MH);
+
   // --- spawn and exit
   const start = mainRooms[0];
   level.spawn = { x: start.cx, z: start.cz + 2 };
@@ -324,7 +360,7 @@ function decorateRoom(level, room, rng) {
     const prop = { type, x: wx, z: wz, rot: extra.rot ?? rng.range(0, Math.PI * 2), ...extra };
     if (type === 'barrel' || type === 'crate') {
       // some barrels are powder kegs: break one near a pack and it goes up in flames
-      if (type === 'barrel' && !isBoss && (extra.keg || rng.chance(0.22))) type = 'keg';
+      if (type === 'barrel' && !isBoss && (extra.keg || rng.chance(room.mod === 'powder' ? 0.75 : 0.22))) type = 'keg';
       // destructible clutter: gets a collider and a stable index for co-op sync
       prop.breakable = level.breakables.length;
       const c = { x: wx, z: wz, r: type === 'crate' ? 0.45 : 0.42, h: 1.05, breakable: prop.breakable };
@@ -696,16 +732,18 @@ function decorateRoom(level, room, rng) {
 
   // ---------------- powder kegs out on the fighting floor (not just against the walls),
   // so every fight offers a chance to lure a pack and set one off
+  // (a powder room is stacked with them)
   if ((room.type === ROOM.COMBAT || room.type === ROOM.ELITE || room.type === ROOM.TRIAL) && w >= 9 && h >= 9) {
-    const want = rng.int(1, 2);
+    const powder = room.mod === 'powder';
+    const want = powder ? rng.int(7, 10) : rng.int(1, 2);
     let placed = 0;
-    for (let t = 0; t < 20 && placed < want; t++) {
+    for (let t = 0; t < (powder ? 60 : 20) && placed < want; t++) {
       const sp = randFloorSpot(2);
       if (!sp) continue;
       const i = level.idx(Math.floor(sp[0] / T), Math.floor(sp[1] / T));
-      if (level.kind[i] === K_ALT || level.kind[i] === K_WATER) continue;
+      if ((level.kind[i] === K_ALT && !powder) || level.kind[i] === K_WATER) continue;
       if (Math.hypot(sp[0] - cx * T, sp[1] - cy * T) < 3) continue;
-      if (level.colliders.some((c) => Math.hypot((c.x ?? 1e9) - sp[0], (c.z ?? 1e9) - sp[1]) < (c.r || 0.5) + 1.6)) continue;
+      if (level.colliders.some((c) => Math.hypot((c.x ?? 1e9) - sp[0], (c.z ?? 1e9) - sp[1]) < (c.r || 0.5) + (powder ? 1.1 : 1.6))) continue;
       P('barrel', sp[0], sp[1], { keg: true });
       placed++;
     }
@@ -713,7 +751,26 @@ function decorateRoom(level, room, rng) {
 
   // ---------------- room-type set pieces
   const mid = [cx * T, cy * T];
-  if (room.type === ROOM.TREASURE) P('chest', mid[0], mid[1], { rot: 0, big: true, interact: 'chest' });
+  // a mimic room's chest is a monster spawned by the encounter code in the chest's place
+  if (room.type === ROOM.TREASURE) { if (room.mimic) room.mimicAt = { x: mid[0], z: mid[1] }; else P('chest', mid[0], mid[1], { rot: 0, big: true, interact: 'chest' }); }
+  if (room.type === ROOM.ALTAR) {
+    // a blood altar (built by the encounter code), stained flagstones and the remains of those who bargained
+    level.colliders.push({ x: mid[0], z: mid[1], r: 1.05 });
+    room.setAt = { x: mid[0], z: mid[1] };
+    for (const [ox, oz, t] of [[1.7, 1.2, 'bloodstain'], [-1.4, 1.6, 'bloodstain'], [-2.2, -1.4, 'bones'], [2.3, -1.6, 'skeletonSit'], [0, -2.4, 'candles'], [-2.4, 0.4, 'candles']]) {
+      const ii = level.idx(Math.floor((mid[0] + ox) / T), Math.floor((mid[1] + oz) / T));
+      if (level.cells[ii] === FLOOR && level.roomId[ii] === room.id) level.props.push({ type: t, x: mid[0] + ox, z: mid[1] + oz, rot: rng.range(0, 6.28) });
+    }
+  }
+  if (room.type === ROOM.GAMBLER) {
+    // a hooded figure behind a gaming table (the figure itself comes from the encounter code)
+    addPillar(level, mid[0], mid[1] + 0.2, 0.75, 'table', { rot: 0 });
+    level.colliders.push({ x: mid[0], z: mid[1] - 1.1, r: 0.5 });
+    level.props.push({ type: 'stool', x: mid[0] + 0.1, z: mid[1] + 1.35, rot: 0.3 });
+    level.props.push({ type: 'candelabra', x: mid[0] + 2.4, z: mid[1] - 1.8, rot: 0 });
+    level.props.push({ type: 'sack', x: mid[0] - 2.2, z: mid[1] - 1.6, rot: 0.6 });
+    room.setAt = { x: mid[0], z: mid[1] };
+  }
   if (room.type === ROOM.SHRINE) { addPillar(level, mid[0], mid[1], 0.9, 'shrine', { interact: 'shrine' }); }
   if (room.type === ROOM.SHOP) P('merchant', mid[0], mid[1] - 2, { rot: 0, interact: 'shop' });
   if (room.type === ROOM.START) {
@@ -750,4 +807,101 @@ function decorateCorridor(level, corr, rng) {
       level.props.push({ type: rng.pick(['rubble', 'bones', 'puddle']), x: wx + rng.range(-0.5, 0.5), z: wz + rng.range(-0.5, 0.5), rot: rng.range(0, 6.28) });
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Secret rooms: a small vault in an empty macro block next to an ordinary
+// room, joined to it by a one-cell passage whose mouth is sealed by a cracked
+// wall (game/encounters.js builds the wall, its tells and the collision
+// blocker). The passage cells are real floor so reachability holds; the wall
+// only blocks movement and sight until a spell breaks it.
+// ---------------------------------------------------------------------------
+function carveSecret(level, rng, blocks, MW, MH) {
+  const hosts = rng.shuffle(level.rooms.filter((r) => [ROOM.COMBAT, ROOM.ELITE, ROOM.SHOP, ROOM.TREASURE, ROOM.SHRINE].includes(r.type)));
+  for (const host of hosts) {
+    for (const [dx, dy] of rng.shuffle([[1, 0], [-1, 0], [0, 1], [0, -1]])) {
+      const nx = host.mx + dx, ny = host.my + dy;
+      if (nx < 0 || ny < 0 || nx >= MW || ny >= MH || blocks.has(nx + ',' + ny)) continue;
+      const room = trySecret(level, rng, host, dx, dy, nx, ny);
+      if (room) { blocks.set(nx + ',' + ny, room); return room; }
+    }
+  }
+  return null;
+}
+
+function trySecret(level, rng, host, dx, dy, nx, ny) {
+  const b = level.biome;
+  // work in (u along the passage, v across it); XY maps back to cells
+  const alongX = dx !== 0, du = alongX ? dx : dy;
+  const XY = (u, v) => (alongX ? [u, v] : [v, u]);
+  const hu0 = alongX ? host.x : host.y, hu1 = hu0 + (alongX ? host.w : host.h) - 1;
+  const hv0 = alongX ? host.y : host.x, hv1 = hv0 + (alongX ? host.h : host.w) - 1;
+  const bu0 = (alongX ? nx : ny) * BLOCKSZ, bv0 = (alongX ? ny : nx) * BLOCKSZ;
+  const su = rng.int(4, 5), sv = rng.int(4, 5);
+  const free = (u, v) => { const [x, y] = XY(u, v); if (!level.inb(x, y)) return false; const i = level.idx(x, y); return level.cells[i] === SOLID && level.roomId[i] < 0 && level.corrId[i] < 0; };
+  const hostCell = (u, v) => { const [x, y] = XY(u, v); const i = level.idx(x, y); return level.cells[i] === FLOOR && level.roomId[i] === host.id && level.hgt[i] === 0 && level.kind[i] !== K_WATER; };
+  const lanes = [];
+  for (let v = hv0 + 2; v <= hv1 - 2; v++) lanes.push(v);
+  for (const v of rng.shuffle(lanes)) {
+    const edge = du > 0 ? hu1 : hu0;
+    // the opening sits in a straight run of wall, with floor in front of it
+    if (!hostCell(edge, v) || !hostCell(edge, v - 1) || !hostCell(edge, v + 1) || !hostCell(edge - du, v)) continue;
+    const s0 = du > 0 ? bu0 + 1 + rng.int(0, 2) : bu0 + BLOCKSZ - 1 - su - rng.int(0, 2);
+    const t0 = Math.max(bv0 + 1, Math.min(bv0 + BLOCKSZ - 1 - sv, v - rng.int(1, sv - 2)));
+    if (v < t0 + 1 || v > t0 + sv - 2) continue;
+    const pEnd = du > 0 ? s0 - 1 : s0 + su;
+    const len = (pEnd - edge) * du;
+    if (len < 2 || len > 16) continue;
+    let ok = true;
+    for (let k = 1; k <= len && ok; k++) for (let o = -(k === 1 ? 2 : 1); o <= (k === 1 ? 2 : 1); o++) if (!free(edge + du * k, v + o)) { ok = false; break; }
+    for (let u = s0 - 1; u <= s0 + su && ok; u++) for (let w = t0 - 1; w <= t0 + sv; w++) if (!free(u, w)) { ok = false; break; }
+    if (!ok) continue;
+    // the mouth in world space: the plane between the host's last cell and the passage
+    const plane = (du > 0 ? edge + 1 : edge) * T, mid = (v + 0.5) * T;
+    const [mx, mz] = alongX ? [plane, mid] : [mid, plane];
+    const [onx, onz] = alongX ? [du, 0] : [0, du];
+    // nothing standing in front of it: no pillar, prop, keg or sconce
+    const fx = mx - onx * 1.2, fz = mz - onz * 1.2;
+    if (level.colliders.some((c) => c.r && Math.hypot(c.x - fx, c.z - fz) < c.r + 1.4)) continue;
+    if (level.torches.some((t) => Math.hypot(t.x - mx, t.z - mz) < 1.6)) continue;
+    // carve
+    const pc = b.outdoor ? 99 : b.ceilCorr;
+    const cells = [];
+    for (let k = 1; k <= len; k++) {
+      const [x, y] = XY(edge + du * k, v);
+      const i = level.idx(x, y);
+      level.cells[i] = FLOOR; level.ceil[i] = pc; level.kind[i] = b.id === 'sewers' ? K_ALT : K_MAIN;
+      cells.push(i);
+    }
+    const [rx, ry] = XY(s0, t0);
+    const [rw, rh] = alongX ? [su, sv] : [sv, su];
+    const room = {
+      id: level.rooms.length, x: rx, y: ry, w: rw, h: rh, mx: nx, my: ny, type: ROOM.SECRET, depth: host.depth + 0.5, parent: host.id,
+      ceil: b.outdoor ? b.ceilRoom[0] : Math.min(b.ceilRoom[0], 4.4), doors: [], neighbors: [], layout: 'vault', cleared: true, visited: false, main: false,
+    };
+    room.cx = (rx + rw / 2) * T; room.cz = (ry + rh / 2) * T;
+    level.rooms.push(room);
+    for (let y = ry; y < ry + rh; y++) for (let x = rx; x < rx + rw; x++) {
+      const i = level.idx(x, y);
+      level.cells[i] = FLOOR; level.roomId[i] = room.id; level.ceil[i] = b.outdoor ? 99 : room.ceil;
+    }
+    // the sealed mouth: as tall as the passage (indoors a lintel sits above it), or the host's wall outdoors
+    room.secret = { host: host.id, x: mx, z: mz, nx: onx, nz: onz, cell: cells[0], cells, h: b.outdoor ? host.ceil : pc };
+    // the hoard: a chest facing the way in, a warm brazier by the passage (its light leaks
+    // through the cracks), and whoever found it first
+    const along = (k) => [room.cx - onx * k * T, room.cz - onz * k * T];
+    const across = (k) => [alongX ? 0 : k * T, alongX ? k * T : 0];
+    const side = rng.sign();
+    const [c0x, c0z] = along(-0.4);
+    level.props.push({ type: 'chest', x: c0x, z: c0z, rot: Math.atan2(-onx, -onz), big: true, interact: 'chest' });
+    const [b0x, b0z] = along(su / 2 - 0.8), [b1x, b1z] = across(side * (sv / 2 - 0.8));
+    addPillar(level, b0x + b1x, b0z + b1z, 0.45, 'brazierFloor');
+    level.torches.push({ x: b0x + b1x, y: 1.1, z: b0z + b1z, type: 'brazier', color: 0xffb060, intensity: 22, range: 11, priority: 0.8 });
+    const [k0x, k0z] = along(-(su / 2 - 0.7)), [k1x, k1z] = across(-side * (sv / 2 - 0.7));
+    level.props.push({ type: 'skeletonSit', x: k0x + k1x, z: k0z + k1z, rot: Math.atan2(-onx, -onz) });
+    level.props.push({ type: 'rubble', x: mx + onx * 1.2, z: mz + onz * 1.2, rot: rng.range(0, 6.28) });
+    level.props.push({ type: 'bones', x: room.cx + rng.range(-0.8, 0.8), z: room.cz + rng.range(-0.8, 0.8), rot: rng.range(0, 6.28) });
+    return room;
+  }
+  return null;
 }

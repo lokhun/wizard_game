@@ -129,6 +129,7 @@ export function handleGameMessage(game, msg, from) {
     case 'defeat': if (!game.isHost) game.defeat(); break;
     case 'ping': game.addPing?.(msg); break;
     case 'rsum': game.events?.emit('net:rsum', msg, from); break; // a teammate's run summary (src/meta)
+    case 'enc': game.encounters?.onNet(msg, from); break;
     default: break;
   }
 }

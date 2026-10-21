@@ -10,6 +10,7 @@ import { BIOMES } from '../world/biomes.js';
 import { SpellRuntime, soundEl } from './spells.js';
 import { ActorManager, typeIndex } from './actors.js';
 import { Director } from './director.js';
+import { Encounters } from './encounters.js';
 import { LocalPlayer } from './player.js';
 import { RemotePlayer } from './remote.js';
 import { resolveHit, ST, REACTIONS } from '../game/combat.js';
@@ -50,6 +51,7 @@ export class Game {
     this.spells = new SpellRuntime(this);
     this.actors = new ActorManager(this);
     this.director = new Director(this);
+    this.encounters = new Encounters(this);
     this.time = 0;
     this.remotes = new Map();
     this.hazards = [];
@@ -162,7 +164,7 @@ export class Game {
     this.pools = [];
 
     this.floorIndex = index;
-    const level = generateLevel(this.seed, index);
+    const level = generateLevel(this.seed, index, this.encounters.forced);
     this.level = level;
     this.biome = level.biome;
     this.collision = new Collision(level);
@@ -185,7 +187,7 @@ export class Game {
     this.actors.setLevel(level, this.collision);
     this.director.setLevel(level);
     const b0 = level.biome;
-    preloadEnemies([...new Set([...b0.enemies, ...b0.elites, b0.boss, 'skeleton', 'hound', 'slime', 'slimeling'].map((t) => ENEMY_DEFS[t]?.model ?? BOSS_DEFS[t]?.model ?? t))], this);
+    preloadEnemies([...new Set([...b0.enemies, ...b0.elites, b0.boss, 'skeleton', 'hound', 'slime', 'slimeling', ...this.encounters.warmTypes(level)].map((t) => ENEMY_DEFS[t]?.model ?? BOSS_DEFS[t]?.model ?? t))], this);
     // atmosphere
     const b = this.biome;
     this.scene.fog = new THREE.FogExp2(b.fog.color, b.fog.density);
@@ -229,6 +231,8 @@ export class Game {
         });
       }
     }
+    // mimics, champions, room modifiers, altars, the gambler, secret walls
+    this.encounters.setLevel(level);
     // place players
     this.player.rerolls = this.difficulty.rerolls ?? 1;
     const s = level.spawn;
@@ -270,7 +274,7 @@ export class Game {
     let added = [];
     try {
       const b = level.biome;
-      const types = new Set([...b.enemies, ...(b.elites ?? []), b.boss, 'skeletonMinion', 'spiritWolf']);
+      const types = new Set([...b.enemies, ...(b.elites ?? []), b.boss, 'skeletonMinion', 'spiritWolf', ...this.encounters.warmTypes(level)]);
       const models = [...new Set([...types].map((t) => ENEMY_DEFS[t]?.model ?? BOSS_DEFS[t]?.model ?? t))];
       const cam = this.renderer.camera;
       const front = cam.position.clone().add(new THREE.Vector3(0, 0, -3).applyQuaternion(cam.quaternion));
@@ -375,7 +379,7 @@ export class Game {
     const glyph = { boss: ['☠', '#ff5040'], shop: ['⚖', '#f0c050'], shrine: ['✚', '#ffe080'], treasure: ['♦', '#ffb030'], elite: ['★', '#ff9040'], trial: ['⧗', '#ffcf60'], combat: ['⚔', '#d8c8a8'], start: null };
     for (const door of L.doors) {
       const other = L.rooms[door.other];
-      const g = glyph[other.type];
+      const g = this.encounters.sigil(other) ?? glyph[other.type];
       if (!g) continue;
       const tex = signTexture(g[0], g[1]);
       const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 });
@@ -410,6 +414,7 @@ export class Game {
   }
   smashAt(pos, radius) {
     for (const b of this.breakablesNear(pos, radius)) this.breakProp(b.i, true);
+    this.encounters.smash(pos, radius);
   }
   breakProp(i, local = false) {
     const b = this.level.breakables[i];
@@ -527,6 +532,7 @@ export class Game {
       this._updateDrops(dt);
     }
     for (const it of this.interactables) it.update?.(dt, this.time);
+    this.encounters.update(dt);
     this._updateTips(realDt);
     this.events.emit('tick', realDt);
     this._updateDoorSigns(realDt);
@@ -536,7 +542,7 @@ export class Game {
     if (this.baseHemi && !this.ended && !this._victoryLight) {
       const br = this.level.bossRoom, pp = this.player.pos;
       const inArena = br && this.level.roomAt(pp.x, pp.z) === br && !this.biome.outdoor;
-      const want = this.baseHemi * (inArena ? 1.9 : 1);
+      const want = this.baseHemi * (inArena ? 1.9 : 1) * this.encounters.hemiK;
       this.hemi.intensity += (want - this.hemi.intensity) * Math.min(1, realDt * 1.5);
     }
 
@@ -546,12 +552,12 @@ export class Game {
     if (this.cinematic) this._cinematicCam(cam, realDt);
     else if (p.dead && !this.isSolo) this._spectate(cam, realDt);
     this.selfLight.position.copy(cam.position).add(_v.set(0, -0.2, 0));
-    this.selfLight.intensity = (p.dead ? 0 : 2.2) * (this.settings.selfLight ?? 1);
+    this.selfLight.intensity = (p.dead ? 0 : 2.2) * (this.settings.selfLight ?? 1) * this.encounters.selfK;
     // flames
     const cx = cam.position.x, cz = cam.position.z;
     for (const f of this.built.flames) {
       const dx = f.x - cx, dz = f.z - cz;
-      if (dx * dx + dz * dz > 1300) continue;
+      if (dx * dx + dz * dz > 1300 || f.out) continue;
       this.vfx.flame(f, realDt);
     }
     this.lights.update(realDt, this.time, cam.position);
@@ -652,7 +658,7 @@ export class Game {
       this.tint.t -= dt;
       const k = Math.min(1, this.tint.t * 3);
       g.uTint.value.set(1 + (this.tint.rgb[0] - 1) * k, 1 + (this.tint.rgb[1] - 1) * k, 1 + (this.tint.rgb[2] - 1) * k);
-    } else g.uTint.value.set(1, 1, 1);
+    } else g.uTint.value.set(...this.encounters.tint); // room modifiers grade the view while you're in them
   }
 
   screenTint(rgb, dur) { this.tint = { rgb, t: dur }; }
@@ -801,13 +807,14 @@ export class Game {
     if (a.faction !== 'enemy') return;
     this.stats.kills++;
     // drops
-    const gold = Math.round((a.def.gold ?? 1) * (a.elite ? 4 : 1) * (1 + this.floorIndex * 0.25));
+    const gold = Math.round((a.def.gold ?? 1) * (a.elite ? 4 : 1) * (1 + this.floorIndex * 0.25) * this.encounters.goldMult(a));
     if (gold > 0) this.spawnDrop('gold', a.pos, gold);
     if (Math.random() < (a.elite ? 1 : a.boss ? 0 : 0.1 * (this.difficulty.orbChance ?? 1))) this.spawnDrop('health', a.pos, 18 + this.floorIndex * 4);
     // kill credit
     if (killer === this.player.id) this.onLocalKill(a);
     else if (killer) this.net?.sendTo(killer, { t: 'kc', id: a.id, el, x: a.pos.x, z: a.pos.z, hx: a.mask & ST.hex ? 1 : 0, b: a.mask & ST.burn ? 1 : 0 });
     if (a.boss) this.onBossKilled(a);
+    this.encounters.onKilled(a);
   }
 
   onLocalKill(a, hexed, burning) {
@@ -1233,6 +1240,7 @@ export class Game {
   // ======================================================================
   setRoomLocked(roomId, locked) {
     const room = this.level.rooms[roomId];
+    this.encounters.onLock(room, locked);
     for (const did of room.doors) {
       const door = this.level.doors[did];
       this.built.setDoor(did, locked);
@@ -1243,7 +1251,8 @@ export class Game {
     if (locked) this.critters?.startle(new THREE.Vector3(room.cx, 1, room.cz), Math.max(room.w, room.h) * T);
     if (locked) {
       this.audio?.setMusic(room.type === ROOM.BOSS ? 'boss' : 'combat');
-      if (room.type === ROOM.TRIAL) { this.ui?.banner('TRIAL OF SPEED', `Slay them all within ${room.trialLimit ?? 45} seconds`, '#ffcf60'); this.audio?.play('boss_roar', { volume: 0.4 }); }
+      if (room.type !== ROOM.BOSS && this.encounters.lockBanner(room)) { /* mimic, champion or modifier */ }
+      else if (room.type === ROOM.TRIAL) { this.ui?.banner('TRIAL OF SPEED', `Slay them all within ${room.trialLimit ?? 45} seconds`, '#ffcf60'); this.audio?.play('boss_roar', { volume: 0.4 }); }
       else if (room.type === ROOM.ELITE) this.ui?.banner('ELITE CHAMBER', 'A champion bars the way', '#ff9040');
       else if (room.sentriesPlaced) this.ui?.banner('SENTRIES', 'Strike before they rally', '#d08040');
       else if (room.type !== ROOM.BOSS) this.ui?.banner('AMBUSH', 'The doors slam shut', '#d04030');
@@ -1263,16 +1272,18 @@ export class Game {
       this.screenTint([1.12, 1.06, 0.96], 0.5);
     }
     if (room.type === ROOM.BOSS) return; // handled by boss death
-    if (room.type === ROOM.TRIAL) this.ui?.banner(room.trialWon ? 'TRIAL CONQUERED' : 'CHAMBER CLEARED', room.trialWon ? 'An epic tome is yours' : 'Too slow — a lesser reward', room.trialWon ? '#ffcf60' : '#e8c070');
+    const enc = this.encounters.onRoomCleared(room); // champion hoards, modifier rewards
+    if (enc?.banner) this.ui?.banner(...enc.banner);
+    else if (room.type === ROOM.TRIAL) this.ui?.banner(room.trialWon ? 'TRIAL CONQUERED' : 'CHAMBER CLEARED', room.trialWon ? 'An epic tome is yours' : 'Too slow — a lesser reward', room.trialWon ? '#ffcf60' : '#e8c070');
     else this.ui?.banner('CHAMBER CLEARED', room.type === ROOM.ELITE ? 'A rare tome awaits' : 'Claim your reward', '#e8c070');
     // revive dead teammates at the end of a room
     if (this.player.dead) { this.player.dead = false; this.player.downed = false; this.player.hp = Math.round(this.player.maxHp * 0.3); this.player.spawnAt(room.cx, room.cz, this.player.yaw); this.ui?.toast('You return from beyond the veil'); }
     if (this.player.downed) this.player.revive(0.3);
     else if (this.player.alive && this.player.hp < this.player.maxHp) this.player.heal(this.player.maxHp * 0.15 * (this.difficulty.clearHeal ?? 1)); // a breath of respite between fights
-    this.spawnPedestal(room, room.type === ROOM.TRIAL ? (room.trialWon ? 2 : 0) : room.type === ROOM.ELITE ? 1 : 0);
+    this.spawnPedestal(room, Math.max(enc?.rarity ?? 0, room.type === ROOM.TRIAL ? (room.trialWon ? 2 : 0) : room.type === ROOM.ELITE ? 1 : 0));
     if (this._ctxTips?.sigil) { this._tipQ?.unshift(this._ctxTips.sigil); this._ctxTips.sigil = null; }
     if (this.isHost) {
-      const gold = Math.round((10 + this.floorIndex * 6) * (room.type === ROOM.ELITE ? 2.5 : room.type === ROOM.TRIAL && room.trialWon ? 3 : 1));
+      const gold = Math.round((10 + this.floorIndex * 6) * (room.type === ROOM.ELITE ? 2.5 : room.type === ROOM.TRIAL && room.trialWon ? 3 : 1) * (enc?.gold ?? 1));
       this.spawnDrop('gold', new THREE.Vector3(room.cx, this.groundY(room.cx, room.cz), room.cz), gold);
     }
   }
@@ -1501,7 +1512,7 @@ export class Game {
       case 'portal':
         this.goNextFloor();
         break;
-      default: break;
+      default: this.encounters.interact(it); break;
     }
   }
 

@@ -100,6 +100,7 @@ export class Director {
     const a = this.g.actors.spawn(type, x, z, { hp, dmg, elite: opts.elite, affix: opts.affix, yaw: opts.yaw ?? Math.random() * 6.28, dormant: opts.dormant, homeRoom: opts.homeRoom, spawnFx: opts.spawnFx });
     if (!BOSS_DEFS[type]) a.speedMult *= this.g.difficulty?.enemySpeed ?? 1; // the Hunt pact
     if (this.active && !opts.noCredit) this.active.spawned.add(a.id);
+    this.g.encounters?.onSpawned(a);
     return a;
   }
 
@@ -152,6 +153,7 @@ export class Director {
     this.active = { room, waves, waveIdx: -1, spawned: new Set(), t: 0, waveT: 0, clearT: 0, entry };
     // a trial is against the clock: clear it in time for an epic reward
     if (room.type === ROOM.TRIAL) { room.trialLimit = TRIAL_TIME + this.floor * 3; room.trialEnd = g.time + room.trialLimit; room.trialWon = null; }
+    g.encounters?.onEncounterStart(room, waves);
     g.setRoomLocked(room.id, true);
     g.net?.broadcast({ t: 'lock', r: room.id, on: 1, sen: room.sentriesPlaced ? 1 : 0, tl: room.trialLimit ?? 0 });
     // pull stragglers into the room
@@ -242,7 +244,8 @@ export class Director {
       const cx = room.x + 1 + Math.floor(this.rng.next() * (room.w - 2));
       const cy = room.y + 1 + Math.floor(this.rng.next() * (room.h - 2));
       const idx = cy * L.W + cx;
-      if (L.cells[idx] !== FLOOR || L.kind[idx] === K_WATER) continue;
+      // (an L-shaped room's cut corner can hold corridor floor: that is outside the doors)
+      if (L.cells[idx] !== FLOOR || L.kind[idx] === K_WATER || L.roomId[idx] !== room.id) continue;
       const x = (cx + 0.5) * T, z = (cy + 0.5) * T;
       if (g.collision.pushOut(x, z, 0.6)) continue;
       let near = 1e9;
@@ -271,7 +274,9 @@ export class Director {
       this.g.spells.after(i * 0.12 + Math.random() * 0.2, () => {
         if (this.active !== A) return;
         const p = this._spawnPoint(room, s.role);
-        this.spawnEnemy(s.type, p.x, p.z, { elite: s.elite, affix: s.affix });
+        const a = this.spawnEnemy(s.type, p.x, p.z, { elite: s.elite, affix: s.affix });
+        // some elite chambers are held by a named champion
+        if (s.champion && room.champ) this.g.encounters?.makeChampion(a, room);
       });
     });
     if (A.waveIdx > 0) this.g.net?.broadcast({ t: 'wave', n: A.waveIdx + 1, of: A.waves.length });

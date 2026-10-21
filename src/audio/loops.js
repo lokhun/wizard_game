@@ -70,3 +70,8 @@ def('loop_portal', 0.4, (v) => {
   v.noise({ buf: 'pink', a: 0.5, peak: 0.15, filt: { type: 'bp', f: 900, q: 8, lfo: { rate: 0.2, depth: 400 } } });
   v.osc({ f: 55, a: 0.5, peak: 0.15 });
 });
+// a draught whistling through cracked stone: the tell of a secret wall
+def('loop_draft', 0.5, (v) => {
+  v.noise({ buf: 'pink', a: 1.5, peak: 0.35, filt: { type: 'bp', f: 700, q: 9, lfo: { rate: 0.13, depth: 260 } }, trem: { rate: 0.21, depth: 0.6 } });
+  v.noise({ buf: 'white', a: 1.5, peak: 0.1, filt: { type: 'bp', f: 2300, q: 14, lfo: { rate: 0.31, depth: 500 } }, trem: { rate: 0.17, depth: 0.8 } });
+});

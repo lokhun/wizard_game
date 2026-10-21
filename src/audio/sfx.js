@@ -632,3 +632,43 @@ def('enemy_death', 'enemy', 0.25, (v) => {
   vocal(v, { f: 130, f2: 70, dur: 0.45, a: 0.01, form: 500, peak: 0.25, vr: 20, vd: 0.06, drive: 3 });
   v.noise({ buf: 'pink', dur: 0.35, peak: 0.4, filt: { type: 'lp', f: 1200, f2: 200 } });
 });
+
+// --------------------------------------------------------- encounters -----
+// mimic: a wet, wooden growl - a creaking lid over a throat
+def('mimic_growl', 'enemy', 0.25, (v) => {
+  creak(v, { dur: 0.5, f: 22, f2: 40, f3: 18, res: 520, peak: 0.35 });
+  vocal(v, { f: rnd(70, 85), f2: 55, ft: 0.35, f3: 66, dur: 0.8, form: 420, lp: 1300, peak: 0.35, rasp: 0.3, vr: 22, vd: 0.14, drive: 5 });
+  bubbles(v, 3, 0.4, 260, 0.12, 0.1);
+}, { cap: 2 });
+// the reveal: lid banging open, a roar and a spray of coins
+def('mimic_spring', 'sting', 0.35, (v) => {
+  burst(v, { dur: 0.04, type: 'bp', f: 1600, q: 2, peak: 0.8 });
+  v.thump({ f: 95, f2: 45, dur: 0.22, peak: 0.9 });
+  creak(v, { dur: 0.3, f: 40, f2: 70, f3: 30, res: 600, peak: 0.45 });
+  vocal(v, { t: 0.05, f: 78, f2: 58, ft: 0.6, f3: 48, dur: 1.2, a: 0.04, form: 480, lp: 1600, peak: 0.42, rasp: 0.4, vr: 19, vd: 0.12, drive: 7 });
+  coins(v, 14, 0.5, 0.09, 0.05);
+}, { cap: 1 });
+def('mimic_death', 'enemy', 0.3, (v) => {
+  creak(v, { dur: 0.9, f: 30, f2: 18, f3: 12, res: 480, peak: 0.45 });
+  v.thump({ t: 0.35, f: 90, f2: 40, dur: 0.25, peak: 0.8 });
+  coins(v, 18, 0.7, 0.1, 0.4);
+  vocal(v, { f: 90, f2: 40, dur: 0.6, a: 0.02, form: 400, peak: 0.25, vr: 14, vd: 0.1, drive: 3 });
+}, { cap: 2 });
+// a secret wall gives way: stone cracking, then a rumbling slide of rubble
+def('wall_crumble', 'boom', 0.45, (v) => {
+  burst(v, { dur: 0.05, type: 'bp', f: 1800, q: 1.2, peak: 0.9 });
+  v.noise({ buf: 'crackle', dur: 0.9, a: 0.01, peak: 0.7, rate: 0.5, filt: { type: 'bp', f: 900, q: 0.8 } });
+  rumble(v, { dur: 1.6, a: 0.04, f: 220, peak: 0.95 });
+  v.thump({ t: 0.2, f: 70, f2: 35, dur: 0.4, peak: 0.8 });
+  for (let i = 0; i < 6; i++) v.noise({ buf: 'pink', t: 0.3 + i * 0.14 + rnd(0, 0.05), dur: 0.08, a: 0.005, peak: 0.35, filt: { type: 'bp', f: rnd(500, 1300), q: 2 } });
+}, { cap: 1 });
+// altars and bargains
+def('altar_pact', 'sting', 0.6, (v) => {
+  v.choir({ freqs: [110, 130.8, 164.8, 207.7], dur: 2.2, a: 0.5, peak: 0.12, vowel: 'o' });
+  rumble(v, { dur: 1.8, a: 0.3, f: 160, peak: 0.5 });
+  v.osc({ type: 'sine', f: 55, dur: 1.8, a: 0.3, peak: 0.3 });
+}, { cap: 1 });
+def('dice_roll', 'sting', 0.2, (v) => {
+  for (let i = 0; i < 7; i++) v.noise({ buf: 'pink', t: i * (0.05 + i * 0.012), dur: 0.03, a: 0.002, peak: 0.5 * (1 - i * 0.1), filt: { type: 'bp', f: rnd(1800, 3200), q: 3 } });
+  coins(v, 5, 0.3, 0.06, 0.45);
+}, { cap: 2 });

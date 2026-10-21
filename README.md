@@ -27,6 +27,9 @@ A first-person, co-op wizard roguelike for the browser. Fight your way up from t
   - Pillars and statues break line of sight.
   - Optional **Trial** rooms: beat a tougher wave against the clock for an Epic tome.
   - Some rooms have their first squad camped around a fire, so you can scout and strike first.
+  - **Room modifiers**: some fights happen in Darkness, under a Blood Moon, Haunted by specters that pass through walls, in an Arcane Surge or in a Powder Store.
+  - **Named champions** with two affixes and a health bar guard some elite chambers, and an epic hoard.
+  - **Mimics** lurk among the treasure chests (look closely), a **Blood Altar** and a **Gambler** offer bargains, and **secret rooms** hide behind cracked walls.
 - **A living world:**
   - Rats scurry along the walls, bats burst from the vaults, and crows take wing in the bailey.
   - Mist drifts over the cobbles, ivy trails from the battlements, and moss, water stains and cracks mark the walls.
