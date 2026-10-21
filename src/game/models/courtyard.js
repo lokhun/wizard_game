@@ -30,7 +30,7 @@ function visorSlit(rig, eye, k = 6, y = 0.15, z = 0.135, w = 0.1) {
 // a mail coif, a dented great helm trailing torn mantling, a faded heraldic surcoat and a ragged
 // cape, a heater shield painted to match (an arrow still in it, more in his back), a notched sword.
 const FK_EYE = 0x8fd8ff;
-const FK_FIELD = [0.1, 0.12, 0.26], FK_CHARGE = [0.72, 0.68, 0.58];
+const FK_FIELD = [0.17, 0.21, 0.46], FK_CHARGE = [0.9, 0.84, 0.7];
 function fkWear(v) {
   const n = vnoise(v.x * 9 + 2, v.y * 7, v.z * 9, 61), st = vnoise(v.x * 28, v.y * 3, v.z * 28, 5), d = 0.8 + 0.3 * vnoise(v.x * 40, v.y * 40, v.z * 40, 9);
   const r = smooth(0.42, 0.72, n * 0.75 + st * 0.35);

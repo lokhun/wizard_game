@@ -63,7 +63,11 @@ export const animatedArmor = {
         { hit: 0.22 },
       ),
     },
-    extra: (P, m) => { m.U.uFlutterSpeed.value = 2.0; },
+    extra: (P, m, s) => {
+      m.U.uFlutterSpeed.value = s.anim === 'windup' ? 3.2 : 2.0;
+      // the binding light swells through a wind-up and drains away as the suit falls apart
+      glowLevel(m, s.anim === 'windup' ? 1 + 0.9 * smooth(0, 1, s.progress) : s.anim === 'death' ? 1 - 0.9 * smooth(0.2, 0.8, s.progress) : 1);
+    },
   },
 };
 
@@ -472,15 +476,26 @@ export const royalGuard = {
     rig.add('head', 'steel', helm, { y: 0.01, sz: 1.1 }, { c: BK });
     rig.add('head', 'steel', mergeRaw([xf(G.box(0.03, 0.15, 0.14), { x: 0.12, y: 0.03, z: 0.0 }), xf(G.box(0.03, 0.15, 0.14), { x: -0.12, y: 0.03, z: 0.0 }), xf(G.box(0.24, 0.12, 0.03), { y: 0.06, z: -0.13 })]), {}, { c: BK });
     rig.add('head', 'gold', mergeRaw([xf(G.tor(0.142, 0.01, 4, 20), { rx: Math.PI / 2, y: 0.13, sy: 1.1 }), xf(G.box(0.02, 0.14, 0.32), { y: 0.3, z: -0.02 }), xf(G.box(0.012, 0.18, 0.02), { y: 0.13, z: 0.15 })]), {}, { c: GOLDTRIM });
-    addTowerShield(rig, 'foreL', { w: 0.62, h: 1.1, y: -0.18, c: BK, rimC: GOLDTRIM, mat: 'steel', rimMat: 'gold', emblem: (r, b, t) => r.add(b, 'gold', mergeRaw([xf(G.tor(0.12, 0.02, 4, 16), { z: 0.07 }), xf(G.box(0.03, 0.5, 0.02), { z: 0.07 }), xf(G.box(0.3, 0.03, 0.02), { z: 0.07, y: 0.08 })]), t, { c: GOLDTRIM }) });
+    addTowerShield(rig, 'foreL', { w: 0.56, h: 0.98, y: -0.17, c: BK, rimC: GOLDTRIM, mat: 'steel', rimMat: 'gold', emblem: (r, b, t) => r.add(b, 'gold', mergeRaw([xf(G.tor(0.12, 0.02, 4, 16), { z: 0.07 }), xf(G.box(0.03, 0.5, 0.02), { z: 0.07 }), xf(G.box(0.3, 0.03, 0.02), { z: 0.07, y: 0.08 })]), t, { c: GOLDTRIM }) });
     addHalberd(rig, 'handR', { len: 2.4, grip: 0.38, metalC: [1.4, 1.4, 1.5], trimC: GOLDTRIM });
+    // a long, moth-eaten royal cape, black with a gold-threaded hem
+    const cape = panel(0.56, 1.35, { ws: 6, hs: 9, tatter: 0.35, seed: 31, curve: 0.12, taperBot: 1.25 });
+    rig.add('chest', 'cloth', cape, { y: D.chest - 0.02, z: -0.23, ry: Math.PI, rx: 0.08 }, {
+      cfn: (v) => { const k = 0.7 + 0.35 * vnoise(v.x * 8, v.y * 8, 3, 9); return v.y < -1.18 ? [0.65 * k, 0.5 * k, 0.24 * k] : [0.07 * k, 0.06 * k, 0.08 * k]; },
+      anim: (v) => clamp(-v.y / 1.2) * 1.6,
+      skin: chainSkin([['hips', -1.05], ['spine', -0.5], ['chest', -0.05]], (v) => v.y),
+    });
     rig.socket('muzzle', 'handR', 0, -0.07, 1.4);
     return D;
   },
   pose: humanoidPose,
   anim: {
     death: 'collapse', spawn: 'rise', gait: 'plod', armSwing: 0.15, stride: 0.5, knee: 0.7,
-    rest: { armR: [-0.3, 0, 0.0], foreR: [-1.15, 0, 0], handR: [-0.2, 0, 0], armL: [-0.3, -0.9, 0.25], foreL: [-1.3, 0, 0] },
+    rest: { armR: [-0.3, 0, 0.0], foreR: [-1.15, 0, 0], handR: [-0.2, 0, 0], armL: [-0.12, -0.9, 0.25], foreL: [-1.3, 0, 0] },
+    extra: (P, m, s, dt, k) => {
+      glowLevel(m, s.anim === 'windup' ? 1 + smooth(0, 1, s.progress) : s.anim === 'death' ? 1 - 0.9 * s.progress : 1);
+      if (!k.action && s.anim !== 'death') P.r('jaw', Math.max(0, Math.sin(m.time * 0.8 + m.seed * 5)) * 0.12);
+    },
     stance: (P) => P.apply({ spine: [0.05, 0, 0], thighL: [-0.06, 0, 0.04], thighR: [-0.06, 0, -0.04], shinL: [0.1, 0, 0], shinR: [0.1, 0, 0] }),
     actions: {
       bash: act2(

@@ -608,7 +608,9 @@ export const ratShaman = {
     rig.add('handR', 'bone', mergeRaw([0, 1, 2, 3].map((i) => tube([[Math.cos(i * 1.57) * 0.03, Math.sin(i * 1.57) * 0.03, tip + 0.04], [Math.cos(i * 1.57) * 0.07, Math.sin(i * 1.57) * 0.07, tip + 0.13], [Math.cos(i * 1.57) * 0.025, Math.sin(i * 1.57) * 0.025, tip + 0.24]], (u) => 0.009 * (1 - u * 0.6), 6, 3))), st0, { c: [0.85, 0.78, 0.62] });
     rig.add('handR', 'leather', mergeRaw([xf(G.cyl(0.026, 0.026, 0.1, 6), { rx: Math.PI / 2, z: -0.0 }), xf(G.tor(0.024, 0.006, 4, 8), { z: tip - 0.12 })]), st0, { c: 0x4a3420 });
     rig.add('handR', 'glow', G.oct(0.042), { ...st0, z: tip + 0.14, sz: 1.6 }, { c: HDR(SHAMAN_GLOW, 3.5) });
-    rig.add('handR', 'glow', mergeRaw([xf(G.sph(0.012, 5, 4), { x: 0.035, z: tip - 0.02, y: 0.01 }), xf(G.sph(0.012, 5, 4), { x: -0.035, z: tip - 0.02, y: 0.01 })]), { ...st0 }, { c: HDR(SHAMAN_GLOW, 4) });
+    // the staff skull's face looks along hand +Y: dark sockets with witch-light pinpoints in them
+    rig.add('handR', 'dark', mergeRaw([xf(G.sph(0.024, 6, 4), { x: 0.037, z: tip - 0.025, y: 0.112, sy: 0.6 }), xf(G.sph(0.024, 6, 4), { x: -0.037, z: tip - 0.025, y: 0.112, sy: 0.6 }), xf(G.cone(0.012, 0.025, 3), { z: tip - 0.055, y: 0.113, rx: Math.PI / 2 })]), { ...st0 });
+    rig.add('handR', 'glow', mergeRaw([xf(G.sph(0.011, 5, 4), { x: 0.036, z: tip - 0.025, y: 0.12 }), xf(G.sph(0.011, 5, 4), { x: -0.036, z: tip - 0.025, y: 0.12 })]), { ...st0 }, { c: HDR(SHAMAN_GLOW, 5) });
     // dangling fetishes: cords with a feather and a tooth
     rig.add('handR', 'leather', mergeRaw([tube([[0.03, 0, tip - 0.12], [0.05, -0.05, tip - 0.14], [0.05, -0.14, tip - 0.15]], 0.004, 5, 3), tube([[-0.03, 0, tip - 0.12], [-0.045, -0.06, tip - 0.13], [-0.04, -0.12, tip - 0.13]], 0.004, 5, 3)]), st0, { c: 0x3a2a1a, anim: 1 });
     rig.add('handR', 'cloth', xf(G.box(0.004, 0.08, 0.02), { x: 0.05, y: -0.18, z: tip - 0.15 }), st0, { c: [0.35, 0.32, 0.28], anim: 1 });
