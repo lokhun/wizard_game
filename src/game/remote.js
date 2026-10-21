@@ -66,9 +66,19 @@ export class RemotePlayer {
       if (this.channel) { this.channel.sp.channel.end(this.channel.ctx, this.channel.S); this.channel = null; }
       return;
     }
-    const origin = msg.o ? new THREE.Vector3(...msg.o) : this.muzzleWorld();
-    const dir = msg.d ? new THREE.Vector3(...msg.d) : this.forward();
+    let origin = msg.o ? new THREE.Vector3(...msg.o) : this.muzzleWorld();
+    let dir = msg.d ? new THREE.Vector3(...msg.d) : this.forward();
     const aim = msg.ap ? new THREE.Vector3(...msg.ap) : null;
+    // replays are visual only (the caster's own client deals the damage), so start
+    // them from this avatar's staff tip rather than the caster's first-person view,
+    // still aimed at the point they aimed at
+    if (msg.o && aim) {
+      const tip = this.muzzleWorld();
+      if (tip.distanceToSquared(origin) < 2.5 && aim.distanceToSquared(tip) > 1) {
+        origin = tip;
+        dir = aim.clone().sub(tip).normalize();
+      }
+    }
     this.castT = 0.5;
     this.game.castFlourish?.(this, msg.slot);
     if (sp.mode === 'channel') {

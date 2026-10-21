@@ -142,7 +142,9 @@ function coneChannel({ el, range, angle, dmg, interval = 0.12, st, sound, max = 
     start(ctx, S) {
       S.acc = 0; S.snd = ctx.loop(sound);
       // roaring volume behind the particles: scrolling-noise flame cone
-      S.cone = ctx.vfx.cone({ element: el, speed: 4.5, alpha: 1.5 });
+      // seen end-on from your own eyes the volume reads as a ball, so the caster
+      // gets a thin one and the flame stream carries it; partners see it full
+      S.cone = ctx.vfx.cone({ element: el, speed: 4.5, alpha: ctx.local ? 0.45 : 1.5 });
     },
     update(ctx, S, dt) {
       const o = ctx.origin, d = ctx.dir;
@@ -154,7 +156,7 @@ function coneChannel({ el, range, angle, dmg, interval = 0.12, st, sound, max = 
       // them), widening and cooling from a hot orange throat to sooty red
       const n = emitN(S, 'eF', 160, dt);
       for (let i = 0; i < n; i++) {
-        const t = 0.1 + Math.pow(Math.random(), 0.9) * 0.88;
+        const t = (ctx.local ? 0.16 : 0.1) + Math.pow(Math.random(), 0.9) * 0.82;
         const w = Math.tan(angle) * t;
         const sx = d.x + rand(-1, 1) * w * 0.8, sy = d.y + rand(-1, 1) * w * 0.5, sz = d.z + rand(-1, 1) * w * 0.8;
         const L = t * range;

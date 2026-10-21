@@ -132,22 +132,27 @@ void main(){
 }`;
 
 const BEAM_VERT = /* glsl */ `
-varying vec2 vUv; varying vec3 vN; varying vec3 vV; varying float vDepth;
+varying vec2 vUv; varying vec3 vN; varying vec3 vV; varying float vDepth; varying vec3 vAx;
 void main(){
   vUv = uv;
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   vN = normalize(normalMatrix * normal);
+  vAx = (modelViewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz; // the beam's axis (local +Y) in view space
   vV = normalize(-mv.xyz);
   vDepth = -mv.z;
   gl_Position = projectionMatrix * mv;
 }`;
 const BEAM_FRAG = /* glsl */ `
 uniform vec3 uColor; uniform vec3 uCore; uniform float uTime; uniform float uLen; uniform float uAlpha; uniform float uNoise;
-varying vec2 vUv; varying vec3 vN; varying vec3 vV; varying float vDepth;
+varying vec2 vUv; varying vec3 vN; varying vec3 vV; varying float vDepth; varying vec3 vAx;
 float h(float x){ return fract(sin(x) * 43758.5453); }
 float n1(float x){ float i = floor(x), f = fract(x); return mix(h(i), h(i + 1.0), smoothstep(0.,1.,f)); }
 void main(){
-  float facing = abs(dot(vN, vV));
+  // facing measured across the beam, not along it: your own beam runs nearly
+  // straight away from the eye, where a plain N.V goes to zero and it vanished
+  vec3 ax = normalize(vAx);
+  vec3 vp = vV - ax * dot(vV, ax);
+  float facing = dot(vp, vp) > 1e-6 ? abs(dot(vN, normalize(vp))) : 1.0;
   float core = pow(facing, 6.0);
   float glow = pow(facing, 1.5);
   float along = vUv.y * uLen;
