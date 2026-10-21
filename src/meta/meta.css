@@ -2,11 +2,12 @@
    Built on the base UI look (panels, bronze trim, engraved serif); each run's
    summary takes its realm's colours through --acc / --deep. */
 
-/* ---------- feat toast (in run: one element, restyled per feat) */
-.feat-toast { position: absolute; left: 50%; top: 9vh; transform: translate(-50%, -24px); opacity: 0; display: flex; align-items: center; gap: 14px; padding: 10px 22px 10px 14px; min-width: 300px;
+/* ---------- feat toast (in run: one element, restyled per feat). Under the minimap,
+   clear of the realm banner (feats like Moonrise land on a floor's first frame) and the crosshair. */
+.feat-toast { position: absolute; right: 24px; top: 240px; transform: translateX(24px); opacity: 0; display: flex; align-items: center; gap: 14px; padding: 10px 22px 10px 14px; min-width: 300px;
   background: linear-gradient(180deg, rgba(34,26,16,0.94), rgba(12,10,8,0.94)); border: 1px solid var(--bronze); box-shadow: 0 0 30px rgba(255,190,90,0.25), inset 0 0 24px rgba(0,0,0,0.6); pointer-events: none; z-index: 12; }
 .feat-toast.show { animation: featIn 4.2s ease forwards; }
-@keyframes featIn { 0% { opacity: 0; transform: translate(-50%, -24px); } 8%, 86% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; transform: translate(-50%, -12px); } }
+@keyframes featIn { 0% { opacity: 0; transform: translateX(24px); } 8%, 86% { opacity: 1; transform: translateX(0); } 100% { opacity: 0; transform: translateX(12px); } }
 .feat-toast .fi { width: 46px; height: 46px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: radial-gradient(circle, rgba(255,200,100,0.22), rgba(0,0,0,0) 70%); }
 .feat-toast .fk { font-family: var(--serif); font-size: 10.5px; letter-spacing: 0.4em; color: var(--gold); text-transform: uppercase; }
 .feat-toast .fn { font-family: 'Cinzel', var(--serif); font-weight: 600; font-size: 19px; color: #fff0d0; letter-spacing: 0.05em; text-shadow: 0 0 14px rgba(255,180,80,0.5); }
