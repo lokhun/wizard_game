@@ -51,6 +51,7 @@ export class Actor {
     this.elite = !!opts.elite || !!this.def.elite;
     this.affix = opts.affix ?? null;
     this.affix2 = opts.affix2 ?? null; // (the Exalted pact: a second affix)
+    this._combo = null; this._tap = false; // (Nightmare: a chained melee blow, a follow-up shot in flight)
     this.pos = new THREE.Vector3(opts.x, opts.y ?? 0, opts.z);
     this.vel = new THREE.Vector3();
     this.kb = new THREE.Vector3();
@@ -956,7 +957,13 @@ export class ActorManager {
       return out;
     }
     if (a.state === 'recover') {
-      if (a.stateT > (a.attack?.recover ?? 0.6) * (hasAffix(a, 'frenzied') ? 0.5 : 1)) this._setState(a, 'chase', 'idle', null);
+      // Nightmare: a melee blow may chain straight into a second (its wind-up and tell play again)
+      if (a._combo && a.stateT > 0.12) {
+        const at = a._combo;
+        a._combo = null;
+        if (at && this._canUse(a, at, dist, tRad, true)) { this._beginAttack(a, at, tgt); return out; }
+      }
+      if (a.stateT > (a.attack?.recover ?? 0.6) * (hasAffix(a, 'frenzied') ? 0.5 : 1) * (a.faction === 'enemy' ? g.difficulty?.aiRecover ?? 1 : 1)) this._setState(a, 'chase', 'idle', null);
       return out;
     }
 
@@ -974,9 +981,9 @@ export class ActorManager {
         if (!this._canUse(a, at, dist, tRad, los)) continue;
         // ranged "fire tokens": only a couple of shooters wind up on one target at once,
         // so volleys stay readable and dodgeable
-        if (a.faction === 'enemy' && RANGED_KINDS.has(at.kind) && this._rangedWindups(tgt, a) >= 2 + (g.floorIndex >= 2 ? 1 : 0) + (g.floorIndex >= 4 ? 1 : 0)) continue;
+        if (a.faction === 'enemy' && RANGED_KINDS.has(at.kind) && this._rangedWindups(tgt, a) >= 2 + (g.floorIndex >= 2 ? 1 : 0) + (g.floorIndex >= 4 ? 1 : 0) + (g.difficulty?.fireTokens ?? 0)) continue;
         // (specials come round a little faster than authored; frenzied champions twice as fast)
-        a.cds[at.id] = (at.cd ?? 0) * rand(0.72, 1.02) * (hasAffix(a, 'frenzied') ? 0.5 : 1);
+        a.cds[at.id] = (at.cd ?? 0) * rand(0.72, 1.02) * (hasAffix(a, 'frenzied') ? 0.5 : 1) * (a.faction === 'enemy' ? g.difficulty?.aiCd ?? 1 : 1);
         this._beginAttack(a, at, tgt);
         return out;
       }
@@ -993,7 +1000,7 @@ export class ActorManager {
         if (b === a || b.target !== tgt || b.def.range) continue;
         if (b.state === 'windup' || b.state === 'attack' || b.pos.distanceTo(tp) < tRad + b.radius + 1.2) engaged++;
       }
-      if (engaged >= 3 + (g.floorIndex >= 2 ? 1 : 0)) { waiting = true; wantDist = 4.5 + (a.id % 3); }
+      if (engaged >= 3 + (g.floorIndex >= 2 ? 1 : 0) + (g.difficulty?.meleeSlots ?? 0)) { waiting = true; wantDist = 4.5 + (a.id % 3); }
     }
     let move = false, mvx = 0, mvz = 0;
     if (dist > wantDist) {
@@ -1082,7 +1089,7 @@ export class ActorManager {
     if (at.kind === 'nova') {
       g.broadcastHazard({ shape: 'circle', x: a.pos.x, y: a.pos.y, z: a.pos.z, r: at.radius, delay: at.windup, dmg, el: at.el ?? 'enemy', st: at.st, kb: 10, vis: 1, src: a.id });
     } else if (at.kind === 'circle') {
-      const n = at.count ?? 1;
+      const n = (at.count ?? 1) + (a.faction === 'enemy' && !at.ahead ? g.difficulty?.extraCircle ?? 0 : 0);
       for (let i = 0; i < n; i++) {
         let cx = tgt.pos.x, cz = tgt.pos.z;
         if (at.ahead) { cx = a.pos.x + Math.sin(yaw) * at.ahead; cz = a.pos.z + Math.cos(yaw) * at.ahead; }
@@ -1119,6 +1126,8 @@ export class ActorManager {
       g.audio?.play('swing', { pos: a.pos, volume: 0.5 });
       return;
     }
+    const D = g.difficulty;
+    a._combo = D?.combo && (at.kind === 'melee' || at.kind === 'lunge') && !a.boss && Math.random() < D.combo * (a.elite ? 1.7 : 1) ? at : null; // (kept apart: recover drops a.attack)
     switch (at.kind) {
       case 'melee':
         g.broadcastHazard({ shape: 'arc', x: a.pos.x, y: a.pos.y, z: a.pos.z, r: at.range + a.radius, rot: a.yaw, angle: at.arc * 0.5, delay: 0.08, dmg, el: at.el ?? 'physical', st: at.st, kb: at.kb ?? 5, vis: 0, src: a.id });
@@ -1158,6 +1167,8 @@ export class ActorManager {
           g.broadcastEnemyProjectile({ x: muzzle.x, y: muzzle.y, z: muzzle.z, vx: d.x * at.speed, vy: d.y * at.speed, vz: d.z * at.speed, el: at.el ?? 'enemy', dmg, mesh: at.mesh, homing: at.homing ?? 0, aoe: at.aoe ?? 0, st: at.st });
         }
         g.audio?.play('enemy_projectile', { pos: muzzle, volume: 0.6 });
+        // Nightmare: a follow-up shot a beat later, aimed afresh (a sidestep that beat the first may not beat the second)
+        if (D?.doubleTap && !a._tap && a.attack === at) g.spells.after(0.3, () => { if (a.dead || a.state !== 'attack' || tgt.dead) return; a._tap = true; this._strike(a, tgt, dist); a._tap = false; });
         break;
       }
       case 'lob': {

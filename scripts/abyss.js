@@ -49,6 +49,6 @@
   await new Promise((r) => setTimeout(r, 400));
   log.push(`ended=${g.ended}; summary: ${summary}`);
   const prof = JSON.parse(localStorage.getItem(Object.keys(localStorage).find((k) => /profile/i.test(k))) ?? '{}');
-  log.push(`profile: wins=${prof.wins} deaths=${prof.deaths} deepestAbyss=${prof.records?.deepestAbyss} pyro.bestAbyss=${prof.classes?.pyromancer?.bestAbyss} fastest=${prof.records?.fastestWin}`);
+  log.push(`profile: wins=${prof.wins} deaths=${prof.deaths} deepestAbyss=${prof.records?.deepestAbyss} pyro.bestAbyss=${prof.classes?.pyromancer?.bestAbyss} fastest=${prof.records?.fastestWin} nightmareWins=${prof.records?.nightmareWins} pyro.nightmare=${prof.classes?.pyromancer?.nightmare} feats=${Object.keys(prof.feats ?? {}).join(",")}`);
   return { log, errs };
 })();

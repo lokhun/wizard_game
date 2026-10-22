@@ -19,7 +19,7 @@ import { sigilTexture } from './game/models/wizard/sigil.js';
 import { TextureFactory, surfaceBakes } from './render/textures.js';
 import { warmBakes } from './render/bake.js';
 import { installShaderFixes } from './render/shaderFixes.js';
-import { attachMeta, loadProfile, resetProfile, difficultyFor, cleanPacts, pactsUnlocked, pactStrip, showPactBoard, showCodex, showDailyRite, riteLine, demoSummary, FEATS } from './meta/index.js';
+import { attachMeta, loadProfile, resetProfile, difficultyFor, cleanPacts, pactsUnlocked, toggleNightmare, pactStrip, showPactBoard, showCodex, showDailyRite, riteLine, demoSummary, FEATS } from './meta/index.js';
 
 // Optional modules (resolved at build time; missing files are simply skipped)
 const optional = import.meta.glob(['./audio/audio.js', './game/enemyModels.js', './game/wizardModels.js']);
@@ -293,7 +293,7 @@ function showSelect(lobbyInfo) {
     selected: selectedClass,
     lobby: lobbyInfo,
     // the host swears the pacts for the whole party
-    pacts: (!lobbyInfo || lobbyInfo.isHost) ? { html: (id) => pactStrip(id), bind: (box, id, rerender) => { const b = box.querySelector('#bPacts'); if (b) b.onclick = () => showPactBoard(ui, { classId: id, onClose: rerender }); } } : null,
+    pacts: (!lobbyInfo || lobbyInfo.isHost) ? { html: (id) => pactStrip(id), bind: (box, id, rerender) => { const b = box.querySelector('#bPacts'); if (b) b.onclick = () => showPactBoard(ui, { classId: id, onClose: rerender }); const n = box.querySelector('#bNight'); if (n) n.onclick = () => { ui.audio?.play(toggleNightmare() ? 'boss_roar' : 'ui_click', { volume: 0.5 }); rerender(); }; } } : null,
     onSelect: (id) => {
       selectedClass = id;
       settings.lastClass = id;
@@ -333,7 +333,12 @@ function refreshLobby() {
 // ---------------------------------------------------------------------------
 // solo
 // ---------------------------------------------------------------------------
-function currentPacts() { return pactsUnlocked() ? cleanPacts(loadProfile().pacts) : {}; }
+// (Nightmare is open from the first run; the pacts after the first victory)
+function currentPacts() {
+  const sel = cleanPacts(loadProfile().pacts);
+  if (q.get('test') && q.has('nightmare')) return { ...sel, nightmare: 1 }; // test hook
+  return pactsUnlocked() ? sel : sel.nightmare ? { nightmare: 1 } : {};
+}
 
 function startSolo() {
   dailyRun = null;

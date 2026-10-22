@@ -4,7 +4,7 @@ import { ENEMY_DEFS, BOSS_DEFS } from '../game/enemyDefs.js';
 import { BIOMES } from '../world/biomes.js';
 import { loadProfile, saveProfile, storageOk } from './profile.js';
 import { FEATS, FEAT_GROUPS, bestiaryTypes } from './feats.js';
-import { PACTS, PACT_BY_ID, MAX_HEAT, heatOf, cleanPacts, dailyRite, utcDay, pactOpen, nextUnlock, heatBoons } from './pacts.js';
+import { PACTS, PACT_BY_ID, NIGHTMARE, MAX_HEAT, heatOf, cleanPacts, dailyRite, utcDay, pactOpen, nextUnlock, heatBoons } from './pacts.js';
 import { fmtTime, fmtNum } from './summary.js';
 
 // ---------------------------------------------------------------------------
@@ -79,7 +79,7 @@ function wizardsPage(p) {
     const has = c && c.runs > 0;
     const d = (v, f = (x) => x) => (v ? f(v) : '—');
     return `<tr class="${c?.wins ? 'won' : ''}"><td><span class="cn">${classEmblem(id, hex(m.color), 28)}${m.name}</span></td>
-      <td class="${has ? '' : 'dim'}">${has ? c.runs : '—'}</td><td class="${c?.wins ? '' : 'dim'}">${d(c?.wins)}</td>
+      <td class="${has ? '' : 'dim'}">${has ? c.runs : '—'}</td><td class="${c?.wins ? '' : 'dim'}">${d(c?.wins)}${c?.nightmare ? ` <span class="nmw" title="Nightmare victories">· ${c.nightmare} ${iconSVG('skull', '#ff6050', 12, { glow: false })}</span>` : ''}</td>
       <td class="${has ? '' : 'dim'}">${has ? `${c.bestFloor} / ${BIOMES.length}` : '—'}</td><td class="${c?.fastest ? '' : 'dim'}">${d(c?.fastest, fmtTime)}</td>
       <td class="${c?.bestHeat >= 0 && c?.wins ? 'hot' : 'dim'}">${c?.wins && c.bestHeat >= 0 ? c.bestHeat : '—'}</td><td class="${c?.bestAbyss ? 'hot' : 'dim'}">${d(c?.bestAbyss)}</td><td class="${has ? '' : 'dim'}">${has ? fmtNum(c.kills) : '—'}</td></tr>`;
   }).join('');
@@ -122,6 +122,7 @@ function recordsPage(p) {
     ${t('Most foes in a run', p.records.mostKills ? fmtNum(p.records.mostKills) : '—')}
     ${t('Fastest victory', p.records.fastestWin ? fmtTime(p.records.fastestWin) : '—')}
     ${t('Highest heat cleared', p.records.highestHeat >= 0 ? p.records.highestHeat : '—')}
+    ${t('Nightmare victories', p.records.nightmareWins ? fmtNum(p.records.nightmareWins) : '—')}
     ${t('Deepest Abyss', p.records.deepestAbyss ? `depth ${p.records.deepestAbyss}` : '—')}
     ${t('Co-op victories', fmtNum(p.coopWins))}
     ${t('Nemesis', nemesis ? esc((ENEMY_DEFS[nemesis[0]] ?? BOSS_DEFS[nemesis[0]])?.name ?? nemesis[0]) : '—', nemesis ? `ended ${nemesis[1]} run${nemesis[1] > 1 ? 's' : ''}` : '')}
@@ -132,14 +133,24 @@ function recordsPage(p) {
 // ================================================================== pacts
 export function pactsUnlocked(p = loadProfile()) { return p.wins > 0; }
 
-// the strip on the class-select screen
+// the strip on the class-select screen: the pacts (after the first win) and
+// the Nightmare toggle (open from the start, for those who came for a fight)
+export function nightmareOn(p = loadProfile()) { return !!cleanPacts(p.pacts).nightmare; }
+export function toggleNightmare() {
+  const p = loadProfile(), sel = cleanPacts(p.pacts);
+  if (sel.nightmare) delete sel.nightmare; else sel.nightmare = 1;
+  p.pacts = sel; saveProfile();
+  return !!sel.nightmare;
+}
 export function pactStrip(classId) {
   const p = loadProfile();
-  if (!pactsUnlocked(p)) return `<div class="panel cs-pacts locked">${iconSVG('pact', '#806050', 26, { glow: false })}<div class="lab"><div class="subtitle">Pacts of Ascension</div><div class="s2">Unlocked by your first victory over the Hollow King.</div></div></div>`;
+  const nm = nightmareOn(p), nmWins = p.classes[classId]?.nightmare ?? 0;
+  const night = `<button class="btn small cs-nm${nm ? ' on' : ''}" id="bNight" title="${esc(NIGHTMARE.desc())}">${iconSVG('skull', nm ? '#ff5050' : '#9a8f7c', 16, { glow: nm })}Nightmare${nmWins ? ` <span class="w">${nmWins}✦</span>` : ''}</button>`;
+  if (!pactsUnlocked(p)) return `<div class="panel cs-pacts${nm ? ' nm' : ''}">${iconSVG(nm ? 'skull' : 'pact', nm ? '#ff5050' : '#806050', 26, { glow: nm })}<div class="lab"><div class="subtitle">${nm ? 'Nightmare · heat 10' : 'Pacts of Ascension'}</div><div class="s2">${nm ? 'Smarter, relentless foes · flawless chambers earn Dread Marks' : 'Pacts unlock with your first victory. Seasoned? Try Nightmare.'}</div></div>${night}</div>`;
   const sel = cleanPacts(p.pacts), h = heatOf(sel);
   const best = p.classes[classId]?.wins ? p.classes[classId].bestHeat : -1;
-  const names = Object.keys(sel).map((id) => PACT_BY_ID[id].name).join(' · ');
-  return `<div class="panel cs-pacts">${iconSVG('flame', h ? '#ff8a40' : '#806050', 26, { glow: !!h })}<div class="hv">${h}</div><div class="lab"><div class="subtitle">Pacts of Ascension · heat</div><div class="s2">${h ? esc(names) : 'No pacts sworn.'}${best >= 0 ? ` · best cleared with this wizard: ${best}` : ''}</div></div><button class="btn small" id="bPacts">Pacts</button></div>`;
+  const names = Object.keys(sel).filter((id) => id !== 'nightmare').map((id) => PACT_BY_ID[id].name).join(' · ');
+  return `<div class="panel cs-pacts${nm ? ' nm' : ''}">${iconSVG('flame', h ? '#ff8a40' : '#806050', 26, { glow: !!h })}<div class="hv">${h}</div><div class="lab"><div class="subtitle">${nm ? 'Pacts · heat' : 'Pacts of Ascension · heat'}</div><div class="s2">${names ? esc(names) : 'No pacts sworn.'}${best >= 0 ? ` · best cleared with this wizard: ${best}` : ''}</div></div>${night}<button class="btn small" id="bPacts">Pacts</button></div>`;
 }
 
 export function showPactBoard(ui, { classId, onClose } = {}) {
@@ -167,7 +178,7 @@ export function showPactBoard(ui, { classId, onClose } = {}) {
     }).join('');
     const h = heatOf(sel), b = heatBoons(h), nu = nextUnlock(cleared);
     m.querySelector('#pbHeat').textContent = h;
-    m.querySelector('#pbBoons').innerHTML = (h ? `${iconSVG('flame', '#ff8a40', 16, { glow: false })}<b>Heat ${h} rewards:</b> finer tomes ${Math.round((b.luck - 1) * 100)}% likelier · ${Math.round((b.gold - 1) * 100)}% more gold` : 'Swear pacts to raise the heat: the hotter the run, the finer its tomes and the richer its gold.')
+    m.querySelector('#pbBoons').innerHTML = (sel.nightmare ? `${iconSVG('skull', '#ff5050', 16, { glow: false })}<b style="color:#ff7060">Nightmare +10</b> · ` : '') + (h ? `${iconSVG('flame', '#ff8a40', 16, { glow: false })}<b>Heat ${h} rewards:</b> finer tomes ${Math.round((b.luck - 1) * 100)}% likelier · ${Math.round((b.gold - 1) * 100)}% more gold` : 'Swear pacts to raise the heat: the hotter the run, the finer its tomes and the richer its gold.')
       + (Number.isFinite(nu) ? ` <span class="nu">· next seal breaks at heat ${nu}${cleared >= 0 ? ` (best cleared: ${cleared})` : ''}</span>` : '');
     grid.querySelectorAll('.pb-card:not(.locked)').forEach((el) => {
       const pc = PACT_BY_ID[el.dataset.id];
@@ -180,7 +191,7 @@ export function showPactBoard(ui, { classId, onClose } = {}) {
   const done = () => { p.pacts = cleanPacts(sel); saveProfile(); };
   const close = keyed(ui, m, () => { done(); onClose?.(heatOf(sel)); }, (e) => { if (e.code === 'Enter') close(); });
   m.querySelector('#pbDone').onclick = close;
-  m.querySelector('#pbClear').onclick = () => { for (const k of Object.keys(sel)) delete sel[k]; render(); };
+  m.querySelector('#pbClear').onclick = () => { for (const k of Object.keys(sel)) if (k !== 'nightmare') delete sel[k]; render(); }; // (Nightmare has its own toggle)
   return m;
 }
 

@@ -127,6 +127,15 @@ export class BossBrain {
   sound(name, vol = 1) { this.g.net?.broadcast({ t: 'snd', n: name, x: this.a.pos.x, y: this.a.pos.y, z: this.a.pos.z, v: vol }); this.g.audio?.play(name, { pos: this.a.pos, volume: vol }); }
   fx(kind, extra = {}) { this.g.net?.broadcast({ t: 'bfx', k: kind, id: this.a.id, ...extra }); this.g.bossFx(kind, this.a, extra); }
 
+  _dread() {
+    const n = 12 + 2 * this.phase, off = Math.random() * Math.PI * 2, step = Math.PI * 2 / n;
+    this.fx('dread');
+    // at chest height above the ground, even from a boss on the wing
+    const y = () => 1.0 - (this.a.pos.y - this.g.groundY(this.a.pos.x, this.a.pos.z));
+    this.at(0.75, () => this.ring(n, 6.5 + this.phase * 0.6, 'enemyFire', 0.3, off, y()));
+    this.at(1.25, () => this.ring(n, 6.5 + this.phase * 0.6, 'enemyFire', 0.3, off + step / 2, y()));
+  }
+
   idleType() { const t = this.script.idleType; return typeof t === 'function' ? t(this) : (t ?? ''); }
 
   // ------------------------------------------------ main update
@@ -154,6 +163,12 @@ export class BossBrain {
       if (e.t <= 0) { this.events.splice(i, 1); e.fn(); }
     }
     for (const k in this.cds) this.cds[k] -= dt;
+    // Nightmare: between (and over) its moves the boss looses dread rings, two
+    // staggered rings of slow bolts whose gaps you weave through; faster each phase
+    if (this.g.difficulty?.dreadPulse && this.fightT > 4 && !a.hiddenT) {
+      this.dreadT = (this.dreadT ?? 5) - dt * Math.max(0.3, am);
+      if (this.dreadT <= 0) { this.dreadT = [8, 6.5, 5.2, 4.5][Math.min(this.phase, 3)]; this._dread(); }
+    }
     // anim progress
     this.animT += dt * Math.max(0.3, am);
     a.progress = Math.min(1, this.animT / Math.max(0.05, this.animDur));
@@ -184,7 +199,7 @@ export class BossBrain {
       let pick = pool[0];
       for (const m of pool) { r -= m.w ?? 1; if (r <= 0) { pick = m; break; } }
       this.move = pick;
-      this.cds[pick.name] = pick.cd ?? 3;
+      this.cds[pick.name] = (pick.cd ?? 3) * (this.g.difficulty?.bossCd ?? 1);
       this.face(tgt);
       const dur = pick.run(this, tgt, dist);
       this.busy = (dur ?? 1) / (phases[this.phase].speed ?? 1);

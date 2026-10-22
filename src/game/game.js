@@ -36,6 +36,7 @@ const WADE_C = [0.16, 0.22, 0.22]; // ripple rings on channel water
 
 const _v = new THREE.Vector3();
 
+const DREAD_MAX = 12;
 export class Game {
   constructor({ renderer, input, audio, ui, settings }) {
     this.renderer = renderer;
@@ -90,6 +91,24 @@ export class Game {
     this.hitSoundT = 0;
     // what happened, for whoever listens (run tracking, feats, the run summary: src/meta)
     this.events = new Emitter();
+    // (Nightmare) a chamber you leave untouched earns a Dread Mark: watch what the local player takes per fight
+    this.events.on('roomLock', (room, on) => { if (on) { this._fightRoom = room; this._fightHurt = 0; } });
+    this.events.on('hurt', (dmg) => { if (this._fightRoom) this._fightHurt += dmg; });
+  }
+
+  // Nightmare rewards skill: each flawless chamber grants a Dread Mark (+5% damage,
+  // up to 12), a flawless boss two. Judged per wizard, on each wizard's own machine.
+  _dreadCheck(room) {
+    if (this._fightRoom !== room) return;
+    this._fightRoom = null;
+    const p = this.player;
+    if (!this.difficulty.nightmare || this._fightHurt > 0 || p.dead || p.downed || this.menuMode) return;
+    if (p.dread >= DREAD_MAX) { this.ui?.toast('Flawless · your Dread Marks are full', '#ff8070'); return; }
+    p.dread = Math.min(DREAD_MAX, p.dread + (room.type === ROOM.BOSS ? 2 : 1));
+    p.recomputeStats();
+    this.ui?.toast(`Flawless · Dread Mark ${p.dread} — +${p.dread * 5}% damage`, '#ff7060');
+    this.audio?.play('victory_sting', { volume: 0.35 });
+    this.events.emit('dread', p.dread);
   }
 
   // ======================================================================
@@ -1293,6 +1312,7 @@ export class Game {
   slowMo(dur, k) { if (!this.slow || this.slow.k > k) this.slow = { t: 0, dur, k }; }
 
   onRoomCleared(room) {
+    this._dreadCheck(room);
     this.events.emit('roomClear', room);
     this.relics?.onRoomClear(room);
     this.audio?.setMusic('explore');
@@ -1321,8 +1341,10 @@ export class Game {
     }
   }
 
-  spawnPedestal(room, minRarity, relic = false) {
-    const it = makePedestal(this, new THREE.Vector3(room.cx, this.groundY(room.cx, room.cz), room.cz), minRarity);
+  spawnPedestal(room, minRarity, relic = false, dx = 0) {
+    minRarity = Math.max(minRarity, this.difficulty.minRarity ?? 0); // (Nightmare: never a Common tome)
+    const x = room.cx + dx;
+    const it = makePedestal(this, new THREE.Vector3(x, this.groundY(x, room.cz), room.cz), minRarity);
     if (relic) { it.relic = true; it.label = 'Claim a Relic'; it.minRarity = 1; } // (built gold-ringed, rolls like an elite tome if ever read as one)
     this.interactables.push(it);
   }
@@ -1405,7 +1427,8 @@ export class Game {
     if (this.player.dead || this.player.downed) this.player.revive(0.5);
     this.player.heal(this.player.maxHp * 0.35);
     // legendary-leaning reward + gold + portal up
-    this.spawnPedestal(room, 2);
+    if (this.difficulty.bossRelic) { this.spawnPedestal(room, 2, false, -2.2); this.spawnPedestal(room, 3, true, 2.2); } // (Nightmare: a relic from every boss)
+    else this.spawnPedestal(room, 2);
     if (this.isHost) this.spawnDrop('gold', new THREE.Vector3(room.cx, 0, room.cz + 3), 60 + this.floorIndex * 30);
     const ex = room.exit;
     const portal = makePortal(this, new THREE.Vector3(ex.x, this.groundY(ex.x, ex.z), ex.z));
@@ -1710,6 +1733,11 @@ export class Game {
         this.audio?.play('cast_fire_big', { pos: a.pos });
         break;
       }
+      case 'dread': // (Nightmare) the tell before a dread ring: the boss gathers a red halo
+        this.vfx.ring({ x: a.pos.x, y: a.pos.y + 0.15, z: a.pos.z }, 4 + a.radius, [2.6, 0.15, 0.12], 0.7, 0.05);
+        this.vfx.explosion(new THREE.Vector3(a.pos.x, a.pos.y + 1.4, a.pos.z), 'enemyFire', 1.6, { shakeScale: 0.2 });
+        this.audio?.play('enemy_cast', { pos: a.pos, volume: 0.9 });
+        break;
       case 'fly':
         a.model?.setFlying?.(!!extra.on);
         break;

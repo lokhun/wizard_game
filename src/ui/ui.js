@@ -331,7 +331,7 @@ export class UI {
           <div class="cd"></div><div class="cdtxt"></div><div class="key">${KEYS[s]}</div><div class="charges"></div>
         </div>`).join('')}
       </div>
-      <div class="gold-box">${iconSVG('gold', '#f0c050', 26)}<span id="goldTxt">0</span></div>
+      <div class="gold-box"><span class="dread hidden" title="Dread Marks: +5% damage each, earned by flawless chambers">${iconSVG('skull', '#ff5a4a', 22)}<span id="dreadTxt">0</span></span>${iconSVG('gold', '#f0c050', 26)}<span id="goldTxt">0</span></div>
       <div class="prompt"></div>
       <div class="toasts"></div>
       <div class="banner"><div class="b1"></div><div class="line"></div><div class="b2"></div></div>
@@ -341,7 +341,7 @@ export class UI {
       hp: q('#hpBar .fill'), hpLag: q('#hpBar .lag'), hpShield: q('#hpBar .shield'), hpTxt: q('#hpBar .txt'),
       dash: q('.dash-pips'), res: q('.resource'), buffs: q('.buffs'),
       slots: Object.fromEntries(SLOTS.map((s) => [s, q(`.slot[data-slot="${s}"]`)])),
-      gold: q('#goldTxt'), goldBox: q('.gold-box'), prompt: q('.prompt'), toasts: q('.toasts'), banner: q('.banner'),
+      gold: q('#goldTxt'), goldBox: q('.gold-box'), dread: q('#dreadTxt'), dreadBox: q('.gold-box .dread'), prompt: q('.prompt'), toasts: q('.toasts'), banner: q('.banner'),
       hit: q('.hitmarker'), team: q('.team'), boss: q('.boss-bar'), bossFill: q('.boss-bar .fill'), bossLag: q('.boss-bar .lag'),
       bossName: q('.boss-bar .bname'), bossTitle: q('.boss-bar .btitle'), minimap: q('.minimap'), fname: q('.fname'), fsub: q('.fsub'),
       obj: q('.objective'), wave: q('.wave-ind'), dmgDir: q('.damage-dir'), clickHint: q('.click-hint'),
@@ -355,8 +355,11 @@ export class UI {
     if (!this.h) return;
     const ab = game.abyss ?? 0;
     this.h.fname.textContent = ab ? `${biome.name} · Abyss ${ab}` : biome.name;
-    this.h.fsub.textContent = `Realm ${index + 1} of ${BIOMES.length} · ${biome.subtitle}`;
+    const nm = !!game.difficulty?.nightmare;
+    this.h.fsub.textContent = nm ? `Nightmare · Realm ${index + 1} of ${BIOMES.length}` : `Realm ${index + 1} of ${BIOMES.length} · ${biome.subtitle}`;
+    this.h.fsub.style.color = nm ? '#ff8070' : '';
     if (ab) this.banner(`ABYSS ${ab} · ${biome.name}`, 'The realms remade in darkness — deadlier than before', '#ff5878', 5);
+    else if (nm) this.banner(biome.name, `${biome.subtitle} · a nightmare`, '#ff7060', 4);
     else this.banner(biome.name, biome.subtitle, '#e2c48a', 4);
     this.h.boss.classList.add('hidden');
     this.bossActor = null;
@@ -421,6 +424,7 @@ export class UI {
     }
     // gold
     setText(h.gold, String(Math.floor(p.gold)));
+    if (p.dread !== this._dread) { this._dread = p.dread; h.dreadBox.classList.toggle('hidden', !p.dread); setText(h.dread, String(p.dread)); }
     // team
     const team = [...game.remotes.values()];
     const tk = team.map((r) => `${r.id}${Math.ceil(r.hp)}${r.downed}${r.dead}${r.maxHp}`).join();

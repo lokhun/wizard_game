@@ -14,7 +14,7 @@ export const bestiaryTypes = () => FIGHT_TYPES;
 const BOSSES = BIOMES.map((b) => b.boss);
 const classWins = (p) => CLASS_IDS.filter((id) => (p.classes[id]?.wins ?? 0) > 0).length;
 
-export const FEAT_GROUPS = ['The Ascent', 'Mastery', 'Builds', 'Pacts & Rites', 'Legacy'];
+export const FEAT_GROUPS = ['The Ascent', 'Mastery', 'Builds', 'Pacts & Rites', 'Legacy', 'Nightmare'];
 
 export const FEATS = [
   // ---------------- the ascent
@@ -57,6 +57,13 @@ export const FEATS = [
   { id: 'thousand', group: 4, name: 'A Thousand Fallen', icon: 'army', desc: 'Slay 1,000 foes across all runs.', on: { profile: (r, p) => p.kills >= 1000 }, progress: (p) => [Math.min(1000, p.kills), 1000] },
   { id: 'bestiary', group: 4, name: 'Bestiarist', icon: 'eye', desc: 'Slay every kind of foe at least once.', on: { profile: (r, p) => FIGHT_TYPES.every((t) => p.bestiary[t] > 0) }, progress: (p) => [FIGHT_TYPES.filter((t) => p.bestiary[t] > 0).length, FIGHT_TYPES.length] },
   { id: 'kingslayer', group: 4, name: "Kingslayer's Road", icon: 'crown', desc: 'Defeat all five realm bosses.', on: { profile: (r, p) => BOSSES.every((b) => p.bosses[b] > 0) }, progress: (p) => [BOSSES.filter((b) => p.bosses[b] > 0).length, BOSSES.length] },
+  // ---------------- nightmare
+  { id: 'nmWin', group: 5, name: 'Waking Hour', icon: 'sun', desc: 'Win a run on Nightmare.', on: { end: (r) => r.won && r.nightmare } },
+  { id: 'nmBoss', group: 5, name: 'Night Terror', icon: 'skull', desc: 'On Nightmare, defeat a boss without taking damage.', on: { bossDown: (r, p, x) => r.nightmare && x.room && x.room.dmg === 0 } },
+  { id: 'nmDread', group: 5, name: 'Dread Lord', icon: 'crown', desc: 'Bear all twelve Dread Marks at once.', on: { dread: (r, p, n) => n >= 12 } },
+  { id: 'nmAwake', group: 5, name: 'Wide Awake', icon: 'eye', desc: 'Win on Nightmare without ever being downed.', on: { end: (r) => r.won && r.nightmare && r.downs === 0 } },
+  { id: 'nmLucid', group: 5, name: 'Lucid Dreamer', icon: 'flame', desc: 'Win on Nightmare at 25 heat or more.', on: { end: (r) => r.won && r.nightmare && r.heat >= 25 } },
+  { id: 'nmAbyss', group: 5, name: 'The Dream Beneath', icon: 'tentacle', desc: 'Descend into the Abyss on Nightmare.', on: { abyss: (r) => r.nightmare } },
 ];
 export const FEAT_BY_ID = Object.fromEntries(FEATS.map((f) => [f.id, f]));
 

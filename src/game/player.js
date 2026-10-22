@@ -39,6 +39,7 @@ export class LocalPlayer {
     this.cls = CLASSES[classId];
     this.meta = CLASS_META[classId];
     this.upgrades = []; // {def, rarity, mult}
+    this.dread = 0; // (Nightmare) Dread Marks from flawless chambers: +5% damage each
     this.relics = [];
     this.buffs = [];
     this.stats = baseStats(classId);
@@ -118,6 +119,7 @@ export class LocalPlayer {
       }
     }
     if (this.hasteT > 0) { s.moveSpeed *= 1.2; s.cdRate += 0.2; }
+    s.dmgMult += 0.05 * this.dread;
     if (s.frenzy && this.hp / this.maxHp < 0.4) s.dmgMult += s.frenzy;
     if (s.airDmg && !this.grounded) s.dmgMult += s.airDmg;
     s.armor = Math.min(0.8, s.armor);
