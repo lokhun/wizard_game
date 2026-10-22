@@ -116,7 +116,7 @@ void main(){
   vec3 c = mix(uEdge, uMid, smoothstep(0.05, 0.5, heat));
   c = mix(c, uCore, smoothstep(0.7, 1.15, heat));
   // thin hot rim so the silhouette stays crisp against dark stone
-  c += uMid * pow(1.0 - f, 4.0) * uRim;
+  c += uMid * pow(max(1.0 - f, 0.0), 4.0) * uRim;
   // a soft limb (fire) or a crisp one (energy)
   c *= mix(smoothstep(0.0, 0.5, f), 1.0, min(uRim, 1.0));
   // close to the lens (just leaving your hand) it dims instead of filling the
@@ -144,7 +144,7 @@ varying vec2 vUv; varying float vDepth;
 void main(){
   vec2 p = vUv * 2.0 - 1.0;
   float d = length(p);
-  float r = 1.0 - pow(1.0 - uProg, 3.0);
+  float r = 1.0 - pow(max(1.0 - uProg, 0.0), 3.0);
   float w = uWidth * (1.0 - uProg * 0.5);
   float ring = smoothstep(r - w, r, d) * (1.0 - smoothstep(r, r + w * 0.3, d));
   float a = atan(p.y, p.x);
@@ -231,7 +231,7 @@ uniform vec3 uColor; uniform float uAlpha; uniform float uTime;
 varying vec2 vUv; varying vec3 vN; varying vec3 vV; varying float vDepth;
 void main(){
   float f = 1.0 - abs(dot(vN, vV));
-  float rim = pow(f, 2.5);
+  float rim = pow(max(f, 0.0), 2.5);
   float hex = 0.6 + 0.4 * sin(vUv.x * 60.0 + uTime * 2.0) * sin(vUv.y * 40.0 - uTime * 1.5);
   vec3 c = uColor * (rim * 0.75 + 0.02) * hex * uAlpha * smoothstep(0.5, 3.0, vDepth);
   gl_FragColor = vec4(c, 1.0);
@@ -305,7 +305,7 @@ void main(){
   float n = fbm(q);
   float wisp = smoothstep(0.42, 0.78, fbm(vec2(u * 13.0 + v * uTwist * 1.6 - uTime * uSpin * 1.4, v * 5.0 - uTime)));
   float ends = smoothstep(0.0, 0.12, v) * smoothstep(1.0, 0.7, v);
-  float sil = 0.3 + 0.7 * pow(1.0 - vFacing, 1.5);
+  float sil = 0.3 + 0.7 * pow(max(1.0 - vFacing, 0.0), 1.5);
   float a = (n * 0.55 + wisp * 0.6) * ends * sil * uAlpha;
   a *= smoothstep(0.6, 3.0, vDepth);
   if (a < 0.004) discard;
@@ -337,7 +337,10 @@ void main(){
   float n = fbm(vec2(u * 9.0 + along * 2.0, along * 4.0 - uTime * uSpeed));
   float n2 = fbm(vec2(u * 17.0 - along * 3.0, along * 7.0 - uTime * uSpeed * 1.7));
   float tongues = smoothstep(0.22, 0.72, n * 0.6 + n2 * 0.5 - along * 0.2);
-  float body = pow(vFacing, 0.7);
+  // max(): interpolation can take vFacing a hair below zero, and a fractional
+  // pow of a negative is NaN on D3D - every pixel of the cone went black, the
+  // whole screen while you stood in its throat (Dragon's Breath)
+  float body = pow(max(vFacing, 0.0), 0.7);
   // strongest through the first half; the mouth dissolves instead of drawing a rim
   float ends = smoothstep(0.0, 0.1, along) * (1.0 - smoothstep(0.35, 0.95, along));
   float k = tongues * body * ends * uAlpha;
@@ -634,7 +637,7 @@ export class VFX {
       const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
         // bolts that pass the lens (a blink, a nova at your feet) fade instead of whiting out the view
         vertexShader: 'varying vec2 vUv; varying float vDepth; void main(){ vUv = uv; vec4 mv = modelViewMatrix * vec4(position,1.); vDepth = -mv.z; gl_Position = projectionMatrix * mv; }',
-        fragmentShader: 'uniform vec3 uColor; uniform float uAlpha; varying vec2 vUv; varying float vDepth; void main(){ float d = abs(vUv.y - 0.5) * 2.0; float c = pow(1.0 - d, 2.0); float nk = mix(0.12, 1.0, smoothstep(0.6, 4.0, vDepth)); gl_FragColor = vec4((uColor * c * uAlpha + vec3(0.9, 0.93, 1.0) * pow(1.0 - d, 8.0) * uAlpha * 1.5) * nk, 1.0); }',
+        fragmentShader: 'uniform vec3 uColor; uniform float uAlpha; varying vec2 vUv; varying float vDepth; void main(){ float d = abs(vUv.y - 0.5) * 2.0; float c = pow(max(1.0 - d, 0.0), 2.0); float nk = mix(0.12, 1.0, smoothstep(0.6, 4.0, vDepth)); gl_FragColor = vec4((uColor * c * uAlpha + vec3(0.9, 0.93, 1.0) * pow(max(1.0 - d, 0.0), 8.0) * uAlpha * 1.5) * nk, 1.0); }',
         uniforms: { uColor: { value: new THREE.Color() }, uAlpha: { value: 1 } },
         transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
       }));
