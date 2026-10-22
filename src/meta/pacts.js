@@ -14,15 +14,31 @@ export const PACTS = [
   { id: 'hunt', name: 'The Hunt', icon: 'speed', heat: 1, max: 2, desc: (r) => `Foes move ${12 * r}% faster.` },
   { id: 'legion', name: 'The Legion', icon: 'army', heat: 1, max: 2, desc: (r) => `Waves are ${20 * r}% larger.` },
   { id: 'champions', name: 'Champions', icon: 'elite', heat: 2, max: 1, desc: () => 'Champions appear twice as often, and every elite bears an affix.' },
-  { id: 'respite', name: 'Scant Respite', icon: 'heart', heat: 1, max: 2, desc: (r) => (r >= 2 ? 'Clearing a chamber no longer heals you.' : 'Clearing a chamber heals 7% instead of 15%.') },
+  { id: 'respite', name: 'Scant Respite', icon: 'heart', heat: 1, max: 2, desc: (r) => (r >= 2 ? 'Clearing a chamber no longer heals you.' : 'Clearing a chamber heals 5% instead of 10%.') },
   { id: 'avarice', name: 'Avarice', icon: 'gold', heat: 1, max: 2, desc: (r) => `The merchant charges +${40 * r}%.` },
   { id: 'wrath', name: 'Wrath', icon: 'boss', heat: 2, max: 2, desc: (r) => `Bosses reach their fiercer phases ${15 * r}% sooner.` },
   { id: 'fate', name: 'Fixed Fate', icon: 'hourglass', heat: 1, max: 1, desc: () => 'No tome rerolls.' },
   { id: 'frailty', name: 'Frailty', icon: 'drop', heat: 1, max: 2, desc: (r) => `You take +${15 * r}% damage.` },
   { id: 'famine', name: 'Famine', icon: 'skull', heat: 1, max: 1, desc: () => 'Foes drop health orbs half as often.' },
+  // the deeper pacts: each is unlocked by clearing that much heat with any wizard
+  { id: 'omens', name: 'Ill Omens', icon: 'eye', heat: 1, max: 2, unlock: 3, desc: (r) => (r >= 2 ? 'Every fight after a realm\'s first falls under an omen (Darkness, Blood Moon, Haunted...).' : 'Omens fall on twice as many fights.') },
+  { id: 'narrow', name: 'Narrow Path', icon: 'split', heat: 1, max: 1, unlock: 3, desc: () => 'Tomes offer two choices instead of three.' },
+  { id: 'leaden', name: 'Leaden Steps', icon: 'stoneskin', heat: 1, max: 2, unlock: 3, desc: (r) => `Your dash recharges ${40 * r}% slower.` },
+  { id: 'relentless', name: 'Relentless', icon: 'stairs', heat: 1, max: 2, unlock: 6, desc: (r) => (r >= 2 ? 'The next wave comes while three quarters of the last still stand.' : 'The next wave comes while half the last still stands.') },
+  { id: 'volatile', name: 'Volatile Dead', icon: 'bomb', heat: 2, max: 1, unlock: 6, desc: () => 'Slain foes burst a moment later. Mind where they fall.' },
+  { id: 'exalted', name: 'Exalted', icon: 'crown', heat: 2, max: 1, unlock: 10, desc: () => 'Every champion bears two affixes.' },
 ];
 export const PACT_BY_ID = Object.fromEntries(PACTS.map((p) => [p.id, p]));
 export const MAX_HEAT = PACTS.reduce((s, p) => s + p.heat * p.max, 0);
+
+// Pacts open as you clear heat: `unlock` is the heat you must have cleared
+// (with any wizard) before it can be sworn. `best` is the profile's record.
+export const pactOpen = (pc, best) => !pc.unlock || best >= pc.unlock;
+export const nextUnlock = (best) => PACTS.filter((pc) => !pactOpen(pc, best)).reduce((m, pc) => Math.min(m, pc.unlock), Infinity);
+
+// What heat pays: the finer tomes come likelier (Rare, Epic and Legendary
+// weights grow 6% per heat) and gold drops grow 5% per heat.
+export function heatBoons(heat) { return { luck: 1 + 0.06 * heat, gold: 1 + 0.05 * heat }; }
 
 // keep only known pacts at legal ranks (the selection arrives from storage and the network)
 export function cleanPacts(sel) {
@@ -42,6 +58,7 @@ export function heatOf(sel) {
 }
 
 // The knobs the game reads. Neutral values reproduce the unmodified game.
+const prefix = (b) => ({ tomeLuck: b.luck, goldMult: b.gold });
 export function difficultyFor(sel, extra = {}) {
   const s = cleanPacts(sel);
   const r = (id) => s[id] ?? 0;
@@ -53,12 +70,19 @@ export function difficultyFor(sel, extra = {}) {
     enemyCount: 1 + 0.2 * r('legion'),
     champions: r('champions') ? 2 : 1,
     eliteAffix: !!r('champions'),
-    clearHeal: [1, 7 / 15, 0][r('respite')],
+    clearHeal: [1, 0.5, 0][r('respite')],
     shopCost: 1 + 0.4 * r('avarice'),
     bossEnrage: 0.15 * r('wrath'),
     rerolls: r('fate') ? 0 : 1,
     orbChance: r('famine') ? 0.5 : 1,
+    omens: r('omens'),
+    tomeChoices: r('narrow') ? 2 : 3,
+    dashCd: 1 + 0.4 * r('leaden'),
+    waveEarly: r('relentless'), // the share of a wave left standing when the next comes: 0.25 / 0.5 / 0.75
+    volatileDead: !!r('volatile'),
+    twinAffix: !!r('exalted'),
     heat: heatOf(s),
+    ...prefix(heatBoons(heatOf(s))),
     pacts: s,
     ...extra,
   };
@@ -72,7 +96,7 @@ export function dayNumber(key) { return Math.floor(Date.parse(key + 'T00:00:00Z'
 export function prevDay(key) { return utcDay(new Date(Date.parse(key + 'T00:00:00Z') - 864e5)); }
 
 // a fixed pool of fair pact mixes: each rite draws one at modest heat
-const RITE_POOL = ['hides', 'blades', 'hunt', 'legion', 'champions', 'respite', 'avarice', 'wrath', 'fate', 'frailty', 'famine'];
+const RITE_POOL = ['hides', 'blades', 'hunt', 'legion', 'champions', 'respite', 'avarice', 'wrath', 'fate', 'frailty', 'famine', 'omens', 'narrow', 'leaden', 'relentless', 'volatile'];
 export function dailyRite(key = utcDay()) {
   const n = dayNumber(key);
   const rng = new RNG(hashString('rite:' + key));

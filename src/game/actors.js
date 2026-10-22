@@ -11,6 +11,7 @@ import { BossBrain } from './bosses.js';
 
 const _frustum = new THREE.Frustum(), _m4 = new THREE.Matrix4(), _sph = new THREE.Sphere();
 const _aiOut = { x: 0, z: 0 }, NO_ATTACKS = [];
+const AFFIX_COL = { hasted: [0.6, 1.6, 2.6], vampiric: [2.4, 0.15, 0.25], volatile: [3, 1.2, 0.2], shielded: [2.6, 2.2, 0.8], frenzied: [2.8, 0.5, 1.6], bombardier: [3, 0.6, 0.1] };
 
 // A body that neither posed nor moved since its matrices and bone texture
 // were last made keeps them: see ActorManager._settle.
@@ -31,6 +32,9 @@ export const ANIMS = ['idle', 'move', 'windup', 'attack', 'cast', 'stagger', 'de
 const _v = new THREE.Vector3();
 const _dir = { x: 0, z: 0 };
 
+// a champion's affix, whichever of its (up to two) slots holds it
+export const hasAffix = (a, k) => a.affix === k || a.affix2 === k;
+
 let actorTypeIndex = null;
 export function typeIndex() {
   if (!actorTypeIndex) actorTypeIndex = [...Object.keys(ENEMY_DEFS), ...Object.keys(BOSS_DEFS)];
@@ -46,6 +50,7 @@ export class Actor {
     this.faction = opts.faction ?? (this.def.ally ? 'ally' : 'enemy');
     this.elite = !!opts.elite || !!this.def.elite;
     this.affix = opts.affix ?? null;
+    this.affix2 = opts.affix2 ?? null; // (the Exalted pact: a second affix)
     this.pos = new THREE.Vector3(opts.x, opts.y ?? 0, opts.z);
     this.vel = new THREE.Vector3();
     this.kb = new THREE.Vector3();
@@ -199,7 +204,7 @@ export class ActorManager {
     a.state = a.dormant ? 'chase' : 'spawn';
     a.anim = a.dormant ? 'idle' : 'spawn';
     a.stateT = 0;
-    if (g.isHost && !opts.silent) g.net?.broadcast({ t: 'spawn', id, ty: type, x, z, yaw: a.yaw, e: a.elite ? 1 : 0, hp: a.maxHp, f: a.faction === 'ally' ? 1 : 0, af: a.affix, life: a.life, nf: spawnFx ? 0 : 1, dm: a.dormant ? 1 : 0, hr: a.homeRoom ? a.homeRoom.id : -1 });
+    if (g.isHost && !opts.silent) g.net?.broadcast({ t: 'spawn', id, ty: type, x, z, yaw: a.yaw, e: a.elite ? 1 : 0, hp: a.maxHp, f: a.faction === 'ally' ? 1 : 0, af: a.affix, af2: a.affix2, life: a.life, nf: spawnFx ? 0 : 1, dm: a.dormant ? 1 : 0, hr: a.homeRoom ? a.homeRoom.id : -1 });
     if (a.boss) a.brain = new BossBrain(g, a);
     this._rebuildLists();
     return a;
@@ -288,7 +293,7 @@ export class ActorManager {
       if (fx * -H.kbDir[0] + fz * -H.kbDir[1] > 0.5 && !(a.st.stun?.t > 0)) dmg *= 1 - def.frontShield;
     }
     if (a.shieldHp > 0) { const ab = Math.min(a.shieldHp, dmg); a.shieldHp -= ab; dmg -= ab; }
-    if (a.affix === 'shielded' && a.hp > a.maxHp * 0.5) dmg *= 0.6;
+    if (hasAffix(a, 'shielded') && a.hp > a.maxHp * 0.5) dmg *= 0.6;
     if (a.brain?.modifyDamage) dmg = a.brain.modifyDamage(dmg, H);
     a.hp -= dmg;
     a.lastHitBy = H.src ?? a.lastHitBy;
@@ -362,9 +367,12 @@ export class ActorManager {
         }
       }
       if (a.def.deathPool) g.spawnPool(a.pos, a.def.deathPool.radius, a.def.deathPool.dur, a.def.deathPool.dps * g.director.dmgScale(), 'enemyGreen');
-      if (a.def.deathExplode || a.affix === 'volatile') {
+      if (a.def.deathExplode || hasAffix(a, 'volatile')) {
         const de = a.def.deathExplode ?? { radius: 3, el: 'enemyFire' };
         g.broadcastHazard({ shape: 'circle', x: a.pos.x, y: a.pos.y, z: a.pos.z, r: de.radius, delay: 0.6, dmg: a.dmg * 1.2, el: de.el, vis: 1 });
+      } else if (g.difficulty?.volatileDead && !a.boss && a.faction === 'enemy') {
+        // the Volatile Dead pact: every fallen foe bursts after a short fuse
+        g.broadcastHazard({ shape: 'circle', x: a.pos.x, y: a.pos.y, z: a.pos.z, r: 1.3 + a.radius, delay: 1.0, dmg: a.dmg * 0.6, el: 'enemyFire', kb: 5, vis: 1 });
       }
     }
     this.deathFx(a, el);
@@ -603,7 +611,7 @@ export class ActorManager {
     // champion affix auras
     if (a.affix && Math.random() < dt * 14) {
       const ang = Math.random() * Math.PI * 2;
-      const col = { hasted: [0.6, 1.6, 2.6], vampiric: [2.4, 0.15, 0.25], volatile: [3, 1.2, 0.2], shielded: [2.6, 2.2, 0.8], frenzied: [2.8, 0.5, 1.6], bombardier: [3, 0.6, 0.1] }[a.affix] ?? [2, 2, 2];
+      const col = AFFIX_COL[a.affix2 && Math.random() < 0.5 ? a.affix2 : a.affix] ?? [2, 2, 2];
       P.glow({ x: x + Math.cos(ang) * r * 1.2, y: y + 0.1, z: z + Math.sin(ang) * r * 1.2, vx: -Math.sin(ang) * 1.2, vy: rand(0.8, 1.8), vz: Math.cos(ang) * 1.2, r: col[0], g: col[1], b: col[2], life: 0.9, size: 0.09, sprite: SPR.SPARK, drag: 1 });
     }
     if (a.elite && !a.def.elite) g.lights.request(_v.set(x, y + h * 0.5, z), 0xffa040, 2.5, 4);
@@ -732,7 +740,7 @@ export class ActorManager {
       if (a.life <= 0) { this.kill(a, 0, 'necrotic'); return; }
     }
 
-    if (a.affix === 'bombardier' && !a.dormant && a.state !== 'spawn') this._bombard(a, dt);
+    if (hasAffix(a, 'bombardier') && !a.dormant && a.state !== 'spawn') this._bombard(a, dt);
     const mm = moveMult(a);
     const am = actMult(a);
     a.stateT += dt * Math.max(am, 0.0001) * (am === 0 ? 0 : 1);
@@ -926,7 +934,7 @@ export class ActorManager {
     const dist = Math.hypot(dx, dz);
     const tRad = tgt.radius ?? 0.4;
     const faceYaw = Math.atan2(dx, dz);
-    const speed = def.speed * mm * (a.affix === 'hasted' ? 1.4 : a.affix === 'frenzied' ? 1.12 : 1) * a.speedMult * (a.mask & ST.empower ? 1.15 : 1);
+    const speed = def.speed * mm * (hasAffix(a, 'hasted') ? 1.4 : hasAffix(a, 'frenzied') ? 1.12 : 1) * a.speedMult * (a.mask & ST.empower ? 1.15 : 1);
 
     if (a.state === 'windup') {
       a.yaw = angleDamp(a.yaw, faceYaw, a.attack.kind === 'charge' ? 2 : 8, dt);
@@ -948,7 +956,7 @@ export class ActorManager {
       return out;
     }
     if (a.state === 'recover') {
-      if (a.stateT > (a.attack?.recover ?? 0.6) * (a.affix === 'frenzied' ? 0.5 : 1)) this._setState(a, 'chase', 'idle', null);
+      if (a.stateT > (a.attack?.recover ?? 0.6) * (hasAffix(a, 'frenzied') ? 0.5 : 1)) this._setState(a, 'chase', 'idle', null);
       return out;
     }
 
@@ -968,7 +976,7 @@ export class ActorManager {
         // so volleys stay readable and dodgeable
         if (a.faction === 'enemy' && RANGED_KINDS.has(at.kind) && this._rangedWindups(tgt, a) >= 2 + (g.floorIndex >= 2 ? 1 : 0) + (g.floorIndex >= 4 ? 1 : 0)) continue;
         // (specials come round a little faster than authored; frenzied champions twice as fast)
-        a.cds[at.id] = (at.cd ?? 0) * rand(0.72, 1.02) * (a.affix === 'frenzied' ? 0.5 : 1);
+        a.cds[at.id] = (at.cd ?? 0) * rand(0.72, 1.02) * (hasAffix(a, 'frenzied') ? 0.5 : 1);
         this._beginAttack(a, at, tgt);
         return out;
       }
@@ -1091,7 +1099,7 @@ export class ActorManager {
   _strike(a, tgt, dist) {
     const g = this.g;
     const at = a.attack;
-    const dmg = a.dmg * (at.dmgMult ?? 1) * (a.affix === 'vampiric' ? 1 : 1);
+    const dmg = a.dmg * (at.dmgMult ?? 1);
     this._setState(a, 'attack', at.kind === 'heal' || at.kind === 'summon' || at.kind === 'shoot' && at.anim === 'cast' ? 'cast' : 'attack', at);
     const fx = Math.sin(a.yaw), fz = Math.cos(a.yaw);
     if (a.faction === 'ally') {

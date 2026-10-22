@@ -162,7 +162,7 @@ export function rollTomes(player, n = 3, minRarity = 0, rng = Math.random) {
   // weight elemental tomes toward the player's element
   const el = player.meta.element;
   for (let i = 0; i < n && pool.length; i++) {
-    let rar = rollRarity(rng, minRarity);
+    let rar = rollRarity(rng, minRarity, player.game?.difficulty?.tomeLuck ?? 1); // (heat makes the finer tomes likelier)
     // class augments: their own roll, so they show up at a steady rate whatever the rarity
     const augs = augPool.filter((t) => !used.has(t.id));
     if (augs.length && rng() < AUG_CHANCE) {
@@ -187,11 +187,13 @@ export function rollTomes(player, n = 3, minRarity = 0, rng = Math.random) {
   return out;
 }
 
-export function rollRarity(rng = Math.random, min = 0) {
+// luck scales every weight above Common
+export function rollRarity(rng = Math.random, min = 0, luck = 1) {
+  const w = (i) => RARITY[i].weight * (i > 0 ? luck : 1);
   let tot = 0;
-  for (let i = min; i < RARITY.length; i++) tot += RARITY[i].weight;
+  for (let i = min; i < RARITY.length; i++) tot += w(i);
   let r = rng() * tot;
-  for (let i = min; i < RARITY.length; i++) { r -= RARITY[i].weight; if (r <= 0) return i; }
+  for (let i = min; i < RARITY.length; i++) { r -= w(i); if (r <= 0) return i; }
   return min;
 }
 

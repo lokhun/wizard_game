@@ -359,7 +359,9 @@ function beginRun(opts) {
     game.backdrop = null;
     game.paused = false;
     game.difficulty = difficultyFor(opts.pacts, { daily: opts.daily ?? null });
-    game.startRun({ ...opts, name: settings.name || 'Wizard', classId: selectedClass, floor: opts.floor ?? (+q.get('floor') || 0) });
+    // the Abyss opens past the Hollow King once you have won a run (the host's profile decides for a party)
+    game.abyssUnlocked = (!net || net.isHost) && (pactsUnlocked() || q.has('abyss'));
+    game.startRun({ ...opts, name: settings.name || 'Wizard', classId: selectedClass, floor: opts.floor ?? (+q.get('floor') || 0), abyss: opts.abyss ?? (+q.get('abyss') || 0) });
     if (opts.late) applyLateState(opts.late);
     if (opts.late && net && !net.isHost) net.send({ t: 'started' });
     ui.fadeIn(1.4);
@@ -453,14 +455,14 @@ function onLobbyMessage(msg, from) {
       audio?.play('ui_click');
       if (mode === 'run' && game && !game.menuMode) {
         // late join: bring them into the current floor; actors follow once they report 'started'
-        net.sendTo(from, { t: 'start', seed: game.seed, players: lobby.players, floor: game.floorIndex, late: lateState(), pk: game.difficulty?.pacts ?? {} });
+        net.sendTo(from, { t: 'start', seed: game.seed, players: lobby.players, floor: game.floorIndex, ab: game.abyss ?? 0, late: lateState(), pk: game.difficulty?.pacts ?? {} });
         game.addRemote(p);
       }
     } else if (msg.t === 'started') {
       if (mode !== 'run' || !game || game.menuMode) return;
       for (const a of game.actors.list) {
         if (a.dead) continue;
-        net.sendTo(from, { t: 'spawn', id: a.id, ty: a.type, x: a.pos.x, z: a.pos.z, yaw: a.yaw, e: a.elite ? 1 : 0, hp: a.maxHp, f: a.faction === 'ally' ? 1 : 0, af: a.affix, fly: a.brain?.data?.fly ? 1 : 0 });
+        net.sendTo(from, { t: 'spawn', id: a.id, ty: a.type, x: a.pos.x, z: a.pos.z, yaw: a.yaw, e: a.elite ? 1 : 0, hp: a.maxHp, f: a.faction === 'ally' ? 1 : 0, af: a.affix, af2: a.affix2, fly: a.brain?.data?.fly ? 1 : 0 });
         if (a.boss) net.sendTo(from, { t: 'boss', id: a.id });
       }
       const act = game.director.active;
@@ -483,7 +485,7 @@ function onLobbyMessage(msg, from) {
       }
     } else if (msg.t === 'start') {
       lobby.players = msg.players;
-      beginRun({ seed: msg.seed, localId: net.id, isHost: false, net, players: msg.players, floor: msg.floor ?? 0, late: msg.late, pacts: msg.pk });
+      beginRun({ seed: msg.seed, localId: net.id, isHost: false, net, players: msg.players, floor: msg.floor ?? 0, abyss: +msg.ab || 0, late: msg.late, pacts: msg.pk });
     } else if (msg.t === 'full') {
       alert('That party is full (4 wizards max).');
       leaveNet(); showMenu();
@@ -649,10 +651,10 @@ function testScreen(which, arg) {
 }
 function demoProfile() {
   const ids = CLASS_IDS;
-  const classes = Object.fromEntries(ids.slice(0, 9).map((id, i) => [id, { runs: 3 + i, wins: i % 3 === 0 ? 1 + (i % 2) : 0, bestFloor: 1 + (i % 5), fastest: i % 3 === 0 ? 1900 + i * 61 : 0, bestHeat: i % 3 === 0 ? i : -1, kills: 300 + i * 97 }]));
+  const classes = Object.fromEntries(ids.slice(0, 9).map((id, i) => [id, { runs: 3 + i, wins: i % 3 === 0 ? 1 + (i % 2) : 0, bestFloor: 1 + (i % 5), fastest: i % 3 === 0 ? 1900 + i * 61 : 0, bestHeat: i % 3 === 0 ? i : -1, kills: 300 + i * 97, bestAbyss: i === 0 ? 2 : 0 }]));
   const feats = Object.fromEntries(FEATS.filter((f, i) => i % 3 !== 2).map((f, i) => [f.id, Date.now() - i * 864e5]));
   resetProfile({ v: 1, runs: 47, wins: 6, deaths: 41, coopWins: 2, kills: 6420, damage: 2310400, time: 61230, gold: 18400, tomes: 412, rooms: 302, flawless: 41, bestFloor: 5,
-    records: { biggestHit: 4312, mostDamage: 188200, mostKills: 402, fastestWin: 1904, highestHeat: 9 }, classes, feats,
+    records: { biggestHit: 4312, mostDamage: 188200, mostKills: 402, fastestWin: 1904, highestHeat: 9, deepestAbyss: 2 }, classes, feats,
     bestiary: { rat: 1200, slime: 430, slimeling: 610, ghoul: 220, bilespitter: 140, ratShaman: 61, ratOgre: 14, skeleton: 380, skeletonArcher: 210, wraith: 120, jailer: 64, executionerGuard: 6, fallenKnight: 140, hound: 260, gargoyle: 88 },
     bosses: { motherOfFilth: 12, executioner: 9, stoneWyvern: 7, courtArchmage: 6 }, killedBy: { gargoyle: 6, executionerGuard: 3, executioner: 4, skeletonArcher: 2 },
     pacts: { hides: 2, wrath: 1, fate: 1 }, daily: { last: new Date(Date.now() - 864e5).toISOString().slice(0, 10), streak: 4, bestStreak: 6, runs: 11, best: null } });

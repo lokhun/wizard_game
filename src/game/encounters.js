@@ -336,17 +336,20 @@ export class Encounters {
     const names = CHAMP_NAMES[a.type] ?? CHAMP_NAMES.default;
     const name = names[rng.int(0, names.length - 1)];
     const affix = rng.pick(AFFIXES), trait = rng.pick(Object.keys(TRAITS));
+    // (the Exalted pact: a second affix)
+    const affix2 = this.g.difficulty?.twinAffix || (this.g.abyss ?? 0) >= 2 ? rng.pick(AFFIXES.filter((k) => k !== affix)) : null;
     a.maxHp *= 1.5; a.hp = a.maxHp;
-    this._champion(a, name, affix, trait);
-    this._send({ k: 'champ', id: a.id, n: name, af: affix, tr: trait, hp: a.maxHp }, false);
+    this._champion(a, name, affix, trait, affix2);
+    this._send({ k: 'champ', id: a.id, n: name, af: affix, af2: affix2, tr: trait, hp: a.maxHp }, false);
   }
 
-  _champion(a, name, affix, trait) {
+  _champion(a, name, affix, trait, affix2 = null) {
     const g = this.g;
     a.affix = affix;
+    a.affix2 = affix2;
     a.champion = trait;
     // a named copy of its definition: the health bar and banner read the name from it
-    a.def = { ...a.def, name, title: `${AFFIX_NAME[affix]} · ${TRAITS[trait]}`, poise: trait === 'juggernaut' ? 9999 : a.def.poise };
+    a.def = { ...a.def, name, title: `${AFFIX_NAME[affix]}${affix2 ? ' · ' + AFFIX_NAME[affix2] : ''} · ${TRAITS[trait]}`, poise: trait === 'juggernaut' ? 9999 : a.def.poise };
     if (trait === 'juggernaut') a.speedMult *= 1.15;
     const k = 1.15;
     a.scale *= k; a.radius *= k; a.height *= k;
@@ -783,7 +786,7 @@ export class Encounters {
       case 'spring': if (g.isHost && room?._mimic) { if (room._mimic.actor) this._spring(room); else room._mimic.wantSpring = true; } break;
       case 'sprung': if (room?._mimic) this._sprungFx(room, msg.id); break;
       case 'hoard': if (room?.mimicAt) { const at = this._freeSpot(room.mimicAt.x, room.mimicAt.z - 2.4, room); this._hoard(at.x, at.z, 0); } break;
-      case 'champ': { const a = g.actors.byId.get(msg.id); if (a && !g.isHost) { a.maxHp = msg.hp; this._champion(a, msg.n, msg.af, msg.tr); } break; }
+      case 'champ': { const a = g.actors.byId.get(msg.id); if (a && !g.isHost) { a.maxHp = msg.hp; this._champion(a, msg.n, msg.af, msg.tr, msg.af2 ?? null); } break; }
       case 'rally': { const a = g.actors.byId.get(msg.id); if (a) { g.audio?.play('boss_roar', { pos: a.pos, volume: 0.6 }); g.ui?.floatText(new THREE.Vector3(a.pos.x, a.pos.y + a.height + 0.5, a.pos.z), 'TO ME!', '#ff6a40', true); } break; }
       case 'stomp': { const a = g.actors.byId.get(msg.id); if (a) { g.vfx.ring(a.pos, 2.2, [2.6, 0.5, 0.15], 0.5, 0.15); g.audio?.play('boss_slam', { pos: a.pos, volume: 0.7 }); g.vfx.addShake(0.2); } break; }
       case 'wail': this._wailFx(msg.x, msg.z); break;

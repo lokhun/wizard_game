@@ -77,7 +77,7 @@ export function handleGameMessage(game, msg, from) {
     case 'wake': { const a = game.actors.byId.get(msg.id); if (a) a.dormant = false; break; }
     case 'spawn': {
       if (game.isHost || game.actors.byId.has(msg.id)) return;
-      const a = game.actors.spawn(msg.ty, msg.x, msg.z, { id: msg.id, yaw: msg.yaw, elite: !!msg.e, hp: msg.hp, faction: msg.f ? 'ally' : 'enemy', affix: msg.af, life: msg.life, silent: true, spawnFx: msg.nf ? false : undefined, dormant: !!msg.dm, homeRoom: msg.hr >= 0 ? game.level.rooms[msg.hr] : null });
+      const a = game.actors.spawn(msg.ty, msg.x, msg.z, { id: msg.id, yaw: msg.yaw, elite: !!msg.e, hp: msg.hp, faction: msg.f ? 'ally' : 'enemy', affix: msg.af, affix2: msg.af2 ?? null, life: msg.life, silent: true, spawnFx: msg.nf ? false : undefined, dormant: !!msg.dm, homeRoom: msg.hr >= 0 ? game.level.rooms[msg.hr] : null });
       a.net.x = msg.x; a.net.z = msg.z; a.net.yaw = msg.yaw;
       if (msg.fly) a.model?.setFlying?.(true);
       break;
@@ -116,7 +116,10 @@ export function handleGameMessage(game, msg, from) {
       else setTimeout(() => { const b = game.actors.byId.get(msg.id); if (b) game.onBossSpawn(b); }, 300);
       break;
     }
-    case 'bossdead': if (!game.isHost) game.bossDefeated(); break;
+    case 'bossdead': if (!game.isHost) game.bossDefeated(!!msg.ab); break;
+    case 'abyss': if (!game.isHost) game.enterAbyss(+msg.d || 1); break;
+    case 'claimVictory': if (game.isHost && game.floorIndex >= 4 && game.interactables.some((i) => i.kind === 'victoryPortal')) game.victory(); break;
+    case 'descend': if (game.isHost && game.interactables.some((i) => i.kind === 'abyssPortal')) game.descendAbyss(); break;
     case 'banner': game.ui?.banner(msg.a, msg.b, msg.c); break;
     case 'shake': game.vfx.addShake(msg.k); break;
     case 'snd': game.audio?.play(msg.n, { pos: new THREE.Vector3(msg.x, msg.y, msg.z), volume: msg.v }); break;

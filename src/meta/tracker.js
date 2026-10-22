@@ -34,6 +34,7 @@ export class RunTracker {
     E.on('tome', (c) => this.run && this.tome(c));
     E.on('relic', () => this.run && this.fire('relic', this.g.player.relics.length));
     E.on('revive', () => this.run && this.fire('revive'));
+    E.on('abyss', (d) => this.run && this.abyss(d));
     E.on('end', (won) => this.end(won));
     E.on('abandon', () => this.abandon());
     E.on('net:rsum', (msg) => this.remoteSummary(msg));
@@ -50,7 +51,7 @@ export class RunTracker {
       classId: g.player.classId, name: g.player.name, coop: !g.isSolo, heat: d.heat ?? 0, pacts: { ...(d.pacts ?? {}) }, daily: d.daily ?? null,
       kills: 0, bestiary: {}, bosses: [], reactions: 0, biggest: 0, biggestOn: '', taken: 0, downs: 0, dashes: 0,
       tomesTaken: 0, bestRarity: -1, augments: 0, rooms: [], cur: null, flawlessChain: 0, killer: null, killerType: null,
-      feats: [], maxFloor: 0, won: false, ended: false,
+      feats: [], maxFloor: 0, won: false, ended: false, abyss: 0, winTime: 0,
     };
     this._kt = [];
     this._dash = g.player.dashCharges;
@@ -95,7 +96,7 @@ export class RunTracker {
     // reads after "Slain by": "a Drowned Ghoul", "an Animated Armor", "Gravemaw", "The Executioner"
     const named = (a) => {
       const n = a.def.name ?? a.type;
-      return { name: (a.boss || /^The /.test(n) ? n : (/^[AEIOU]/.test(n) ? 'an ' : 'a ') + n) + (a.affix ? ` (${a.affix} champion)` : ''), type: a.type };
+      return { name: (a.boss || /^The /.test(n) ? n : (/^[AEIOU]/.test(n) ? 'an ' : 'a ') + n) + (a.affix ? ` (${a.affix}${a.affix2 ? ' ' + a.affix2 : ''} champion)` : ''), type: a.type };
     };
     if (opts?.attacker?.def) return named(opts.attacker);
     const g = this.g, at = from ?? g.player.pos;
@@ -181,6 +182,15 @@ export class RunTracker {
     this.fire('tome', c);
   }
 
+  // descending banks the victory: the Hollow King fell, whatever the Abyss does next
+  abyss(d) {
+    const r = this.run, g = this.g;
+    if (!r.won) { r.won = true; r.winTime = g.stats.time; }
+    r.abyss = Math.max(r.abyss, d);
+    if (r.cur) this._closeRoom(false);
+    this.fire('abyss', d);
+  }
+
   // ------------------------------------------------------------------ run end
   summary() {
     const g = this.g, p = g.player, r = this.run;
@@ -195,7 +205,7 @@ export class RunTracker {
       v: 1, pid: p.id, name: p.name, classId: r.classId, won: r.won, time: Math.round(r.time), floor: r.maxFloor, biome: g.level?.biome?.id ?? '',
       kills: r.kills, partyKills: g.stats.kills, damage: Math.round(p.damageDealt ?? 0), biggest: Math.round(r.biggest), biggestOn: r.biggestOn,
       taken: Math.round(r.taken), downs: r.downs, reactions: r.reactions, gold: Math.round(g.stats.gold ?? 0), heat: r.heat, pacts: r.pacts, daily: r.daily,
-      killer: r.won ? null : r.killer, coop: r.coop, practice: this.practice, feats: [...r.feats],
+      abyss: r.abyss, fell: !!r.fell, killer: r.won && !r.fell ? null : r.killer, coop: r.coop, practice: this.practice, feats: [...r.feats],
       tomes: [...tomes.values()], relics: p.relics.map((x) => x.def?.id).filter(Boolean),
       rooms: r.rooms.map((c) => [c.f, c.type, Math.round(c.t), Math.round(c.dmg), (c.done ? 1 : 0) | (c.trial ? 2 : 0), c.kills]),
     };
@@ -206,9 +216,11 @@ export class RunTracker {
     if (!r || r.ended) return;
     const g = this.g;
     r.ended = true;
-    r.won = !!won;
+    r.fell = !won && r.won; // perished in the Abyss after the throne was already taken
+    r.won ||= !!won;
     r.coop ||= !g.isSolo; // someone may have joined mid-run
     r.time = g.stats.time;
+    r.winTime ||= r.time;
     r.maxFloor = Math.max(r.maxFloor, g.floorIndex);
     if (r.cur) this._closeRoom(false);
     if (!won && !r.killer) r.killer = 'the darkness';
@@ -226,6 +238,7 @@ export class RunTracker {
     if (!r || r.ended) return;
     r.ended = true; r.abandoned = true;
     r.time = this.g.stats.time;
+    r.winTime ||= r.time;
     this.record();
   }
 
@@ -243,8 +256,9 @@ export class RunTracker {
     if (veteran && damage > p.records.mostDamage) rec.damage = true;
     if (veteran && r.kills > p.records.mostKills) rec.kills = true;
     if (c.runs > 0 && realm > c.bestFloor) rec.floor = true;
-    if (r.won && c.wins > 0 && (!c.fastest || r.time < c.fastest)) rec.fastest = true;
+    if (r.won && c.wins > 0 && (!c.fastest || r.winTime < c.fastest)) rec.fastest = true;
     if (r.won && r.heat > Math.max(0, c.bestHeat)) rec.heat = true;
+    if (r.abyss && p.records.deepestAbyss > 0 && r.abyss > p.records.deepestAbyss) rec.abyss = true;
     p.records.biggestHit = Math.max(p.records.biggestHit, Math.round(r.biggest));
     p.records.mostDamage = Math.max(p.records.mostDamage, damage);
     p.records.mostKills = Math.max(p.records.mostKills, r.kills);
@@ -252,11 +266,15 @@ export class RunTracker {
     if (r.won) {
       p.wins++; c.wins++;
       if (r.coop) p.coopWins++;
-      c.fastest = c.fastest ? Math.min(c.fastest, Math.round(r.time)) : Math.round(r.time);
-      p.records.fastestWin = p.records.fastestWin ? Math.min(p.records.fastestWin, Math.round(r.time)) : Math.round(r.time);
+      const wt = Math.round(r.winTime);
+      c.fastest = c.fastest ? Math.min(c.fastest, wt) : wt;
+      p.records.fastestWin = p.records.fastestWin ? Math.min(p.records.fastestWin, wt) : wt;
+      c.bestAbyss = Math.max(c.bestAbyss, r.abyss);
+      p.records.deepestAbyss = Math.max(p.records.deepestAbyss, r.abyss);
       c.bestHeat = Math.max(c.bestHeat, r.heat);
       p.records.highestHeat = Math.max(p.records.highestHeat, r.heat);
-    } else if (!r.abandoned) {
+    }
+    if ((!r.won || r.fell) && !r.abandoned) {
       p.deaths++;
       if (r.killerType) p.killedBy[r.killerType] = (p.killedBy[r.killerType] ?? 0) + 1;
     }

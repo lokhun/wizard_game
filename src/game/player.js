@@ -529,13 +529,13 @@ export class LocalPlayer {
     this.dashRecharge -= dt;
     if (this.dashCharges < st.dashCharges && this.dashRecharge <= 0) {
       this.dashCharges++;
-      this.dashRecharge = st.dashCd;
+      this.dashRecharge = st.dashCd * (this.game.difficulty?.dashCd ?? 1);
     }
     if (allowMove && input.was('dash') && this.dashCharges > 0 && this.dashT <= 0) {
       const dir = wish.lengthSq() > 0.01 ? target.clone().normalize() : f.clone();
       this.dash(dir, 6.5, 0.18, { invuln: 0.22 });
       this.dashCharges--;
-      if (this.dashRecharge <= 0) this.dashRecharge = st.dashCd;
+      if (this.dashRecharge <= 0) this.dashRecharge = st.dashCd * (this.game.difficulty?.dashCd ?? 1); // (Leaden Steps)
       g.audio?.play('dash', { volume: 0.7 });
       const fx = fxOf(this.meta.element);
       const p = this.pos;

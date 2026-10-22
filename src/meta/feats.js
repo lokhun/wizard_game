@@ -21,7 +21,7 @@ export const FEATS = [
   { id: 'filth', group: 0, name: 'Filth Purged', icon: 'boss', desc: 'Defeat the Mother of Filth.', on: { bossDown: (r, p, x) => x.type === 'motherOfFilth' } },
   { id: 'moonrise', group: 0, name: 'Moonrise', icon: 'crescent', desc: 'Reach the Moonlit Bailey.', on: { floor: (r, p, x) => x >= 2 } },
   { id: 'dawn', group: 0, name: 'Dawn Returns', icon: 'sun', desc: 'Defeat the Hollow King.', on: { end: (r) => r.won } },
-  { id: 'swift', group: 0, name: 'Swift Ascent', icon: 'clock', desc: 'Win a run in under 30 minutes.', on: { end: (r) => r.won && r.time < 30 * 60 } },
+  { id: 'swift', group: 0, name: 'Swift Ascent', icon: 'clock', desc: 'Win a run in under 30 minutes.', on: { end: (r) => r.won && r.winTime < 30 * 60 } },
   { id: 'fellowship', group: 0, name: 'Fellowship', icon: 'army', desc: 'Win a run in co-op.', on: { end: (r) => r.won && r.coop } },
   { id: 'lifeline', group: 0, name: 'Lifeline', icon: 'heart', desc: 'Revive a fallen ally.', on: { revive: () => true } },
   // ---------------- mastery (single feats of skill)
@@ -44,6 +44,11 @@ export const FEATS = [
   // ---------------- pacts & the daily rite
   { id: 'pactbound', group: 3, name: 'Pactbound', icon: 'pact', desc: 'Win with 5 or more heat.', on: { end: (r) => r.won && r.heat >= 5 } },
   { id: 'inferno', group: 3, name: 'Into the Inferno', icon: 'flame', desc: 'Win with 12 or more heat.', on: { end: (r) => r.won && r.heat >= 12 } },
+  { id: 'crucible', group: 3, name: 'The Crucible', icon: 'phoenix', desc: 'Win with 20 or more heat.', on: { end: (r) => r.won && r.heat >= 20 } },
+  { id: 'unmade', group: 3, name: 'Unmade', icon: 'ult', desc: 'Win with 30 or more heat.', on: { end: (r) => r.won && r.heat >= 30 } },
+  { id: 'abyss', group: 3, name: 'Into the Abyss', icon: 'tentacle', desc: 'Descend into the Abyss after slaying the Hollow King.', on: { abyss: (r, p, d) => d >= 1 } },
+  { id: 'deep', group: 3, name: 'Deep Dweller', icon: 'skull', desc: 'Reach the third depth of the Abyss.', on: { abyss: (r, p, d) => d >= 3 } },
+  { id: 'abyssal', group: 3, name: 'Abyssal Sovereign', icon: 'crown', desc: 'Slay the Hollow King of the Abyss and descend again, with 10 or more heat.', on: { abyss: (r, p, d) => d >= 2 && r.heat >= 10 } },
   { id: 'rite', group: 3, name: 'Rite Keeper', icon: 'shrine', desc: 'Reach the Moonlit Bailey in a Daily Rite.', on: { floor: (r, p, x) => !!r.daily && x >= 2 } },
   { id: 'devotee', group: 3, name: 'Devotee', icon: 'stairs', desc: 'Keep a three-day Daily Rite streak.', on: { profile: (r, p) => p.daily.streak >= 3 }, progress: (p) => [Math.min(3, p.daily.streak), 3] },
   // ---------------- legacy (lifetime)

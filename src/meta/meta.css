@@ -40,6 +40,7 @@
 .rs-badges { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .rs-badge { font-family: var(--serif); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; padding: 3px 9px; border: 1px solid var(--bronze-lo); color: var(--bronze-hi); background: rgba(0,0,0,0.35); display: inline-flex; align-items: center; gap: 5px; }
 .rs-badge.heat { border-color: #a0441c; color: #ffb070; }
+.rs-badge.abyss { border-color: #5a2a8a; color: #d0a0ff; }
 .rs-badge.daily { border-color: #6a5a20; color: var(--gold); }
 .rs-badge.practice { border-color: #444; color: #999; }
 
@@ -172,11 +173,11 @@
 .cx-foot .hint { color: var(--text-dim); font-size: 12px; font-family: var(--serif); letter-spacing: 0.1em; }
 
 /* ---------- pact board */
-.pb { width: min(1000px, 95vw); max-height: 94vh; overflow-y: auto; padding: 20px 28px; display: flex; flex-direction: column; gap: 12px; }
+.pb { width: min(1180px, 96vw); max-height: 94vh; overflow-y: auto; padding: 20px 28px; display: flex; flex-direction: column; gap: 12px; }
 .pb-head { display: flex; align-items: center; gap: 20px; }
 .pb-heat { display: flex; align-items: center; gap: 8px; margin-left: auto; font-family: 'Cinzel', var(--serif); font-weight: 600; font-size: 40px; color: #ffb070; text-shadow: 0 0 22px rgba(255,120,40,0.55); font-variant-numeric: tabular-nums; }
 .pb-heat small { font-size: 12px; letter-spacing: 0.3em; color: var(--text-dim); text-shadow: none; margin-right: 4px; }
-.pb-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.pb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
 .pb-card { padding: 10px 12px; border: 1px solid #2a221b; background: linear-gradient(180deg, #1a1512, #0c0a08); cursor: pointer; display: flex; flex-direction: column; gap: 4px; transition: all 0.12s; pointer-events: auto; position: relative; }
 .pb-card:hover { border-color: var(--bronze); }
 .pb-card.on { border-color: #b0501c; background: linear-gradient(180deg, #2e1a10, #120a06); box-shadow: inset 0 0 26px rgba(255,100,30,0.12); }
@@ -187,6 +188,12 @@
 .pb-card .r i { width: 16px; height: 5px; background: #2a221b; border: 1px solid #3a2e22; }
 .pb-card .r i.on { background: #ff8a40; border-color: #ffb070; box-shadow: 0 0 6px #ff7020; }
 .pb-card .h { margin-left: auto; font-family: var(--serif); font-size: 11px; color: #c07040; letter-spacing: 0.1em; }
+.pb-card.locked { cursor: default; opacity: 0.55; border-style: dashed; }
+.pb-card.locked:hover { border-color: #2a221b; }
+.pb-card.locked .t { color: #6a5e50; }
+.pb-boons { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-family: var(--serif); font-size: 13px; color: #e8b888; letter-spacing: 0.04em; min-height: 18px; }
+.pb-boons b { color: #ffb070; font-weight: 600; }
+.pb-boons .nu { color: var(--text-dim); }
 .pb-foot { display: flex; align-items: center; gap: 12px; }
 .pb-foot .hint { color: var(--text-dim); font-size: 12px; font-family: var(--serif); letter-spacing: 0.08em; flex: 1; }
 

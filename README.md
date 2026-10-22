@@ -43,8 +43,9 @@ A first-person, co-op wizard roguelike for the browser. Fight your way up from t
   - Boss intro cinematics, and fallen co-op players spectate their teammates.
 - **Reasons to come back:**
   - A **run summary** on every victory and defeat: time, realm, kills, damage, your biggest hit, the build you bound, what killed you and a chronicle of every fight. In co-op, every wizard gets a column.
-  - A persistent **Codex**: 30 feats with in-run toasts, per-wizard records (wins, best realm, fastest victory, highest heat), a bestiary and lifetime totals.
-  - **Pacts of Ascension**, unlocked by your first victory: 11 difficulty modifiers (tougher, faster or more numerous foes, enraged bosses, scant healing, no rerolls...) that add heat, recorded per wizard.
+  - A persistent **Codex**: 35 feats with in-run toasts, per-wizard records (wins, best realm, fastest victory, highest heat, deepest Abyss), a bestiary and lifetime totals.
+  - **Pacts of Ascension**, unlocked by your first victory: 17 pacts (tougher, faster or more numerous foes, enraged bosses, scant healing, no rerolls, omens on every fight, fewer tome choices, a slower dash, relentless waves, foes that burst when slain, champions with two affixes...) up to heat 35, recorded per wizard. The deeper pacts are sealed until you win at higher heat, and heat pays back: finer tomes and more gold.
+  - **The Abyss**: after your first victory, the Hollow King's fall opens a second portal. Descend and the realms begin again, deadlier at every depth, for as long as you last. The win is already banked.
   - The **Daily Rite**: one seed, one wizard and one set of pacts for everyone each day, with a best result and a streak.
 
 ## Controls

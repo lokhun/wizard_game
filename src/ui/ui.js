@@ -353,9 +353,11 @@ export class UI {
 
   onFloor(game, biome, index) {
     if (!this.h) return;
-    this.h.fname.textContent = biome.name;
+    const ab = game.abyss ?? 0;
+    this.h.fname.textContent = ab ? `${biome.name} · Abyss ${ab}` : biome.name;
     this.h.fsub.textContent = `Realm ${index + 1} of ${BIOMES.length} · ${biome.subtitle}`;
-    this.banner(biome.name, biome.subtitle, '#e2c48a', 4);
+    if (ab) this.banner(`ABYSS ${ab} · ${biome.name}`, 'The realms remade in darkness — deadlier than before', '#ff5878', 5);
+    else this.banner(biome.name, biome.subtitle, '#e2c48a', 4);
     this.h.boss.classList.add('hidden');
     this.bossActor = null;
     this._mmCache = null;
@@ -445,7 +447,7 @@ export class UI {
     const tr = fightRoom?.type === ROOM.TRIAL && fightRoom.trialWon === null && fightRoom.trialEnd ? Math.max(0, Math.ceil(fightRoom.trialEnd - game.time)) : null;
     if (locked && tr !== null) obj = `Trial — ${tr}s left · ${foes} foe${foes === 1 ? '' : 's'} remain`;
     else if (locked) obj = game.actors.list.some((a) => a.boss && !a.dead) ? 'Defeat the guardian' : `Survive the ambush — ${foes} foe${foes === 1 ? '' : 's'} remain`;
-    else if (room?.type === ROOM.BOSS && room.cleared) obj = 'Step through the portal to ascend';
+    else if (room?.type === ROOM.BOSS && room.cleared) obj = game.interactables.some((i) => i.kind === 'abyssPortal') ? 'Claim your victory, or descend into the Abyss' : 'Step through the portal to ascend';
     else obj = 'Find the way to the guardian\'s lair';
     if (obj !== this._obj) { this._obj = obj; h.obj.textContent = obj; }
     // banners/toasts timers
@@ -663,7 +665,8 @@ export class UI {
       g.fillRect(s.x - w / 2, s.y, w * Math.max(0, a.hp / a.maxHp), hgt);
       if (a.shieldHp > 0) { g.fillStyle = '#ffe080'; g.fillRect(s.x - w / 2, s.y - 3, w * Math.min(1, a.shieldHp / a.maxHp), 2); }
       if (a.elite) {
-        const label = (a.affix ? a.affix[0].toUpperCase() + a.affix.slice(1) + ' ' : '') + a.def.name;
+        const cap = (k) => (k ? k[0].toUpperCase() + k.slice(1) + ' ' : '');
+        const label = cap(a.affix) + cap(a.affix2) + a.def.name;
         const b = this._textBitmap(label, '600 11px Cinzel, serif', '#ffb050', { lw: 0 });
         const lw = b.w / 2 + 2;
         this._blitText(g, b, Math.max(lw, Math.min(innerWidth - lw, s.x)), s.y - 9);

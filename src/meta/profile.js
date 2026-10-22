@@ -17,7 +17,7 @@ const num = (x, d = 0) => (Number.isFinite(+x) && +x >= 0 ? +x : d);
 const obj = (x) => (x && typeof x === 'object' && !Array.isArray(x) ? x : {});
 const numMap = (x) => { const o = {}; for (const [k, v] of Object.entries(obj(x))) if (Number.isFinite(+v)) o[k] = +v; return o; };
 
-export function blankClass() { return { runs: 0, wins: 0, bestFloor: 0, fastest: 0, bestHeat: -1, kills: 0 }; }
+export function blankClass() { return { runs: 0, wins: 0, bestFloor: 0, fastest: 0, bestHeat: -1, kills: 0, bestAbyss: 0 }; }
 
 export function blankProfile() {
   return {
@@ -26,7 +26,7 @@ export function blankProfile() {
     runs: 0, wins: 0, deaths: 0, coopWins: 0,
     kills: 0, damage: 0, time: 0, gold: 0, tomes: 0, rooms: 0, flawless: 0,
     bestFloor: 0, // realms reached, 1..5
-    records: { biggestHit: 0, mostDamage: 0, mostKills: 0, fastestWin: 0, highestHeat: -1 },
+    records: { biggestHit: 0, mostDamage: 0, mostKills: 0, fastestWin: 0, highestHeat: -1, deepestAbyss: 0 },
     classes: {}, // id -> blankClass()
     bestiary: {}, // enemy type -> kills by you
     bosses: {}, // boss type -> times defeated (any party member's kill counts)

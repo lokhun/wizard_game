@@ -69,7 +69,8 @@ export class Level {
 }
 
 // force: optional list of encounter names to put on every eligible room (test hook, ?enc=)
-export function generateLevel(seed, floorIndex, force = null) {
+// opts.omens (the Ill Omens pact): 1 doubles the omens a floor can hold, 2 puts one on every fight but the first
+export function generateLevel(seed, floorIndex, force = null, opts = {}) {
   const biome = BIOMES[floorIndex];
   const rng = new RNG(seed * 7919 + floorIndex * 104729);
   // encounters roll on their own stream so the layout itself doesn't depend on them
@@ -205,8 +206,10 @@ export function generateLevel(seed, floorIndex, force = null) {
     if (r.type !== ROOM.COMBAT) continue;
     if (forcedMod) { r.mod = forcedMod; continue; }
     if (dealt) { r.mod = ROOM_MODS[deal++ % ROOM_MODS.length]; continue; }
-    if (r.order < 2 || usedMods.size >= (floorIndex === 0 ? 1 : 2) || !er.chance(floorIndex === 0 ? 0.3 : 0.4)) continue;
-    const pool = ROOM_MODS.filter((m) => !usedMods.has(m) && !(m === 'darkness' && biome.outdoor));
+    const omens = opts.omens ?? 0;
+    if (omens >= 2 ? r.order < 2 : (r.order < 2 || usedMods.size >= (floorIndex === 0 ? 1 : 2) * (omens + 1) || !er.chance((floorIndex === 0 ? 0.3 : 0.4) * (omens + 1)))) continue;
+    let pool = ROOM_MODS.filter((m) => !usedMods.has(m) && !(m === 'darkness' && biome.outdoor));
+    if (!pool.length) { usedMods.clear(); pool = ROOM_MODS.filter((m) => !(m === 'darkness' && biome.outdoor)); }
     r.mod = er.pick(pool);
     usedMods.add(r.mod);
   }

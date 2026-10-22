@@ -121,47 +121,59 @@ export function makePedestal(game, pos, minRarity = 0) {
 }
 
 // Swirling portal that carries the party to the next floor.
-export function makePortal(game, pos) {
+// The way on. opts.kind / label / look: the Hollow King's two ways out, back
+// to the dawn ('dawn', gold) or down into the Abyss ('abyss', blood and dark).
+// The look is only colours (uniforms): every portal shares one program.
+const PORTAL_LOOKS = {
+  arcane: { a: [0.6, 0.2, 1.6], b: [2.2, 1.4, 3.2], c: [1.5, 1.2, 2.5], light: 0xa060ff, spark: [1.6, 0.8, 3], arch: 0x401060, burst: 'arcane' },
+  dawn: { a: [1.0, 0.55, 0.12], b: [1.9, 1.35, 0.5], c: [1.1, 0.9, 0.5], light: 0xffc060, spark: [3, 2, 0.8], arch: 0x604010, burst: 'holy' },
+  abyss: { a: [0.22, 0.0, 0.03], b: [1.15, 0.03, 0.14], c: [0, 0, 0], light: 0xc01040, void: true, spark: [2.6, 0.2, 0.5], arch: 0x500818, burst: 'enemyFire' },
+};
+export function makePortal(game, pos, opts = {}) {
+  const look = PORTAL_LOOKS[opts.look] ?? PORTAL_LOOKS.arcane;
   const root = new THREE.Group();
   root.position.copy(pos);
   const mat = new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 } },
-    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    uniforms: { uTime: { value: 0 }, uA: { value: new THREE.Vector3(...look.a) }, uB: { value: new THREE.Vector3(...look.b) }, uC: { value: new THREE.Vector3(...look.c) }, uVoid: { value: look.void ? 1 : 0 } },
+    // a void portal is a hole in the world (normal blending, opaque black core); the rest glow additively
+    transparent: true, depthWrite: false, blending: look.void ? THREE.NormalBlending : THREE.AdditiveBlending, side: THREE.DoubleSide,
     vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }',
     fragmentShader: `
-      uniform float uTime; varying vec2 vUv;
+      uniform float uTime, uVoid; uniform vec3 uA, uB, uC; varying vec2 vUv;
       void main(){
         vec2 p = vUv * 2. - 1.;
         float r = length(p);
         float a = atan(p.y, p.x);
         float swirl = sin(a * 5. + r * 12. - uTime * 5.) * 0.5 + 0.5;
-        float edge = smoothstep(1.0, 0.85, r) * smoothstep(0.0, 0.5, r);
+        float edge = smoothstep(1.0, 0.85, r) * smoothstep(0.0, 0.5, r) * mix(1., smoothstep(0.35, 0.85, r), uVoid);
         float core = smoothstep(0.7, 0.0, r);
-        vec3 c = mix(vec3(0.6, 0.2, 1.6), vec3(2.2, 1.4, 3.2), swirl) * edge + vec3(1.5, 1.2, 2.5) * core * 0.6;
-        gl_FragColor = vec4(c * smoothstep(1.0, 0.9, r), 1.);
+        vec3 c = mix(uA, uB, swirl) * edge + uC * core * 0.6;
+        float m = smoothstep(1.0, 0.9, r);
+        gl_FragColor = vec4(c * m, mix(1., m, uVoid));
       }`,
   });
+  mat.forceSinglePass = true; // it always faces the camera; keeps one program for every look
   const disc = new THREE.Mesh(new THREE.CircleGeometry(1.6, 48), mat);
   disc.position.y = 2;
   root.add(disc);
-  const arch = new THREE.Mesh(new THREE.TorusGeometry(1.75, 0.18, 8, 32), new THREE.MeshStandardMaterial({ color: 0x40384a, roughness: 0.6, emissive: 0x401060, emissiveIntensity: 0.8 }));
+  const arch = new THREE.Mesh(new THREE.TorusGeometry(1.75, 0.18, 8, 32), new THREE.MeshStandardMaterial({ color: 0x40384a, roughness: 0.6, emissive: look.arch, emissiveIntensity: 0.8 }));
   arch.position.y = 2;
   root.add(arch);
   const lightAt = pos.clone().add(new THREE.Vector3(0, 2, 0)); // pooled light, see makeChest
   game.scene.add(root);
   const snd = game.audio?.loop('loop_portal', { pos });
-  game.vfx.explosion(pos.clone().add(new THREE.Vector3(0, 2, 0)), 'arcane', 4);
+  game.vfx.explosion(pos.clone().add(new THREE.Vector3(0, 2, 0)), look.burst, 4);
   return {
-    kind: 'portal', pos: pos.clone().add(new THREE.Vector3(0, 1.5, 0)), r: 3.5, label: 'Ascend to the next floor', usedBy: new Set(),
+    kind: opts.kind ?? 'portal', pos: pos.clone().add(new THREE.Vector3(0, 1.5, 0)), r: opts.kind ? 2.6 : 3.5, label: opts.label ?? 'Ascend to the next floor', usedBy: new Set(),
     update(dt, t) {
       mat.uniforms.uTime.value = t;
       const cam = game.renderer.camera.position;
       disc.lookAt(cam.x, pos.y + 2, cam.z);
       arch.lookAt(cam.x, pos.y + 2, cam.z);
-      game.lights.request(lightAt, 0xa060ff, 10 + Math.sin(t * 4) * 3, 12);
+      game.lights.request(lightAt, look.light, 10 + Math.sin(t * 4) * 3, 12);
       if (Math.random() < dt * 30) {
         const a = Math.random() * Math.PI * 2;
-        game.vfx.P.glow({ x: pos.x + Math.cos(a) * 1.7, y: pos.y + 2 + Math.sin(a) * 1.7, z: pos.z, vx: -Math.cos(a) * 1.5, vy: -Math.sin(a) * 1.5, r: 1.6, g: 0.8, b: 3, life: 0.9, size: 0.08, sprite: SPR.SPARK });
+        game.vfx.P.glow({ x: pos.x + Math.cos(a) * 1.7, y: pos.y + 2 + Math.sin(a) * 1.7, z: pos.z, vx: -Math.cos(a) * 1.5, vy: -Math.sin(a) * 1.5, r: look.spark[0], g: look.spark[1], b: look.spark[2], life: 0.9, size: 0.08, sprite: SPR.SPARK });
       }
     },
     dispose() {

@@ -4,7 +4,7 @@ import { ENEMY_DEFS, BOSS_DEFS } from '../game/enemyDefs.js';
 import { BIOMES } from '../world/biomes.js';
 import { loadProfile, saveProfile, storageOk } from './profile.js';
 import { FEATS, FEAT_GROUPS, bestiaryTypes } from './feats.js';
-import { PACTS, PACT_BY_ID, MAX_HEAT, heatOf, cleanPacts, dailyRite, utcDay } from './pacts.js';
+import { PACTS, PACT_BY_ID, MAX_HEAT, heatOf, cleanPacts, dailyRite, utcDay, pactOpen, nextUnlock, heatBoons } from './pacts.js';
 import { fmtTime, fmtNum } from './summary.js';
 
 // ---------------------------------------------------------------------------
@@ -81,9 +81,9 @@ function wizardsPage(p) {
     return `<tr class="${c?.wins ? 'won' : ''}"><td><span class="cn">${classEmblem(id, hex(m.color), 28)}${m.name}</span></td>
       <td class="${has ? '' : 'dim'}">${has ? c.runs : '—'}</td><td class="${c?.wins ? '' : 'dim'}">${d(c?.wins)}</td>
       <td class="${has ? '' : 'dim'}">${has ? `${c.bestFloor} / ${BIOMES.length}` : '—'}</td><td class="${c?.fastest ? '' : 'dim'}">${d(c?.fastest, fmtTime)}</td>
-      <td class="${c?.bestHeat >= 0 && c?.wins ? 'hot' : 'dim'}">${c?.wins && c.bestHeat >= 0 ? c.bestHeat : '—'}</td><td class="${has ? '' : 'dim'}">${has ? fmtNum(c.kills) : '—'}</td></tr>`;
+      <td class="${c?.bestHeat >= 0 && c?.wins ? 'hot' : 'dim'}">${c?.wins && c.bestHeat >= 0 ? c.bestHeat : '—'}</td><td class="${c?.bestAbyss ? 'hot' : 'dim'}">${d(c?.bestAbyss)}</td><td class="${has ? '' : 'dim'}">${has ? fmtNum(c.kills) : '—'}</td></tr>`;
   }).join('');
-  return `<table class="cx-table"><tr><th>Wizard</th><th>Runs</th><th>Victories</th><th>Best realm</th><th>Fastest victory</th><th>Highest heat cleared</th><th>Foes slain</th></tr>${rows}</table>`;
+  return `<table class="cx-table"><tr><th>Wizard</th><th>Runs</th><th>Victories</th><th>Best realm</th><th>Fastest victory</th><th>Highest heat cleared</th><th>Deepest Abyss</th><th>Foes slain</th></tr>${rows}</table>`;
 }
 
 function bestiaryPage(p) {
@@ -122,6 +122,7 @@ function recordsPage(p) {
     ${t('Most foes in a run', p.records.mostKills ? fmtNum(p.records.mostKills) : '—')}
     ${t('Fastest victory', p.records.fastestWin ? fmtTime(p.records.fastestWin) : '—')}
     ${t('Highest heat cleared', p.records.highestHeat >= 0 ? p.records.highestHeat : '—')}
+    ${t('Deepest Abyss', p.records.deepestAbyss ? `depth ${p.records.deepestAbyss}` : '—')}
     ${t('Co-op victories', fmtNum(p.coopWins))}
     ${t('Nemesis', nemesis ? esc((ENEMY_DEFS[nemesis[0]] ?? BOSS_DEFS[nemesis[0]])?.name ?? nemesis[0]) : '—', nemesis ? `ended ${nemesis[1]} run${nemesis[1] > 1 ? 's' : ''}` : '')}
     ${t('Daily Rite streak', d.streak ? `${d.streak} day${d.streak > 1 ? 's' : ''}` : '—', `best ${d.bestStreak} · ${d.runs} rites`)}
@@ -150,18 +151,25 @@ export function showPactBoard(ui, { classId, onClose } = {}) {
       <div class="pb-head"><div><div class="title" style="font-size:30px">Pacts of Ascension</div><div class="subtitle">Swear pacts to raise the heat${best >= 0 ? ` · best cleared as ${CLASS_META[classId].name}: ${best}` : ''}</div></div>
       <div class="pb-heat"><small>HEAT</small>${iconSVG('flame', '#ff8a40', 34)}<span id="pbHeat">0</span><small style="margin-left:6px">/ ${MAX_HEAT}</small></div></div>
       <div class="pb-grid"></div>
-      <div class="pb-foot"><div class="hint">Click a pact to raise its rank, right-click to lower it. Heat is recorded per wizard when you win.</div><button class="btn small" id="pbClear">Clear all</button><button class="btn small primary" id="pbDone">Done</button></div>
+      <div class="pb-boons" id="pbBoons"></div>
+      <div class="pb-foot"><div class="hint">Click a pact to raise its rank, right-click to lower it. Heat is recorded per wizard when you win; clearing more heat opens deeper pacts.</div><button class="btn small" id="pbClear">Clear all</button><button class="btn small primary" id="pbDone">Done</button></div>
     </div>`);
   const grid = m.querySelector('.pb-grid');
+  const cleared = p.records.highestHeat; // (any wizard)
+  for (const id of Object.keys(sel)) if (!pactOpen(PACT_BY_ID[id], cleared)) delete sel[id];
   const render = () => {
     grid.innerHTML = PACTS.map((pc) => {
+      if (!pactOpen(pc, cleared)) return `<div class="pb-card locked"><div class="t">${iconSVG(pc.icon, '#4a4038', 20, { glow: false })}${esc(pc.name)}</div><div class="d">Win with ${pc.unlock} heat to break this seal.</div><div class="r"><span class="h">+${pc.heat} heat${pc.max > 1 ? ' each' : ''}</span></div></div>`;
       const r = sel[pc.id] ?? 0;
       return `<div class="pb-card${r ? ' on' : ''}" data-id="${pc.id}"><div class="t">${iconSVG(pc.icon, r ? '#ffb070' : '#9a8f7c', 20, { glow: !!r })}${esc(pc.name)}${pc.max > 1 && r ? ` ${ROMAN[r - 1]}` : ''}</div>
         <div class="d">${esc(pc.desc(Math.max(1, r)))}</div>
         <div class="r">${Array.from({ length: pc.max }, (_, i) => `<i class="${i < r ? 'on' : ''}"></i>`).join('')}<span class="h">+${pc.heat} heat${pc.max > 1 ? ' each' : ''}</span></div></div>`;
     }).join('');
-    m.querySelector('#pbHeat').textContent = heatOf(sel);
-    grid.querySelectorAll('.pb-card').forEach((el) => {
+    const h = heatOf(sel), b = heatBoons(h), nu = nextUnlock(cleared);
+    m.querySelector('#pbHeat').textContent = h;
+    m.querySelector('#pbBoons').innerHTML = (h ? `${iconSVG('flame', '#ff8a40', 16, { glow: false })}<b>Heat ${h} rewards:</b> finer tomes ${Math.round((b.luck - 1) * 100)}% likelier · ${Math.round((b.gold - 1) * 100)}% more gold` : 'Swear pacts to raise the heat: the hotter the run, the finer its tomes and the richer its gold.')
+      + (Number.isFinite(nu) ? ` <span class="nu">· next seal breaks at heat ${nu}${cleared >= 0 ? ` (best cleared: ${cleared})` : ''}</span>` : '');
+    grid.querySelectorAll('.pb-card:not(.locked)').forEach((el) => {
       const pc = PACT_BY_ID[el.dataset.id];
       const set = (r) => { if (r > 0) sel[pc.id] = r; else delete sel[pc.id]; ui.audio?.play(r ? 'ui_click' : 'ui_hover', { volume: 0.5 }); render(); };
       el.onclick = () => set(((sel[pc.id] ?? 0) + 1) % (pc.max + 1));

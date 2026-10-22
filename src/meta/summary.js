@@ -102,11 +102,14 @@ export function showSummary(ui, S, { party = [], remotes = new Map(), onMenu, on
   const rec = S.records ?? {};
   const coop = party.length > 0;
   const pacts = Object.entries(S.pacts ?? {}).map(([id, r]) => PACT_BY_ID[id] ? PACT_BY_ID[id].name + (PACT_BY_ID[id].max > 1 ? ' ' + ROMAN[r - 1] : '') : null).filter(Boolean);
-  const sub = won
+  const sub = S.fell
+    ? `The Hollow King fell, but ${S.killer ? `<em>${esc(S.killer)}</em>` : 'the dark'} claimed you at depth ${S.abyss} of the Abyss.`
+    : S.abyss ? `The Hollow King has fallen ${S.abyss + 1} times. You return from depth ${S.abyss} of the Abyss.`
+    : won
     ? 'The Hollow King has fallen. Dawn returns to the Ashen Keep.'
     : `${S.killer ? `Slain by <em>${esc(S.killer)}</em>` : 'Fallen'} in ${esc(b?.name ?? 'the dark')}${S.rooms?.at(-1)?.[1] === 'boss' && !(S.rooms.at(-1)[4] & 1) ? ', before its lord' : ''}.`;
   const tiles = [
-    tile('Time', S.time, 'time', won ? 'to the throne' : 'survived', rec.fastest, 0),
+    tile('Time', S.time, 'time', won && !S.abyss ? 'to the throne' : 'survived', rec.fastest, 0),
     tile('Realm', S.floor + 1, 'realm', esc((b?.name ?? '').replace(/^The /, '')), rec.floor, 1),
     tile('Foes slain', S.kills, 'num', coop ? `party ${fmtNum(S.partyKills)}` : `${fmtNum(S.reactions)} reactions`, rec.kills, 2),
     tile('Damage dealt', S.damage, 'num', `${fmtNum(S.damage / Math.max(1, S.time))} per second`, rec.damage, 3),
@@ -128,6 +131,7 @@ export function showSummary(ui, S, { party = [], remotes = new Map(), onMenu, on
           <div class="rl">Realm ${S.floor + 1} of ${BIOMES.length}</div>
           <div class="rs-badges">
             ${S.heat ? `<span class="rs-badge heat" title="${esc(pacts.join(' · '))}">${iconSVG('flame', '#ff8a40', 13, { glow: false })}Heat ${S.heat}${rec.heat ? ' · best' : ''}</span>` : ''}
+            ${S.abyss ? `<span class="rs-badge abyss">${iconSVG('tentacle', '#c080ff', 13, { glow: false })}Abyss ${S.abyss}${rec.abyss ? ' · best' : ''}</span>` : ''}
             ${S.daily ? `<span class="rs-badge daily">${iconSVG('sun', '#f0c050', 13, { glow: false })}Daily Rite ${esc(S.daily)}${rec.daily ? ' · best' : ''}</span>` : ''}
             ${S.practice ? '<span class="rs-badge practice">Practice · not recorded</span>' : ''}
           </div>

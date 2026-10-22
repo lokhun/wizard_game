@@ -83,7 +83,7 @@ export class Director {
       const level = this.level;
       this.g.spells.after(k * 0.02, () => {
         if (this.level !== level || room.cleared) return;
-        const a = this.spawnEnemy(s.type, p.x, p.z, { elite: s.elite, affix: s.affix, dormant: true, homeRoom: room, spawnFx: false, yaw, noCredit: true });
+        const a = this.spawnEnemy(s.type, p.x, p.z, { elite: s.elite, affix: s.affix, affix2: s.affix2, dormant: true, homeRoom: room, spawnFx: false, yaw, noCredit: true });
         room.sentryIds.push(a.id);
         if (this.active?.room === room) this.active.spawned.add(a.id); // (the fight began meanwhile)
       });
@@ -98,18 +98,32 @@ export class Director {
   // still faces about what a solo player does (with 2.5x the bodies and no
   // extra damage, a 4-player party used to take ~40% less each than solo,
   // on top of revives) - and the fight gets bigger, not just longer.
-  hpScale() { return FLOOR_HP[this.floor] * (1 + 0.28 * (this.partySize() - 1)) * (this.g.difficulty?.enemyHp ?? 1); }
-  dmgScale() { return FLOOR_DMG[this.floor] * (1 + 0.12 * (this.partySize() - 1)) * (this.g.difficulty?.enemyDamage ?? 1); }
-  countScale() { return (1 + 0.75 * (this.partySize() - 1)) * (this.g.difficulty?.enemyCount ?? 1); }
+  hpScale() { return this.floorHp() * (1 + 0.28 * (this.partySize() - 1)) * (this.g.difficulty?.enemyHp ?? 1); }
+  dmgScale() { return this.floorDmg() * (1 + 0.12 * (this.partySize() - 1)) * (this.g.difficulty?.enemyDamage ?? 1); }
+  countScale() { return (1 + 0.75 * (this.partySize() - 1)) * (this.g.difficulty?.enemyCount ?? 1) * (1 + 0.15 * this.depth); }
+  // The Abyss: each descent past the Hollow King. The realms start again from
+  // the first, but a depth-1 Sewers already hits like the Throne and the last
+  // realm of depth 1 far beyond it; champions are commoner and, from depth 2,
+  // every one bears two affixes.
+  get depth() { return this.g.abyss ?? 0; }
+  // the realm curve, flattened and lifted so depth 1 starts where the Throne left off
+  floorHp(f = this.floor) {
+    const d = this.depth;
+    return d ? FLOOR_HP.at(-1) * (1 + 0.5 * (d - 1)) * FLOOR_HP[f] ** 0.6 : FLOOR_HP[f];
+  }
+  floorDmg(f = this.floor) {
+    const d = this.depth;
+    return d ? FLOOR_DMG.at(-1) * (1 + 0.2 * (d - 1)) * (FLOOR_DMG[f] / FLOOR_DMG[0]) ** 0.5 : FLOOR_DMG[f];
+  }
 
   spawnEnemy(type, x, z, opts = {}) {
     const def = ENEMY_DEFS[type] ?? BOSS_DEFS[type];
     // boss HP in BOSS_DEFS is already tuned per realm, so bosses skip the floor multiplier
     const hp = BOSS_DEFS[type]
-      ? def.hp * (1 + 0.65 * (this.partySize() - 1)) * (this.g.difficulty?.enemyHp ?? 1)
+      ? def.hp * (1 + 0.65 * (this.partySize() - 1)) * (this.g.difficulty?.enemyHp ?? 1) * (this.floorHp() / FLOOR_HP[this.floor])
       : def.hp * this.hpScale() * (opts.elite ? 3 : 1);
     const dmg = def.dmg * this.dmgScale() * (opts.elite ? 1.3 : 1);
-    const a = this.g.actors.spawn(type, x, z, { hp, dmg, elite: opts.elite, affix: opts.affix, yaw: opts.yaw ?? Math.random() * 6.28, dormant: opts.dormant, homeRoom: opts.homeRoom, spawnFx: opts.spawnFx });
+    const a = this.g.actors.spawn(type, x, z, { hp, dmg, elite: opts.elite, affix: opts.affix, affix2: opts.affix2, yaw: opts.yaw ?? Math.random() * 6.28, dormant: opts.dormant, homeRoom: opts.homeRoom, spawnFx: opts.spawnFx });
     if (!BOSS_DEFS[type]) a.speedMult *= this.g.difficulty?.enemySpeed ?? 1; // the Hunt pact
     if (this.active && !opts.noCredit) this.active.spawned.add(a.id);
     this.g.encounters?.onSpawned(a);
@@ -200,7 +214,8 @@ export class Director {
       const list = [];
       if (room.type === ROOM.ELITE && w === nWaves - 1) {
         // the Champions pact: the chamber's champion bears an affix too
-        list.push({ type: rng.pick(b.elites), elite: false, champion: true, role: 'heavy', affix: this.g.difficulty?.eliteAffix ? rng.pick(AFFIXES) : null });
+        const af = this.g.difficulty?.eliteAffix ? rng.pick(AFFIXES) : null;
+        list.push({ type: rng.pick(b.elites), elite: false, champion: true, role: 'heavy', affix: af, affix2: this._twin(af) });
         budget *= 0.4;
       }
       // the opening wave uses a simple, readable squad; later waves get nastier ones
@@ -215,8 +230,9 @@ export class Director {
         const pack = def.pack ? rng.int(def.pack[0], def.pack[1]) : 1;
         for (let i = 0; i < pack && ((budget > 0 && list.length < cap) || (force && i === 0)); i++) {
           // occasional champion (elite affix) from floor 2 on
-          const elite = (f >= 1 || trial) && rng.chance(((trial ? 0.18 : 0.05) + f * 0.025 + (this.partySize() - 1) * 0.02) * (this.g.difficulty?.champions ?? 1)) && def.cost >= 2;
-          list.push({ type, elite, affix: elite ? rng.pick(AFFIXES) : null, role: roleOf(type) });
+          const elite = (f >= 1 || trial || this.depth > 0) && rng.chance(((trial ? 0.18 : 0.05) + f * 0.025 + (this.partySize() - 1) * 0.02 + this.depth * 0.08) * (this.g.difficulty?.champions ?? 1)) && def.cost >= 2;
+          const af = elite ? rng.pick(AFFIXES) : null;
+          list.push({ type, elite, affix: af, affix2: this._twin(af), role: roleOf(type) });
           budget -= def.cost * (elite ? 3 : 1);
         }
       };
@@ -274,6 +290,13 @@ export class Director {
     return best ?? { x: room.cx, z: room.cz };
   }
 
+  // the Exalted pact: a second affix, never the first one again
+  _twin(af) {
+    if (!af || !(this.g.difficulty?.twinAffix || this.depth >= 2)) return null;
+    const rest = AFFIXES.filter((k) => k !== af);
+    return rest[Math.floor(this.rng.next() * rest.length)];
+  }
+
   _nextWave() {
     const A = this.active;
     A.waveIdx++;
@@ -286,7 +309,7 @@ export class Director {
       this.g.spells.after(i * 0.12 + Math.random() * 0.2, () => {
         if (this.active !== A) return;
         const p = this._spawnPoint(room, s.role);
-        const a = this.spawnEnemy(s.type, p.x, p.z, { elite: s.elite, affix: s.affix });
+        const a = this.spawnEnemy(s.type, p.x, p.z, { elite: s.elite, affix: s.affix, affix2: s.affix2 });
         // some elite chambers are held by a named champion
         if (s.champion && room.champ) this.g.encounters?.makeChampion(a, room);
       });
@@ -336,7 +359,8 @@ export class Director {
     const wave = A.waves[A.waveIdx];
     if (!A.boss && wave && A.waveIdx < A.waves.length - 1) {
       // next wave when the current one is mostly dead, or after a long time
-      const frac = A.room.type === ROOM.TRIAL ? 0.5 : 0.25;
+      // (the Relentless pact brings it while half, or three quarters, still stand)
+      const frac = Math.max(A.room.type === ROOM.TRIAL ? 0.5 : 0.25, [0.25, 0.5, 0.75][g.difficulty?.waveEarly ?? 0] ?? 0.25);
       if ((alive <= Math.max(1, Math.floor(wave.length * frac)) && A.waveT > 2.5) || A.waveT > 40) this._nextWave();
       return;
     }

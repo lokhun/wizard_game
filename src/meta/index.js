@@ -36,7 +36,7 @@ export function attachMeta(game, ui, hooks = {}) {
 }
 
 // ---------------------------------------------------------------- test hooks
-// ?screen=summary&demo=win|loss|coop shows the summary with a made-up run
+// ?screen=summary&demo=win|loss|coop|abyss shows the summary with a made-up run
 // (screenshots and layout checks without playing to the end).
 export function demoSummary(ui, kind = 'win') {
   const won = kind !== 'loss';
@@ -50,6 +50,7 @@ export function demoSummary(ui, kind = 'win') {
     relics: RELICS.slice(0, won ? 3 : 1).map((r) => r.id),
     rooms: [], records: won ? { fastest: true, biggest: true, heat: true } : { floor: true, daily: true },
   };
+  if (kind === 'abyss') Object.assign(S, { abyss: 2, fell: true, killer: 'a Fallen Knight (frenzied, volatile champion)', heat: 14, time: 3920, records: { abyss: true, heat: true } });
   const types = ['combat', 'combat', 'trial', 'combat', 'elite', 'boss'];
   for (let f = 0; f <= S.floor; f++) {
     for (const [i, t] of types.entries()) {

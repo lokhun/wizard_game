@@ -8,7 +8,7 @@ import { buildLevel } from '../world/builder.js';
 import { Collision } from '../world/collision.js';
 import { BIOMES } from '../world/biomes.js';
 import { SpellRuntime, soundEl } from './spells.js';
-import { ActorManager, typeIndex } from './actors.js';
+import { ActorManager, typeIndex, hasAffix } from './actors.js';
 import { Director } from './director.js';
 import { Encounters } from './encounters.js';
 import { LocalPlayer } from './player.js';
@@ -95,8 +95,9 @@ export class Game {
   // ======================================================================
   // run setup
   // ======================================================================
-  startRun({ seed, localId, name, classId, isHost, net, players = [], floor = 0 }) {
+  startRun({ seed, localId, name, classId, isHost, net, players = [], floor = 0, abyss = 0 }) {
     this.player?.endChannel();
+    this.abyss = abyss; // the Abyss: how many times the party has descended past the Hollow King
     this.cinematic = null;
     this.ui?.letterbox?.(false);
     for (const r of this.remotes.values()) r.dispose();
@@ -178,7 +179,8 @@ export class Game {
     this.pools = [];
 
     this.floorIndex = index;
-    const level = generateLevel(this.seed, index, this.encounters.forced);
+    // (each descent into the Abyss lays the realms out anew)
+    const level = generateLevel(this.seed + (this.abyss ?? 0) * 7919, index, this.encounters.forced, { omens: this.menuMode ? 0 : this.difficulty?.omens ?? 0 });
     this.level = level;
     this.biome = level.biome;
     this.collision = new Collision(level);
@@ -1051,7 +1053,7 @@ export class Game {
       if (taken > 0) {
         if (h.kb) this._knock(p, h.x, h.z, h.kb);
         if (h.st?.stun) { p.stunT = h.st.stun; }
-        if (attacker?.affix === 'vampiric') {
+        if (attacker && hasAffix(attacker, 'vampiric')) {
           if (this.isHost) attacker.hp = Math.min(attacker.maxHp, attacker.hp + taken * 0.5);
           else this.net?.send({ t: 'vamp', id: attacker.id, d: taken });
         }
@@ -1128,6 +1130,7 @@ export class Game {
   // ======================================================================
   spawnDrop(type, pos, value, id) {
     const did = id ?? (this.isHost ? this.dropId++ : -1);
+    if (type === 'gold' && id === undefined) value = Math.round(value * (this.difficulty?.goldMult ?? 1)); // (heat pays: +5% gold a point)
     if (this.isHost && id === undefined) this.net?.broadcast({ t: 'drop', id: did, ty: type, x: pos.x, y: pos.y, z: pos.z, v: value });
     const count = type === 'gold' ? Math.min(8, Math.ceil(value / 3)) : 1;
     for (let i = 0; i < count; i++) {
@@ -1355,17 +1358,20 @@ export class Game {
 
   onBossKilled(a) {
     if (this.isHost) {
+      const abyssOpen = !!this.abyssUnlocked;
       // the boss's court crumbles with it: no adds left standing during the victory beat
       for (const b of [...this.actors.list]) {
         if (b === a || b.faction !== 'enemy' || b.dead) continue;
         this.spells.after(0.15 + Math.random() * 0.5, () => { if (!b.dead) { b.hp = 0; this.actors.kill(b, 0, 'holy'); } }); // holy: skeletons don't reassemble
       }
-      this.net?.broadcast({ t: 'bossdead', id: a.id });
-      this.bossDefeated(a.id);
+      this.net?.broadcast({ t: 'bossdead', id: a.id, ab: abyssOpen ? 1 : 0 });
+      this.bossDefeated(abyssOpen);
     }
   }
 
-  bossDefeated() {
+  // abyssOpen (the host's say: it has won a run before): the Hollow King's
+  // fall opens two ways out, back to the dawn or down into the Abyss
+  bossDefeated(abyssOpen = false) {
     const room = this.level.bossRoom;
     this.events.emit('bossDown');
     this.audio?.play('victory_sting');
@@ -1374,7 +1380,8 @@ export class Game {
     // slow-mo moment
     this.vfx.hitstop = 0.6;
     if (this.floorIndex >= BIOMES.length - 1) {
-      this.ui?.banner('THE HOLLOW KING HAS FALLEN', 'Dawn returns to the Ashen Keep', '#ffd860', 5);
+      if (this.abyss) this.ui?.banner('THE HOLLOW KING FALLS AGAIN', `Abyss ${this.abyss} is conquered`, '#ff7090', 5);
+      else this.ui?.banner('THE HOLLOW KING HAS FALLEN', 'Dawn returns to the Ashen Keep', '#ffd860', 5);
       this.screenTint([1.35, 1.25, 1.0], 3);
       // the eclipse lifts: torches return to warm light
       for (const t of this.lights.torches) { t.intensity *= 2; t.color.set(0xffb060); }
@@ -1382,7 +1389,16 @@ export class Game {
       this._victoryLight = true;
       const c = new THREE.Vector3(room.cx, this.groundY(room.cx, room.cz) + 3, room.cz);
       for (let i = 0; i < 6; i++) this.spells.after(i * 0.35, () => this.vfx.explosion(c.clone().add(new THREE.Vector3(rand(-6, 6), rand(0, 4), rand(-6, 6))), 'holy', 4));
-      this.spells.after(4.5, () => this.victory());
+      if (!abyssOpen) { this.spells.after(4.5, () => this.victory()); return; }
+      this.spells.after(3.5, () => {
+        if (this.player.dead || this.player.downed) this.player.revive(0.5);
+        const ex = room.exit, gy = (x, z) => this.groundY(x, z);
+        const side = new THREE.Vector3(ex.z - room.cz, 0, -(ex.x - room.cx)).normalize().multiplyScalar(3.2);
+        const v = new THREE.Vector3(ex.x, 0, ex.z).add(side), d = new THREE.Vector3(ex.x, 0, ex.z).sub(side);
+        this.interactables.push(makePortal(this, new THREE.Vector3(v.x, gy(v.x, v.z), v.z), { kind: 'victoryPortal', label: 'Claim your victory', look: 'dawn' }));
+        this.interactables.push(makePortal(this, new THREE.Vector3(d.x, gy(d.x, d.z), d.z), { kind: 'abyssPortal', label: `Descend into the Abyss · depth ${this.abyss + 1}`, look: 'abyss' }));
+        this.ui?.banner('TWO WAYS LIE OPEN', 'Claim your victory — or descend into the Abyss', '#e8a0b0', 5);
+      });
       return;
     }
     this.ui?.banner('VANQUISHED', `${this.biome.name} is conquered`, '#ffd060');
@@ -1410,6 +1426,28 @@ export class Game {
       this.loadFloor(i);
       this.transitioning = false;
       this.ui?.fadeIn(1.2);
+    });
+  }
+
+  // (host) down into the Abyss: the realms again from the first, laid out anew and far deadlier
+  descendAbyss() {
+    if (!this.isHost || this.transitioning || this.ended) return;
+    this.transitioning = true;
+    const d = this.abyss + 1;
+    this.net?.broadcast({ t: 'abyss', d });
+    this.enterAbyss(d);
+  }
+  enterAbyss(d) {
+    this.abyss = d;
+    this.events.emit('abyss', d);
+    this.audio?.play('boss_roar', { volume: 0.6 });
+    this.ui?.fadeOut(1.4, () => {
+      this.loadFloor(0);
+      this.transitioning = false;
+      const p = this.player;
+      if (p.dead || p.downed) p.revive(1);
+      p.heal(p.maxHp);
+      this.ui?.fadeIn(1.6);
     });
   }
 
@@ -1511,7 +1549,7 @@ export class Game {
           break;
         }
         const offer = () => {
-          const choices = rollTomes(p, 3, it.minRarity ?? 0);
+          const choices = rollTomes(p, this.difficulty.tomeChoices ?? 3, it.minRarity ?? 0); // (Narrow Path: two)
           const reroll = p.rerolls > 0 ? { left: p.rerolls, fn: () => { p.rerolls--; offer(); } } : null;
           this.ui?.chooseTome(choices, (c) => {
             if (!c) return;
@@ -1548,6 +1586,12 @@ export class Game {
       }
       case 'portal':
         this.goNextFloor();
+        break;
+      case 'victoryPortal':
+        if (this.isHost) this.victory(); else this.net?.send({ t: 'claimVictory' });
+        break;
+      case 'abyssPortal':
+        if (this.isHost) this.descendAbyss(); else this.net?.send({ t: 'descend' });
         break;
       default: this.encounters.interact(it); break;
     }
