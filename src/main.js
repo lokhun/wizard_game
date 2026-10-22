@@ -515,14 +515,25 @@ document.body.appendChild(fpsEl);
 // Dynamic resolution: steps the render scale down while the frame rate stays
 // low and creeps back up after a long stretch at full speed. A level that just
 // failed is not retried for a while, so it never oscillates.
-const dyn = { low: 0, high: 0, holdUntil: 0, failedAt: 1.1 };
+// Each step down is judged two seconds later: when the frame rate didn't
+// rise, the frame is bound by the CPU (a crowded fight), fewer pixels only
+// blur the view (and every step reallocates the render targets), so the step
+// is undone and the scale left alone for half a minute.
+const dyn = { low: 0, high: 0, holdUntil: 0, failedAt: 1.1, judge: null, cpuUntil: 0 };
 function adaptResolution(fps) {
   if (settings.dynamicRes === false) renderer.setResScale(1);
-  if (settings.dynamicRes === false || NORENDER || mode !== 'run' || !game || game.paused) { dyn.low = dyn.high = 0; return; }
+  if (settings.dynamicRes === false || NORENDER || mode !== 'run' || !game || game.paused) { dyn.low = dyn.high = 0; dyn.judge = null; return; }
   const now = performance.now() / 1000, k = renderer.resScale;
   if (fps < 48) { dyn.low++; dyn.high = 0; } else if (fps >= 57) { dyn.high++; dyn.low = 0; } else { dyn.low = dyn.high = 0; }
-  if (dyn.low >= 2 && k > 0.5) {
+  if (dyn.judge && now >= dyn.judge.at) {
+    if (fps < dyn.judge.fps * 1.06) { renderer.setResScale(dyn.judge.k); dyn.failedAt = 1.1; dyn.cpuUntil = now + 30; dyn.low = 0; }
+    dyn.judge = null;
+    return;
+  }
+  if (dyn.judge) return;
+  if (dyn.low >= 2 && k > 0.5 && now > dyn.cpuUntil) {
     dyn.failedAt = k; dyn.holdUntil = now + 25;
+    dyn.judge = { k, fps, at: now + 1.9 };
     renderer.setResScale(k - 0.1);
     dyn.low = 0;
   } else if (dyn.high >= 8 && k < 1) {
@@ -543,7 +554,7 @@ function loop(now) {
     perf.frames = 0; perf.t = 0;
     fpsEl.textContent = settings.showFps ? `${Math.round(perf.fps)} fps · ${renderer.lastStats?.calls ?? 0} calls${renderer.resScale < 1 ? ` · ${Math.round(renderer.resScale * 100)}% res` : ''}` : '';
     adaptResolution(perf.fps);
-    if (mode === 'run' && !perf.warned && perf.fps < 35 && renderer.resScale <= 0.55 && game && game.time > 8 && settings.quality !== 'low' && !NORENDER) {
+    if (mode === 'run' && !perf.warned && perf.fps < 35 && (renderer.resScale <= 0.55 || performance.now() / 1000 < dyn.cpuUntil) && game && game.time > 8 && settings.quality !== 'low' && !NORENDER) {
       perf.warned = true;
       ui.toast(`Running at ${Math.round(perf.fps)} fps — try a lower Graphics quality in Settings (Esc)`, '#ff9040');
     }

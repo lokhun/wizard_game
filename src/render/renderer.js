@@ -119,6 +119,26 @@ const FINAL_FRAG = /* glsl */ `
   ${GRADE_MAIN}
 `;
 
+// Point lights past their range add exactly nothing (the attenuation window
+// reaches zero at light.distance, and idle pool lights sit at intensity 0),
+// yet three.js runs the full BRDF for every light of the pool at every lit
+// pixel. Branch around it: same image, and most pixels only pay for the two
+// or three lights that actually reach them.
+THREE.ShaderChunk.lights_fragment_begin = THREE.ShaderChunk.lights_fragment_begin.replace(
+  /(getPointLightInfo\( pointLight, geometryPosition, directLight \);[\s\S]*?)(RE_Direct\( directLight,[^;]*;)/,
+  '$1if ( directLight.visible ) $2');
+
+// three.js draws a transparent double-sided material twice (back faces, then
+// front faces), flagging the material for a program re-check before each
+// half. With additive blending and no depth writes the two halves commute, so
+// one pass gives the same pixels for half the draw calls; flames, beams,
+// slashes and glows are all of this kind. (An explicit forceSinglePass still wins.)
+Object.defineProperty(THREE.Material.prototype, 'forceSinglePass', {
+  configurable: true,
+  get() { return this._forceSinglePass || (this.blending === THREE.AdditiveBlending && !this.depthWrite); },
+  set(v) { this._forceSinglePass = v; },
+});
+
 const BLOOM_THRESHOLD = 1.05;
 const BLOOM_SCALE = 0.6;
 // asymptotic cap for point lights lighting the first-person hands
@@ -145,6 +165,14 @@ export class Renderer {
     this.renderer.shadowMap.enabled = quality === 'high' || quality === 'ultra';
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.info.autoReset = true;
+    // Opaque draws grouped by shader program, then material, then front to
+    // back (three.js groups by material only). Every program switch re-sends
+    // the camera and the whole light pool, and a crowd of enemies, each with
+    // its own materials, used to switch program on nearly every draw.
+    const props = this.renderer.properties;
+    const prog = (m) => props.get(m).currentProgram?.id ?? 0;
+    this.renderer.setOpaqueSort((a, b) => a.groupOrder - b.groupOrder || a.renderOrder - b.renderOrder || prog(a.material) - prog(b.material)
+      || a.material.id - b.material.id || a.materialVariant - b.materialVariant || a.z - b.z || a.id - b.id);
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(78, window.innerWidth / window.innerHeight, 0.05, 220);
@@ -291,7 +319,7 @@ export class Renderer {
   // driver builds every program at once on its own threads while the page
   // stays responsive (behind the loading veil), and the promise resolves once
   // they're all ready. Without the extension it still works, just serially.
-  async compileScenes({ upload = false, timeout = 20000 } = {}) {
+  async compileScenes({ upload = false, all = upload, timeout = 20000 } = {}) {
     const r = this.renderer;
     const prev = r.getRenderTarget();
     r.setRenderTarget(this.hdrTarget);
@@ -304,15 +332,33 @@ export class Renderer {
     if (ready) await Promise.race([ready, new Promise((res) => setTimeout(res, timeout))]);
     if (!upload) return;
     r.setRenderTarget(this.hdrTarget);
-    const culled = [];
+    const culled = [], flipped = [];
+    // With all, hidden things (pooled effects, the hands' cast glows, enemy
+    // parts and set pieces that only show later) and the first-person hands
+    // are drawn too. A compiled program still costs on its first draw: three
+    // looks up its uniforms (a wait on the driver), ANGLE builds the D3D
+    // shader for the actual vertex layout (skinned meshes: ~50 ms each, on the
+    // GPU process's main thread) and the shadow pass picks its depth variant.
+    // Lights keep their state - one switched on would change every program.
+    // The target is cleared by the next frame, so none of this is ever seen.
+    const show = (o, on) => {
+      if (o.isLight) { if (!on && o.visible) { o.visible = false; flipped.push(o); } return; }
+      if (all && !o.visible) { o.visible = true; flipped.push(o); on = false; }
+      if (o.frustumCulled && (o.isMesh || o.isPoints || o.isSprite || o.isLine)) { o.frustumCulled = false; culled.push(o); }
+      for (const c of o.children) show(c, on);
+    };
     try {
-      this.scene.traverse((o) => { if (o.frustumCulled && (o.isMesh || o.isPoints || o.isSprite || o.isLine)) { o.frustumCulled = false; culled.push(o); } });
+      show(this.scene, true);
+      if (all) show(this.viewScene, true);
       const auto = r.autoClear;
       r.autoClear = true;
       r.render(this.scene, this.camera);
       r.autoClear = auto;
+      // the hands over it, as a frame draws them
+      if (all) this.viewPass.render(r, null, this.hdrTarget);
     } finally {
       for (const o of culled) o.frustumCulled = true;
+      for (const o of flipped) o.visible = !o.visible;
       r.setRenderTarget(prev);
     }
   }

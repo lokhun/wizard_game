@@ -557,8 +557,13 @@ export class VFX {
     // flat normal for dry decals, so every lit decal shares one shader program
     this.flatNormal = new THREE.DataTexture(new Uint8Array([128, 128, 255, 255]), 1, 1);
     this.flatNormal.needsUpdate = true;
+    // A lit decal is a full PBR quad drawn over the floor; in a big fight
+    // dozens overlap and they were the largest GPU cost of the frame. Where
+    // the texture is empty (a third to a half of every quad) alphaTest drops
+    // the pixel before any lighting is done; what it drops would add under
+    // half a percent of a dark decal, so the look is unchanged.
     this.decalPool = this._pool(80, () => {
-      const lit = new THREE.MeshStandardMaterial({ transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, roughness: 0.9, metalness: 0, map: this.decalTex.scorch, normalMap: this.flatNormal });
+      const lit = new THREE.MeshStandardMaterial({ transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, roughness: 0.9, metalness: 0, map: this.decalTex.scorch, normalMap: this.flatNormal, alphaTest: 1 / 255 });
       // mapped from the start: a map assigned later would not change the
       // compiled program, and the decal drew as a solid coloured quad
       const glow = new THREE.MeshBasicMaterial({ map: this.decalTex.glyph, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, blending: THREE.AdditiveBlending, fog: true });

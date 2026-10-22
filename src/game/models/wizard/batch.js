@@ -72,12 +72,15 @@ export function probeDynamic(root, run) {
 const MERGEABLE = (m) => m && !Array.isArray(m) && (m.isMeshStandardMaterial || m.isMeshBasicMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial) && !m.isShaderMaterial;
 const tid = (t) => (t ? t.uuid : '-');
 // signature of a shared surface material, ignoring its base colour
-let _matSig = null;
+// (exact: only materials that render identically share a draw; the avatars
+// accept near matches - leather's deeper normals on glove, say - for fewer draws)
+let _matSig = null, _exact = false;
 function sigOf(m) {
   if (!m.userData.shared || !m.isMeshStandardMaterial) return 'u:' + (_matSig?.get(m) ?? m.uuid);
+  const near = _exact ? [m.roughness, m.metalness, m.normalScale ? m.normalScale.x : 0, tid(m.envMap), m.envMapIntensity]
+    : [Math.round(m.roughness * 10), Math.round(m.metalness * 10), m.normalScale ? Math.round(m.normalScale.x) : 0];
   return ['s', m.type, tid(m.map), tid(m.normalMap), tid(m.roughnessMap), tid(m.emissiveMap), m.side, m.transparent ? 1 : 0, m.opacity,
-    Math.round(m.roughness * 10), Math.round(m.metalness * 10), m.normalScale ? Math.round(m.normalScale.x) : 0,
-    m.emissive ? m.emissive.getHexString() : '', m.emissiveIntensity, m.customProgramCacheKey ? m.customProgramCacheKey() : ''].join('|');
+    ...near, m.emissive ? m.emissive.getHexString() : '', m.emissiveIntensity, m.customProgramCacheKey ? m.customProgramCacheKey() : ''].join('|');
 }
 
 // fresnel rim matching the enemy materials (uses their global rim uniform)
@@ -197,9 +200,12 @@ function bakeGroup(g, boneIndex, addBone) {
 }
 
 // Bake the avatar. authored: list of { geo (root space), mat, bone | skin }.
+// rim: merged surface materials get the avatars' fresnel rim; exact: merge
+// only identical materials (the first-person viewmodel bakes with neither, to
+// look exactly as before).
 // Returns { meshes, materials, tris, setTint(hex,k), dispose() }.
-export function bakeAvatar(root, authored, { exclude = new Set(), known = null, visDyn = new Set(), matSig = null } = {}) {
-  _matSig = matSig;
+export function bakeAvatar(root, authored, { exclude = new Set(), known = null, visDyn = new Set(), matSig = null, rim = true, exact = false } = {}) {
+  _matSig = matSig; _exact = exact;
   root.updateMatrixWorld(true);
   const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
   const groups = new Map();
@@ -255,7 +261,7 @@ export function bakeAvatar(root, authored, { exclude = new Set(), known = null, 
   for (const [g, b] of baked) {
     const { geo, shared, tris: t } = b;
     tris += t;
-    const mat = shared ? cloneShared(g.src, { white: true }) : g.src;
+    const mat = shared ? cloneShared(g.src, { white: true, rim }) : g.src;
     if (shared) materials.push(mat);
     const mesh = new THREE.SkinnedMesh(geo, mat);
     mesh.name = 'mesh:' + (g.src.name || g.src.type);
@@ -279,7 +285,7 @@ export function bakeAvatar(root, authored, { exclude = new Set(), known = null, 
   }
   for (const p of authored) if (!disposed.has(p.geo)) { disposed.add(p.geo); p.geo.dispose(); }
   const tint = new THREE.Color();
-  _matSig = null;
+  _matSig = null; _exact = false;
   return {
     // call after the avatar's update: hide baked parts of hidden subtrees
     syncVisibility() {

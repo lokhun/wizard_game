@@ -8,6 +8,7 @@ import { wob } from './fx.js';
 import { SigilPool } from './sigil.js';
 import { BladeTrail } from './trail.js';
 import { getCostume } from './costumes.js';
+import { probeDynamic, bakeAvatar } from './batch.js';
 
 // ---------------------------------------------------------------------------
 // First-person viewmodel: two hands with robe sleeves, the class focus and
@@ -638,13 +639,50 @@ export function createViewModel(classId, ctx) {
     if (sigils.busy(sigCharge)) sigils.update(dt, muzzle, sigCharge);
   }
 
+  // ---------------- batch into a few draw calls ----------------
+  // The hands, sleeves and focus are 60-100 meshes (finger segments, cuff
+  // layers, flame tongues), each its own draw call every frame. Bake them as
+  // the avatars are baked (batch.js): one skinned mesh per material, every
+  // source mesh kept as the bone that moves its vertices, so the animation
+  // code above is untouched. Probing every state finds what must stay
+  // separate (swapped geometry or materials); the sigils, the blade trail and
+  // alpha-blended parts (their draw order matters this close to the lens)
+  // are left out, and only identical materials merge (no avatar rim).
+  // (ctx.bake === false keeps every mesh separate: for comparing against the baked look)
+  const known = new Set();
+  if (ctx.bake !== false) for (const g of [rigR, rigL, floatG]) g?.traverse((o) => known.add(o));
+  const { exclude, visDyn, matSig } = probeDynamic(root, (sample) => {
+    let tt = 0;
+    const run = (n, s) => { for (let i = 0; i < n; i++) { tt += 1 / 30; update(1 / 30, { t: tt, ...s(i / n) }); sample(); } };
+    run(20, () => ({ speed: 1 }));
+    for (const style of Object.keys(STYLES)) for (const hand of ['right', 'left', 'both']) run(12, (k) => ({ cast: { slot: style, style, hand, t: k * 0.6 } }));
+    run(12, (k) => ({ charge: k }));
+    power = 1; run(12, () => ({ grounded: false, hurt: 1 })); power = 0;
+    run(12, () => ({ dash: true }));
+    run(12, () => ({ downed: true }));
+    run(30, () => ({}));
+  });
+  root.traverse((o) => { if (o.isMesh && o.material?.transparent && o.material.blending !== THREE.AdditiveBlending) exclude.add(o); });
+  // back to rest: the probe ran the springs, fidgets, sigils and trail
+  for (const sp of [sR, sL, sSway, sLand]) { sp.x.fill(0); sp.v.fill(0); sp.target.fill(0); }
+  bobPhase = bobAmp = 0; wasGrounded = true; lastCastT = -1; lastCastKey = ''; prevHurt = 0;
+  stillT = 0; fidget = null; fidgetT = 0; fidgetN = 0; nextFidget = 6;
+  power = downedK = dashK = chargeK = flare = 0; first = true;
+  for (const [p, r] of [[poseR, restPoseR], [poseL, restPoseL]]) { r.f.forEach((row, i) => p.f[i].splice(0, row.length, ...row)); p.t.splice(0, r.t.length, ...r.t); }
+  for (const it of sigils.items) it.m.visible = false;
+  sigils.chargeK = 0; sigils.charge.visible = false;
+  if (trail) { trail.count = 0; trail.mesh.visible = false; }
+  const baked = bakeAvatar(root, [], { exclude, known, visDyn, matSig, rim: false, exact: true });
+
   update(0.016, { t: 0 });
 
   return {
     root, muzzle, offhand, light,
-    update,
+    update(dt, s) { update(dt, s); baked.syncVisibility(); },
     setPower(k) { power = THREE.MathUtils.clamp(k ?? 0, 0, 1); },
+    stats: { tris: baked.tris, bones: baked.bones, meshes: baked.meshes.length },
     dispose() {
+      baked.dispose();
       glows.dispose();
       sigils.dispose();
       trail?.dispose();

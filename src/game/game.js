@@ -335,7 +335,8 @@ export class Game {
       // exactly what the prewarm put in the scene, fixed now: anything spawned
       // while the compile runs is left alone
       added = scene.children.filter((o) => !kids.has(o));
-      await this.renderer.compileScenes({ upload: !this.renderer.noRender });
+      // (the menu backdrop only shows the level: its hidden extras and the hands wait for a run)
+      await this.renderer.compileScenes({ upload: !this.renderer.noRender, all: !this.menuMode });
     } catch (e) { console.warn('prewarm failed', e); }
     for (const f of undo) { try { f(); } catch { /* already gone */ } }
     for (const o of added) scene.remove(o);

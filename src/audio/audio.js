@@ -24,7 +24,7 @@
  * the master dynamics. Files: core.js (DSP + Voice), sfx.js, loops.js,
  * ambience.js, music.js, calib.js (measured per-sound level trims).
  */
-import { makeBuffers, makeIR, makeCurves, Voice, rnd, clamp } from './core.js';
+import { bufferSteps, makeIR, makeCurves, Voice, rnd, clamp } from './core.js';
 import { SFX } from './sfx.js';
 import { LOOPS } from './loops.js';
 import { AMBIENCE } from './ambience.js';
@@ -57,6 +57,32 @@ export class GameAudio {
     this._dispose = [];           // [{ t, fn }]
     this._intensity = 0; this._heart = null;
     this._timer = null;
+    this._prep = null;
+    // build the buffers while the page idles, not on the first click
+    if (typeof window !== 'undefined' && window.requestIdleCallback) setTimeout(() => this.prepare(), 0);
+  }
+
+  // Synthesis ahead of the first gesture. init() used to build every noise
+  // buffer and the reverb impulse in the click that started audio: a 100-300 ms
+  // freeze on the first menu click. A context may be created before a gesture
+  // (it stays suspended until init resumes it), so the buffers are made a slice
+  // per idle callback; a click that beats them finishes the rest on the spot.
+  prepare() {
+    if (this.ctx || this._prep) return;
+    let c;
+    try { c = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' }); } catch { return; }
+    const P = (this._prep = { ctx: c, buf: {}, steps: null, ir: null });
+    P.steps = bufferSteps(c, P.buf);
+    const step = () => { if (P.steps) { if (P.steps.next().done) P.steps = null; return true; } P.ir = makeIR(c); return false; };
+    const tick = (deadline) => {
+      if (this._prep !== P) return;
+      // a busy page (the menu renders every frame) leaves little idle time:
+      // a timed-out callback still takes one slice
+      let more = deadline.didTimeout ? step() : true;
+      while (more && deadline.timeRemaining() > 4) more = step();
+      if (more) requestIdleCallback(tick, { timeout: 250 });
+    };
+    requestIdleCallback(tick, { timeout: 250 });
   }
 
   get ready() { return !!this.ctx && this.ctx.state === 'running'; }
@@ -66,12 +92,20 @@ export class GameAudio {
       if (this.ctx.state === 'suspended' && this.ctx.resume) this.ctx.resume().catch(() => {});
       return;
     }
+    const P = this._prep;
+    this._prep = null;
     try {
       const AC = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext);
-      this.ctx = opts.context || new AC({ latencyHint: 'interactive' });
+      this.ctx = opts.context || P?.ctx || new AC({ latencyHint: 'interactive' });
     } catch (e) { console.warn('[audio] Web Audio unavailable', e); this.ctx = null; return; }
     const c = this.ctx;
-    this._eng = { ctx: c, buf: makeBuffers(c), curve: makeCurves() };
+    // what prepare() got through (a test's own context starts from scratch)
+    const own = P?.ctx === c;
+    if (P && !own) P.ctx.close?.().catch(() => {});
+    const buf = own ? P.buf : {};
+    const steps = own ? P.steps : bufferSteps(c, buf);
+    if (steps) for (const _ of steps); // eslint-disable-line no-unused-vars
+    this._eng = { ctx: c, buf, curve: makeCurves() };
 
     // Master chain: buses -> intensity lowpass -> master gain -> compressor -> limiter -> out
     this._pre = c.createGain();
@@ -97,7 +131,7 @@ export class GameAudio {
     // Shared reverb: per-bus send inputs -> highpass -> convolver -> return
     this._verbIn = c.createGain();
     const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 160;
-    this._conv = c.createConvolver(); this._conv.buffer = makeIR(c);
+    this._conv = c.createConvolver(); this._conv.buffer = (own && P.ir) || makeIR(c);
     this._verbOut = c.createGain(); this._verbOut.gain.value = 0.7;
     this._verbIn.connect(hp); hp.connect(this._conv); this._conv.connect(this._verbOut); this._verbOut.connect(this._pre);
     this._sfxSend = c.createGain(); this._musicSend = c.createGain(); this._ambSend = c.createGain();

@@ -37,14 +37,17 @@ function normPeak(d, target) {
 }
 const poisson = (rate, sr) => Math.max(1, Math.floor((-Math.log(1 - Math.random()) * sr) / rate));
 
-export function makeBuffers(ctx) {
+// The noise and texture buffers every sound draws on (~70 ms of synthesis), as
+// a generator that yields between buffers, so it can run in slices while the
+// page idles (GameAudio.prepare) instead of all at once on the first click.
+export function* bufferSteps(ctx, B) {
   const sr = ctx.sampleRate;
   const mk = (sec) => ctx.createBuffer(1, Math.floor(sec * sr), sr);
-  const B = {};
 
   // White noise
   B.white = mk(2);
   { const d = B.white.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; normRms(d, 0.25); }
+  yield;
 
   // Pink noise (Paul Kellet)
   B.pink = mk(3);
@@ -60,6 +63,7 @@ export function makeBuffers(ctx) {
     }
     normRms(d, 0.25);
   }
+  yield;
 
   // Brown noise
   B.brown = mk(3);
@@ -68,6 +72,7 @@ export function makeBuffers(ctx) {
     for (let i = 0; i < d.length; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = last; }
     normRms(d, 0.25);
   }
+  yield;
 
   // Crackle: sparse decaying noise pops (fire, crunch, electricity)
   B.crackle = mk(3);
@@ -81,6 +86,7 @@ export function makeBuffers(ctx) {
     }
     normPeak(d, 0.95);
   }
+  yield;
 
   // Chain / metal jingle: sparse inharmonic metallic pings
   B.chain = mk(2);
@@ -98,6 +104,7 @@ export function makeBuffers(ctx) {
     }
     normPeak(d, 0.95);
   }
+  yield;
 
   // Bones / wood clicks
   B.bones = mk(2);
@@ -114,6 +121,7 @@ export function makeBuffers(ctx) {
     }
     normPeak(d, 0.95);
   }
+  yield;
 
   // Heartbeat: one "lub-dub" per second (loop + playbackRate = bpm/60)
   B.heart = mk(1);
@@ -130,6 +138,12 @@ export function makeBuffers(ctx) {
     beat(0.01, 1, 46); beat(0.29, 0.7, 54);
     normPeak(d, 0.9);
   }
+  yield;
+}
+
+export function makeBuffers(ctx) {
+  const B = {};
+  for (const _ of bufferSteps(ctx, B)); // eslint-disable-line no-unused-vars
   return B;
 }
 
