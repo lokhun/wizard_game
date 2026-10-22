@@ -1,0 +1,10 @@
+{
+  "name": "arcane-ascent-signal",
+  "private": true,
+  "type": "module",
+  "description": "Co-op matchmaking (PeerJS signalling) and short-lived relay logins for play.lokhunproject.fun",
+  "dependencies": {
+    "express": "4.22.3",
+    "peer": "1.0.2"
+  }
+}

@@ -11,14 +11,25 @@ const loadPeer = () => (peerjs ??= import('peerjs').catch((e) => { peerjs = null
 //
 // Config (optional) — set window.ARCANE_NET before loading the game, or use
 // URL params ?peerHost=&peerPort=&peerPath=&peerSecure= to point at your own
-// PeerJS signalling server, plus `iceServers` for TURN relays.
+// PeerJS signalling server, plus `iceServers` for TURN relays. Both override
+// what the site's ./net-config gives (see loadSiteNet).
 // ---------------------------------------------------------------------------
 
 const PREFIX = 'arcane-ascent-v1-';
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
-function peerOptions() {
-  const cfg = { ...(window.ARCANE_NET ?? {}) };
+// The site's own co-op service (deploy/signal/server.mjs): a PeerJS signalling
+// server, so matchmaking doesn't depend on the free public one, and a
+// short-lived login for its TURN relay, for players whose networks block
+// direct connections. Fetched fresh for each host or join; anywhere without
+// one (dev, other hosts) the public PeerJS server and STUN alone are used.
+const loadSiteNet = () => fetch('./net-config', { cache: 'no-store', signal: AbortSignal.timeout(4000) })
+  .then((r) => (r.ok ? r.json() : {}))
+  .then((j) => ({ peer: j?.peer?.host ? j.peer : null, iceServers: Array.isArray(j?.iceServers) ? j.iceServers : [] }))
+  .catch(() => ({ peer: null, iceServers: [] }));
+
+function peerOptions(site = { peer: null, iceServers: [] }) {
+  const cfg = { ...(site.peer ?? {}), ...(window.ARCANE_NET ?? {}) };
   const q = new URLSearchParams(location.search);
   if (q.get('peerHost')) {
     cfg.host = q.get('peerHost');
@@ -30,11 +41,11 @@ function peerOptions() {
   if (cfg.host) { opts.host = cfg.host; opts.port = cfg.port; opts.path = cfg.path; opts.secure = cfg.secure; }
   if (cfg.key) opts.key = cfg.key;
   opts.config = {
-    iceServers: cfg.iceServers ?? [
+    iceServers: [...(cfg.iceServers ?? [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
       { urls: 'stun:global.stun.twilio.com:3478' },
-    ],
+    ]), ...site.iceServers],
   };
   return opts;
 }
@@ -86,10 +97,10 @@ export class Net {
 
   // ------------------------------------------------------------- hosting
   host() {
-    return loadPeer().then(({ Peer }) => new Promise((resolve, reject) => {
+    return Promise.all([loadPeer(), loadSiteNet()]).then(([{ Peer }, site]) => new Promise((resolve, reject) => {
       const attempt = (tries) => {
         const code = makeCode();
-        const peer = new Peer(PREFIX + code, peerOptions());
+        const peer = new Peer(PREFIX + code, peerOptions(site));
         let opened = false;
         peer.on('open', () => {
           opened = true;
@@ -150,8 +161,8 @@ export class Net {
 
   // ------------------------------------------------------------- joining
   join(code) {
-    return loadPeer().then(({ Peer }) => new Promise((resolve, reject) => {
-      const peer = new Peer(undefined, peerOptions());
+    return Promise.all([loadPeer(), loadSiteNet()]).then(([{ Peer }, site]) => new Promise((resolve, reject) => {
+      const peer = new Peer(undefined, peerOptions(site));
       let done = false;
       const timer = setTimeout(() => { if (!done) { done = true; reject(new Error('Timed out. Check the code, or the host may be behind a strict firewall.')); peer.destroy(); } }, 15000);
       peer.on('open', () => {

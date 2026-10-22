@@ -1,6 +1,10 @@
 # Production: /opt/wizard on the lokhunproject.fun Droplet, next to /opt/rift, /opt/house and /opt/puzzle.
 # A static file server for dist/ on loopback only; the rift Caddy terminates HTTPS for
-# play.lokhunproject.fun and proxies here. Co-op is peer-to-peer, so nothing else runs.
+# play.lokhunproject.fun and proxies here. Co-op is peer-to-peer; `turn` relays it for
+# players whose networks block direct connections (see turnserver.conf), and `signal`
+# (signal/server.mjs) is where players find each other (PeerJS) and get the relay's
+# short-lived logins. turn.secret and the rendered turn/turnserver.conf are written on
+# the server by tools/deploy.mjs, never shipped.
 services:
   web:
     image: caddy:2-alpine
@@ -22,6 +26,47 @@ services:
       options: {max-size: 5m, max-file: '2'}
     healthcheck:
       test: [CMD, wget, -qO-, http://127.0.0.1:3003/healthz]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+  turn:
+    image: coturn/coturn:4.6.3
+    restart: unless-stopped
+    network_mode: host
+    command: [-c, /etc/coturn/turnserver.conf]
+    volumes:
+      - ./turn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    read_only: true
+    tmpfs: [/var/lib/coturn, /tmp]
+    mem_limit: 128m
+    pids_limit: 64
+    cap_drop: [ALL]
+    # like caddy, the image's turnserver binary carries this file capability
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: '2'}
+  signal:
+    image: node:24-alpine
+    restart: unless-stopped
+    network_mode: host
+    user: node
+    command: [node, /app/server.mjs]
+    working_dir: /app
+    volumes:
+      - ./signal:/app:ro
+      - ./turn.secret:/run/turn.secret:ro
+    read_only: true
+    mem_limit: 160m
+    pids_limit: 64
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: '2'}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3004/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 3s
       retries: 3

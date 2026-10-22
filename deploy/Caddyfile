@@ -10,6 +10,9 @@
 	bind 127.0.0.1
 	# Other deploy scripts on this Droplet check https://play.lokhunproject.fun/healthz.
 	respond /healthz "ok" 200
+	# co-op: matchmaking (PeerJS, WebSocket) and the relay's short-lived logins (signal/server.mjs)
+	@net path /net-config /peerjs/*
+	reverse_proxy @net 127.0.0.1:3004
 
 	# Hashed assets never change; index.html always revalidates (same rules as public/_headers).
 	@assets path /assets/*

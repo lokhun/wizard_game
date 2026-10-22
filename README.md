@@ -126,9 +126,19 @@ Connections are direct, browser-to-browser, over WebRTC:
 - Traffic is small, about 8 KB/s per player. Enemy and player positions go over an unordered channel, so a lost packet never holds up the newer updates behind it; events (casts, hits, pickups) go over a reliable one.
 - To find each other, browsers use the free public PeerJS signalling server (`0.peerjs.com`) and Google's public STUN servers. No game data passes through them.
 
-### Optional: your own signalling or TURN servers
+### play.lokhunproject.fun: its own matchmaking and relay
 
-Some strict corporate or university networks block peer-to-peer connections. If that's a problem for your players, you can add a TURN relay, and you can also run your own signalling server.
+`node tools/deploy.mjs` also runs the site's own co-op service next to the game (see `deploy/`):
+
+- **Matchmaking:** a PeerJS signalling server at `/peerjs/arcane` (`deploy/signal/server.mjs`), so finding a party doesn't depend on the free public server, which drops sessions at times.
+- **Relay:** a TURN relay (coturn, UDP 40050, `deploy/turnserver.conf`) for players whose networks block direct connections (strict NAT, phone hotspots, many school and work networks). Everyone else still connects directly. It never relays into private address space and is bandwidth-capped.
+- **Logins:** the game fetches `/net-config` when a player hosts or joins. That returns the signalling server and a relay login that expires after 24 hours, signed with a secret that is generated on the server at the first deploy and never leaves it.
+
+Elsewhere (the dev server, other hosts) there is no `/net-config`, and the game falls back to the public PeerJS server and STUN as described above.
+
+### Optional: your own signalling or TURN servers elsewhere
+
+Some strict corporate or university networks block peer-to-peer connections. If that's a problem for your players on another host, you can add a TURN relay, and you can also run your own signalling server.
 
 Add a script **before** the game's script tag in `dist/index.html`:
 
