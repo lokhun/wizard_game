@@ -365,9 +365,35 @@ export class Director {
       return;
     }
     if (A.boss && !A.bossId) return;
+    // a fight that stalls (no foe has fallen for 35 s and only a few remain) pulls its
+    // stragglers in: a foe wedged behind cover or out of reach must never hold the doors shut
+    if (alive !== A.lastAlive) { A.lastAlive = alive; A.progT = A.t; }
+    if (!A.boss && alive > 0 && alive <= 3 && A.t - (A.progT ?? 0) > 35) { A.progT = A.t; this._pullStragglers(A); }
     if (alive === 0 && A.t > 2) {
       A.clearT += dt;
       if (A.clearT > 0.6) this.clearRoom();
+    }
+  }
+
+  _pullStragglers(A) {
+    const g = this.g, room = A.room;
+    const ps = g.allPlayers().filter((p) => p.alive && !p.dead && g.level.roomAt(p.pos.x, p.pos.z) === room);
+    const c = ps[0]?.pos ?? { x: room.cx, z: room.cz };
+    for (const id of A.spawned) {
+      const a = g.actors.byId.get(id);
+      if (!a || a.dead || a.dormant || a.boss) continue;
+      for (let k = 0; k < 16; k++) {
+        const ang = Math.random() * Math.PI * 2, r = 5 + Math.random() * 3;
+        const x = c.x + Math.cos(ang) * r, z = c.z + Math.sin(ang) * r;
+        if (g.level.roomAt(x, z) !== room || g.collision.pushOut(x, z, 0.6) || g.collision.cellBlocked(Math.floor(x / 2), Math.floor(z / 2), a.pos.y + 0.5)) continue;
+        g.net?.broadcast({ t: 'blinkfx', x: a.pos.x, y: a.pos.y, z: a.pos.z });
+        g.actors.blinkFx(a.pos);
+        a.pos.x = x; a.pos.z = z; a.pos.y = g.groundY(x, z);
+        a.net.x = x; a.net.z = z;
+        g.net?.broadcast({ t: 'blinkfx', x, y: a.pos.y, z });
+        g.actors.blinkFx(a.pos);
+        break;
+      }
     }
   }
 
