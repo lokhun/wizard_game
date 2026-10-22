@@ -35,6 +35,12 @@ const WADE_C = [0.16, 0.22, 0.22]; // ripple rings on channel water
 // ---------------------------------------------------------------------------
 
 const _v = new THREE.Vector3();
+// the moon sits this far from its target; its shadow camera's axes (as lookAt builds them)
+const MOON_OFFSET = new THREE.Vector3(30, 70, -60);
+const MOON_AXES = (() => {
+  const z = MOON_OFFSET.clone().normalize(), x = new THREE.Vector3(0, 1, 0).cross(z).normalize();
+  return { x, y: z.clone().cross(x), z };
+})();
 
 export class Game {
   constructor({ renderer, input, audio, ui, settings }) {
@@ -209,7 +215,9 @@ export class Game {
     this.moon.intensity = b.moon ? b.moon.intensity * 1.6 : 0;
     const shadows = !!b.moon && this.renderer.renderer.shadowMap.enabled;
     this.moon.castShadow = shadows;
-    this.built.group.traverse((o) => { if (o.isMesh && !o.material.transparent && o.name?.startsWith('lvl_')) { o.castShadow = shadows; o.receiveShadow = shadows; } });
+    const statics = [];
+    this.built.group.traverse((o) => { if (o.isMesh && !o.material.transparent && o.name?.startsWith('lvl_')) { o.castShadow = shadows; o.receiveShadow = shadows; if (shadows) statics.push(o); } });
+    this.renderer.setStaticShadowCasters?.(statics);
     this.shadowsOn = shadows;
     if (b.moon) this.moon.color.set(b.moon.color);
     this.renderer.setGrade(b.grade);
@@ -580,11 +588,17 @@ export class Game {
     this.particles.update(this.time);
     this._viewModel(realDt);
     this._postFx(realDt);
-    // moon follows the player so its (unused) shadow frustum would be centred
-    const snap = 72 / 2048 * 4;
-    const mx = Math.round(cx / snap) * snap, mz = Math.round(cz / snap) * snap;
-    this.moon.target.position.set(mx, 0, mz);
-    this.moon.position.set(mx + 30, 70, mz - 60);
+    // moon follows the player so its shadow frustum (72 m across) stays centred.
+    // It steps in its own frame (the shadow camera's axes), 128 whole shadow
+    // texels (4.5 m) at a time: every texel lands back on the same world spot
+    // after a step, so shadow edges never crawl, and the level's cached shadow
+    // depth (Renderer.setStaticShadowCasters) is redrawn about once a second at
+    // a run. (Stepping along world x/z moved the texel grid by fractions.)
+    const M = MOON_AXES, step = 72 / 2048 * 128;
+    _v.set(cx, 0, cz);
+    const ax = Math.round(_v.dot(M.x) / step) * step, ay = Math.round(_v.dot(M.y) / step) * step, az = Math.round(_v.dot(M.z) / step) * step;
+    this.moon.target.position.copy(M.x).multiplyScalar(ax).addScaledVector(M.y, ay).addScaledVector(M.z, az);
+    this.moon.position.copy(this.moon.target.position).add(MOON_OFFSET);
     // audio listener
     this.audio?.setListener(cam.position, p.forward());
     this.audio?.setIntensity?.(p.alive && !p.downed ? clamp(1 - p.hp / p.maxHp - 0.4, 0, 1) * 1.6 : 1);

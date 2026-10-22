@@ -42,18 +42,34 @@ const cpuprof = +arg('cpuprof', 0);
 // --frozen: the world stops during each window (render cost of a fixed frame;
 // with --gpu, the steadiest GPU comparison)
 const frozen = process.argv.includes('--frozen');
+// --spikes: per-frame attribution (update, render split into shadow map / scene /
+// hands / bloom / final, GL uploads, program switches, sync calls) and the
+// slowest frames of each scenario. --skip S drops the first S seconds of every
+// window from the stats (default 0.5: the first frames after a thaw).
+const spikes = process.argv.includes('--spikes');
+const skip = +arg('skip', 0.5);
+// --vsync: keep the browser's frame pacing (60 Hz) instead of uncapped frames,
+// to tell real stalls from a GPU queue that uncapped rendering keeps full
+const vsync = process.argv.includes('--vsync');
 const BROWSER = process.env.BROWSER ?? (process.platform === 'win32' ? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe' : undefined);
 
 const init = ([quality]) => {
   try { localStorage.setItem('arcane-ascent-settings', JSON.stringify({ quality, dynamicRes: false, showFps: false, name: 'Bench', master: 0.8 })); } catch { /* ignore */ }
   window.__frames = [];
+  window.__perFrame = [];
+  window.__fr = {};
   let last = 0;
-  const f = (t) => { if (last && window.__rec) window.__frames.push(t - last); last = t; requestAnimationFrame(f); };
+  // runs before the game's own rAF callback: closes the previous frame's record
+  const f = (t) => {
+    if (last && window.__rec) { window.__frames.push(t - last); window.__perFrame.push({ at: t - window.__recT0, gap: t - last, ...window.__fr }); }
+    window.__fr = {};
+    last = t; requestAnimationFrame(f);
+  };
   requestAnimationFrame(f);
 };
 
 // runs in the page: sets up one scenario's driver and plays its warm-up
-const setupScenario = async ([scen, res, N, gpuMode]) => {
+const setupScenario = async ([scen, res, N, gpuMode, spikes]) => {
   const g = window.__game, p = g.player, inp = window.__input, THREE = window.__THREE, R = g.renderer;
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   let seed = 777;
@@ -65,9 +81,10 @@ const setupScenario = async ([scen, res, N, gpuMode]) => {
     window.__wrapped = true;
     window.__cpu = { upd: [], ren: [], calls: [], tris: [] };
     const u0 = g.update.bind(g);
-    g.update = (dt) => { window.__drive?.(dt); const t0 = performance.now(); try { return u0(dt); } finally { if (window.__rec) window.__cpu.upd.push(performance.now() - t0); } };
+    g.update = (dt) => { window.__drive?.(dt); const t0 = performance.now(); try { return u0(dt); } finally { const ms = performance.now() - t0; window.__fr.upd = ms; if (window.__rec) window.__cpu.upd.push(ms); } };
+    if (spikes) installSpikeProbe(g, R);
     const r0 = R.render.bind(R);
-    R.render = (t) => { const t0 = performance.now(); try { return r0(t); } finally { if (window.__rec) { const c = window.__cpu; c.ren.push(performance.now() - t0); c.calls.push(R.lastStats?.calls ?? 0); c.tris.push(R.lastStats?.tris ?? 0); } } };
+    R.render = (t) => { const t0 = performance.now(); try { return r0(t); } finally { const ms = performance.now() - t0; window.__fr.ren = ms; window.__fr.calls = R.lastStats?.calls ?? 0; if (window.__rec) { const c = window.__cpu; c.ren.push(ms); c.calls.push(R.lastStats?.calls ?? 0); c.tris.push(R.lastStats?.tris ?? 0); } } };
   }
   if (gpuMode && !window.__gpuAcc) installGpuTimer(R, gpuMode === 'draws');
   if (window.__gpuAcc) for (const k in window.__gpuAcc) delete window.__gpuAcc[k];
@@ -200,7 +217,7 @@ const setupScenario = async ([scen, res, N, gpuMode]) => {
 // runs in the page: records one window of `sec` seconds. frozen: the world
 // holds still (rendering only) - in explore at a fixed spot per round, so every
 // build draws the same frame
-const measureWindow = async ([sec, frozen, scen, round]) => {
+const measureWindow = async ([sec, frozen, scen, round, prof]) => {
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const g = window.__game, R = g.renderer;
   if (frozen) {
@@ -215,24 +232,73 @@ const measureWindow = async ([sec, frozen, scen, round]) => {
     }
   }
   window.__frames.length = 0;
+  window.__perFrame.length = 0;
+  window.__recT0 = performance.now();
   for (const k in window.__cpu) window.__cpu[k].length = 0;
   if (window.__gpuAcc) { for (const k in window.__gpuAcc) delete window.__gpuAcc[k]; window.__gpuFrames.clear(); }
   window.__rec = true;
-  console.profile('fps');
+  if (prof) console.profile('fps');
   await wait(sec * 1000);
-  console.profileEnd('fps');
+  if (prof) console.profileEnd('fps');
   window.__rec = false;
   window.__freeze = false;
   if (window.__heldDrive) { window.__drive = window.__heldDrive; window.__heldDrive = null; }
   const sum = (a) => a.reduce((s, v) => s + v, 0);
   const c = window.__cpu;
   return {
+    perFrame: window.__perFrame.map((f) => { const o = {}; for (const k in f) o[k] = typeof f[k] === 'number' ? +f[k].toFixed(2) : f[k]; return o; }),
     frames: window.__frames.slice(), renList: c.ren.slice(), upd: sum(c.upd), ren: sum(c.ren), calls: sum(c.calls), tris: sum(c.tris) / 1000, n: c.ren.length,
     gpu: window.__gpuAcc ? JSON.parse(JSON.stringify(window.__gpuAcc)) : null,
     gpuFrames: window.__gpuFrames ? [...window.__gpuFrames.values()].map((F) => { let t = 0; for (const k in F) t += F[k]; F.total = t; return F; }) : null,
     enemies: g.actors.list.filter((a) => !a.dead).length, res: R.resScale,
   };
 };
+
+// The slowest frames of a set of windows, each split into its parts, plus the
+// mean split of all frames and of the slowest 1% (what a 1% low is made of).
+function spikeReport(ws) {
+  const all = ws.flatMap((w) => w.perFrame ?? []).filter((f) => f.at >= skip * 1000);
+  if (!all.length) return '';
+  const srt = all.slice().sort((a, b) => b.gap - a.gap), worst = srt.slice(0, Math.max(1, Math.ceil(all.length / 100)));
+  const keys = ['gap', 'upd', 'ren', 'shadow', 'scene', 'view', 'bloom', 'final', 'calls', 'prog', 'tex', 'texKB', 'buf', 'bufKB', 'sync', 'link'];
+  const fmt = (k, v) => (k.endsWith('KB') || k === 'calls' || k === 'prog' || k === 'buf' || k === 'tex' || k === 'sync' || k === 'link' ? v.toFixed(0) : v.toFixed(2));
+  const avg = (a) => keys.map((k) => `${k} ${fmt(k, a.reduce((s, f) => s + (f[k] ?? 0), 0) / a.length)}`).join(' ');
+  const early = ws.flatMap((w) => (w.perFrame ?? []).filter((f) => f.at < skip * 1000));
+  const lines = [`    all frames : ${avg(all)}`, `    worst 1%   : ${avg(worst)}`];
+  if (early.length) lines.push(`    first ${skip}s of each window (dropped): ${early.length} frames, worst ${Math.max(...early.map((f) => f.gap)).toFixed(0)} ms (kept p99 ${srt[Math.floor(all.length / 100)].gap.toFixed(0)} ms)`);
+  for (const f of srt.slice(0, 6)) lines.push('    ' + keys.map((k) => `${k} ${fmt(k, f[k] ?? 0)}`).join(' ') + `  other ${(f.gap - (f.upd ?? 0) - (f.ren ?? 0)).toFixed(1)}`);
+  return lines.join('\n');
+}
+
+// Per-frame counters for --spikes: time inside each stage of the frame and
+// what the GL context was asked to do (uploads, program switches, calls that
+// make the page wait for the GPU process).
+function installSpikeProbe(g, R) {
+  const add = (k, v) => { const F = window.__fr; F[k] = (F[k] ?? 0) + v; };
+  const timeIt = (obj, name, label) => { const f = obj[name].bind(obj); obj[name] = (...a) => { const t0 = performance.now(); try { return f(...a); } finally { add(label, performance.now() - t0); } }; };
+  const r = R.renderer, gl = r.getContext();
+  timeIt(r.shadowMap, 'render', 'shadow');
+  if (R.fused) {
+    timeIt(R.viewPass, 'render', 'view');
+    timeIt(R, 'bloomMips', 'bloom');
+    timeIt(R.finalQuad, 'render', 'final');
+  }
+  // the main scene's WebGLRenderer.render, its shadow pass taken out afterwards
+  const rr = r.render.bind(r);
+  r.render = (scene, cam) => { const t0 = performance.now(); try { return rr(scene, cam); } finally { if (scene === R.scene) add('scene', performance.now() - t0); } };
+  const R0 = R.render.bind(R);
+  R.render = (t) => { try { return R0(t); } finally { const F = window.__fr; if (F.scene && F.shadow) F.scene -= F.shadow; } };
+  const count = (name, label, bytes) => { const f = gl[name].bind(gl); gl[name] = (...a) => { add(label, 1); if (bytes) add(label + 'KB', bytes(a) / 1024); return f(...a); }; };
+  count('useProgram', 'prog');
+  count('linkProgram', 'link');
+  const img = (o) => (o?.width ?? 0) * (o?.height ?? 0) * 4;
+  count('texImage2D', 'tex', (a) => (a.length >= 9 ? a[3] * a[4] * 4 : img(a[5])));
+  count('texSubImage2D', 'tex', (a) => (a.length >= 9 ? a[4] * a[5] * 4 : img(a[6])));
+  count('texSubImage3D', 'tex', (a) => a[5] * a[6] * a[7] * 4);
+  count('bufferData', 'buf', (a) => (typeof a[1] === 'number' ? a[1] : a[1]?.byteLength ?? 0));
+  count('bufferSubData', 'buf', (a) => (a[4] !== undefined ? a[4] * (a[2]?.BYTES_PER_ELEMENT ?? 1) : a[2]?.byteLength ?? 0));
+  for (const n of ['getProgramParameter', 'getShaderParameter', 'getUniformLocation', 'getError', 'readPixels', 'finish', 'clientWaitSync', 'getActiveUniform']) if (gl[n]) count(n, 'sync');
+}
 
 // self and inclusive ms per frame by function over the measured window
 function summarize(p, top, frames) {
@@ -319,7 +385,8 @@ const sum = (a) => a.reduce((s, v) => s + v, 0), mean = (a) => (a.length ? sum(a
 const med = (a) => { const v = a.slice().sort((x, y) => x - y); return v.length ? (v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2) : 0; };
 // pooled stats over a set of windows
 function stats(ws) {
-  const fr = ws.flatMap((w) => w.frames), srt = fr.slice().sort((a, b) => b - a);
+  const kept = (w) => (w.perFrame?.length === w.frames.length ? w.perFrame.filter((f) => f.at >= skip * 1000).map((f) => f.gap) : w.frames);
+  const fr = ws.flatMap(kept), srt = fr.slice().sort((a, b) => b - a);
   const worst = srt.slice(0, Math.max(1, Math.ceil(fr.length / 100)));
   const nr = sum(ws.map((w) => w.n)) || 1;
   const gpu = {};
@@ -332,7 +399,7 @@ function stats(ws) {
   const rmed = med(ws.flatMap((w) => w.renList ?? []));
   return {
     gmed, rmed,
-    fps: fr.length / (sum(fr) / 1000), medFps: med(ws.map((w) => w.frames.length / (sum(w.frames) / 1000))), low1: 1000 / mean(worst), p99: srt[Math.floor(fr.length / 100)] ?? 0,
+    fps: fr.length / (sum(fr) / 1000), medFps: med(ws.map((w) => { const k = kept(w); return k.length / (sum(k) / 1000); })), low1: 1000 / mean(worst), p99: srt[Math.floor(fr.length / 100)] ?? 0,
     upd: sum(ws.map((w) => w.upd)) / nr, ren: sum(ws.map((w) => w.ren)) / nr, calls: sum(ws.map((w) => w.calls)) / nr, tris: sum(ws.map((w) => w.tris)) / nr,
     gpu: Object.keys(passes).length ? passes : null, draws, enemies: ws[ws.length - 1]?.enemies,
   };
@@ -360,7 +427,7 @@ for (let rep = 0; rep < reps; rep++) {
   for (const quality of qualities) for (const floor of floors) {
     const browser = await chromium.launch({
       executablePath: BROWSER, headless: true,
-      args: ['--enable-gpu', '--use-angle=d3d11', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required', '--disable-gpu-vsync', '--disable-frame-rate-limit'],
+      args: ['--enable-gpu', '--use-angle=d3d11', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required', ...(vsync ? [] : ['--disable-gpu-vsync', '--disable-frame-rate-limit'])],
     });
     try {
       const pages = [];
@@ -371,6 +438,7 @@ for (let rep = 0; rep < reps; rep++) {
         page.on('pageerror', (e) => errors.push(e.message));
         await page.addInitScript(init, [quality]);
         if (gpuMode) await page.addInitScript(`window.installGpuTimer = ${installGpuTimer.toString()}`);
+        if (spikes) await page.addInitScript(`window.installSpikeProbe = ${installSpikeProbe.toString()}`);
         const cdp = await ctx.newCDPSession(page);
         let profP = null;
         if (cpuprof) {
@@ -389,7 +457,7 @@ for (let rep = 0; rep < reps; rep++) {
         pages.push(P);
       }
       for (const scen of scens) {
-        for (const P of pages) { await P.thaw(); await P.page.evaluate(setupScenario, [scen, res, n, gpuMode]); await P.freeze(); }
+        for (const P of pages) { await P.thaw(); await P.page.evaluate(setupScenario, [scen, res, n, gpuMode, spikes]); await P.freeze(); }
         const got = new Map(pages.map((P) => [P, []]));
         for (let r = 0; r < rounds; r++) {
           for (let i = 0; i < pages.length; i++) {
@@ -397,7 +465,7 @@ for (let rep = 0; rep < reps; rep++) {
             await P.thaw();
             await P.page.waitForTimeout(400); // the first frames after a thaw carry the frozen gap
             const prof = cpuprof && r === 0 ? new Promise((res) => P.prof(res)) : null;
-            const w = await P.page.evaluate(measureWindow, [sec, frozen, scen, r]);
+            const w = await P.page.evaluate(measureWindow, [sec, frozen, scen, r, !!prof]);
             await P.freeze();
             if (prof) console.log(`[${P.b.name} ${quality} f${floor} ${scen}]\n` + summarize(await prof, cpuprof, w.frames.length));
             const row = { build: P.b.name, quality, floor, scen, rep, round: r, ...w, errors: P.errors.length };
@@ -411,6 +479,7 @@ for (let rep = 0; rep < reps; rep++) {
           const st = stats(got.get(P));
           console.log('  ' + line(P.b.name, st) + (P.errors.length ? '  ERR ' + P.errors[0] : ''));
           if (gpuMode === 'draws') for (const [k, v] of st.draws) console.log('       ', v.toFixed(3).padStart(7), k);
+          if (spikes) console.log(spikeReport(got.get(P)));
         }
         for (const P of pages) { await P.thaw(); await P.page.evaluate(() => { window.__drive = null; const i = window.__input; i.mouse.left = i.mouse.right = false; i.down.clear(); }); await P.freeze(); }
       }

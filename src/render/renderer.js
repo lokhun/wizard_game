@@ -139,6 +139,9 @@ Object.defineProperty(THREE.Material.prototype, 'forceSinglePass', {
   set(v) { this._forceSinglePass = v; },
 });
 
+// layer marking the level's static shadow casters (see setStaticShadowCasters)
+const STATIC_LAYER = 2;
+
 const BLOOM_THRESHOLD = 1.05;
 const BLOOM_SCALE = 0.6;
 // asymptotic cap for point lights lighting the first-person hands
@@ -164,6 +167,15 @@ export class Renderer {
     // shadow maps are only used by the courtyard moon (outdoor realm)
     this.renderer.shadowMap.enabled = quality === 'high' || quality === 'ultra';
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    // objects drawn only into shadow maps (merged enemy casters, shadows.js):
+    // hidden from the camera, shown while three.js renders the shadow maps
+    this.shadowOnly = new Set();
+    this.staticCasters = [];
+    const sm = this.renderer.shadowMap, smRender = sm.render.bind(sm);
+    sm.render = (lights, scene, camera) => {
+      for (const o of this.shadowOnly) o.visible = true;
+      try { this._renderShadows(smRender, lights, scene, camera); } finally { for (const o of this.shadowOnly) o.visible = false; }
+    };
     this.renderer.info.autoReset = true;
     // Opaque draws grouped by shader program, then material, then front to
     // back (three.js groups by material only). Every program switch re-sends
@@ -259,6 +271,54 @@ export class Renderer {
     this.grade = new ShaderPass(GradeShader);
     this.composer.addPass(this.grade);
     this.composer.addPass(new OutputPass());
+  }
+
+  // The level's own shadow casters (static, every one of them inside the moon's
+  // frustum: ~160k triangles on the Bailey) are drawn into a cached depth map
+  // only when the light moves (the moon steps with the player every few metres).
+  // Each frame copies that depth into the shadow map in place of the clear and
+  // draws only what moves - enemies, players, props - on top: the same depth
+  // image, without re-drawing the level every frame.
+  setStaticShadowCasters(list) {
+    for (const o of this.staticCasters) o.layers.disable(STATIC_LAYER);
+    this.staticCasters = list;
+    for (const o of list) o.layers.enable(STATIC_LAYER);
+    this._staticKey = null;
+  }
+
+  _renderShadows(smRender, lights, scene, camera) {
+    const light = lights.length === 1 && lights[0].isDirectionalLight ? lights[0] : null;
+    const map = light?.shadow.map;
+    if (!light || !map || !this.staticCasters.length) { smRender(lights, scene, camera); return; }
+    const r = this.renderer;
+    let rt = this._staticRT;
+    if (!rt || rt.width !== map.width || rt.height !== map.height) {
+      rt?.dispose();
+      rt = this._staticRT = new THREE.WebGLRenderTarget(map.width, map.height, { depthTexture: new THREE.DepthTexture(map.width, map.height, THREE.UnsignedIntType) });
+      this._staticKey = null;
+    }
+    const e = light.matrixWorld.elements, t = light.target.matrixWorld.elements;
+    const key = `${e[12]},${e[13]},${e[14]},${t[12]},${t[13]},${t[14]}`;
+    if (key !== this._staticKey) {
+      // the level alone (the static layer), then keep its depth
+      const cam = (this._staticCam ??= new THREE.Camera());
+      cam.layers.set(STATIC_LAYER);
+      smRender(lights, scene, cam);
+      if (!r.properties.get(rt.depthTexture).__renderTarget) { const prev = r.getRenderTarget(); r.setRenderTarget(rt); r.setRenderTarget(prev); }
+      r.copyTextureToTexture(map.depthTexture, rt.depthTexture);
+      this._staticKey = key;
+    }
+    // everything that moves, on top of the level's depth
+    const clear = r.clear;
+    r.clear = (color = true, depth = true, stencil = true) => {
+      if (r.getRenderTarget() !== map) { clear.call(r, color, depth, stencil); return; }
+      clear.call(r, color, false, stencil);
+      r.copyTextureToTexture(rt.depthTexture, map.depthTexture);
+      r.setRenderTarget(map);
+    };
+    const cast = this.staticCasters;
+    for (const o of cast) o.castShadow = false;
+    try { smRender(lights, scene, camera); } finally { r.clear = clear; for (const o of cast) o.castShadow = true; }
   }
 
   // "Reduce flashing" (settings): bloom at a bit over half strength

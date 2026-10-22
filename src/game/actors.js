@@ -7,6 +7,7 @@ import { rand } from '../core/rng.js';
 import { angleDamp, clamp } from '../core/math.js';
 import { Pathing } from './pathing.js';
 import { getEnemyModel } from './models.js';
+import { castMergedShadow } from '../render/shadows.js';
 import { BossBrain } from './bosses.js';
 
 const _frustum = new THREE.Frustum(), _m4 = new THREE.Matrix4(), _sph = new THREE.Sphere();
@@ -136,7 +137,8 @@ export class ActorManager {
     if (a.faction === 'ally') a.model.setTint?.(0x50e890, 0.45);
     else if (a.def.tint) a.model.setTint?.(a.def.tint, 0.5);
     if (a.elite && !a.def.elite) a.model.setTint?.(0xffaa30, 0.25);
-    if (g.shadowsOn) a.model.root.traverse((o) => { if (o.isMesh && !o.material?.transparent) o.castShadow = true; });
+    if (g.shadowsOn && !a.boss) a.unshadow = castMergedShadow(a.model.root, g.renderer);
+    else if (g.shadowsOn) a.model.root.traverse((o) => { if (o.isMesh && !o.material?.transparent) o.castShadow = true; });
     g.scene.add(a.model.root);
     this.list.push(a);
     this.byId.set(id, a);
@@ -160,6 +162,7 @@ export class ActorManager {
   }
 
   _disposeModel(a) {
+    a.unshadow?.(); a.unshadow = null;
     if (a.model) {
       this.g.scene.remove(a.model.root);
       a.model.dispose?.();
