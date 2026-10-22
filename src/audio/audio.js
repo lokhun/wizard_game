@@ -24,7 +24,7 @@
  * the master dynamics. Files: core.js (DSP + Voice), sfx.js, loops.js,
  * ambience.js, music.js, calib.js (measured per-sound level trims).
  */
-import { bufferSteps, makeIR, makeCurves, Voice, rnd, clamp } from './core.js';
+import { bufferSteps, irSteps, makeIR, makeCurves, Voice, rnd, clamp } from './core.js';
 import { SFX } from './sfx.js';
 import { LOOPS } from './loops.js';
 import { AMBIENCE } from './ambience.js';
@@ -72,8 +72,9 @@ export class GameAudio {
     let c;
     try { c = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' }); } catch { return; }
     const P = (this._prep = { ctx: c, buf: {}, steps: null, ir: null });
-    P.steps = bufferSteps(c, P.buf);
-    const step = () => { if (P.steps) { if (P.steps.next().done) P.steps = null; return true; } P.ir = makeIR(c); return false; };
+    // the noise buffers, then the reverb impulse, a few ms per slice
+    P.steps = (function* () { yield* bufferSteps(c, P.buf); P.ir = yield* irSteps(c); })();
+    const step = () => { if (P.steps?.next().done) P.steps = null; return !!P.steps; };
     const tick = (deadline) => {
       if (this._prep !== P) return;
       // a busy page (the menu renders every frame) leaves little idle time:

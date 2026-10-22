@@ -134,7 +134,9 @@ function bakeGroup(g, boneIndex, addBone) {
     ni += it.geo.index ? it.geo.index.count : p.count;
   }
   const pos = new Float32Array(nv * 3), nrm = new Float32Array(nv * 3), uv = new Float32Array(nv * 2), col = new Float32Array(nv * 3);
-  const si = new Uint16Array(nv * 4), sw = new Float32Array(nv * 4);
+  // float bone indices: an integer vertex input costs ANGLE/D3D11 a second vertex shader,
+  // built synchronously on the GPU process's main thread at the first draw (~50 ms)
+  const si = new Float32Array(nv * 4), sw = new Float32Array(nv * 4);
   const idx = nv > 65535 ? new Uint32Array(ni) : new Uint16Array(ni);
   const shared = sigOf(g.src).startsWith('s|');
   let vo = 0, io = 0;

@@ -186,6 +186,9 @@ export class Renderer {
     this._buildComposer();
     this.resize();
     window.addEventListener('resize', () => this.resize());
+    // the post chain's programs never change: compile them now, on the
+    // driver's threads, instead of on the first frame (boot waits for it)
+    this.postReady = this._warmPost();
   }
 
   // Low / Medium / High: one fused chain instead of the composer's ping-pong.
@@ -229,10 +232,14 @@ export class Renderer {
       // SMAA (Medium only) is 46 KB of embedded lookup textures: fetched on
       // demand, the frame goes straight to the canvas until it arrives
       if (this.quality === 'medium') {
-        import('three/addons/postprocessing/SMAAPass.js').then(({ SMAAPass }) => {
-          this.ldrRT = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, depthBuffer: false });
-          this.smaa = new SMAAPass();
-          this.smaa.renderToScreen = true;
+        // (and switched on once its three programs are compiled in parallel)
+        import('three/addons/postprocessing/SMAAPass.js').then(async ({ SMAAPass }) => {
+          const ldr = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, depthBuffer: false });
+          const smaa = new SMAAPass();
+          smaa.renderToScreen = true;
+          await this._compileQuads([[ldr, [smaa._materialEdges, smaa._materialWeights]], [null, [smaa._materialBlend]]]);
+          this.ldrRT = ldr;
+          this.smaa = smaa;
           this.resize();
         }).catch((e) => console.warn('SMAA unavailable', e));
       }
@@ -361,6 +368,53 @@ export class Renderer {
       for (const o of flipped) o.visible = !o.visible;
       r.setRenderTarget(prev);
     }
+  }
+
+  // Bloom's bright pass, blurs and composite and the final grade pass, which
+  // otherwise all linked synchronously in the first menu frame (0.1-0.5 s on
+  // ANGLE/D3D11).
+  _warmPost() {
+    if (!this.fused) return Promise.resolve();
+    const b = this.bloom;
+    return this._compileQuads([[b.renderTargetBright, [b.materialHighPassFilter, ...b.separableBlurMaterials, b.compositeMaterial]], [null, [this.finalMat]]]);
+  }
+
+  // Compile full-screen pass materials on the driver's threads, each group
+  // against the kind of target it draws into ([target, materials]: a canvas
+  // pass gets tone mapping and sRGB in its program, a render target doesn't).
+  async _compileQuads(groups) {
+    const r = this.renderer, geo = new THREE.BufferGeometry();
+    // FullScreenQuad's own triangle: position and uv only (normals would be another program)
+    geo.setAttribute('position', new THREE.Float32BufferAttribute([-1, 3, 0, -1, -1, 0, 3, -1, 0], 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute([0, 2, 0, 0, 2, 0], 2));
+    const prev = r.getRenderTarget();
+    const jobs = [];
+    try {
+      for (const [target, mats] of groups) {
+        const s = new THREE.Scene();
+        for (const m of mats) if (m) s.add(new THREE.Mesh(geo, m));
+        r.setRenderTarget(target);
+        if (r.extensions.has('KHR_parallel_shader_compile')) jobs.push(r.compileAsync(s, this.camera));
+        else r.compile(s, this.camera);
+      }
+    } catch (e) { console.warn('pass warm-up failed', e); } finally { r.setRenderTarget(prev); }
+    await Promise.race([Promise.all(jobs), new Promise((res) => setTimeout(res, 20000))]);
+    geo.dispose();
+  }
+
+  // Compile one object's materials (not yet in the scene) against the scene's
+  // lights and the HDR target, on the driver's threads where it can: the
+  // promise resolves once its programs are ready to draw without stalling.
+  async compileObject(obj, scene = this.scene, { timeout = 20000 } = {}) {
+    const r = this.renderer;
+    const prev = r.getRenderTarget();
+    r.setRenderTarget(this.hdrTarget);
+    let ready = null;
+    try {
+      if (r.extensions.has('KHR_parallel_shader_compile')) ready = r.compileAsync(obj, this.camera, scene);
+      else r.compile(obj, this.camera, scene);
+    } finally { r.setRenderTarget(prev); }
+    if (ready) await Promise.race([ready, new Promise((res) => setTimeout(res, timeout))]);
   }
 
   render(time) {

@@ -172,7 +172,8 @@ if (opt('analyze')) { const d = JSON.parse(fs.readFileSync(opt('analyze'), 'utf8
     await cdp.send('Profiler.start');
   }
   // --trace: GPU-process trace events (ANGLE's shader compiles run there, out of the page's sight)
-  const trace = opt('trace');
+  const trace = browser ? opt('trace') : null; // (tracing needs a launched browser, not a reused profile)
+  if (opt('trace') && !browser) console.warn('--trace is ignored with --profile-dir');
   if (trace) await browser.startTracing(page, { path: trace, categories: [...(args.includes('--trace-gpu') ? ['gpu'] : []), ...(opt('trace-cats')?.split(',') ?? []), 'gpu.angle', 'blink.user_timing'] });
   await page.goto(url, { timeout: 120000 });
   const gpu = await page.evaluate(() => { const gl = document.createElement('canvas').getContext('webgl2'); const e = gl.getExtension('WEBGL_debug_renderer_info'); return gl.getParameter(e.UNMASKED_RENDERER_WEBGL); });

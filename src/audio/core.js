@@ -91,9 +91,10 @@ export function* bufferSteps(ctx, B) {
   // Chain / metal jingle: sparse inharmonic metallic pings
   B.chain = mk(2);
   {
-    const d = B.chain.getChannelData(0); let t = 0;
+    const d = B.chain.getChannelData(0); let t = 0, slice = 0;
     const ratios = [1, 1.53, 2.31, 3.17];
     while (t < d.length) {
+      if (t >= slice) { slice += d.length / 8; yield; } // the heaviest buffer: in eighths
       t += poisson(Math.random() < 0.3 ? 80 : 22, sr);
       const f0 = rnd(1700, 3300), dec = rnd(0.008, 0.03), amp = rnd(0.25, 1);
       const L = Math.floor(dec * 5 * sr);
@@ -149,9 +150,16 @@ export function makeBuffers(ctx) {
 
 // Dungeon-ish stereo reverb IR: predelay, early reflections, damped diffuse tail.
 export function makeIR(ctx, sec = 2.8, rt60 = 2.5) {
+  const steps = irSteps(ctx, sec, rt60);
+  let r;
+  while (!(r = steps.next()).done);
+  return r.value;
+}
+// the same, yielding every ~0.35 s of samples (a few ms each); returns the buffer
+export function* irSteps(ctx, sec = 2.8, rt60 = 2.5) {
   const sr = ctx.sampleRate, len = Math.floor(sec * sr);
   const buf = ctx.createBuffer(2, len, sr);
-  const pre = Math.floor(0.014 * sr);
+  const pre = Math.floor(0.014 * sr), slice = Math.floor(0.35 * sr);
   for (let ch = 0; ch < 2; ch++) {
     const d = buf.getChannelData(ch); let lp = 0;
     for (let i = pre; i < len; i++) {
@@ -160,6 +168,7 @@ export function makeIR(ctx, sec = 2.8, rt60 = 2.5) {
       const a = 0.9 - 0.82 * Math.min(1, t / 1.6); // brighter early, darker late
       lp += a * (Math.random() * 2 - 1 - lp);
       d[i] = lp * env * (1 / Math.sqrt(a + 0.05)) * 0.6;
+      if ((i - pre) % slice === slice - 1) yield;
     }
     for (let k = 0; k < 14; k++) {
       const idx = pre + Math.floor(rnd(0.004, 0.085) * sr);

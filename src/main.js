@@ -104,6 +104,7 @@ async function boot() {
   ui.loading(0.7, 'Opening the sewers');
   await frame();
   startBackdrop();
+  await renderer.postReady; // (bloom and grade programs, compiled in parallel since the renderer was made)
   ui.loading(1, 'Ready');
   await frame();
   ui.hideLoading();
@@ -162,11 +163,39 @@ function startBackdrop(floor) {
   placeMenuAvatar();
 }
 
-function placeMenuAvatar() {
+// The class-select wizard is built and its shaders compiled on the driver's
+// threads before it is shown. Building it on the click linked a dozen programs
+// synchronously (~350 ms each on ANGLE/D3D11): a 2 s freeze on entering the
+// screen and on every pick, since disposing the last wizard released programs
+// the next one needed again. Now the wizard on show stays until its successor
+// is ready (keeping the shared programs alive), and the menu builds the last
+// played class's wizard while it idles.
+let avatarGen = 0, nextAvatar = null; // { classId, av, ready }
+function prepareAvatar(classId) {
+  if (nextAvatar?.classId === classId) return nextAvatar;
+  nextAvatar?.av.dispose?.();
+  const av = getAvatar(classId, game);
+  nextAvatar = { classId, av, ready: renderer.compileObject(av.root, game.scene) };
+  return nextAvatar;
+}
+function dropMenuAvatar() {
   if (menuAvatar) { game.scene.remove(menuAvatar.root); menuAvatar.dispose?.(); menuAvatar = null; }
-  if (mode !== 'select') return;
-  menuAvatar = getAvatar(selectedClass, game);
-  game.scene.add(menuAvatar.root);
+}
+function placeMenuAvatar() {
+  const gen = ++avatarGen;
+  if (mode !== 'select') { dropMenuAvatar(); return; }
+  if (menuAvatar?.classId === selectedClass) return;
+  const next = prepareAvatar(selectedClass);
+  next.ready.then(() => {
+    if (gen !== avatarGen || mode !== 'select' || nextAvatar !== next) return; // a later pick won
+    nextAvatar = null;
+    const pick = !!menuAvatar;
+    dropMenuAvatar();
+    menuAvatar = next.av;
+    menuAvatar.classId = next.classId;
+    game.scene.add(menuAvatar.root);
+    if (pick && game.backdrop) game.backdrop.flourish = 0; // the pick's flourish, on the new wizard
+  });
 }
 
 function updateBackdrop(dt) {
@@ -236,6 +265,8 @@ function menuStats() { const p = loadProfile(); return { runs: p.runs, wins: p.w
 function showMenu() {
   mode = 'menu';
   placeMenuAvatar();
+  // the wizard the class select opens on, built while the menu idles
+  setTimeout(() => { if (mode === 'menu') (window.requestIdleCallback ?? setTimeout)(() => { if (mode === 'menu') prepareAvatar(selectedClass); }, { timeout: 2000 }); }, 2500);
   ui.showMenu({
     name: settings.name,
     stats: menuStats(),
@@ -319,7 +350,9 @@ function startDaily(r) {
 
 function beginRun(opts) {
   mode = 'run';
-  if (menuAvatar) { game.scene.remove(menuAvatar.root); menuAvatar.dispose?.(); menuAvatar = null; }
+  avatarGen++;
+  dropMenuAvatar();
+  nextAvatar?.av.dispose?.(); nextAvatar = null;
   ui.fadeOut(0.6, () => {
     game.menuMode = false;
     game.backdrop = null;

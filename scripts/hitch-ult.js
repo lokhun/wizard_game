@@ -24,6 +24,20 @@
       (gpuMs[window.__tag] ??= []).push(performance.now() - t0);
     };
   }
+  // &black=1: read five canvas pixels after every render and count the frames where all are
+  // black (a NaN in some effect's shader blanks the whole frame through bloom)
+  const black = {};
+  if (Q.get('black')) {
+    const R = g.renderer, gl = R.renderer.getContext(), px = new Uint8Array(4), render = R.render.bind(R);
+    R.render = (t) => {
+      render(t);
+      const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+      let lit = 0;
+      for (const [x, y] of [[0.5, 0.5], [0.25, 0.3], [0.75, 0.3], [0.25, 0.7], [0.75, 0.7]]) { gl.readPixels(Math.floor(w * x), Math.floor(h * y), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); lit += px[0] + px[1] + px[2]; }
+      const b = (black[window.__tag] ??= { frames: 0, black: 0 });
+      b.frames++; if (lit < 3) b.black++;
+    };
+  }
   tag('settle'); await sleep(2500);
   const room = g.level.rooms.filter((r) => r.main && r.type === 'combat').sort((a, b) => a.order - b.order)[0];
   p.pos.set(room.cx, g.groundY(room.cx, room.cz), room.cz);
@@ -56,12 +70,12 @@
   tag('pre'); await hold(1500);
   await ult('ult:solo1');
   tag('gap'); await hold(1000);
-  await ult('ult:solo2');
+  if (!Q.get('quick')) await ult('ult:solo2');
   // the crowd
   tag('fill'); fill(N); await hold(4000);
   await ult('ult:crowd1');
   tag('gap'); fill(N); await hold(1000);
-  await ult('ult:crowd2');
+  if (!Q.get('quick')) await ult('ult:crowd2');
   for (const [k, slot] of [['Mouse0', 'lmb'], ['Mouse2', 'rmb'], ['KeyQ', 'Q'], ['KeyE', 'E']]) {
     fill(N); cd(); tag('crowd:' + slot);
     if (k === 'Mouse0') { inp.mouse.left = true; await hold(2500); inp.mouse.left = false; } else if (k === 'Mouse2') { inp.mouse.rightPressed = true; inp.mouse.right = true; await hold(2500); inp.mouse.right = false; } else { inp.pressed.add(k); await hold(2500); }
@@ -69,5 +83,6 @@
   tag('end'); await sleep(300);
   const pc = (v, q) => { const s = [...v].sort((a, b) => a - b); return +s[Math.min(s.length - 1, Math.floor(s.length * q))].toFixed(1); };
   const renderMs = Object.fromEntries(Object.entries(gpuMs).map(([k, v]) => [k, { med: pc(v, 0.5), p95: pc(v, 0.95), max: pc(v, 1) }]));
-  return { renderMs, programs: g.renderer.renderer.info.programs.length, prewarm: g._prewarmPrograms, alive: hostiles().length, ultSpell: p.cls?.spells?.ultimate?.name };
+  const blackFrames = Object.fromEntries(Object.entries(black).filter(([, v]) => v.black));
+  return { blackFrames, renderMs, programs: g.renderer.renderer.info.programs.length, prewarm: g._prewarmPrograms, alive: hostiles().length, ultSpell: p.cls?.spells?.ultimate?.name };
 })()

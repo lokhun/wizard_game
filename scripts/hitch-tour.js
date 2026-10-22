@@ -5,7 +5,7 @@
 // reactions, deaths, the tome choice, the elite chamber and its relic, a chest (or mimic),
 // shrine, merchant, the boss intro, its phase changes and death, and the portal into the
 // next realm (the loading veil is timed) with a first fight there.
-// &tour=short stops after the first fight.
+// &tour=short stops after the first fight; &tour=boss goes straight to the boss.
 (async () => {
   const Q = new URLSearchParams(location.search);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -76,7 +76,10 @@
     tag(pre + 'clear'); await sleep(2500);
   };
   const ped = () => g.interactables.find((i) => i.kind === 'pedestal' && !i.usedBy?.has(p.id));
+  // &tour=boss: straight to the boss (intro, phases, death, portal)
+  const bossOnly = Q.get('tour') === 'boss';
   // ---- the first fight of the floor
+  if (!bossOnly) {
   const main = L().rooms.filter((r) => r.main).sort((a, b) => a.order - b.order);
   const first = main.find((r) => r.type === 'combat');
   tag('enter'); goto(first); await until(() => hostiles().length > 0, 9000); await hold(1500);
@@ -97,7 +100,9 @@
   const pd = ped();
   if (pd) { g.interact(pd); await pick('tome'); }
   log.push('first fight done: kills ' + g.stats.kills);
+  }
   if (Q.get('tour') !== 'short') {
+    if (!bossOnly) {
     // ---- elite chamber
     const elite = L().rooms.find((r) => r.type === 'elite');
     if (elite) {
@@ -123,6 +128,7 @@
     // ---- merchant
     const shop = g.interactables.find((i) => i.kind === 'shop');
     if (shop) { tag('shop:enter'); p.pos.set(shop.pos.x, 0, shop.pos.z + 3); p.yaw = 0; await sleep(2000); p.gold += 500; g.interact(shop); tag('shopUI'); await sleep(1200); tag('shopUI:buy'); click('.modal .shop-item'); await sleep(800); click('.modal #bLeave'); await sleep(800); }
+    }
     // ---- boss
     const br = L().bossRoom;
     if (br) {

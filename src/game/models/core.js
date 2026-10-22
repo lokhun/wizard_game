@@ -515,7 +515,9 @@ export class Rig {
       const sn = src.getAttribute('normal');
       const cnt = sp.count;
       const pos = new Float32Array(cnt * 3), nrm = new Float32Array(cnt * 3), uv = new Float32Array(cnt * 2), col = new Float32Array(cnt * 3), an = new Float32Array(cnt);
-      const si = new Uint16Array(cnt * 4), sw = new Float32Array(cnt * 4);
+      // bone indices as floats: ANGLE/D3D11 builds a second vertex shader, synchronously on
+      // the GPU process's main thread at the first draw (~50 ms), for integer vertex inputs
+      const si = new Float32Array(cnt * 4), sw = new Float32Array(cnt * 4);
       const c = toColor(part.opts.c);
       const bi = boneIndex.get(bone);
       const animFn = part.opts.anim;
