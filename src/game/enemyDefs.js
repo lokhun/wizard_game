@@ -269,8 +269,9 @@ export const BOSS_DEFS = {
   hollowKing: { name: 'The Hollow King', title: 'Last Lord of the Ashen Keep', hp: 36000, dmg: 40, poise: 9999, gold: 0, model: 'hollowKing', speed: 4.4, sound: 'boss_roar', deathSound: 'boss_roar', hitSound: 'enemy_hit_armor', undead: true },
 };
 
-export const FLOOR_HP = [1, 1.5, 2.1, 2.8, 3.6];
-export const FLOOR_DMG = [1, 1.25, 1.55, 1.85, 2.2];
+// (a run's tomes and relics compound: the later realms keep pace with them)
+export const FLOOR_HP = [1, 1.55, 2.25, 3.05, 4.0];
+export const FLOOR_DMG = [1.1, 1.4, 1.75, 2.1, 2.55];
 
 // Every def, and every attack, laid out with the same fields in the same order
 // (missing ones undefined). The AI reads a.def.speed, at.kind, at.range... for

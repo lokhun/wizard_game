@@ -69,13 +69,18 @@ How the research in `RESEARCH.md` turned into the game.
 - **The Daily Rite** derives seed, wizard and pacts (heat 3-5) from the UTC date, so everyone gets the same rite with nothing to fetch. It records a best result and a streak of consecutive days.
 
 ## Scaling
-- **Enemy health per floor:** ×1 / 1.65 / 2.5 / 3.5 / 4.8. This applies to regular and elite enemies only.
+- **Enemy health per floor:** ×1 / 1.55 / 2.25 / 3.05 / 4.0. This applies to regular and elite enemies only.
 - **Boss health** is tuned per boss in `BOSS_DEFS` (5,760 / 9,360 / 17,500 / 23,000 / 36,000; tomes stack up late, so the last three are beefier) and does not get the floor multiplier.
-- **Enemy damage per floor:** ×1 / 1.25 / 1.55 / 1.85 / 2.2.
-- **Party size:**
-  - Enemy count grows by +50% per extra player.
-  - Trash health grows by only +32% per extra player, because the research flagged health sponges as a common complaint.
-  - Boss health grows by +45% per extra player.
+- **Enemy damage per floor:** ×1.1 / 1.4 / 1.75 / 2.1 / 2.55.
+- **Party size:** each player should face about what a solo player does. (With +50% bodies, +32% health and no extra damage per player, a 4-player party used to take ~40% less damage each than a solo player, on top of revives.)
+  - Enemy count grows by +75% per extra player (the wave cap with it).
+  - Trash health grows by only +28% per extra player, because the research flagged health sponges as a common complaint.
+  - Enemy damage grows by +12% per extra player.
+  - Boss health grows by +65% per extra player.
+  - Champions: +2% chance per extra player.
+  - A downed wizard bleeds out in 20 s, then 10 s, 6.7 s... for each further fall in the same chamber (25 s solo).
+- **Pressure:** specials come round ~15% faster than authored. From the third realm a fourth melee foe may press one target and a third shooter may wind up on it (a fourth in the last realm). Ranged foes lead a moving target by most of their bolt's flight time. Pack hunters (flankers, the fast ones) go for a wizard with no ally within 9 m.
+- **Measure a retune** with `scripts/pressure.js`: the director's real waves at a chosen party size, health refilled every frame, damage taken per minute and seconds per room. Compare builds on the same seed, at party sizes 1 and 4.
 
 ## Combat design: how a fight actually plays
 
@@ -122,7 +127,7 @@ The target pace is quicker than Dark and Darker, nowhere near a boomer shooter, 
   - Water slows and makes you Wet, which conducts lightning.
   - **Powder kegs**: 1–2 out on the floor of every fight room, plus about 1 in 5 wall barrels. They explode when broken, chain into each other and hurt anyone close.
 - **Sustain:**
-  - Clearing a room restores 15% health. Health orbs drop from about 10% of kills and pull in from 5 m.
+  - Clearing a room restores 10% health. Health orbs drop from about 10% of kills and pull in from 5 m.
   - Bosses are a test of the build and of dodging, not of attrition.
 - **Feedback:**
   - Hit flinch on a damped spring, a flash, merged damage numbers and a hitmarker.

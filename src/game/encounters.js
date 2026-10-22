@@ -35,8 +35,8 @@ export const MODS = {
   surge: { name: 'ARCANE SURGE', sub: 'Wild magic — every cooldown quickens, theirs too', color: '#c890ff', glyph: '✦', tint: [1.06, 0.94, 1.16] },
   powder: { name: 'POWDER STORE', sub: 'One spark and the whole room goes up', color: '#ff9a40', glyph: '✹', tint: null },
 };
-const AFFIXES = ['hasted', 'vampiric', 'volatile', 'shielded'];
-const AFFIX_NAME = { hasted: 'Hasted', vampiric: 'Vampiric', volatile: 'Volatile', shielded: 'Shielded' };
+const AFFIXES = ['hasted', 'vampiric', 'volatile', 'shielded', 'frenzied', 'bombardier'];
+const AFFIX_NAME = { hasted: 'Hasted', vampiric: 'Vampiric', volatile: 'Volatile', shielded: 'Shielded', frenzied: 'Frenzied', bombardier: 'Bombardier' };
 const TRAITS = {
   warcaller: 'Warcaller', // calls its pack at two-thirds and one-third health
   thunderous: 'Thunderous', // stamps out shockwaves you must jump
@@ -260,7 +260,7 @@ export class Encounters {
     if (room.mod === 'bloodmoon') for (const id of room.sentryIds ?? []) { const a = this.g.actors.byId.get(id); if (a) a.dmg *= 1.35; }
     if (this.curse <= 0 || (room.type !== ROOM.COMBAT && room.type !== ROOM.ELITE) || !waves.length) return;
     const b = this.level.biome, t = b.elites[Math.floor(Math.random() * b.elites.length)];
-    const s = ENEMY_DEFS[t]?.elite ? { type: t, elite: false, role: 'heavy' } : { type: t, elite: true, affix: AFFIXES[Math.floor(Math.random() * 4)], role: 'heavy' };
+    const s = ENEMY_DEFS[t]?.elite ? { type: t, elite: false, role: 'heavy' } : { type: t, elite: true, affix: AFFIXES[Math.floor(Math.random() * AFFIXES.length)], role: 'heavy' };
     // into the last wave (fights always have two or more; the first may be sentries already standing)
     waves[waves.length - 1].push(s);
     this.curse--;

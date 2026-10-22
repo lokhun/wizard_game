@@ -98,6 +98,7 @@ export class Actor {
     this._mvLosT = 0; this._mvLosTgt = null; this._losMove = false; this._losT = 0; this._los = false;
     this._tellT = 0; this._wadeT = null; this._laserBeam = null; this._laserEnd = 0; this._blockT = 0;
     this._rxT = null; this._lastMiasma = null; this._augTracked = false;
+    this._bombT = 2 + Math.random() * 2; // (the bombardier affix: seconds to its next barrage)
     this._mw = new Float64Array(6); // root position and rotation when last settled
   }
   get alive() { return !this.dead && !this.collapsed; }
@@ -602,7 +603,7 @@ export class ActorManager {
     // champion affix auras
     if (a.affix && Math.random() < dt * 14) {
       const ang = Math.random() * Math.PI * 2;
-      const col = { hasted: [0.6, 1.6, 2.6], vampiric: [2.4, 0.15, 0.25], volatile: [3, 1.2, 0.2], shielded: [2.6, 2.2, 0.8] }[a.affix] ?? [2, 2, 2];
+      const col = { hasted: [0.6, 1.6, 2.6], vampiric: [2.4, 0.15, 0.25], volatile: [3, 1.2, 0.2], shielded: [2.6, 2.2, 0.8], frenzied: [2.8, 0.5, 1.6], bombardier: [3, 0.6, 0.1] }[a.affix] ?? [2, 2, 2];
       P.glow({ x: x + Math.cos(ang) * r * 1.2, y: y + 0.1, z: z + Math.sin(ang) * r * 1.2, vx: -Math.sin(ang) * 1.2, vy: rand(0.8, 1.8), vz: Math.cos(ang) * 1.2, r: col[0], g: col[1], b: col[2], life: 0.9, size: 0.09, sprite: SPR.SPARK, drag: 1 });
     }
     if (a.elite && !a.def.elite) g.lights.request(_v.set(x, y + h * 0.5, z), 0xffa040, 2.5, 4);
@@ -731,6 +732,7 @@ export class ActorManager {
       if (a.life <= 0) { this.kill(a, 0, 'necrotic'); return; }
     }
 
+    if (a.affix === 'bombardier' && !a.dormant && a.state !== 'spawn') this._bombard(a, dt);
     const mm = moveMult(a);
     const am = actMult(a);
     a.stateT += dt * Math.max(am, 0.0001) * (am === 0 ? 0 : 1);
@@ -793,6 +795,26 @@ export class ActorManager {
     a.progress = this._progress(a);
   }
 
+  // Bombardier champions call a barrage down every few seconds: blasts
+  // telegraphed on the ground under their target and around it (more of them
+  // in later realms), meteors falling into them. Readable, dodgeable, it keeps
+  // a party moving, and killing the champion cancels what hasn't landed.
+  _bombard(a, dt) {
+    a._bombT -= dt * actMult(a);
+    if (a._bombT > 0) return;
+    a._bombT = 4.5 + Math.random() * 1.5;
+    const tgt = a.target?.follow ?? a.target;
+    if (!tgt?.pos || tgt.dead || Math.hypot(tgt.pos.x - a.pos.x, tgt.pos.z - a.pos.z) > 24) { a._bombT = 1; return; }
+    const g = this.g;
+    const n = 2 + Math.min(2, Math.floor(g.floorIndex / 2));
+    for (let i = 0; i < n; i++) {
+      const ang = Math.random() * Math.PI * 2, d = i === 0 ? 0 : 2.2 + Math.random() * 2.5;
+      const x = tgt.pos.x + Math.cos(ang) * d, z = tgt.pos.z + Math.sin(ang) * d;
+      g.broadcastHazard({ shape: 'circle', x, y: g.groundY(x, z), z, r: 2.2, delay: 1.15 + i * 0.25, dmg: a.dmg * 0.8, el: 'enemyFire', kb: 6, vis: 1, src: a.id, fx: 'enemyFire', meteor: 1 });
+    }
+    g.audio?.play('telegraph', { pos: a.pos, volume: 0.6 });
+  }
+
   _progress(a) {
     const at = a.attack;
     switch (a.state) {
@@ -816,7 +838,19 @@ export class ActorManager {
       if (d < bd) { bd = d; best = t; }
     };
     if (a.faction === 'enemy') {
-      for (const p of g.allPlayers()) if (p.alive && !p.dead && !p.downed) consider(p, p.pos, true);
+      // pack hunters (flankers, the fast ones) go for a wizard who strayed
+      // from the party: no ally within 9 m reads as half the distance away
+      const hunter = a.def.flank || a.def.speed >= 5.5;
+      const players = g.allPlayers();
+      for (const p of players) {
+        if (!p.alive || p.dead || p.downed) continue;
+        if (hunter && players.length > 1 && !players.some((q) => q !== p && q.alive && !q.dead && (q.pos.x - p.pos.x) ** 2 + (q.pos.z - p.pos.z) ** 2 < 81)) {
+          const dx = p.pos.x - a.pos.x, dz = p.pos.z - a.pos.z, d = Math.hypot(dx, dz) * 0.5;
+          if (d < bd) { bd = d; best = p; }
+          continue;
+        }
+        consider(p, p.pos, true);
+      }
       for (const al of this._allies) consider(al, al.pos, false);
       if (!best) for (const p of g.allPlayers()) if (p.downed) consider(p, p.pos, true);
     } else {
@@ -892,7 +926,7 @@ export class ActorManager {
     const dist = Math.hypot(dx, dz);
     const tRad = tgt.radius ?? 0.4;
     const faceYaw = Math.atan2(dx, dz);
-    const speed = def.speed * mm * (a.affix === 'hasted' ? 1.4 : 1) * a.speedMult * (a.mask & ST.empower ? 1.15 : 1);
+    const speed = def.speed * mm * (a.affix === 'hasted' ? 1.4 : a.affix === 'frenzied' ? 1.12 : 1) * a.speedMult * (a.mask & ST.empower ? 1.15 : 1);
 
     if (a.state === 'windup') {
       a.yaw = angleDamp(a.yaw, faceYaw, a.attack.kind === 'charge' ? 2 : 8, dt);
@@ -914,7 +948,7 @@ export class ActorManager {
       return out;
     }
     if (a.state === 'recover') {
-      if (a.stateT > (a.attack?.recover ?? 0.6)) this._setState(a, 'chase', 'idle', null);
+      if (a.stateT > (a.attack?.recover ?? 0.6) * (a.affix === 'frenzied' ? 0.5 : 1)) this._setState(a, 'chase', 'idle', null);
       return out;
     }
 
@@ -932,8 +966,9 @@ export class ActorManager {
         if (!this._canUse(a, at, dist, tRad, los)) continue;
         // ranged "fire tokens": only a couple of shooters wind up on one target at once,
         // so volleys stay readable and dodgeable
-        if (a.faction === 'enemy' && RANGED_KINDS.has(at.kind) && this._rangedWindups(tgt, a) >= 2 + (g.floorIndex >= 3 ? 1 : 0)) continue;
-        a.cds[at.id] = (at.cd ?? 0) * rand(0.85, 1.2);
+        if (a.faction === 'enemy' && RANGED_KINDS.has(at.kind) && this._rangedWindups(tgt, a) >= 2 + (g.floorIndex >= 2 ? 1 : 0) + (g.floorIndex >= 4 ? 1 : 0)) continue;
+        // (specials come round a little faster than authored; frenzied champions twice as fast)
+        a.cds[at.id] = (at.cd ?? 0) * rand(0.72, 1.02) * (a.affix === 'frenzied' ? 0.5 : 1);
         this._beginAttack(a, at, tgt);
         return out;
       }
@@ -950,7 +985,7 @@ export class ActorManager {
         if (b === a || b.target !== tgt || b.def.range) continue;
         if (b.state === 'windup' || b.state === 'attack' || b.pos.distanceTo(tp) < tRad + b.radius + 1.2) engaged++;
       }
-      if (engaged >= 3) { waiting = true; wantDist = 4.5 + (a.id % 3); }
+      if (engaged >= 3 + (g.floorIndex >= 2 ? 1 : 0)) { waiting = true; wantDist = 4.5 + (a.id % 3); }
     }
     let move = false, mvx = 0, mvz = 0;
     if (dist > wantDist) {
@@ -1105,8 +1140,10 @@ export class ActorManager {
         const n = at.count ?? 1;
         for (let i = 0; i < n; i++) {
           const spread = n > 1 ? (i / (n - 1) - 0.5) * (at.spread ?? 0.2) * 2 : 0;
-          // lead the target a little
-          const lead = (tgt.vel ? 0.25 : 0);
+          // lead the target by most of the bolt's flight time (a little less
+          // and a little more by turns): running in a straight line gets you
+          // shot, changing direction still slips it
+          const lead = tgt.vel ? Math.min(1.2, Math.hypot(tgt.pos.x - muzzle.x, tgt.pos.z - muzzle.z) / at.speed) * (0.55 + 0.35 * ((a.id * 7 + this._frame) % 5) / 4) : 0;
           const tx = tgt.pos.x + (tgt.vel?.x ?? 0) * lead, tz = tgt.pos.z + (tgt.vel?.z ?? 0) * lead;
           const d = new THREE.Vector3(tx - muzzle.x, tY - muzzle.y, tz - muzzle.z).normalize();
           d.applyAxisAngle(new THREE.Vector3(0, 1, 0), spread);

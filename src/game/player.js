@@ -72,6 +72,7 @@ export class LocalPlayer {
     this.downT = 0;
     this.reviveProgress = 0;
     this.selfRevives = 1;
+    this.downsThisRoom = 0;
     this.parryT = 0;
     this.edge = 0; // spellblade charges
     this.staticDist = 0; this.staticReady = false;
@@ -212,7 +213,10 @@ export class LocalPlayer {
     }
     this.hp = 0;
     this.downed = true;
-    this.downT = 25;
+    // in a party each fall bleeds out sooner than the last one in the same
+    // chamber (20 s, 10 s, 6.7 s...): a revive buys time, not immunity
+    this.downT = g.isSolo ? 25 : Math.max(6, 20 / (1 + this.downsThisRoom));
+    this.downsThisRoom++;
     this.reviveProgress = 0;
     this.endChannel();
     g.audio?.play('downed');

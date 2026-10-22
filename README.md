@@ -12,7 +12,8 @@ A first-person, co-op wizard roguelike for the browser. Fight your way up from t
   - 39 **spell augments**, three per class, that change how a spell works. For example, Fireball bursts into cinders, Chain Lightning forks, and the Arcane Orb boomerangs back to you.
   - A boss at the end of every realm: Mother of Filth, The Executioner, Gravemaw the Stone Wyvern, Archmage Veyrin and the Hollow King. Each boss has 3 phases.
 - **Co-op for 1–4 players**: peer-to-peer over WebRTC with a 5-letter party code, so no game server is needed.
-  - Fallen allies can be revived. Allies who bleed out come back when the chamber is cleared.
+  - Fallen allies can be revived, but each fall in the same chamber bleeds out faster. Allies who bleed out come back when the chamber is cleared.
+  - Enemies scale with the party: more of them, tougher and harder-hitting, and pack hunters go for whoever strays from the group.
   - Every player chooses their own rewards.
 - **Grim, torch-lit visuals**, all generated in code. There are no asset files:
   - GPU-generated stone, wood and metal textures.
@@ -38,7 +39,7 @@ A first-person, co-op wizard roguelike for the browser. Fight your way up from t
 - **And more:**
   - Sigils above doorways reveal the room beyond: ambush, elite, treasure, shrine, merchant or boss.
   - Barrels and crates can be destroyed.
-  - Champion enemies carry affixes: hasted, vampiric, volatile or shielded.
+  - Champion enemies carry affixes: hasted, vampiric, volatile, shielded, frenzied (attacks twice as often) or bombardier (calls meteor barrages down on you).
   - Boss intro cinematics, and fallen co-op players spectate their teammates.
 - **Reasons to come back:**
   - A **run summary** on every victory and defeat: time, realm, kills, damage, your biggest hit, the build you bound, what killed you and a chronicle of every fight. In co-op, every wizard gets a column.

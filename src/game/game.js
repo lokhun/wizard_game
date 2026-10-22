@@ -1307,7 +1307,8 @@ export class Game {
     // revive dead teammates at the end of a room
     if (this.player.dead) { this.player.dead = false; this.player.downed = false; this.player.hp = Math.round(this.player.maxHp * 0.3); this.player.spawnAt(room.cx, room.cz, this.player.yaw); this.ui?.toast('You return from beyond the veil'); }
     if (this.player.downed) this.player.revive(0.3);
-    else if (this.player.alive && this.player.hp < this.player.maxHp) this.player.heal(this.player.maxHp * 0.15 * (this.difficulty.clearHeal ?? 1)); // a breath of respite between fights
+    else if (this.player.alive && this.player.hp < this.player.maxHp) this.player.heal(this.player.maxHp * 0.1 * (this.difficulty.clearHeal ?? 1)); // a breath of respite between fights
+    this.player.downsThisRoom = 0;
     // elite chambers offer a relic instead of a tome (a gold-ringed lectern)
     this.spawnPedestal(room, Math.max(enc?.rarity ?? 0, room.type === ROOM.TRIAL ? (room.trialWon ? 2 : 0) : room.type === ROOM.ELITE ? 3 : 0), room.type === ROOM.ELITE);
     if (this._ctxTips?.sigil) { this._tipQ?.unshift(this._ctxTips.sigil); this._ctxTips.sigil = null; }

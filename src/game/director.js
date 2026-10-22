@@ -8,7 +8,7 @@ import { RNG } from '../core/rng.js';
 // waves scaled to floor and party size, and hands out rewards on clear.
 // ---------------------------------------------------------------------------
 
-const AFFIXES = ['hasted', 'vampiric', 'volatile', 'shielded'];
+export const AFFIXES = ['hasted', 'vampiric', 'volatile', 'shielded', 'frenzied', 'bombardier'];
 
 // Combat role of an enemy type, derived from its definition. Waves are built
 // from roles so every fight has a readable shape (a line to break, a caster to
@@ -93,15 +93,20 @@ export class Director {
 
   get floor() { return this.level.floorIndex; }
   partySize() { return Math.max(1, this.g.allPlayers().length); }
-  hpScale() { return FLOOR_HP[this.floor] * (1 + 0.32 * (this.partySize() - 1)) * (this.g.difficulty?.enemyHp ?? 1); }
-  dmgScale() { return FLOOR_DMG[this.floor] * (this.g.difficulty?.enemyDamage ?? 1); }
-  countScale() { return (1 + 0.5 * (this.partySize() - 1)) * (this.g.difficulty?.enemyCount ?? 1); }
+  // Party scaling: every wizard past the first brings ~3/4 of a solo fight's
+  // bodies, a little more health on each, and harder hits, so each player
+  // still faces about what a solo player does (with 2.5x the bodies and no
+  // extra damage, a 4-player party used to take ~40% less each than solo,
+  // on top of revives) - and the fight gets bigger, not just longer.
+  hpScale() { return FLOOR_HP[this.floor] * (1 + 0.28 * (this.partySize() - 1)) * (this.g.difficulty?.enemyHp ?? 1); }
+  dmgScale() { return FLOOR_DMG[this.floor] * (1 + 0.12 * (this.partySize() - 1)) * (this.g.difficulty?.enemyDamage ?? 1); }
+  countScale() { return (1 + 0.75 * (this.partySize() - 1)) * (this.g.difficulty?.enemyCount ?? 1); }
 
   spawnEnemy(type, x, z, opts = {}) {
     const def = ENEMY_DEFS[type] ?? BOSS_DEFS[type];
     // boss HP in BOSS_DEFS is already tuned per realm, so bosses skip the floor multiplier
     const hp = BOSS_DEFS[type]
-      ? def.hp * (1 + 0.45 * (this.partySize() - 1)) * (this.g.difficulty?.enemyHp ?? 1)
+      ? def.hp * (1 + 0.65 * (this.partySize() - 1)) * (this.g.difficulty?.enemyHp ?? 1)
       : def.hp * this.hpScale() * (opts.elite ? 3 : 1);
     const dmg = def.dmg * this.dmgScale() * (opts.elite ? 1.3 : 1);
     const a = this.g.actors.spawn(type, x, z, { hp, dmg, elite: opts.elite, affix: opts.affix, yaw: opts.yaw ?? Math.random() * 6.28, dormant: opts.dormant, homeRoom: opts.homeRoom, spawnFx: opts.spawnFx });
@@ -210,7 +215,7 @@ export class Director {
         const pack = def.pack ? rng.int(def.pack[0], def.pack[1]) : 1;
         for (let i = 0; i < pack && ((budget > 0 && list.length < cap) || (force && i === 0)); i++) {
           // occasional champion (elite affix) from floor 2 on
-          const elite = (f >= 1 || trial) && rng.chance(((trial ? 0.18 : 0.04) + f * 0.02) * (this.g.difficulty?.champions ?? 1)) && def.cost >= 2;
+          const elite = (f >= 1 || trial) && rng.chance(((trial ? 0.18 : 0.05) + f * 0.025 + (this.partySize() - 1) * 0.02) * (this.g.difficulty?.champions ?? 1)) && def.cost >= 2;
           list.push({ type, elite, affix: elite ? rng.pick(AFFIXES) : null, role: roleOf(type) });
           budget -= def.cost * (elite ? 3 : 1);
         }
