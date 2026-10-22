@@ -197,7 +197,7 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 @keyframes toastIn { from { opacity: 0; transform: translateX(20px);} }
 
 .damage-dir { position: absolute; inset: 0; pointer-events: none; }
-.damage-dir i { position: absolute; left: 50%; top: 50%; width: 180px; height: 180px; margin: -90px 0 0 -90px; border-radius: 50%; border-top: 5px solid rgba(220,20,20,0.9); filter: blur(1px); transition: opacity 0.6s; }
+.damage-dir i { position: absolute; left: 50%; top: 50%; width: 180px; height: 180px; margin: -90px 0 0 -90px; border-radius: 50%; border-top: 5px solid rgba(220,20,20,0.9); filter: blur(1px); will-change: transform, opacity; }
 
 .fade { position: absolute; inset: 0; background: #000; opacity: 0; transition: opacity 0.8s; pointer-events: none; z-index: 50; }
 

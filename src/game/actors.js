@@ -12,6 +12,15 @@ import { BossBrain } from './bosses.js';
 const _frustum = new THREE.Frustum(), _m4 = new THREE.Matrix4(), _sph = new THREE.Sphere();
 const _aiOut = { x: 0, z: 0 }, NO_ATTACKS = [];
 
+// A body that neither posed nor moved since its matrices and bone texture
+// were last made keeps them: see ActorManager._settle.
+function settledMatrixWorld(force) { if (this.settled && !force) return; THREE.Object3D.prototype.updateMatrixWorld.call(this, force); }
+const skeletonUpdate = THREE.Skeleton.prototype.update;
+THREE.Skeleton.prototype.update = function () {
+  if (this.lazy) { if (!this.dirty) return; this.dirty = false; }
+  skeletonUpdate.call(this);
+};
+
 // ---------------------------------------------------------------------------
 // Actors: enemies, bosses and allied summons. The host runs AI and owns HP;
 // clients interpolate snapshots. Damage to players is always resolved by the
@@ -89,6 +98,7 @@ export class Actor {
     this._mvLosT = 0; this._mvLosTgt = null; this._losMove = false; this._losT = 0; this._los = false;
     this._tellT = 0; this._wadeT = null; this._laserBeam = null; this._laserEnd = 0; this._blockT = 0;
     this._rxT = null; this._lastMiasma = null; this._augTracked = false;
+    this._mw = new Float64Array(6); // root position and rotation when last settled
   }
   get alive() { return !this.dead && !this.collapsed; }
 }
@@ -170,6 +180,8 @@ export class ActorManager {
       a.model.root.traverse((o) => { if (o.isMesh && !o.material?.transparent && !o.userData.fx && !o.userData.shadowMerged) { o.castShadow = true; a.casters.push(o); } });
       for (const o of a.model.shadowProxies ?? []) g.renderer.shadowOnly.add(o);
     }
+    a.model.root.updateMatrixWorld = settledMatrixWorld;
+    if (a.model.skeleton) { a.model.skeleton.lazy = true; a.model.skeleton.dirty = true; }
     g.scene.add(a.model.root);
     this.list.push(a);
     this.byId.set(id, a);
@@ -470,7 +482,8 @@ export class ActorManager {
         const sinkAt = a.boss ? 9 : a.deadT > this._sinkOlder ? 1.8 : CORPSE_LINGER;
         if (a.model) {
           // bosses get a longer death performance (visual only: the model keeps animating past progress 1)
-          if (a.deadT < (a.boss ? 4.5 : 1.8)) a.model.update(dt, { anim: 'death', t: a.animT, speed: 0, progress: a.progress, attackType: '' });
+          const posed = a.deadT < (a.boss ? 4.5 : 1.8);
+          if (posed) a.model.update(dt, { anim: 'death', t: a.animT, speed: 0, progress: a.progress, attackType: '' });
           if (a.deadT > sinkAt) {
             a.sinkT = (a.sinkT ?? 0) + dt;
             a.model.root.position.y = a.pos.y - a.sinkT * 0.7;
@@ -487,6 +500,7 @@ export class ActorManager {
             }
           }
         }
+        if (a.model) this._settle(a, a.deadT < (a.boss ? 4.5 : 1.8));
         if (a.model && a.casters) this._castShadow(a);
         if ((a.sinkT ?? 0) > 1.4 || (!a.model && a.deadT > 2.6)) { this.remove(a); listDirty = false; }
         continue;
@@ -525,10 +539,12 @@ export class ActorManager {
           if (!_frustum.intersectsSphere(_sph)) every = shadow ? 2 : 4;
           else if ((a.pos.x - cam.position.x) ** 2 + (a.pos.z - cam.position.z) ** 2 > 900) every = 2;
         }
-        if (every === 1 || (this._frame + a.id) % every === 0 || a.anim !== a._posedAnim) {
+        const posed = every === 1 || (this._frame + a.id) % every === 0 || a.anim !== a._posedAnim;
+        if (posed) {
           m.update(a._poseDt, { anim: a.anim, t: a.animT, speed: a.moveSpeed ?? 0, progress: a.progress, attackType: a.attackType });
           a._poseDt = 0; a._posedAnim = a.anim;
         }
+        this._settle(a, posed);
         if ((a.moveSpeed ?? 0) > 0.5 && a.pos.y < 0) g.wadeFx(a, a.moveSpeed, dt, a.radius ?? 0.5);
         if (a.hitFlash > 0) { m.flash?.(a.hitFlash); a.hitFlash = 0; }
         // status tint
@@ -546,6 +562,19 @@ export class ActorManager {
     if (listDirty) this._rebuildLists();
     // keep lists fresh (spawn state changes)
     this._rebuildLists();
+  }
+
+  // A body that neither posed nor moved this frame - corpses, sentries, the
+  // frames an out-of-view or distant one skips - keeps last frame's matrices
+  // (the scene's matrix pass skips its ~30 nodes) and bone texture (no
+  // upload). Its skeleton is marked dirty on any change, so the first draw
+  // after one, even frames later, still updates it.
+  _settle(a, posed) {
+    const r = a.model.root, c = a._mw;
+    const moved = r.position.x !== c[0] || r.position.y !== c[1] || r.position.z !== c[2] || r.rotation.x !== c[3] || r.rotation.y !== c[4] || r.rotation.z !== c[5];
+    if (moved) { c[0] = r.position.x; c[1] = r.position.y; c[2] = r.position.z; c[3] = r.rotation.x; c[4] = r.rotation.y; c[5] = r.rotation.z; }
+    r.settled = !posed && !moved;
+    if (!r.settled && a.model.skeleton) a.model.skeleton.dirty = true;
   }
 
   // The moon's shadow pass culls only against its own 72 m box, so every body

@@ -45,6 +45,7 @@ export class UI {
     this.modals = root.querySelector('#modals');
     this.fadeEl = root.querySelector('#fade');
     this.dmgDirs = [];
+    this._dmgPool = [];
     // hover / click sounds on any button
     root.addEventListener('mouseover', (e) => { if (e.target.closest?.('.btn, .card, .tome, .shop-item')) this.audio?.play('ui_hover', { volume: 0.25 }); });
     root.addEventListener('click', (e) => { if (e.target.closest?.('.btn, .card')) this.audio?.play('ui_click', { volume: 0.4 }); });
@@ -451,15 +452,14 @@ export class UI {
     if (this.bannerT > 0) { this.bannerT -= dt; if (this.bannerT <= 0) h.banner.classList.remove('show'); }
     // hitmarker fade
     if (this.hitT > 0) { this.hitT -= dt; if (this.hitT <= 0) h.hit.style.opacity = 0; }
-    // damage direction indicators
+    // damage direction indicators (styles written only when they change)
     for (let i = this.dmgDirs.length - 1; i >= 0; i--) {
       const d = this.dmgDirs[i];
       d.t -= dt;
-      const ang = Math.atan2(d.x - p.pos.x, d.z - p.pos.z);
-      const rel = ang - (p.yaw + Math.PI);
-      d.el.style.transform = `rotate(${-rel}rad)`;
-      d.el.style.opacity = Math.max(0, d.t);
-      if (d.t <= 0) { d.el.remove(); this.dmgDirs.splice(i, 1); }
+      if (d.t <= 0) { d.el.style.display = 'none'; this._dmgPool.push(d.el); this.dmgDirs.splice(i, 1); continue; }
+      const rel = Math.atan2(d.x - p.pos.x, d.z - p.pos.z) - (p.yaw + Math.PI);
+      setStyle(d.el, 'transform', `rotate(${(-rel).toFixed(2)}rad)`);
+      setStyle(d.el, 'opacity', Math.min(1, d.t * 1.6).toFixed(2));
     }
     updateRelicShelf(this, game);
     // pointer lock hint
@@ -762,11 +762,25 @@ export class UI {
   healFlash(n) {
     if (this.game) this.game.healPulse = Math.min(1, (this.game.healPulse ?? 0) + n / 40);
   }
-  damageDirection(from, p) {
-    if (!from || !this.h) return;
-    const el = document.createElement('i');
-    this.h.dmgDir.appendChild(el);
-    this.dmgDirs.push({ el, x: from.x, z: from.z, t: 1 });
+  // One marker per direction: a hit within ~25° of a live marker renews it,
+  // and the elements are pooled (eight at most). A crowd used to stack a new
+  // blurred ring per hit, each restyled every frame.
+  damageDirection(from, p = this.game?.player) {
+    if (!from || !this.h || !p) return;
+    const ang = Math.atan2(from.x - p.pos.x, from.z - p.pos.z);
+    for (const d of this.dmgDirs) {
+      const da = Math.atan2(d.x - p.pos.x, d.z - p.pos.z) - ang;
+      if (Math.abs(Math.atan2(Math.sin(da), Math.cos(da))) < 0.45) { d.x = from.x; d.z = from.z; d.t = 1; return; }
+    }
+    let d = this.dmgDirs.length >= 8 ? this.dmgDirs.shift() : null;
+    if (!d) {
+      const el = this._dmgPool.pop() ?? document.createElement('i');
+      if (el.parentNode !== this.h.dmgDir) this.h.dmgDir.appendChild(el);
+      el.style.display = '';
+      d = { el, x: 0, z: 0, t: 1 };
+    }
+    d.x = from.x; d.z = from.z; d.t = 1;
+    this.dmgDirs.push(d);
   }
   slotDenied(slot) {
     const el = this.h?.slots[slot];

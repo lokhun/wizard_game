@@ -5,6 +5,8 @@ import { getAvatar } from './models.js';
 import { angleDamp } from '../core/math.js';
 import { makeCtx } from './caster.js';
 
+const _frustum = new THREE.Frustum(), _m4 = new THREE.Matrix4(), _sph = new THREE.Sphere(new THREE.Vector3(), 1.6);
+
 // A co-op teammate as seen on this machine: an animated avatar driven by
 // network state, plus replay of their spells for visuals.
 export class RemotePlayer {
@@ -37,6 +39,7 @@ export class RemotePlayer {
     this.staticReady = false;
     this.edge = 0;
     this.disposed = false;
+    this._poseDt = 0; this._posedAnim = null; this._lod = 0;
   }
 
   get eye() { return new THREE.Vector3(this.pos.x, this.pos.y + 1.6, this.pos.z); }
@@ -123,7 +126,16 @@ export class RemotePlayer {
     av.root.rotation.y = this.yaw + Math.PI; // avatar faces +Z, player looks -Z
     av.root.visible = !this.dead || true;
     const anim = this.dead ? 'dead' : this.downed ? 'downed' : this.channel || this.castT > 0 ? 'cast' : speed > 0.4 ? 'move' : 'idle';
-    av.update(dt, { anim, t: this.game.time, speed, pitch: this.pitch, castProgress: this.channel ? 0.5 : 1 - this.castT * 2, strafe: 0 });
+    // out of view, the wizard (bones, cloth) poses every 4th frame, the skipped
+    // time carried; never while it casts, so spells leave from the right hand
+    const cam = this.game.renderer.camera;
+    _frustum.setFromProjectionMatrix(_m4.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+    _sph.center.set(this.pos.x, this.pos.y + 1, this.pos.z);
+    this._poseDt += dt;
+    if (_frustum.intersectsSphere(_sph) || anim === 'cast' || anim !== this._posedAnim || ++this._lod % 4 === 0) {
+      av.update(this._poseDt, { anim, t: this.game.time, speed, pitch: this.pitch, castProgress: this.channel ? 0.5 : 1 - this.castT * 2, strafe: 0 });
+      this._poseDt = 0; this._posedAnim = anim;
+    }
     if (this.channel) {
       const ctx = this.channel.ctx;
       ctx.origin.copy(this.muzzleWorld());
