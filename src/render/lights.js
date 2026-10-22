@@ -27,8 +27,11 @@ export class LightPool {
       this.fxLights.push(l);
     }
     this.torches = []; // {pos, color, intensity, range, seed, flicker, enabled}
-    this.requests = [];
-    this.flashes = []; // timed lights {pos,color,intensity,range,life,t}
+    this._reqPool = []; this.nReq = 0; // this frame's requests: _reqPool[0..nReq)
+    this.flashes = []; // timed lights {x,y,z,color,intensity,range,life,t}
+    this._flashPool = [];
+    this._near = []; // the nearest torches, in order (n + 1: the last sets the fade cutoff)
+    this._top = []; // the strongest requests, in order
   }
 
   clearTorches() { this.torches.length = 0; }
@@ -50,32 +53,42 @@ export class LightPool {
     return t;
   }
 
-  // request a light for this frame only
+  // request a light for this frame only (pooled: dozens of these a frame in a fight)
   request(pos, color, intensity, range = 8) {
-    this.requests.push({ x: pos.x, y: pos.y, z: pos.z, color, intensity, range });
+    const r = (this._reqPool[this.nReq++] ??= { x: 0, y: 0, z: 0, color: null, intensity: 0, range: 0, score: 0, k: 1 });
+    r.x = pos.x; r.y = pos.y; r.z = pos.z; r.color = color; r.intensity = intensity; r.range = range;
   }
 
   // a timed flash (explosions, impacts)
   flash(pos, color, intensity, range = 8, life = 0.25) {
     if (this.settings?.calm) intensity *= 0.45; // "Reduce flashing"
-    this.flashes.push({ x: pos.x, y: pos.y, z: pos.z, color: new THREE.Color(color), intensity, range, life, t: 0 });
+    const f = this._flashPool.pop() ?? { x: 0, y: 0, z: 0, color: new THREE.Color(), intensity: 0, range: 0, life: 0, t: 0 };
+    f.x = pos.x; f.y = pos.y; f.z = pos.z; f.color.set(color); f.intensity = intensity; f.range = range; f.life = life; f.t = 0;
+    this.flashes.push(f);
   }
 
   update(dt, time, cam) {
     const cx = cam.x, cy = cam.y, cz = cam.z;
-    // --- torches
+    // --- torches: the n nearest (weighted) by insertion into a short ordered
+    // list, so a frame neither copies nor sorts the realm's few hundred torches
     const ts = this.torches;
-    for (const t of ts) {
-      const dx = t.pos.x - cx, dy = t.pos.y - cy, dz = t.pos.z - cz;
-      t.d2 = t.enabled ? (dx * dx + dy * dy + dz * dz) * t.priority : 1e12;
-    }
-    // partial selection: sort is fine for a few hundred torches
-    const sorted = ts.slice().sort((a, b) => a.d2 - b.d2);
     const n = this.torchLights.length;
-    const cutoff = sorted.length > n ? Math.sqrt(sorted[n].d2) : 1e6;
+    const near = this._near;
+    near.length = 0;
+    for (let i = 0; i < ts.length; i++) {
+      const t = ts[i];
+      const dx = t.pos.x - cx, dy = t.pos.y - cy, dz = t.pos.z - cz;
+      const d2 = t.enabled ? (dx * dx + dy * dy + dz * dz) * t.priority : 1e12;
+      t.d2 = d2;
+      if (near.length > n && d2 >= near[n].d2) continue;
+      let j = near.length < n + 1 ? near.length++ : n;
+      while (j > 0 && near[j - 1].d2 > d2) { near[j] = near[j - 1]; j--; }
+      near[j] = t;
+    }
+    const cutoff = near.length > n ? Math.sqrt(near[n].d2) : 1e6;
     for (let i = 0; i < n; i++) {
       const l = this.torchLights[i];
-      const t = sorted[i];
+      const t = near[i];
       if (!t || t.d2 > 1e11) { l.intensity = 0; continue; }
 
       const d = Math.sqrt(t.d2);
@@ -93,39 +106,45 @@ export class LightPool {
     for (let i = this.flashes.length - 1; i >= 0; i--) {
       const f = this.flashes[i];
       f.t += dt;
-      if (f.t >= f.life) { this.flashes.splice(i, 1); continue; }
+      if (f.t >= f.life) { this.flashes[i] = this.flashes[this.flashes.length - 1]; this.flashes.pop(); this._flashPool.push(f); continue; }
       const k = 1 - f.t / f.life;
-      this.requests.push({ x: f.x, y: f.y, z: f.z, color: f.color, intensity: f.intensity * k * k, range: f.range });
+      this.request(f, f.color, f.intensity * k * k, f.range);
     }
-    const reqs = this.requests;
-    for (const r of reqs) {
+    // the m strongest (as seen from the camera), in order
+    const m = this.fxLights.length;
+    const top = this._top;
+    top.length = 0;
+    for (let i = 0; i < this.nReq; i++) {
+      const r = this._reqPool[i];
       const dx = r.x - cx, dy = r.y - cy, dz = r.z - cz;
-      r.score = r.intensity / (1 + (dx * dx + dy * dy + dz * dz) * 0.02);
+      const sc = (r.score = r.intensity / (1 + (dx * dx + dy * dy + dz * dz) * 0.02));
+      if (top.length >= m && sc <= top[m - 1].score) continue;
+      let j = top.length < m ? top.length++ : m - 1;
+      while (j > 0 && top[j - 1].score < sc) { top[j] = top[j - 1]; j--; }
+      top[j] = r;
     }
-    reqs.sort((a, b) => b.score - a.score);
     // Overlapping blasts (a fireball, the burn it leaves, the deaths it causes)
     // would add their light up and wash the room white. Lights within a few
     // metres share a budget: one blast keeps its full strength, a pile-up
     // gets no brighter than the strongest of them plus a little.
-    const m = Math.min(reqs.length, this.fxLights.length);
-    for (let i = 0; i < m; i++) {
-      const a = reqs[i];
-      let sum = 0, top = 0;
-      for (let j = 0; j < m; j++) {
-        const b = reqs[j];
+    for (let i = 0; i < top.length; i++) {
+      const a = top[i];
+      let sum = 0, mx = 0;
+      for (let j = 0; j < top.length; j++) {
+        const b = top[j];
         const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
-        if (dx * dx + dy * dy + dz * dz < FX_CLUSTER_R2) { sum += b.intensity; if (b.intensity > top) top = b.intensity; }
+        if (dx * dx + dy * dy + dz * dz < FX_CLUSTER_R2) { sum += b.intensity; if (b.intensity > mx) mx = b.intensity; }
       }
-      a.k = sum > 0 ? Math.min(1, Math.max(FX_BUDGET, top * 1.25) / sum) : 1;
+      a.k = sum > 0 ? Math.min(1, Math.max(FX_BUDGET, mx * 1.25) / sum) : 1;
       // a light at your own hand (muzzle flares, a ward you stand in) lights
       // whatever you're pressed against from a hand's breadth: it would blow
       // shiny armour and close walls out to white, so it eases off near the eye
       const dx = a.x - cx, dy = a.y - cy, dz = a.z - cz, dc = Math.sqrt(dx * dx + dy * dy + dz * dz);
       if (dc < 2.5) a.k *= 0.35 + 0.65 * Math.max(0, (dc - 0.4) / 2.1);
     }
-    for (let i = 0; i < this.fxLights.length; i++) {
+    for (let i = 0; i < m; i++) {
       const l = this.fxLights[i];
-      const r = reqs[i];
+      const r = top[i];
       if (!r) { l.intensity = 0; continue; }
 
       l.position.set(r.x, r.y, r.z);
@@ -133,6 +152,8 @@ export class LightPool {
       l.intensity = r.intensity * r.k;
       l.distance = r.range;
     }
-    reqs.length = 0;
+    this.nReq = 0;
+    for (let i = 0; i < m; i++) top[i] = null;
+    top.length = 0;
   }
 }

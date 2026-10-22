@@ -302,7 +302,9 @@ function installGpuTimer(R, perDraw) {
     if (window.__rec) add('frame', 0);
     const rt = this.sceneRT;
     r.setRenderTarget(rt);
+    this.skipResolve = rt.samples > 0;
     time('scene', () => r.render(this.scene, this.camera));
+    this.skipResolve = false;
     time('view', () => this.viewPass.render(r, null, rt));
     time('bloom', () => this.bloomMips(rt));
     const u = this.finalMat.uniforms;

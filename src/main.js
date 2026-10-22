@@ -105,6 +105,7 @@ async function boot() {
   await frame();
   startBackdrop();
   await renderer.postReady; // (bloom and grade programs, compiled in parallel since the renderer was made)
+  ui.warmFonts(); // (while the menu is up)
   ui.loading(1, 'Ready');
   await frame();
   ui.hideLoading();

@@ -78,8 +78,15 @@ export class Director {
       }
       p ??= this._spawnPoint(room, s.role);
       const yaw = camp ? Math.atan2(camp.x - p.x, camp.z - p.z) : undefined;
-      const a = this.spawnEnemy(s.type, p.x, p.z, { elite: s.elite, affix: s.affix, dormant: true, homeRoom: room, spawnFx: false, yaw });
-      room.sentryIds.push(a.id);
+      // one body every 20 ms, not the squad in one frame (each is ~0.5-1 ms
+      // of model building: a squad was a visible hitch while exploring)
+      const level = this.level;
+      this.g.spells.after(k * 0.02, () => {
+        if (this.level !== level || room.cleared) return;
+        const a = this.spawnEnemy(s.type, p.x, p.z, { elite: s.elite, affix: s.affix, dormant: true, homeRoom: room, spawnFx: false, yaw, noCredit: true });
+        room.sentryIds.push(a.id);
+        if (this.active?.room === room) this.active.spawned.add(a.id); // (the fight began meanwhile)
+      });
       k++;
     }
   }

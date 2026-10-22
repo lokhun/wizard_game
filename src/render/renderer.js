@@ -8,8 +8,9 @@ import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 
 // Final grading: grim color grade, vignette, film grain, chromatic aberration
-// and a red damage vignette, in linear HDR. SCENE(uv) is the HDR frame;
-// FINISH runs after the grade (tone mapping and sRGB in the fused pass).
+// and a red damage vignette, in linear HDR. SCENE(uv) is the HDR frame
+// (SHARP(uv) + BLOOM(uv)); FINISH runs after the grade (tone mapping and sRGB
+// in the fused pass).
 const GRADE_MAIN = /* glsl */ `
     uniform float uTime, uVignette, uGrain, uDamage, uHeal, uAberration, uSaturation, uDesat, uDash;
     uniform vec3 uLift, uGain, uTint, uFlash, uDashCol;
@@ -22,9 +23,11 @@ const GRADE_MAIN = /* glsl */ `
       float r2 = dot(dc, dc);
       float ab = uAberration + uDamage * 0.006;
       vec3 col;
-      col.r = SCENE(uv - dc * ab * (1.0 + r2 * 4.0)).r;
-      col.g = SCENE(uv).g;
-      col.b = SCENE(uv + dc * ab * (1.0 + r2 * 4.0)).b;
+      // (the split is of the sharp frame only: bloom is a soft blur, fetched once)
+      col.r = SHARP(uv - dc * ab * (1.0 + r2 * 4.0)).r;
+      col.g = SHARP(uv).g;
+      col.b = SHARP(uv + dc * ab * (1.0 + r2 * 4.0)).b;
+      col += BLOOM(uv);
       // dash: the edges of the view smear toward the centre and class-tinted
       // speed streaks race outward; the centre stays sharp so aim is kept
       float dashEdge = 0.0;
@@ -89,6 +92,8 @@ const GradeShader = {
   `,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
+    #define SHARP(uv) texture2D(tDiffuse, uv).rgb
+    #define BLOOM(uv) vec3(0.0)
     #define SCENE(uv) texture2D(tDiffuse, uv).rgb
     #define FINISH
     ${GRADE_MAIN}
@@ -114,6 +119,8 @@ const FINAL_FRAG = /* glsl */ `
   #include <tonemapping_pars_fragment>
   #include <colorspace_pars_fragment>
   vec3 bloomAt(vec2 uv){ return texture2D(tBloom, uv).rgb; }
+  #define SHARP(uv) texture2D(tDiffuse, uv).rgb
+  #define BLOOM(uv) bloomAt(uv)
   #define SCENE(uv) (texture2D(tDiffuse, uv).rgb + bloomAt(uv))
   #define FINISH gl_FragColor.rgb = ACESFilmicToneMapping(gl_FragColor.rgb); gl_FragColor = sRGBTransferOETF(gl_FragColor);
   ${GRADE_MAIN}
@@ -133,9 +140,20 @@ THREE.ShaderChunk.lights_fragment_begin = THREE.ShaderChunk.lights_fragment_begi
 // half. With additive blending and no depth writes the two halves commute, so
 // one pass gives the same pixels for half the draw calls; flames, beams,
 // slashes and glows are all of this kind. (An explicit forceSinglePass still wins.)
+//
+// The other transparent double-sided materials (robes, ghosts, slime) still
+// draw in two halves, back faces first, but three.js does it by flipping
+// material.side and flagging the material before each half: two full program
+// lookups (parameters and cache key) per draw, every frame - the biggest single
+// cost of rendering a crowd of robed casters. Renderer.twoPass draws the same
+// two halves with the double-sided program and the face culling set per half:
+// the same pixels, since that program turns back-face normals around just as
+// the back-side one does.
+const additiveOnePass = (m) => m.blending === THREE.AdditiveBlending && !m.depthWrite;
+const twoPass = (m) => m.transparent && m.side === THREE.DoubleSide && !m._forceSinglePass && !additiveOnePass(m);
 Object.defineProperty(THREE.Material.prototype, 'forceSinglePass', {
   configurable: true,
-  get() { return this._forceSinglePass || (this.blending === THREE.AdditiveBlending && !this.depthWrite); },
+  get() { return this._forceSinglePass || additiveOnePass(this) || (this.transparent && this.side === THREE.DoubleSide); },
   set(v) { this._forceSinglePass = v; },
 });
 
@@ -164,6 +182,14 @@ export class Renderer {
     // shadow maps are only used by the courtyard moon (outdoor realm)
     this.renderer.shadowMap.enabled = quality === 'high' || quality === 'ultra';
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    // Depth-only twins (an enemy's opaque parts merged, see Rig.finish) are
+    // hidden from every pass but the shadow map's
+    this.shadowOnly = new Set();
+    const sm = this.renderer.shadowMap, smRender = sm.render.bind(sm);
+    sm.render = (...a) => {
+      for (const o of this.shadowOnly) o.visible = true;
+      try { smRender(...a); } finally { for (const o of this.shadowOnly) o.visible = false; }
+    };
     this.renderer.info.autoReset = true;
     // Opaque draws grouped by shader program, then material, then front to
     // back (three.js groups by material only). Every program switch re-sends
@@ -171,6 +197,8 @@ export class Renderer {
     // its own materials, used to switch program on nearly every draw.
     const props = this.renderer.properties;
     const prog = (m) => props.get(m).currentProgram?.id ?? 0;
+    this._twoPassDraws();
+    this._oneResolve();
     this.renderer.setOpaqueSort((a, b) => a.groupOrder - b.groupOrder || a.renderOrder - b.renderOrder || prog(a.material) - prog(b.material)
       || a.material.id - b.material.id || a.materialVariant - b.materialVariant || a.z - b.z || a.id - b.id);
 
@@ -259,6 +287,39 @@ export class Renderer {
     this.grade = new ShaderPass(GradeShader);
     this.composer.addPass(this.grade);
     this.composer.addPass(new OutputPass());
+  }
+
+  // (see twoPass above) back faces, then front faces, of one draw
+  _twoPassDraws() {
+    const r = this.renderer, state = r.state, gl = r.getContext();
+    let half = 0;
+    const setMaterial = state.setMaterial.bind(state);
+    state.setMaterial = (material, frontFaceCW) => {
+      setMaterial(material, frontFaceCW);
+      if (half) { state.enable(gl.CULL_FACE); state.setCullFace(half === 1 ? THREE.CullFaceFront : THREE.CullFaceBack); }
+    };
+    const rbd = r.renderBufferDirect.bind(r);
+    r.renderBufferDirect = (camera, scene, geometry, material, object, group) => {
+      if (!twoPass(material)) return rbd(camera, scene, geometry, material, object, group);
+      try {
+        half = 1; rbd(camera, scene, geometry, material, object, group);
+        half = 2; rbd(camera, scene, geometry, material, object, group);
+      } finally { half = 0; state.setCullFace(THREE.CullFaceBack); }
+    };
+  }
+
+  // On High the HDR target is multisampled, and three.js resolves it at the end
+  // of every render call: the scene's resolve (a full-screen read of all four
+  // samples and a write, in half float) was thrown away when the hands' render
+  // resolved the same target again. Worse, a resolve also tells the driver it
+  // may discard the multisampled colour, which the hands then drew over. While
+  // skipResolve is set the scene's resolve (blit and discard) is left out.
+  _oneResolve() {
+    const gl = this.renderer.getContext();
+    const blit = gl.blitFramebuffer.bind(gl), invalidate = gl.invalidateFramebuffer.bind(gl);
+    this.skipResolve = false;
+    gl.blitFramebuffer = (...a) => { if (!this.skipResolve) blit(...a); };
+    gl.invalidateFramebuffer = (...a) => { if (!this.skipResolve) invalidate(...a); };
   }
 
   // "Reduce flashing" (settings): bloom at a bit over half strength
@@ -350,6 +411,7 @@ export class Renderer {
     // The target is cleared by the next frame, so none of this is ever seen.
     const show = (o, on) => {
       if (o.isLight) { if (!on && o.visible) { o.visible = false; flipped.push(o); } return; }
+      if (o.userData.shadowProxy) return; // (only ever drawn by the shadow pass)
       if (all && !o.visible) { o.visible = true; flipped.push(o); on = false; }
       if (o.frustumCulled && (o.isMesh || o.isPoints || o.isSprite || o.isLine)) { o.frustumCulled = false; culled.push(o); }
       for (const c of o.children) show(c, on);
@@ -405,15 +467,21 @@ export class Renderer {
   // Compile one object's materials (not yet in the scene) against the scene's
   // lights and the HDR target, on the driver's threads where it can: the
   // promise resolves once its programs are ready to draw without stalling.
-  async compileObject(obj, scene = this.scene, { timeout = 20000 } = {}) {
+  // With all, its hidden parts too (cast glows and the like).
+  async compileObject(obj, scene = this.scene, { timeout = 20000, all = false } = {}) {
     const r = this.renderer;
     const prev = r.getRenderTarget();
     r.setRenderTarget(this.hdrTarget);
     let ready = null;
+    const flipped = [];
+    if (all) obj.traverse((o) => { if (!o.visible && !o.isLight && !o.userData.shadowProxy) { o.visible = true; flipped.push(o); } });
     try {
       if (r.extensions.has('KHR_parallel_shader_compile')) ready = r.compileAsync(obj, this.camera, scene);
       else r.compile(obj, this.camera, scene);
-    } finally { r.setRenderTarget(prev); }
+    } finally {
+      for (const o of flipped) o.visible = false;
+      r.setRenderTarget(prev);
+    }
     if (ready) await Promise.race([ready, new Promise((res) => setTimeout(res, timeout))]);
   }
 
@@ -429,9 +497,10 @@ export class Renderer {
 
   _renderFused() {
     const r = this.renderer, rt = this.sceneRT;
-    // (the scene's colour background clears the target)
+    // (the scene's colour background clears the target; the hands' render resolves it)
     r.setRenderTarget(rt);
-    r.render(this.scene, this.camera);
+    this.skipResolve = rt.samples > 0;
+    try { r.render(this.scene, this.camera); } finally { this.skipResolve = false; }
     this.viewPass.render(r, null, rt);
     this.bloomMips(rt);
     const u = this.finalMat.uniforms;

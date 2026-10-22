@@ -10,6 +10,7 @@ import { getEnemyModel } from './models.js';
 import { BossBrain } from './bosses.js';
 
 const _frustum = new THREE.Frustum(), _m4 = new THREE.Matrix4(), _sph = new THREE.Sphere();
+const _aiOut = { x: 0, z: 0 }, NO_ATTACKS = [];
 
 // ---------------------------------------------------------------------------
 // Actors: enemies, bosses and allied summons. The host runs AI and owns HP;
@@ -72,6 +73,22 @@ export class Actor {
     // sentries placed before the party arrives: idle until they notice someone
     this.dormant = !!opts.dormant;
     this.homeRoom = opts.homeRoom ?? null;
+    // Every field an actor ever gets, declared here in one order. Added as
+    // they came up (by state, attack, status, encounter), actors ended up with
+    // dozens of hidden classes: every read of a number off one went through a
+    // megamorphic lookup that also boxed the number - slow, and a quarter of a
+    // fight's garbage. (null where code reads "not set yet" with ??)
+    this.model = null; this.radius = 0.5; this.height = 1.8; this.flying = false;
+    this.casters = null; this._shadowOn = null;
+    this.dotAcc = 0; this.moveSpeed = 0;
+    this.attack = null; this.attackDef = null; this.atkTarget = null; this.brain = null; this.brainAttackType = null; this.netDur = null;
+    this.leapT = 0; this.leapV = null; this.jv = null;
+    this.wakeAt = 0; this.dormantT = 0; this.sinkT = 0; this.hiddenT = 0; this.deathMask = 0;
+    this.reassembled = false; this.champion = null; this._champT = null;
+    this._prevAnim = null; this._poseDt = 0; this._posedAnim = null; this._tint = null;
+    this._mvLosT = 0; this._mvLosTgt = null; this._losMove = false; this._losT = 0; this._los = false;
+    this._tellT = 0; this._wadeT = null; this._laserBeam = null; this._laserEnd = 0; this._blockT = 0;
+    this._rxT = null; this._lastMiasma = null; this._augTracked = false;
   }
   get alive() { return !this.dead && !this.collapsed; }
 }
@@ -113,7 +130,18 @@ export class ActorManager {
 
   hostiles() { return this._hostiles; }
   allies() { return this._allies; }
+  // A fresh array only when the membership changed (this runs every frame and
+  // on every spawn); a list handed out is never changed under its holder.
   _rebuildLists() {
+    const h = this._hostiles, al = this._allies;
+    let nh = 0, na = 0, same = !!h;
+    for (let i = 0; same && i < this.list.length; i++) {
+      const a = this.list[i];
+      if (!a.alive) continue;
+      if (a.faction === 'enemy' && a.state !== 'spawn') same = h[nh++] === a;
+      else if (a.faction === 'ally') same = al[na++] === a;
+    }
+    if (same && nh === h.length && na === al.length) return;
     this._hostiles = this.list.filter((a) => a.alive && a.faction === 'enemy' && a.state !== 'spawn');
     this._allies = this.list.filter((a) => a.alive && a.faction === 'ally');
   }
@@ -136,7 +164,12 @@ export class ActorManager {
     if (a.faction === 'ally') a.model.setTint?.(0x50e890, 0.45);
     else if (a.def.tint) a.model.setTint?.(a.def.tint, 0.5);
     if (a.elite && !a.def.elite) a.model.setTint?.(0xffaa30, 0.25);
-    if (g.shadowsOn) a.model.root.traverse((o) => { if (o.isMesh && !o.material?.transparent) o.castShadow = true; });
+    if (g.shadowsOn) {
+      // (parts merged into a shadow twin cast through it; boss fx never cast)
+      a.casters = [];
+      a.model.root.traverse((o) => { if (o.isMesh && !o.material?.transparent && !o.userData.fx && !o.userData.shadowMerged) { o.castShadow = true; a.casters.push(o); } });
+      for (const o of a.model.shadowProxies ?? []) g.renderer.shadowOnly.add(o);
+    }
     g.scene.add(a.model.root);
     this.list.push(a);
     this.byId.set(id, a);
@@ -161,6 +194,7 @@ export class ActorManager {
 
   _disposeModel(a) {
     if (a.model) {
+      for (const o of a.model.shadowProxies ?? []) this.g.renderer.shadowOnly.delete(o);
       this.g.scene.remove(a.model.root);
       a.model.dispose?.();
       a.model = null;
@@ -453,6 +487,7 @@ export class ActorManager {
             }
           }
         }
+        if (a.model && a.casters) this._castShadow(a);
         if ((a.sinkT ?? 0) > 1.4 || (!a.model && a.deadT > 2.6)) { this.remove(a); listDirty = false; }
         continue;
       }
@@ -482,10 +517,12 @@ export class ActorManager {
         a.animT += animDt;
         a._poseDt = (a._poseDt ?? 0) + animDt;
         let every = 1;
+        const shadow = a.casters ? this._castShadow(a) : false;
         if (!a.boss) {
           _sph.center.set(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z);
           _sph.radius = Math.max(a.height, a.radius * 2) * 0.75 + 0.5;
-          if (!_frustum.intersectsSphere(_sph)) every = 4;
+          // (a body off screen whose shadow is on screen keeps its shadow smooth)
+          if (!_frustum.intersectsSphere(_sph)) every = shadow ? 2 : 4;
           else if ((a.pos.x - cam.position.x) ** 2 + (a.pos.z - cam.position.z) ** 2 > 900) every = 2;
         }
         if (every === 1 || (this._frame + a.id) % every === 0 || a.anim !== a._posedAnim) {
@@ -509,6 +546,23 @@ export class ActorManager {
     if (listDirty) this._rebuildLists();
     // keep lists fresh (spawn state changes)
     this._rebuildLists();
+  }
+
+  // The moon's shadow pass culls only against its own 72 m box, so every body
+  // in it was drawn a second time (a draw per mesh, 8-10 a body, and its
+  // skeleton uploaded) even behind the camera: half the draw calls of an
+  // outdoor fight. A body casts only while its shadow can reach the view: a
+  // sphere around it grown by the shadow's length (the moon stands ~45° up,
+  // so about the body's height) meets the camera frustum.
+  _castShadow(a) {
+    _sph.center.set(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z);
+    _sph.radius = Math.max(a.height, a.radius * 2) * 0.75 + a.height * 1.1 + 1;
+    const on = _frustum.intersectsSphere(_sph);
+    if (on !== a._shadowOn) {
+      a._shadowOn = on;
+      for (const o of a.casters) o.castShadow = on;
+    }
+    return on;
   }
 
   _statusFx(a, dt) {
@@ -628,11 +682,14 @@ export class ActorManager {
     }
     a.dotAcc = dotAcc;
     // wet when standing in water
-    if (!a.flying && a.pos.y < -0.2) S.wet = { t: 1.5 };
+    if (!a.flying && a.pos.y < -0.2) { if (S.wet) S.wet.t = 1.5; else S.wet = { t: 1.5 }; }
     // war-banner aura: empowers other foes nearby while the bearer lives
     if (a.def.aura && a.faction === 'enemy') {
       const R2 = a.def.aura.radius * a.def.aura.radius;
-      for (const b of this._hostiles) if (b !== a && (b.pos.x - a.pos.x) ** 2 + (b.pos.z - a.pos.z) ** 2 < R2) b.st.empower = { t: 0.5 };
+      for (const b of this._hostiles) {
+        if (b === a || (b.pos.x - a.pos.x) ** 2 + (b.pos.z - a.pos.z) ** 2 >= R2) continue;
+        if (b.st.empower) b.st.empower.t = 0.5; else b.st.empower = { t: 0.5 };
+      }
     }
     a.mask = statusMask(S);
     a.stacks.poison = S.poison?.t > 0 ? S.poison.n : 0;
@@ -666,7 +723,9 @@ export class ActorManager {
     }
 
     // separation from other actors
-    for (const b of this.list) {
+    const list = this.list;
+    for (let i = 0; i < list.length; i++) {
+      const b = list[i];
       if (b === a || b.dead) continue;
       const dx = a.pos.x - b.pos.x, dz = a.pos.z - b.pos.z;
       const rr = a.radius + b.radius;
@@ -678,7 +737,9 @@ export class ActorManager {
       }
     }
     // keep out of players
-    for (const p of g.allPlayers()) {
+    const players = g.allPlayers();
+    for (let i = 0; i < players.length; i++) {
+      const p = players[i];
       if (!p.alive || p.dead) continue;
       const dx = a.pos.x - p.pos.x, dz = a.pos.z - p.pos.z;
       // shields and big weapons stick out past the body radius: keep those further from the camera
@@ -740,10 +801,12 @@ export class ActorManager {
     return best;
   }
 
+  // (returns one shared object: read it before the next actor's turn)
   _ai(a, dt, mm, am) {
     const g = this.g;
     const def = a.def;
-    const out = { x: 0, z: 0 };
+    const out = _aiOut;
+    out.x = 0; out.z = 0;
     for (const k in a.cds) a.cds[k] -= dt * am;
 
     if (a.dormant) {
@@ -832,7 +895,9 @@ export class ActorManager {
       // line of sight only when an attack that needs it is off cooldown (it was
       // marched every frame for every chasing enemy, mostly to be ignored)
       let los = null;
-      for (const at of def.attacks ?? []) {
+      const attacks = def.attacks ?? NO_ATTACKS;
+      for (let i = 0; i < attacks.length; i++) {
+        const at = attacks[i];
         if ((a.cds[at.id] ?? 0) > 0) continue;
         if (los === null && LOS_KINDS.has(at.kind)) los = g.collision.los(a.pos.x, a.pos.y + a.height * 0.7, a.pos.z, tp.x, tp.y + 1.2, tp.z);
         if (!this._canUse(a, at, dist, tRad, los)) continue;
@@ -858,7 +923,7 @@ export class ActorManager {
       }
       if (engaged >= 3) { waiting = true; wantDist = 4.5 + (a.id % 3); }
     }
-    let moveDir = null;
+    let move = false, mvx = 0, mvz = 0;
     if (dist > wantDist) {
       // line of sight to the target, re-checked a few times a second per actor
       if (!(a._mvLosT > g.time) || a._mvLosTgt !== tgt) {
@@ -866,36 +931,38 @@ export class ActorManager {
         a._losMove = dist < 25 && g.collision.los(a.pos.x, a.pos.y + 0.8, a.pos.z, tp.x, tp.y + 0.8, tp.z);
       }
       const los = a._losMove && dist < 25;
-      if (los) moveDir = { x: dx / dist, z: dz / dist };
-      else {
+      move = true;
+      mvx = dx / dist; mvz = dz / dist;
+      if (!los) {
         const f = this.pathing.field(tp.x, tp.z, g.time);
-        if (f && this.pathing.dir(f, a.pos.x, a.pos.z, _dir)) moveDir = { x: _dir.x, z: _dir.z };
-        else moveDir = { x: dx / dist, z: dz / dist };
+        if (f && this.pathing.dir(f, a.pos.x, a.pos.z, _dir)) { mvx = _dir.x; mvz = _dir.z; }
       }
       // flankers circle around
       if (def.flank && dist < 8) {
         const side = (a.id % 2 ? 1 : -1);
-        moveDir.x += -dz / dist * 0.6 * side; moveDir.z += dx / dist * 0.6 * side;
-        const l = Math.hypot(moveDir.x, moveDir.z); moveDir.x /= l; moveDir.z /= l;
+        mvx += -dz / dist * 0.6 * side; mvz += dx / dist * 0.6 * side;
+        const l = Math.hypot(mvx, mvz); mvx /= l; mvz /= l;
       }
     } else if (waiting) {
       const side = (a.id % 2 ? 1 : -1);
-      moveDir = { x: -dz / dist * side * 0.6 - dx / dist * 0.2, z: dx / dist * side * 0.6 - dz / dist * 0.2 };
+      move = true;
+      mvx = -dz / dist * side * 0.6 - dx / dist * 0.2; mvz = dx / dist * side * 0.6 - dz / dist * 0.2;
     } else if (pref && dist < pref[0]) {
       // kite away
-      moveDir = { x: -dx / dist, z: -dz / dist };
       const side = Math.sin(g.time * 0.7 + a.id) > 0 ? 1 : -1;
-      moveDir.x += -dz / dist * 0.5 * side; moveDir.z += dx / dist * 0.5 * side;
+      move = true;
+      mvx = -dx / dist - dz / dist * 0.5 * side; mvz = -dz / dist + dx / dist * 0.5 * side;
     } else if (pref) {
       // strafe while in range
       const side = Math.sin(g.time * 0.5 + a.id * 1.7) > 0 ? 1 : -1;
-      moveDir = { x: -dz / dist * 0.5 * side, z: dx / dist * 0.5 * side };
+      move = true;
+      mvx = -dz / dist * 0.5 * side; mvz = dx / dist * 0.5 * side;
     }
-    if (moveDir) {
-      out.x = moveDir.x * speed * dt; out.z = moveDir.z * speed * dt;
+    if (move) {
+      out.x = mvx * speed * dt; out.z = mvz * speed * dt;
       a.anim = 'move';
       if (pref || follow) a.yaw = angleDamp(a.yaw, faceYaw, 8, dt);
-      else a.yaw = angleDamp(a.yaw, Math.atan2(moveDir.x, moveDir.z), 10, dt);
+      else a.yaw = angleDamp(a.yaw, Math.atan2(mvx, mvz), 10, dt);
     } else a.anim = 'idle';
     // ambient sounds
     if (Math.random() < dt * 0.15 && def.sound) g.audio?.play(def.sound, { pos: a.pos, volume: 0.45 });
@@ -917,9 +984,14 @@ export class ActorManager {
       case 'nova': return reach < at.radius * 0.7;
       case 'circle': return los && dist < 22 && (at.ahead ? reach < at.ahead + at.radius * 0.5 : true);
       case 'shoot': case 'lob': return los && dist < 26 && dist > 2.5;
-      case 'heal':
-        if (at.rally) return this._hostiles.filter((b) => b !== a && b.pos.distanceTo(a.pos) < at.radius).length >= 2;
-        return this._hostiles.some((b) => b !== a && b.hp < b.maxHp * 0.75 && b.pos.distanceTo(a.pos) < at.radius);
+      case 'heal': {
+        let n = 0;
+        for (const b of this._hostiles) {
+          if (b === a || b.pos.distanceTo(a.pos) >= at.radius) continue;
+          if (at.rally ? ++n >= 2 : b.hp < b.maxHp * 0.75) return true;
+        }
+        return false;
+      }
       case 'summon': return this._hostiles.length < 14;
       case 'blink': return (dist < 4 || dist > 18) && Math.random() < 0.5;
       default: return false;

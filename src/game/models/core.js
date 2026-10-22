@@ -588,6 +588,34 @@ export class Rig {
       mesh.bind(skeleton);
       this.root.add(mesh);
     }
+    // A depth-only twin of the opaque parts for the moon's shadow pass
+    // (Renderer.shadowOnly shows it there and nowhere else): a body casts with
+    // one draw instead of one per material. The depth pass never ran the
+    // material patches (flutter, wobble), so the shadow is the same.
+    const bySide = new Map();
+    for (const c of this.root.children) {
+      if (!c.isSkinnedMesh || c.userData.fx || c.material.transparent) continue;
+      if (!bySide.has(c.material.side)) bySide.set(c.material.side, []);
+      bySide.get(c.material.side).push(c);
+    }
+    for (const [side, list] of bySide) {
+      if (list.length < 2) continue;
+      const geo = mergeGeometries(list.map((m) => {
+        const g = new THREE.BufferGeometry();
+        // (normals and uvs too, unused: without them three.js keys a different
+        // depth program, one the floor's warm-up never built)
+        for (const k of ['position', 'normal', 'uv', 'skinIndex', 'skinWeight']) g.setAttribute(k, m.geometry.getAttribute(k));
+        g.setIndex(m.geometry.index);
+        return g;
+      }), false);
+      for (const m of list) m.userData.shadowMerged = true;
+      const proxy = new THREE.SkinnedMesh(geo, shadowProxyMaterial(side, list.find((m) => m.material.map)?.material.map ?? null));
+      proxy.name = 'shadow';
+      proxy.userData.shadowProxy = true;
+      proxy.visible = false;
+      proxy.bind(skeleton);
+      this.root.add(proxy);
+    }
     this.tris = tris;
     // uniform model scale: wrap bones + meshes in a scaled group (skinning stays correct
     // because bones and meshes share the scaled ancestor)
@@ -655,6 +683,16 @@ export class PoseBuf {
   snap() { this.cur.set(this.tgt); }
 }
 
+// Never drawn as itself, only through the shadow pass's depth material,
+// which takes over the caster's map: it carries one of its parts' maps so
+// that program is the one its parts already use (the warmed one).
+const shadowProxyMats = new Map();
+function shadowProxyMaterial(side, map) {
+  const k = side + ':' + (map?.uuid ?? '');
+  if (!shadowProxyMats.has(k)) shadowProxyMats.set(k, new THREE.MeshBasicMaterial({ side, map, colorWrite: false }));
+  return shadowProxyMats.get(k);
+}
+
 // ------------------------------------------------------------ instance ----
 const _white = new THREE.Color(1, 1, 1);
 const orbGeoCache = new Map();
@@ -692,9 +730,15 @@ export class EnemyInstance {
     this.mats = [];
     this.meshes = [];
     const bones = [];
+    this.shadowProxies = [];
     let skeleton = null;
     this.root.traverse((o) => {
       if (o.isBone) bones.push(o);
+      if (o.userData.shadowProxy) {
+        this.shadowProxies.push(o);
+        o.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, spec.height * 0.5, 0), Math.max(spec.height, spec.length ?? 0) * 0.85 + 1);
+        return;
+      }
       if (o.isSkinnedMesh) {
         this.meshes.push(o);
         if (!skeleton) skeleton = o.skeleton; else o.skeleton = skeleton;
@@ -713,6 +757,7 @@ export class EnemyInstance {
       }
     });
     this.skeleton = skeleton;
+    for (const o of this.shadowProxies) o.skeleton = skeleton;
     this.bones = {};
     bones.forEach((b) => (this.bones[b.name] = b));
     this.P = new PoseBuf(bones);

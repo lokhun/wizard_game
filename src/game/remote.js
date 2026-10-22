@@ -24,7 +24,11 @@ export class RemotePlayer {
     this.reviveProgress = 0;
     this.radius = 0.4;
     this.avatar = getAvatar(classId, game);
-    game.scene.add(this.avatar.root);
+    // Joining a floor in progress (its warm-up is over): the wizard's
+    // programs are built on the driver's threads before it is drawn, not
+    // linked in the middle of a frame (~0.3 s each on ANGLE/D3D11).
+    if (game.loadingFloor || game.renderer.noRender) game.scene.add(this.avatar.root);
+    else game.renderer.compileObject(this.avatar.root, game.scene, { all: true }).then(() => { if (!this.disposed) game.scene.add(this.avatar.root); });
     this.channel = null;
     this.castT = 0;
     this.counters = {};
@@ -32,6 +36,7 @@ export class RemotePlayer {
     this.ult = 0;
     this.staticReady = false;
     this.edge = 0;
+    this.disposed = false;
   }
 
   get eye() { return new THREE.Vector3(this.pos.x, this.pos.y + 1.6, this.pos.z); }
@@ -128,6 +133,7 @@ export class RemotePlayer {
   }
 
   dispose() {
+    this.disposed = true;
     if (this.channel) { this.channel.sp.channel.end(this.channel.ctx, this.channel.S); this.channel = null; }
     this.game.scene.remove(this.avatar.root);
     this.avatar.dispose?.();

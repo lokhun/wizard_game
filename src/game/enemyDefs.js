@@ -271,3 +271,25 @@ export const BOSS_DEFS = {
 
 export const FLOOR_HP = [1, 1.5, 2.1, 2.8, 3.6];
 export const FLOOR_DMG = [1, 1.25, 1.55, 1.85, 2.2];
+
+// Every def, and every attack, laid out with the same fields in the same order
+// (missing ones undefined). The AI reads a.def.speed, at.kind, at.range... for
+// every enemy every frame; across a dozen literal shapes those reads went
+// megamorphic, which is slow and boxes every number it reads.
+function sameShape(table) {
+  const keys = [...new Set(Object.values(table).flatMap((o) => Object.keys(o)))];
+  for (const id of Object.keys(table)) {
+    const o = table[id], n = {};
+    for (const k of keys) n[k] = o[k];
+    table[id] = n;
+  }
+}
+{
+  const all = Object.values(ENEMY_DEFS).flatMap((d) => d.attacks ?? []);
+  const keys = [...new Set(all.flatMap((o) => Object.keys(o)))];
+  for (const d of Object.values(ENEMY_DEFS)) if (d.attacks) d.attacks = d.attacks.map((o) => { const n = {}; for (const k of keys) n[k] = o[k]; return n; });
+  const defs = { ...ENEMY_DEFS, ...BOSS_DEFS };
+  sameShape(defs);
+  for (const id of Object.keys(ENEMY_DEFS)) ENEMY_DEFS[id] = defs[id];
+  for (const id of Object.keys(BOSS_DEFS)) BOSS_DEFS[id] = defs[id];
+}

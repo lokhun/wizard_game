@@ -101,6 +101,7 @@ export class Game {
     this.ui?.letterbox?.(false);
     for (const r of this.remotes.values()) r.dispose();
     this.remotes.clear();
+    this._partyGen = (this._partyGen ?? 0) + 1;
     this.stats = { kills: 0, damage: 0, time: 0, gold: 0 };
     this.tint = { rgb: [1, 1, 1], t: 0 };
     this.transitioning = false;
@@ -136,6 +137,7 @@ export class Game {
       r.net.x = s.x; r.net.z = s.z;
     }
     this.remotes.set(p.id, r);
+    this._partyGen = (this._partyGen ?? 0) + 1;
     this.isSolo = false;
     this.relics?.onPeerJoin();
     this.ui?.toast(`${p.name} joined as ${CLASS_META[p.classId].name}`);
@@ -145,13 +147,19 @@ export class Game {
     if (!r) return;
     r.dispose();
     this.remotes.delete(id);
+    this._partyGen = (this._partyGen ?? 0) + 1;
     this.ui?.toast(`${r.name} left the party`);
   }
 
+  // (one shared array, rebuilt only when the party changes: it is asked for
+  // several times per enemy per frame. Read it, never change it.)
   allPlayers() {
-    const out = this.player ? [this.player] : [];
-    for (const r of this.remotes.values()) out.push(r);
-    return out;
+    if (this._apFor !== this.player || this._apN !== this.remotes.size || this._apGen !== this._partyGen) {
+      const out = (this._ap = this.player ? [this.player] : []);
+      for (const r of this.remotes.values()) out.push(r);
+      this._apFor = this.player; this._apN = this.remotes.size; this._apGen = this._partyGen;
+    }
+    return this._ap;
   }
   playerById(id) { return id === this.player?.id ? this.player : this.remotes.get(id); }
 
@@ -278,7 +286,7 @@ export class Game {
     this.loadingFloor = true;
     const scene = this.scene;
     const kids = new Set(scene.children);
-    const undo = [], extra = [], hold = [];
+    const undo = [], extra = [], hold = [], warmTwins = [];
     let added = [];
     try {
       const b = level.biome;
@@ -292,7 +300,10 @@ export class Game {
       for (const t of models) {
         const m = getEnemyModelSafe(t, this);
         if (!m) continue;
-        if (this.shadowsOn) m.root.traverse((o) => { if (o.isMesh && !o.material?.transparent) o.castShadow = true; });
+        if (this.shadowsOn) {
+          m.root.traverse((o) => { if (o.isMesh && !o.material?.transparent) o.castShadow = true; });
+          for (const o of m.shadowProxies ?? []) { this.renderer.shadowOnly.add(o); warmTwins.push(o); } // (shadow twins: see Rig.finish)
+        }
         place(m.root);
         hold.push(() => m.dispose?.());
         // spawning and dying bodies fade, which switches their materials to
@@ -339,6 +350,7 @@ export class Game {
       await this.renderer.compileScenes({ upload: !this.renderer.noRender, all: !this.menuMode });
     } catch (e) { console.warn('prewarm failed', e); }
     for (const f of undo) { try { f(); } catch { /* already gone */ } }
+    for (const o of warmTwins) this.renderer.shadowOnly.delete(o);
     for (const o of added) scene.remove(o);
     for (const o of extra) scene.remove(o);
     // release the previous floor's set only now, so shared programs never drop to zero users

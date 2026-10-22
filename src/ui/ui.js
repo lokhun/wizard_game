@@ -52,6 +52,24 @@ export class UI {
 
   get modalOpen() { return this.modalStack.length > 0; }
 
+  // The first measureText / fillText in a new font (weight and size) loads
+  // and resolves the face and starts its glyph cache: 5-12 ms each, and
+  // damage numbers come in ~30 sizes, so a run's first big hits stuttered as
+  // each new size appeared. Every font the overlay draws with, once, at boot.
+  async warmFonts() {
+    try { await Promise.all(['600', '700'].map((w) => document.fonts.load(`${w} 16px Cinzel`))); } catch { /* fallback faces then */ }
+    const g = document.createElement('canvas').getContext('2d');
+    const fonts = ['600 11px Cinzel, serif', '600 12px Cinzel, serif', '18px serif', '22px serif'];
+    for (let s = 13; s <= 32; s++) fonts.push(`600 ${s}px Cinzel, serif`, `700 ${s}px Cinzel, serif`);
+    for (const f of fonts) {
+      g.font = f;
+      g.measureText('0123456789');
+      g.lineWidth = 3;
+      g.strokeText('0123456789!', 0, 40);
+      g.fillText('0123456789!', 0, 40);
+    }
+  }
+
   _resize() {
     const dpr = Math.min(window.devicePixelRatio, 2);
     this.canvas.width = innerWidth * dpr;
