@@ -15,6 +15,7 @@ A first-person, co-op wizard roguelike for the browser. Fight your way up from t
   - Fallen allies can be revived, but each fall in the same chamber bleeds out faster. Allies who bleed out come back when the chamber is cleared.
   - Enemies scale with the party: more of them, tougher and harder-hitting, and pack hunters go for whoever strays from the group.
   - Every player chooses their own rewards.
+  - **Pings** (G) say what they mark: aim at a foe and the marker rides above it with its name until it falls; aim at a tome, chest, merchant or portal and it names it. A ping off screen clings to the screen's edge.
 - **Grim, torch-lit visuals**, all generated in code. There are no asset files:
   - GPU-generated stone, wood and metal textures.
   - Dynamic torch lighting, volumetric-feeling fog, bloom and colour grading.

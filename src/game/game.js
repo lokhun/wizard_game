@@ -36,6 +36,8 @@ const WADE_C = [0.16, 0.22, 0.22]; // ripple rings on channel water
 
 const _v = new THREE.Vector3();
 
+// what a ping names when it lands on a thing
+const PING_NAMES = { pedestal: (it) => (it.relic ? 'Relic' : 'Tome'), chest: 'Chest', mimic: 'Chest', shop: 'Merchant', shrine: 'Shrine', altar: 'Blood Altar', gambler: 'Gambler', portal: 'Portal', victoryPortal: 'Victory', abyssPortal: 'The Abyss' };
 const DREAD_MAX = 12;
 export class Game {
   constructor({ renderer, input, audio, ui, settings }) {
@@ -568,6 +570,7 @@ export class Game {
       p.update(dt, input);
       this._interactions(dt, input);
     }
+    this._updatePings();
     for (const r of this.remotes.values()) r.update(dt);
     if (!this.paused || !this.isSolo) {
       if (this.isHost) this.director.update(dt);
@@ -1355,12 +1358,52 @@ export class Game {
     this.ui?.wave(n, of);
   }
 
+  // Pings say what they mark: a foe (the marker rides above it until it falls),
+  // a thing (tome, chest, shop, portal...) or just a spot. Two per wizard at most.
   addPing(msg) {
     const pl = this.playerById(msg.pid);
-    const pg = { pos: new THREE.Vector3(msg.x, msg.y, msg.z), name: pl?.name ?? '?', color: pl ? '#' + pl.meta.color.toString(16).padStart(6, '0') : '#fff', t: 6 };
+    const kind = msg.k === 'foe' || msg.k === 'item' ? msg.k : 'spot';
+    const pg = { pid: msg.pid, pos: new THREE.Vector3(+msg.x || 0, +msg.y || 0, +msg.z || 0), name: pl?.name ?? '?', color: pl ? '#' + pl.meta.color.toString(16).padStart(6, '0') : '#fff',
+      kind, actorId: kind === 'foe' ? msg.a : -1, label: String(msg.l ?? '').slice(0, 40), born: this.time, life: kind === 'foe' ? 10 : 7 };
+    const mine = this.pings.filter((x) => x.pid === msg.pid);
+    if (mine.length >= 2) this.pings = this.pings.filter((x) => x !== mine[0]);
     this.pings.push(pg);
-    this.audio?.play('ui_hover', { volume: 0.6 });
-    setTimeout(() => { this.pings = this.pings.filter((x) => x !== pg); }, 6000);
+    this.audio?.play(kind === 'foe' ? 'telegraph' : kind === 'item' ? 'ui_click' : 'ui_hover', { volume: kind === 'foe' ? 0.35 : 0.6 });
+  }
+  _updatePings() {
+    if (!this.pings.length) return;
+    this.pings = this.pings.filter((pg) => {
+      if (this.time - pg.born > pg.life) return false;
+      if (pg.kind !== 'foe') return true;
+      const a = this.actors.byId.get(pg.actorId);
+      if (!a || a.dead) return false;
+      pg.pos.set(a.pos.x, a.pos.y + (a.height ?? 2) + 0.6, a.pos.z);
+      return true;
+    });
+  }
+  _pingMsg(p) {
+    const aim = p.aimInfo();
+    const msg = { t: 'ping', pid: p.id, x: aim.point.x, y: aim.point.y, z: aim.point.z, k: 'spot', a: -1, l: '' };
+    const a = aim.actor;
+    if (a && a.faction === 'enemy' && !a.dead) {
+      msg.k = 'foe'; msg.a = a.id;
+      msg.l = (a.boss || a.champion ? a.def.name : (a.elite ? 'Champion ' : '') + (a.def.name ?? a.type));
+      return msg;
+    }
+    // the thing nearest the aim ray, short of whatever the ray struck (a little
+    // more forgiving the farther it is)
+    const reach = aim.eye.distanceTo(aim.point) + 1.5;
+    let best = null, bd = Infinity;
+    for (const it of this.interactables) {
+      if (!PING_NAMES[it.kind] || it.dormant) continue;
+      const ox = it.pos.x - aim.eye.x, oy = it.pos.y - aim.eye.y, oz = it.pos.z - aim.eye.z;
+      const t = ox * aim.dir.x + oy * aim.dir.y + oz * aim.dir.z;
+      if (t < 0.5 || t > reach) continue;
+      const perp = Math.hypot(ox - aim.dir.x * t, oy - aim.dir.y * t, oz - aim.dir.z * t);
+      if (perp < 1.3 + 0.05 * t && perp < bd) { bd = perp; best = it; }
+    }
+    if (best) { msg.k = 'item'; msg.l = typeof PING_NAMES[best.kind] === 'function' ? PING_NAMES[best.kind](best) : PING_NAMES[best.kind]; msg.x = best.pos.x; msg.y = best.pos.y + 0.8; msg.z = best.pos.z; }
+    return msg;
   }
 
   onBossSpawn(a) {
@@ -1514,8 +1557,7 @@ export class Game {
   _interactions(dt, input) {
     const p = this.player;
     if (input.was('ping') && p.alive) {
-      const aim = p.aimInfo();
-      const msg = { t: 'ping', pid: p.id, x: aim.point.x, y: aim.point.y, z: aim.point.z };
+      const msg = this._pingMsg(p);
       this.addPing(msg);
       this.net?.broadcastOrSend(msg);
     }

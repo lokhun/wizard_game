@@ -262,7 +262,7 @@ export class UI {
           <div><span class="k">Q / E</span> abilities</div><div><span class="k">R</span> ultimate (charges as you deal damage)</div>
           <div><span class="k">Shift</span> dash (brief invulnerability)</div><div><span class="k">Space</span> jump — leap over shockwaves</div>
           <div><span class="k">F</span> interact / revive allies</div><div><span class="k">Tab / M</span> map</div>
-          <div><span class="k">Esc</span> pause & settings</div><div><span class="k">G</span> ping location</div>
+          <div><span class="k">Esc</span> pause & settings</div><div><span class="k">G</span> ping a foe, item or spot</div>
         </div>
         <p><b style="color:var(--bronze-hi)">Elemental reactions:</b> combine schools for bonus effects — <i>Melt</i> (fire on frozen), <i>Shatter</i> (shards, earth or blades on frozen), <i>Overload</i> (lightning on burning), <i>Electrocute</i> (lightning on wet foes in water), <i>Combust</i> (fire on poison), <i>Purge</i> (holy on hexed) and more. In co-op, set up reactions for each other!</p>
         <p><b style="color:var(--bronze-hi)">Co-op:</b> one wizard hosts and shares the party code. Fallen wizards can be revived by holding <b>F</b> beside them. Wizards who bleed out return when the chamber is cleared. Each player picks their own rewards — no loot stealing.</p>
@@ -723,14 +723,39 @@ export class UI {
       this._blitText(g, this._textBitmap(f.text, `700 ${f.big ? 22 : 15}px Cinzel, serif`, f.color, { stroke: 'rgba(0,0,0,0.9)', lw: 4, glow: 12 }), s.x, s.y, pop);
       g.globalAlpha = 1;
     }
-    // pings
+    // pings: a foe ping rides above its foe, a thing ping names the thing; off screen
+    // (or behind you) a ping clings to the screen's edge, pointing the way
     for (const pg of game.pings ?? []) {
-      const s = this._project(pg.pos);
-      if (!s) continue;
-      g.strokeStyle = pg.color; g.lineWidth = 2;
-      g.beginPath(); g.moveTo(s.x, s.y - 14); g.lineTo(s.x + 9, s.y); g.lineTo(s.x, s.y + 14); g.lineTo(s.x - 9, s.y); g.closePath(); g.stroke();
-      g.font = '600 12px Cinzel, serif'; g.fillStyle = pg.color; g.textAlign = 'center';
-      g.fillText(`${pg.name} · ${Math.round(pg.pos.distanceTo(cam.position))}m`, s.x, s.y - 20);
+      const age = game.time - pg.born;
+      const fade = Math.min(1, (pg.life - age) / 0.8);
+      let s = this._project(pg.pos);
+      let edge = false;
+      if (!s || s.x < 30 || s.x > innerWidth - 30 || s.y < 30 || s.y > innerHeight - 30) {
+        // direction in view space, pushed to the border
+        const v = (this._pe ??= new THREE.Vector3()).copy(pg.pos).applyMatrix4(this.renderer.camera.matrixWorldInverse);
+        let dx = v.x, dy = -v.y;
+        if (v.z > 0) { dx = -dx; dy = -dy; } // behind: mirror
+        const k = Math.min((innerWidth / 2 - 34) / Math.max(1e-3, Math.abs(dx)), (innerHeight / 2 - 34) / Math.max(1e-3, Math.abs(dy)));
+        s = { x: innerWidth / 2 + dx * k, y: innerHeight / 2 + dy * k };
+        edge = true;
+      }
+      const foe = pg.kind === 'foe', item = pg.kind === 'item';
+      const pulse = 1 + 0.25 * Math.max(0, 1 - age * 2.5); // a pop when it lands
+      g.globalAlpha = Math.max(0, fade);
+      g.lineWidth = 2.5;
+      g.strokeStyle = pg.color;
+      g.fillStyle = foe ? 'rgba(200,40,30,0.35)' : 'rgba(0,0,0,0.25)';
+      g.beginPath();
+      const r = 11 * pulse;
+      if (foe) { g.moveTo(s.x - r, s.y - r * 0.9); g.lineTo(s.x + r, s.y - r * 0.9); g.lineTo(s.x, s.y + r * 0.7); g.closePath(); } // a chevron over the foe
+      else if (item) g.arc(s.x, s.y, r * 0.85, 0, Math.PI * 2);
+      else { g.moveTo(s.x, s.y - r * 1.3); g.lineTo(s.x + r * 0.8, s.y); g.lineTo(s.x, s.y + r * 1.3); g.lineTo(s.x - r * 0.8, s.y); g.closePath(); }
+      g.fill(); g.stroke();
+      const dist = Math.round(pg.pos.distanceTo(cam.position));
+      const label = (pg.label ? pg.label : pg.name) + (edge || dist > 6 ? ` · ${dist}m` : '');
+      this._blitText(g, this._textBitmap(label, '600 12px Cinzel, serif', foe ? '#ff7a60' : pg.color, { lw: 3 }), s.x, s.y - 24);
+      if (pg.label) this._blitText(g, this._textBitmap(pg.name, '11px Cinzel, serif', pg.color, { lw: 3 }), s.x, s.y + 24);
+      g.globalAlpha = 1;
     }
   }
 
