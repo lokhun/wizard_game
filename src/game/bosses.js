@@ -122,6 +122,10 @@ export class BossBrain {
     }
     return { x: room.cx, z: room.cz };
   }
+  arena() {
+    const r = this.g.level.roomAt(this.a.pos.x, this.a.pos.z) ?? this.data.room;
+    return r ? { x0: r.x * 2 + 2, z0: r.y * 2 + 2, x1: (r.x + r.w) * 2 - 2, z1: (r.y + r.h) * 2 - 2 } : { x0: this.a.pos.x - 14, z0: this.a.pos.z - 14, x1: this.a.pos.x + 14, z1: this.a.pos.z + 14 };
+  }
   banner(text, sub, color) { this.g.net?.broadcast({ t: 'banner', a: text, b: sub, c: color }); this.g.ui?.banner(text, sub, color); }
   shake(k) { this.g.net?.broadcast({ t: 'shake', k }); this.g.vfx.addShake(k); }
   sound(name, vol = 1) { this.g.net?.broadcast({ t: 'snd', n: name, x: this.a.pos.x, y: this.a.pos.y, z: this.a.pos.z, v: vol }); this.g.audio?.play(name, { pos: this.a.pos, volume: vol }); }
@@ -191,7 +195,8 @@ export class BossBrain {
     if (!tgt) { this.anim('idle', this.idleType(), 1); return out; }
     // choose a move
     const dist = Math.hypot(tgt.pos.x - a.pos.x, tgt.pos.z - a.pos.z);
-    const pool = phases[this.phase].moves.filter((m) => (this.cds[m.name] ?? 0) <= 0 && (!m.range || (dist >= m.range[0] && dist <= m.range[1])) && (!m.when || m.when(this)));
+    const nm = this.g.difficulty?.nightmare && S.nightmare && this.phase >= (S.nightmare.minPhase ?? 1) ? S.nightmare : null;
+    const pool = (nm ? [...phases[this.phase].moves, nm] : phases[this.phase].moves).filter((m) => (this.cds[m.name] ?? 0) <= 0 && (!m.range || (dist >= m.range[0] && dist <= m.range[1])) && (!m.when || m.when(this)));
     if (pool.length) {
       let tot = 0;
       for (const m of pool) tot += m.w ?? 1;
@@ -201,6 +206,7 @@ export class BossBrain {
       this.move = pick;
       this.cds[pick.name] = (pick.cd ?? 3) * (this.g.difficulty?.bossCd ?? 1);
       this.face(tgt);
+      if (pick === nm && !this.data.nmShown) { this.data.nmShown = true; this.banner(`NIGHTMARE · ${pick.title}`, pick.hint, '#ff5040'); }
       const dur = pick.run(this, tgt, dist);
       this.busy = (dur ?? 1) / (phases[this.phase].speed ?? 1);
       return out;
@@ -230,6 +236,15 @@ const SCRIPTS = {};
 // ---------------- MOTHER OF FILTH ---------------------------------------
 SCRIPTS.motherOfFilth = {
   keepDist: 6,
+  // Nightmare: lanes of bile cross the arena twice; stand in a gap, then move
+  nightmare: { name: 'lattice', title: 'Bile Lattice', hint: 'Find the gaps, then find them again', w: 2, cd: 11, minPhase: 1, run(B) {
+    B.anim('cast', 'spit', 1.4);
+    B.sound('boss_roar', 0.7);
+    const A = B.arena(), off = Math.random() * 6;
+    for (let x = A.x0 + off; x < A.x1; x += 6) B.hazard({ shape: 'rect', x, y: B.a.pos.y, z: A.z0, rot: 0, len: A.z1 - A.z0, w: 2.4, delay: 1.5, teleDur: 1.3, dmg: B.dmg * 0.9, el: 'enemyGreen' });
+    for (let z = A.z0 + ((off + 3) % 6); z < A.z1; z += 6) B.hazard({ shape: 'rect', x: A.x0, y: B.a.pos.y, z, rot: Math.PI / 2, len: A.x1 - A.x0, w: 2.4, delay: 2.9, teleDur: 1.2, dmg: B.dmg * 0.9, el: 'enemyGreen' });
+    return 2.4;
+  } },
   phases: [
     {
       at: 1,
@@ -318,6 +333,22 @@ SCRIPTS.motherOfFilth = {
 // ---------------- THE EXECUTIONER -----------------------------------------
 SCRIPTS.executioner = {
   keepDist: 3,
+  // Nightmare: three chops in a row, each one aimed where you are when it begins
+  nightmare: { name: 'frenzy', title: "Headsman's Frenzy", hint: 'Three blows — keep moving', w: 2, cd: 8, minPhase: 1, range: [0, 12], track: 5, run(B, t) {
+    const chop = (i) => {
+      const p = B.target ?? t;
+      if (!p) return;
+      const yaw = B.yawTo(p.pos);
+      B.a.yaw = yaw;
+      B.anim('windup', 'slam', 0.75);
+      B.circle(p.pos.x, p.pos.z, 3, 0.75, 1.1, i === 2 ? 'enemyFire' : 'physical');
+      B.at(0.75, () => { B.anim('attack', 'slam', 0.35); B.shake(0.35); B.sound('boss_slam'); });
+    };
+    chop(0);
+    B.at(0.95, () => chop(1));
+    B.at(1.9, () => chop(2));
+    return 3.1;
+  } },
   phases: [
     {
       at: 1,
@@ -388,6 +419,27 @@ SCRIPTS.executioner = {
 
 // ---------------- STONE WYVERN (Gravemaw) ---------------------------------
 SCRIPTS.stoneWyvern = {
+  // Nightmare: rows of boulders sweep across the arena, each row with one gap
+  nightmare: { name: 'avalanche', title: 'Avalanche', hint: 'Each row leaves one gap', w: 2, cd: 10, minPhase: 1, run(B, t) {
+    B.anim('cast', 'roar', 1.2);
+    B.sound('boss_roar', 0.9);
+    B.shake(0.4);
+    const A = B.arena();
+    const alongX = Math.random() < 0.5; // rows run across x, sweeping along z (or the other way)
+    const [u0, u1, v0, v1] = alongX ? [A.x0, A.x1, A.z0, A.z1] : [A.z0, A.z1, A.x0, A.x1];
+    const rows = 4, step = 3.3;
+    let gap = u0 + Math.random() * (u1 - u0);
+    for (let i = 0; i < rows; i++) {
+      const v = v0 + ((v1 - v0) * (i + 0.5)) / rows;
+      gap = Math.max(u0 + 2, Math.min(u1 - 2, gap + (Math.random() - 0.5) * 10)); // the gap wanders, but walkably
+      for (let u = u0 + 1; u <= u1 - 1; u += step) {
+        if (Math.abs(u - gap) < 2.4) continue;
+        const [x, z] = alongX ? [u, v] : [v, u];
+        B.circle(x, z, 1.85, 1.3 + i * 0.6, 0.9, 'earth', { boulder: 1 });
+      }
+    }
+    return 2.0;
+  } },
   // airborne it hangs back so it stays in the player's view instead of hovering overhead
   keepDist: (B) => (B.data.fly ? 12 : 6),
   init(B) { B.data.fly = true; B.fx('fly', { on: 1 }); },
@@ -467,6 +519,21 @@ SCRIPTS.stoneWyvern = {
 // ---------------- COURT ARCHMAGE (Veyrin) ---------------------------------
 SCRIPTS.courtArchmage = {
   keepDist: 10,
+  // Nightmare: a ring of runes closes on each wizard with one gap, then the centre detonates
+  nightmare: { name: 'prison', title: 'Rune Prison', hint: 'Leave through the gap', w: 2, cd: 9, minPhase: 1, run(B) {
+    B.anim('cast', 'cast', 1.2);
+    B.sound('enemy_cast', 1);
+    for (const p of B.players()) {
+      const cx = p.pos.x, cz = p.pos.z, gapA = Math.random() * Math.PI * 2;
+      for (let i = 0; i < 10; i++) {
+        const ang = (i / 10) * Math.PI * 2;
+        if (Math.abs(Math.atan2(Math.sin(ang - gapA), Math.cos(ang - gapA))) < 0.4) continue;
+        B.circle(cx + Math.cos(ang) * 4.6, cz + Math.sin(ang) * 4.6, 1.5, 1.0, 0.8, 'arcane');
+      }
+      B.circle(cx, cz, 3.4, 2.0, 1.3, 'enemyPurple');
+    }
+    return 1.8;
+  } },
   phases: [
     {
       at: 1,
@@ -535,6 +602,19 @@ SCRIPTS.courtArchmage = {
 // ---------------- THE HOLLOW KING ----------------------------------------
 SCRIPTS.hollowKing = {
   keepDist: 3.5,
+  // Nightmare: stars of blade-lines fall from the throne, each turned from the last
+  nightmare: { name: 'swords', title: 'Crown of Swords', hint: 'Step between the blades as they turn', w: 2, cd: 9, minPhase: 0, run(B) {
+    B.anim('cast', B.data.seated ? 'seated' : 'roar', 1.4);
+    B.sound('boss_roar', 0.7);
+    const base = Math.random() * Math.PI * 2;
+    for (let k = 0; k < 3; k++) {
+      for (let i = 0; i < 6; i++) {
+        const rot = base + (i / 6) * Math.PI * 2 + k * (Math.PI / 12);
+        B.hazard({ shape: 'rect', x: B.a.pos.x, y: B.a.pos.y, z: B.a.pos.z, rot, len: 26, w: 1.6, delay: 1.1 + k * 0.6, teleDur: 0.9, dmg: B.dmg * 0.8, el: 'enemyPurple', beam: 1 });
+      }
+    }
+    return 2.4;
+  } },
   init(B) {
     B.data.seated = true;
     B.anim('idle', 'seated', 1);
