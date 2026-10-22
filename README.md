@@ -67,6 +67,8 @@ A first-person, co-op wizard roguelike for the browser. Fight your way up from t
 | Tab / M | Map |
 | Esc | Pause and settings |
 
+Every key above (but the mouse buttons and Esc) can be rebound under **Settings → Controls**, including to a mouse's middle or side buttons.
+
 ## Running locally
 
 ```bash

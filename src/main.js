@@ -8,7 +8,7 @@ import '@fontsource/im-fell-english/400-italic.css';
 import './ui/styles.css';
 import * as THREE from 'three';
 import { Renderer } from './render/renderer.js';
-import { Input } from './core/input.js';
+import { Input, applyBindings } from './core/input.js';
 import { UI } from './ui/ui.js';
 import { Game } from './game/game.js';
 import { Net } from './net/net.js';
@@ -28,7 +28,7 @@ const optional = import.meta.glob(['./audio/audio.js', './game/enemyModels.js', 
 // settings
 // ---------------------------------------------------------------------------
 const SETTINGS_KEY = 'arcane-ascent-settings';
-const defaults = { master: 0.8, music: 0.55, sfx: 0.85, sensitivity: 1, fov: 80, shake: 1, quality: 'high', invertY: false, name: '', lastClass: 'pyromancer', showFps: false, dynamicRes: true, calm: false };
+const defaults = { master: 0.8, music: 0.55, sfx: 0.85, sensitivity: 1, fov: 80, shake: 1, quality: 'high', invertY: false, name: '', lastClass: 'pyromancer', showFps: false, dynamicRes: true, calm: false, keys: {} };
 let settings = { ...defaults };
 let saved = null;
 try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null'); settings = { ...defaults, ...(saved ?? {}) }; } catch { /* ignore */ }
@@ -47,6 +47,7 @@ function guessQuality() {
     return 'high';
   } catch { return 'high'; }
 }
+applyBindings(settings.keys); // (rebound keys, see Controls in the settings)
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* ignore */ } };
 if (!settings.name) settings.name = ['Morvain', 'Elsabeth', 'Corvin', 'Ysolde', 'Thadric', 'Isolde', 'Varian', 'Maelis', 'Orin', 'Seraphine'][Math.floor(Math.random() * 10)];
 const q = new URLSearchParams(location.search);

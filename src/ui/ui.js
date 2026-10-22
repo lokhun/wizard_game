@@ -7,9 +7,11 @@ import { ROOM, T } from '../world/levelgen.js';
 import { BIOMES } from '../world/biomes.js';
 import { fightsHere } from '../game/director.js';
 import { updateRelicShelf, relicListHTML, relicCard } from './relicUI.js';
+import { KEYS as BINDS, REBINDABLE, keyOf, keyLabel, applyBindings } from '../core/input.js';
 
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
-const KEYS = { primary: 'LMB', secondary: 'RMB', ability1: 'Q', ability2: 'E', ultimate: 'R' };
+// the key shown on a spell slot follows the player's bindings
+const slotKey = (s) => (s === 'primary' ? 'LMB' : s === 'secondary' ? 'RMB' : keyOf(s));
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // ---------------------------------------------------------------------------
@@ -211,7 +213,7 @@ export class UI {
         <div class="passive-box"><b>${c.passive.name}</b> — ${c.passive.desc}</div>
         <div class="ability-list">${SLOTS.map((s) => {
           const sp = c.spells[s];
-          return `<div class="ability-row"><div class="key">${KEYS[s]}</div><div class="ic">${iconSVG(sp.icon, hex(c.color), 28)}</div><div class="txt"><b>${sp.name}</b>${sp.cd ? ` <span style="display:inline;color:var(--text-dim);font-size:12px">${sp.cd}s</span>` : ''}<span>${sp.desc}</span></div></div>`;
+          return `<div class="ability-row"><div class="key">${slotKey(s)}</div><div class="ic">${iconSVG(sp.icon, hex(c.color), 28)}</div><div class="txt"><b>${sp.name}</b>${sp.cd ? ` <span style="display:inline;color:var(--text-dim);font-size:12px">${sp.cd}s</span>` : ''}<span>${sp.desc}</span></div></div>`;
         }).join('')}</div>
         <div style="margin-top:10px;color:var(--text-dim);font-size:13px">Health ${c.hp} · Speed ${Math.round(c.speed * 100)}%</div>`;
     };
@@ -257,15 +259,15 @@ export class UI {
         <div class="title" style="font-size:30px;text-align:center">How to Play</div>
         <p>Fight your way up from the <b>Drowned Sewers</b>, through the <b>Oubliette</b>, the moonlit <b>Bailey</b> and the <b>Hall of Whispers</b>, to the <b>Hollow Throne</b>. Each realm ends with a boss. Death is permanent, but every run grows you stronger with Arcane Tomes.</p>
         <div class="cols">
-          <div><span class="k">WASD</span> move</div><div><span class="k">Mouse</span> aim</div>
+          <div><span class="k">${esc(['forward', 'left', 'back', 'right'].map(keyOf).join(''))}</span> move</div><div><span class="k">Mouse</span> aim</div>
           <div><span class="k">Left click</span> primary spell (hold)</div><div><span class="k">Right click</span> secondary spell</div>
-          <div><span class="k">Q / E</span> abilities</div><div><span class="k">R</span> ultimate (charges as you deal damage)</div>
-          <div><span class="k">Shift</span> dash (brief invulnerability)</div><div><span class="k">Space</span> jump — leap over shockwaves</div>
-          <div><span class="k">F</span> interact / revive allies</div><div><span class="k">Tab / M</span> map</div>
-          <div><span class="k">Esc</span> pause & settings</div><div><span class="k">G</span> ping a foe, item or spot</div>
+          <div><span class="k">${esc(keyOf('ability1'))} / ${esc(keyOf('ability2'))}</span> abilities</div><div><span class="k">${esc(keyOf('ultimate'))}</span> ultimate (charges as you deal damage)</div>
+          <div><span class="k">${esc(keyOf('dash'))}</span> dash (brief invulnerability)</div><div><span class="k">${esc(keyOf('jump'))}</span> jump — leap over shockwaves</div>
+          <div><span class="k">${esc(keyOf('interact'))}</span> interact / revive allies</div><div><span class="k">${esc(BINDS.map.map(keyLabel).join(' / '))}</span> map</div>
+          <div><span class="k">Esc</span> pause & settings</div><div><span class="k">${esc(keyOf('ping'))}</span> ping a foe, item or spot</div>
         </div>
         <p><b style="color:var(--bronze-hi)">Elemental reactions:</b> combine schools for bonus effects — <i>Melt</i> (fire on frozen), <i>Shatter</i> (shards, earth or blades on frozen), <i>Overload</i> (lightning on burning), <i>Electrocute</i> (lightning on wet foes in water), <i>Combust</i> (fire on poison), <i>Purge</i> (holy on hexed) and more. In co-op, set up reactions for each other!</p>
-        <p><b style="color:var(--bronze-hi)">Co-op:</b> one wizard hosts and shares the party code. Fallen wizards can be revived by holding <b>F</b> beside them. Wizards who bleed out return when the chamber is cleared. Each player picks their own rewards — no loot stealing.</p>
+        <p><b style="color:var(--bronze-hi)">Co-op:</b> one wizard hosts and shares the party code. Fallen wizards can be revived by holding <b>${esc(keyOf('interact'))}</b> beside them. Wizards who bleed out return when the chamber is cleared. Each player picks their own rewards — no loot stealing.</p>
         <div style="text-align:center"><button class="btn" id="bClose">Close</button></div>
       </div>`);
     m.querySelector('#bClose').onclick = () => { this._closeModal(m); onBack?.(); };
@@ -287,7 +289,7 @@ export class UI {
         <div class="row">Dynamic resolution <input type="checkbox" id="sDyn" ${settings.dynamicRes !== false ? 'checked' : ''}></div>
         <div class="row">Show FPS <input type="checkbox" id="sFps" ${settings.showFps ? 'checked' : ''}></div>
         <div style="color:var(--text-dim);font-size:12px">Quality changes apply on the next page load.</div>
-        <button class="btn" id="bClose">Done</button>
+        <div style="display:flex;gap:10px;justify-content:center"><button class="btn" id="bKeys">Controls</button><button class="btn" id="bClose">Done</button></div>
       </div>`);
     m.querySelector('#sQual').value = settings.quality;
     const bind = (id, key, num = true) => m.querySelector(id).addEventListener('input', (e) => { settings[key] = e.target.type === 'checkbox' ? e.target.checked : num ? +e.target.value : e.target.value; onChange(settings); });
@@ -295,6 +297,52 @@ export class UI {
     bind('#sQual', 'quality', false); bind('#sInv', 'invertY', false); bind('#sFps', 'showFps', false); bind('#sDyn', 'dynamicRes', false);
     m.querySelector('#sQual').addEventListener('change', (e) => { settings.quality = e.target.value; onChange(settings); });
     m.querySelector('#bClose').onclick = () => { this._closeModal(m); onBack?.(); };
+    m.querySelector('#bKeys').onclick = () => { this._closeModal(m); this.showControls(settings, onChange, () => this.showSettings(settings, onChange, onBack)); };
+  }
+
+  // Rebind the keys: click an action, press a key (or a mouse's middle or side
+  // button). A key another action held goes to that action's old key instead.
+  showControls(settings, onChange, onBack) {
+    const m = this._modal(`
+      <div class="panel settings-box keys-box">
+        <div class="title" style="font-size:28px">Controls</div>
+        <div class="keys-grid"></div>
+        <div style="color:var(--text-dim);font-size:12px">Click an action, then press its new key. Esc cancels. Spells stay on the mouse buttons.</div>
+        <div style="display:flex;gap:10px;justify-content:center"><button class="btn" id="kReset">Reset to defaults</button><button class="btn" id="kDone">Done</button></div>
+      </div>`);
+    const grid = m.querySelector('.keys-grid');
+    let capture = null;
+    const render = () => {
+      grid.innerHTML = REBINDABLE.map(([a, name]) => `<div class="row">${esc(name)}<button class="btn small kb${capture === a ? ' cap' : ''}" data-a="${a}">${capture === a ? 'Press a key…' : esc(keyOf(a))}</button></div>`).join('');
+      grid.querySelectorAll('button[data-a]').forEach((b) => { b.onclick = (e) => { e.stopPropagation(); capture = b.dataset.a; render(); }; });
+    };
+    const commit = (code) => {
+      const a = capture; capture = null;
+      if (code && code !== 'Escape') {
+        const over = { ...(settings.keys ?? {}) };
+        const old = BINDS[a][0];
+        const other = REBINDABLE.map(([x]) => x).find((x) => x !== a && BINDS[x][0] === code);
+        if (other) over[other] = old; // swap
+        over[a] = code;
+        settings.keys = over;
+        applyBindings(over);
+        this.refreshKeyLabels();
+        onChange(settings);
+      }
+      render();
+    };
+    const onKey = (e) => { if (!capture) return; e.preventDefault(); e.stopImmediatePropagation(); commit(e.code); };
+    const onMouse = (e) => { if (!capture || !(e.button === 1 || e.button > 2)) return; e.preventDefault(); e.stopImmediatePropagation(); commit('Mouse' + e.button); };
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('mousedown', onMouse, true);
+    const close = () => { window.removeEventListener('keydown', onKey, true); window.removeEventListener('mousedown', onMouse, true); this._closeModal(m); onBack?.(); };
+    m.querySelector('#kDone').onclick = close;
+    m.querySelector('#kReset').onclick = () => { capture = null; settings.keys = {}; applyBindings({}); this.refreshKeyLabels(); onChange(settings); render(); };
+    render();
+    return m;
+  }
+  refreshKeyLabels() {
+    for (const el of document.querySelectorAll('.slot[data-slot] .key')) el.textContent = slotKey(el.parentElement.dataset.slot);
   }
 
   // ======================================================================
@@ -328,7 +376,7 @@ export class UI {
         <div class="slot ${s === 'ultimate' ? 'ult' : ''}" data-slot="${s}">
           ${s === 'ultimate' ? '<div class="ult-fill"></div>' : ''}
           ${iconSVG(c.spells[s].icon, col, s === 'ultimate' ? 42 : 34)}
-          <div class="cd"></div><div class="cdtxt"></div><div class="key">${KEYS[s]}</div><div class="charges"></div>
+          <div class="cd"></div><div class="cdtxt"></div><div class="key">${slotKey(s)}</div><div class="charges"></div>
         </div>`).join('')}
       </div>
       <div class="gold-box"><span class="dread hidden" title="Dread Marks: +5% damage each, earned by flawless chambers">${iconSVG('skull', '#ff5a4a', 22)}<span id="dreadTxt">0</span></span>${iconSVG('gold', '#f0c050', 26)}<span id="goldTxt">0</span></div>

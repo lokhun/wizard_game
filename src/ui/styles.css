@@ -288,3 +288,8 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .relic-tab .compact .rrow { font-size: 11.5px; line-height: 1.25; }
 .relic-tab .compact .rlist { gap: 4px; }
 .relic-tab .compact .rsetrow { font-size: 11.5px; }
+
+.keys-box .keys-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px; }
+.keys-box .keys-grid .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.keys-box .kb { min-width: 92px; }
+.keys-box .kb.cap { border-color: var(--gold); color: var(--gold); box-shadow: 0 0 12px rgba(240,192,80,0.3); }

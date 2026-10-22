@@ -4,6 +4,7 @@ import { LightPool } from '../render/lights.js';
 import { Particles, SPR } from '../render/particles.js';
 import { VFX, fxOf } from '../render/vfx.js';
 import { generateLevel, ROOM, T, K_ALT, K_WATER, WATER_Y } from '../world/levelgen.js';
+import { keyOf } from '../core/input.js';
 import { buildLevel } from '../world/builder.js';
 import { Collision } from '../world/collision.js';
 import { BIOMES } from '../world/biomes.js';
@@ -394,10 +395,10 @@ export class Game {
       'WASD to move · Mouse to aim · Space to jump',
       `Hold Left Click — ${sp.primary.name}`,
       `Right Click — ${sp.secondary.name}`,
-      `Q — ${sp.ability1.name} · E — ${sp.ability2.name}`,
-      'Shift to dash — you are briefly invulnerable',
+      `${keyOf('ability1')} — ${sp.ability1.name} · ${keyOf('ability2')} — ${sp.ability2.name}`,
+      `${keyOf('dash')} to dash — you are briefly invulnerable`,
       'Kill an enemy mid-windup to interrupt its attack',
-      'F to interact · Tab for the map · G to ping',
+      `${keyOf('interact')} to interact · ${keyOf('map')} for the map · ${keyOf('ping')} to ping`,
     ];
     this._tipT = 2.5;
     // contextual tips fire when they become relevant
@@ -1585,7 +1586,7 @@ export class Game {
     if (reviveTarget) {
       const holding = input.is('interact');
       this.reviveHold = holding ? (this.reviveHold ?? 0) + dt : 0;
-      this.ui?.prompt(`Hold [F] to revive ${reviveTarget.name}`, this.reviveHold / 3);
+      this.ui?.prompt(`Hold [${keyOf('interact')}] to revive ${reviveTarget.name}`, this.reviveHold / 3);
       if (holding && Math.random() < dt * 10) this.vfx.burst(reviveTarget.pos.clone().add(_v.set(0, 0.5, 0)), { element: 'holy', count: 2, speed: 1, upward: 1, life: 0.8, size: 0.1, sprite: SPR.STAR });
       if (this.reviveHold >= 3) {
         this.reviveHold = 0;
@@ -1598,7 +1599,7 @@ export class Game {
     this.reviveHold = 0;
     if (p.downed) { this.ui?.prompt(this.isSolo ? null : `Bleeding out... ${Math.ceil(p.downT)}s`); return; }
     if (!best) { this.ui?.prompt(null); return; }
-    this.ui?.prompt(`[F] ${best.label}`);
+    this.ui?.prompt(`[${keyOf('interact')}] ${best.label}`);
     if (input.was('interact')) this.interact(best);
   }
 
