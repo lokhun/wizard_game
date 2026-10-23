@@ -173,7 +173,7 @@ export class BossBrain {
     // staggered rings of slow bolts whose gaps you weave through; faster each phase
     if (this.g.difficulty?.dreadPulse && this.fightT > 4 && !a.hiddenT) {
       this.dreadT = (this.dreadT ?? 5) - dt * Math.max(0.3, am);
-      if (this.dreadT <= 0) { this.dreadT = [8, 6.5, 5.2, 4.5][Math.min(this.phase, 3)]; this._dread(); }
+      if (this.dreadT <= 0) { this.dreadT = [8, 6.5, 5.2, 4.5][Math.min(this.phase, 3)] / (this.g.difficulty.dreadRate ?? 1); this._dread(); }
     }
     // anim progress
     this.animT += dt * Math.max(0.3, am);

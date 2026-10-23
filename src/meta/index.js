@@ -2,11 +2,11 @@ import './meta.css';
 import { RunTracker } from './tracker.js';
 import { showSummary, featToaster } from './summary.js';
 import { TOMES, RELICS } from '../game/upgrades.js';
-import { PACT_BY_ID } from './pacts.js';
+import { PACT_BY_ID, pactLabel } from './pacts.js';
 
 export { loadProfile, saveProfile, resetProfile } from './profile.js';
 export { FEATS } from './feats.js';
-export { difficultyFor, dailyRite, heatOf, cleanPacts, PACT_BY_ID } from './pacts.js';
+export { difficultyFor, dailyRite, heatOf, cleanPacts, PACT_BY_ID, pactLabel } from './pacts.js';
 export { showCodex, showPactBoard, pactStrip, pactsUnlocked, nightmareOn, toggleNightmare, toggleRush, showDailyRite, riteLine } from './codex.js';
 
 // Wire the meta layer onto a game: the run tracker listens to game.events,
@@ -29,7 +29,7 @@ export function attachMeta(game, ui, hooks = {}) {
   game.events.on('runStart', () => {
     const r = tracker.run;
     if (!r || (!r.heat && !r.daily)) return;
-    const pk = Object.entries(r.pacts).map(([id, n]) => PACT_BY_ID[id].name + (PACT_BY_ID[id].max > 1 ? ' ' + 'I'.repeat(n) : '')).join(' · ');
+    const pk = Object.entries(r.pacts).map(([id, n]) => pactLabel(id, n)).join(' · ');
     setTimeout(() => { if (tracker.run === r && !game.ended) ui.toast(`${r.daily ? 'Daily Rite · ' : ''}Heat ${r.heat} — ${pk}`, '#ff9a50'); }, 4500);
   });
   return tracker;

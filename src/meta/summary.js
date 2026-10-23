@@ -3,7 +3,7 @@ import { CLASS_META } from '../game/classMeta.js';
 import { RARITY, TOMES, RELICS } from '../game/upgrades.js';
 import { BIOMES } from '../world/biomes.js';
 import { FEAT_BY_ID } from './feats.js';
-import { PACT_BY_ID } from './pacts.js';
+import { PACT_BY_ID, pactLabel } from './pacts.js';
 
 // ---------------------------------------------------------------------------
 // The run summary: the screen players screenshot. Built once when the run ends
@@ -108,7 +108,7 @@ export function showSummary(ui, S, { party = [], remotes = new Map(), onMenu, on
   const meta = CLASS_META[S.classId] ?? CLASS_META.pyromancer;
   const rec = S.records ?? {};
   const coop = party.length > 0;
-  const pacts = Object.entries(S.pacts ?? {}).map(([id, r]) => PACT_BY_ID[id] ? PACT_BY_ID[id].name + (PACT_BY_ID[id].max > 1 ? ' ' + ROMAN[r - 1] : '') : null).filter(Boolean);
+  const pacts = Object.entries(S.pacts ?? {}).map(([id, r]) => (PACT_BY_ID[id] ? pactLabel(id, r) : null)).filter(Boolean);
   const sub = S.fell
     ? `The Hollow King fell, but ${S.killer ? `<em>${esc(S.killer)}</em>` : 'the dark'} claimed you at depth ${S.abyss} of the Abyss.`
     : S.abyss ? `The Hollow King has fallen ${S.abyss + 1} times. You return from depth ${S.abyss} of the Abyss.`
@@ -139,7 +139,7 @@ export function showSummary(ui, S, { party = [], remotes = new Map(), onMenu, on
           <div class="rs-badges">
             ${S.heat ? `<span class="rs-badge heat" title="${esc(pacts.join(' · '))}">${iconSVG('flame', '#ff8a40', 13, { glow: false })}Heat ${S.heat}${rec.heat ? ' · best' : ''}</span>` : ''}
             ${S.rush ? `<span class="rs-badge rush">${iconSVG('boss', '#ffc060', 13, { glow: false })}Boss Rush${rec.rush ? ' · best' : ''}</span>` : ''}
-            ${S.nightmare ? `<span class="rs-badge nm" title="Dread Marks earned: ${S.dread ?? 0}">${iconSVG('skull', '#ff6050', 13, { glow: false })}Nightmare${S.dread ? ` · ${S.dread} dread` : ''}</span>` : ''}
+            ${S.nightmare ? `<span class="rs-badge nm" title="Dread Marks earned: ${S.dread ?? 0}">${iconSVG('skull', '#ff6050', 13, { glow: false })}${S.damnation ? 'Damnation' : 'Nightmare'}${S.dread ? ` · ${S.dread} dread` : ''}</span>` : ''}
             ${S.abyss ? `<span class="rs-badge abyss">${iconSVG('tentacle', '#c080ff', 13, { glow: false })}Abyss ${S.abyss}${rec.abyss ? ' · best' : ''}</span>` : ''}
             ${S.daily ? `<span class="rs-badge daily">${iconSVG('sun', '#f0c050', 13, { glow: false })}Daily Rite ${esc(S.daily)}${rec.daily ? ' · best' : ''}</span>` : ''}
             ${S.practice ? '<span class="rs-badge practice">Practice · not recorded</span>' : ''}

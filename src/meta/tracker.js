@@ -56,7 +56,7 @@ export class RunTracker {
       classId: g.player.classId, name: g.player.name, coop: !g.isSolo, heat: d.heat ?? 0, pacts: { ...(d.pacts ?? {}) }, daily: d.daily ?? null,
       kills: 0, bestiary: {}, bosses: [], reactions: 0, biggest: 0, biggestOn: '', taken: 0, downs: 0, dashes: 0,
       tomesTaken: 0, bestRarity: -1, augments: 0, rooms: [], cur: null, flawlessChain: 0, killer: null, killerType: null,
-      feats: [], maxFloor: 0, won: false, ended: false, abyss: 0, winTime: 0, dodges: 0, nightmare: !!d.nightmare, rush: !!d.rush,
+      feats: [], maxFloor: 0, won: false, ended: false, abyss: 0, winTime: 0, dodges: 0, nightmare: !!d.nightmare, damnation: !!d.damnation, rush: !!d.rush,
     };
     this._kt = [];
     this._dash = g.player.dashCharges;
@@ -230,7 +230,7 @@ export class RunTracker {
       v: 1, pid: p.id, name: p.name, classId: r.classId, won: r.won, time: Math.round(r.time), floor: r.maxFloor, biome: g.level?.biome?.id ?? '',
       kills: r.kills, partyKills: g.stats.kills, damage: Math.round(p.damageDealt ?? 0), biggest: Math.round(r.biggest), biggestOn: r.biggestOn,
       taken: Math.round(r.taken), downs: r.downs, reactions: r.reactions, gold: Math.round(g.stats.gold ?? 0), heat: r.heat, pacts: r.pacts, daily: r.daily,
-      abyss: r.abyss, fell: !!r.fell, recap: r.won && !r.fell ? [] : (r.recap ?? []), nightmare: r.nightmare, rush: r.rush, dread: g.player.dread ?? 0, killer: r.won && !r.fell ? null : r.killer, coop: r.coop, practice: this.practice, feats: [...r.feats],
+      abyss: r.abyss, fell: !!r.fell, recap: r.won && !r.fell ? [] : (r.recap ?? []), nightmare: r.nightmare, damnation: r.damnation, rush: r.rush, dread: g.player.dread ?? 0, killer: r.won && !r.fell ? null : r.killer, coop: r.coop, practice: this.practice, feats: [...r.feats],
       tomes: [...tomes.values()], relics: p.relics.map((x) => x.def?.id).filter(Boolean),
       rooms: r.rooms.map((c) => [c.f, c.type, Math.round(c.t), Math.round(c.dmg), (c.done ? 1 : 0) | (c.trial ? 2 : 0), c.kills]),
     };
@@ -301,6 +301,7 @@ export class RunTracker {
       }
       c.bestAbyss = Math.max(c.bestAbyss, r.abyss);
       if (r.nightmare) { c.nightmare++; p.records.nightmareWins++; }
+      if (r.damnation) { c.damnation++; p.records.damnationWins++; }
       p.records.deepestAbyss = Math.max(p.records.deepestAbyss, r.abyss);
       c.bestHeat = Math.max(c.bestHeat, r.heat);
       p.records.highestHeat = Math.max(p.records.highestHeat, r.heat);

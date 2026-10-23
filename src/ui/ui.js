@@ -412,10 +412,10 @@ export class UI {
     const ab = game.abyss ?? 0;
     this.h.fname.textContent = ab ? `${biome.name} · Abyss ${ab}` : biome.name;
     const nm = !!game.difficulty?.nightmare;
-    this.h.fsub.textContent = nm ? `Nightmare · Realm ${index + 1} of ${BIOMES.length}` : `Realm ${index + 1} of ${BIOMES.length} · ${biome.subtitle}`;
+    this.h.fsub.textContent = nm ? `${game.difficulty.damnation ? 'Damnation' : 'Nightmare'} · Realm ${index + 1} of ${BIOMES.length}` : `Realm ${index + 1} of ${BIOMES.length} · ${biome.subtitle}`;
     this.h.fsub.style.color = nm ? '#ff8070' : '';
     if (ab) this.banner(`ABYSS ${ab} · ${biome.name}`, 'The realms remade in darkness — deadlier than before', '#ff5878', 5);
-    else if (nm) this.banner(biome.name, `${biome.subtitle} · a nightmare`, '#ff7060', 4);
+    else if (nm) this.banner(biome.name, `${biome.subtitle} · ${game.difficulty.damnation ? 'damnation' : 'a nightmare'}`, game.difficulty.damnation ? '#ff3a60' : '#ff7060', 4);
     else this.banner(biome.name, biome.subtitle, '#e2c48a', 4);
     this.h.boss.classList.add('hidden');
     this.bossActor = null;

@@ -211,6 +211,8 @@
 .cs-nm { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .cs-nm.on { border-color: #a02a2a; color: #ffb0a0; background: linear-gradient(180deg, #3a1210, #1a0806); box-shadow: 0 0 14px rgba(255,40,30,0.25); }
 .cs-nm .w { color: #ff8070; font-size: 11px; }
+.cs-nm.on.dm { border-color: #c01840; color: #ffb0c0; background: linear-gradient(180deg, #3a0618, #14020a); box-shadow: 0 0 18px rgba(255,20,70,0.4); }
+.cs-pacts.dm { border-color: #8a1030; box-shadow: inset 0 0 36px rgba(220,10,60,0.18); }
 .cs-nm.on.rush { border-color: #a07020; color: #ffd890; background: linear-gradient(180deg, #3a2a10, #1a1206); box-shadow: 0 0 14px rgba(255,180,40,0.25); }
 
 /* ---------- main menu additions */

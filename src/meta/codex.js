@@ -4,7 +4,7 @@ import { ENEMY_DEFS, BOSS_DEFS } from '../game/enemyDefs.js';
 import { BIOMES } from '../world/biomes.js';
 import { loadProfile, saveProfile, storageOk } from './profile.js';
 import { FEATS, FEAT_GROUPS, bestiaryTypes } from './feats.js';
-import { PACTS, PACT_BY_ID, NIGHTMARE, BOSS_RUSH, MAX_HEAT, heatOf, cleanPacts, dailyRite, utcDay, pactOpen, nextUnlock, heatBoons } from './pacts.js';
+import { PACTS, PACT_BY_ID, NIGHTMARE, BOSS_RUSH, pactLabel, MAX_HEAT, heatOf, cleanPacts, dailyRite, utcDay, pactOpen, nextUnlock, heatBoons } from './pacts.js';
 import { fmtTime, fmtNum } from './summary.js';
 
 // ---------------------------------------------------------------------------
@@ -123,7 +123,7 @@ function recordsPage(p) {
     ${t('Fastest victory', p.records.fastestWin ? fmtTime(p.records.fastestWin) : '—')}
     ${t('Highest heat cleared', p.records.highestHeat >= 0 ? p.records.highestHeat : '—')}
     ${t('Fastest Boss Rush', p.records.rushBest ? fmtTime(p.records.rushBest) : '—')}
-    ${t('Nightmare victories', p.records.nightmareWins ? fmtNum(p.records.nightmareWins) : '—')}
+    ${t('Nightmare victories', p.records.nightmareWins ? fmtNum(p.records.nightmareWins) : '—', p.records.damnationWins ? `${fmtNum(p.records.damnationWins)} on Damnation` : '')}
     ${t('Deepest Abyss', p.records.deepestAbyss ? `depth ${p.records.deepestAbyss}` : '—')}
     ${t('Co-op victories', fmtNum(p.coopWins))}
     ${t('Nemesis', nemesis ? esc((ENEMY_DEFS[nemesis[0]] ?? BOSS_DEFS[nemesis[0]])?.name ?? nemesis[0]) : '—', nemesis ? `ended ${nemesis[1]} run${nemesis[1] > 1 ? 's' : ''}` : '')}
@@ -136,12 +136,14 @@ export function pactsUnlocked(p = loadProfile()) { return p.wins > 0; }
 
 // the strip on the class-select screen: the pacts (after the first win) and
 // the Nightmare toggle (open from the start, for those who came for a fight)
-export function nightmareOn(p = loadProfile()) { return !!cleanPacts(p.pacts).nightmare; }
+export function nightmareOn(p = loadProfile()) { return cleanPacts(p.pacts).nightmare ?? 0; } // 0, 1 (Nightmare) or 2 (Damnation)
+// cycles off -> Nightmare -> Damnation -> off; returns the new rank
 export function toggleNightmare() {
   const p = loadProfile(), sel = cleanPacts(p.pacts);
-  if (sel.nightmare) delete sel.nightmare; else sel.nightmare = 1;
+  const r = ((sel.nightmare ?? 0) + 1) % 3;
+  if (r) sel.nightmare = r; else delete sel.nightmare;
   p.pacts = sel; saveProfile();
-  return !!sel.nightmare;
+  return r;
 }
 export function rushOn(p = loadProfile()) { return !!cleanPacts(p.pacts).rush; }
 export function toggleRush() {
@@ -152,10 +154,10 @@ export function toggleRush() {
 }
 export function pactStrip(classId) {
   const p = loadProfile();
-  const nm = nightmareOn(p), nmWins = p.classes[classId]?.nightmare ?? 0, ru = rushOn(p);
+  const nmR = nightmareOn(p), nm = nmR > 0, dm = nmR >= 2, nmWins = p.classes[classId]?.nightmare ?? 0, dmWins = p.classes[classId]?.damnation ?? 0, ru = rushOn(p);
   const rush = `<button class="btn small cs-nm${ru ? ' on rush' : ''}" id="bRush" title="${esc(BOSS_RUSH.desc())}${p.records.rushBest ? ` Best: ${fmtTime(p.records.rushBest)}` : ''}">${iconSVG('boss', ru ? '#ffb050' : '#9a8f7c', 16, { glow: ru })}Boss Rush</button>`;
-  const night = `<button class="btn small cs-nm${nm ? ' on' : ''}" id="bNight" title="${esc(NIGHTMARE.desc())}">${iconSVG('skull', nm ? '#ff5050' : '#9a8f7c', 16, { glow: nm })}Nightmare${nmWins ? ` <span class="w">${nmWins}✦</span>` : ''}</button>`;
-  if (!pactsUnlocked(p)) return `<div class="panel cs-pacts${nm ? ' nm' : ''}">${iconSVG(nm ? 'skull' : 'pact', nm ? '#ff5050' : '#806050', 26, { glow: nm })}<div class="lab"><div class="subtitle">${nm ? 'Nightmare · heat 10' : 'Pacts of Ascension'}</div><div class="s2">${nm ? 'Smarter, relentless foes · flawless chambers earn Dread Marks' : 'Pacts unlock with your first victory. Seasoned? Try Nightmare.'}</div></div><div class="cs-btns">${night}${rush}</div></div>`;
+  const night = `<button class="btn small cs-nm${nm ? ' on' : ''}${dm ? ' dm' : ''}" id="bNight" title="${esc(NIGHTMARE.desc(nmR || 1))} (Click again for ${dm ? 'neither' : nm ? 'Damnation, the top of the ladder' : 'Nightmare'}.)">${iconSVG('skull', dm ? '#ff2a5a' : nm ? '#ff5050' : '#9a8f7c', 16, { glow: nm })}${dm ? 'Damnation' : 'Nightmare'}${(dm ? dmWins : nmWins) ? ` <span class="w">${dm ? dmWins : nmWins}✦</span>` : ''}</button>`;
+  if (!pactsUnlocked(p)) return `<div class="panel cs-pacts${nm ? ' nm' : ''}${dm ? ' dm' : ''}">${iconSVG(nm ? 'skull' : 'pact', dm ? '#ff2a5a' : nm ? '#ff5050' : '#806050', 26, { glow: nm })}<div class="lab"><div class="subtitle">${dm ? 'Damnation · heat 20' : nm ? 'Nightmare · heat 10' : 'Pacts of Ascension'}</div><div class="s2">${dm ? 'The top of the ladder · scant healing between chambers, no second wind' : nm ? 'Smarter, relentless foes · flawless chambers earn Dread Marks' : 'Pacts unlock with your first victory. Seasoned? Try Nightmare.'}</div></div><div class="cs-btns">${night}${rush}</div></div>`;
   const sel = cleanPacts(p.pacts), h = heatOf(sel);
   const best = p.classes[classId]?.wins ? p.classes[classId].bestHeat : -1;
   const names = Object.keys(sel).filter((id) => id !== 'nightmare' && id !== 'rush').map((id) => PACT_BY_ID[id].name).join(' · ');
@@ -187,7 +189,7 @@ export function showPactBoard(ui, { classId, onClose } = {}) {
     }).join('');
     const h = heatOf(sel), b = heatBoons(h), nu = nextUnlock(cleared);
     m.querySelector('#pbHeat').textContent = h;
-    m.querySelector('#pbBoons').innerHTML = (sel.nightmare ? `${iconSVG('skull', '#ff5050', 16, { glow: false })}<b style="color:#ff7060">Nightmare +10</b> · ` : '') + (h ? `${iconSVG('flame', '#ff8a40', 16, { glow: false })}<b>Heat ${h} rewards:</b> finer tomes ${Math.round((b.luck - 1) * 100)}% likelier · ${Math.round((b.gold - 1) * 100)}% more gold` : 'Swear pacts to raise the heat: the hotter the run, the finer its tomes and the richer its gold.')
+    m.querySelector('#pbBoons').innerHTML = (sel.nightmare ? `${iconSVG('skull', '#ff5050', 16, { glow: false })}<b style="color:#ff7060">${pactLabel('nightmare', sel.nightmare)} +${10 * sel.nightmare}</b> · ` : '') + (h ? `${iconSVG('flame', '#ff8a40', 16, { glow: false })}<b>Heat ${h} rewards:</b> finer tomes ${Math.round((b.luck - 1) * 100)}% likelier · ${Math.round((b.gold - 1) * 100)}% more gold` : 'Swear pacts to raise the heat: the hotter the run, the finer its tomes and the richer its gold.')
       + (Number.isFinite(nu) ? ` <span class="nu">· next seal breaks at heat ${nu}${cleared >= 0 ? ` (best cleared: ${cleared})` : ''}</span>` : '');
     grid.querySelectorAll('.pb-card:not(.locked)').forEach((el) => {
       const pc = PACT_BY_ID[el.dataset.id];

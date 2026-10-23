@@ -32,12 +32,20 @@ export const PACTS = [
 // first run, toggled on the class select, and worth 10 heat. It changes how
 // foes fight rather than only their numbers (see difficultyFor), and pays the
 // skilled back with Dread Marks, finer tomes and a relic from every boss.
-export const NIGHTMARE = { id: 'nightmare', name: 'Nightmare', icon: 'skull', heat: 10, max: 1, desc: () => 'Foes fight smarter and never let up; bosses unleash dread rings. Flawless chambers earn Dread Marks.' };
+// Its second rank is Damnation, the top of the ladder: 20 heat, every Nightmare
+// behaviour pushed further, no healing between chambers and no second wind.
+export const NIGHTMARE = { id: 'nightmare', name: 'Nightmare', icon: 'skull', heat: 10, max: 2,
+  rankName: (r) => (r >= 2 ? 'Damnation' : 'Nightmare'),
+  desc: (r = 1) => (r >= 2
+    ? 'The top of the ladder. Foes far tougher and more relentless, every champion twice-cursed, barely any healing between chambers, no second wind.'
+    : 'Foes fight smarter and never let up; bosses unleash dread rings. Flawless chambers earn Dread Marks.') };
+// a pact as it reads: "Iron Hides II", "Damnation"
+export const pactLabel = (id, r) => { const pc = PACT_BY_ID[id]; return !pc ? id : pc.rankName ? pc.rankName(r) : pc.name + (pc.max > 1 ? ' ' + 'I'.repeat(r) : ''); };
 // Boss Rush is a mode, kept with the pacts the same way (and so sent to the party
 // the same way): worth no heat. Each realm skips straight to its boss's antechamber.
 export const BOSS_RUSH = { id: 'rush', name: 'Boss Rush', icon: 'boss', heat: 0, max: 1, desc: () => 'The five bosses back to back, with tomes and relics between them.' };
 export const PACT_BY_ID = Object.fromEntries([...PACTS, NIGHTMARE, BOSS_RUSH].map((p) => [p.id, p]));
-export const MAX_HEAT = PACTS.reduce((s, p) => s + p.heat * p.max, 0) + NIGHTMARE.heat;
+export const MAX_HEAT = PACTS.reduce((s, p) => s + p.heat * p.max, 0) + NIGHTMARE.heat * NIGHTMARE.max;
 
 // Pacts open as you clear heat: `unlock` is the heat you must have cleared
 // (with any wizard) before it can be sworn. `best` is the profile's record.
@@ -70,39 +78,42 @@ const prefix = (b) => ({ tomeLuck: b.luck, goldMult: b.gold });
 export function difficultyFor(sel, extra = {}) {
   const s = cleanPacts(sel);
   const r = (id) => s[id] ?? 0;
-  const nm = !!r('nightmare');
+  const nm = !!r('nightmare'), dm = r('nightmare') >= 2; // (dm: Damnation)
   return {
-    enemyHp: (1 + 0.25 * r('hides')) * (nm ? 1.3 : 1),
-    enemyDamage: (1 + 0.2 * r('blades')) * (nm ? 1.25 : 1),
+    enemyHp: (1 + 0.25 * r('hides')) * (dm ? 1.6 : nm ? 1.3 : 1),
+    enemyDamage: (1 + 0.2 * r('blades')) * (dm ? 1.45 : nm ? 1.25 : 1),
     playerDamage: 1 + 0.15 * r('frailty'),
-    enemySpeed: 1 + 0.12 * r('hunt'),
-    enemyCount: 1 + 0.2 * r('legion'),
-    champions: r('champions') ? 2 : 1,
-    eliteAffix: !!r('champions'),
-    clearHeal: [1, 0.5, 0][r('respite')] * (nm ? 0.5 : 1),
+    enemySpeed: (1 + 0.12 * r('hunt')) * (dm ? 1.1 : 1),
+    enemyCount: (1 + 0.2 * r('legion')) * (dm ? 1.15 : 1),
+    champions: (r('champions') ? 2 : 1) * (dm ? 2 : 1),
+    eliteAffix: !!r('champions') || dm,
+    clearHeal: dm ? 0.25 : [1, 0.5, 0][r('respite')] * (nm ? 0.5 : 1),
     shopCost: 1 + 0.4 * r('avarice'),
-    bossEnrage: 0.15 * r('wrath'),
+    bossEnrage: 0.15 * r('wrath') + (dm ? 0.15 : 0),
     rerolls: r('fate') ? 0 : 1,
-    orbChance: (r('famine') ? 0.5 : 1) * (nm ? 0.7 : 1),
+    orbChance: (r('famine') ? 0.5 : 1) * (dm ? 0.5 : nm ? 0.7 : 1),
     omens: r('omens'),
     tomeChoices: r('narrow') ? 2 : 3,
     dashCd: 1 + 0.4 * r('leaden'),
     waveEarly: r('relentless'), // the share of a wave left standing when the next comes: 0.25 / 0.5 / 0.75
     volatileDead: !!r('volatile'),
-    twinAffix: !!r('exalted'),
+    twinAffix: !!r('exalted') || dm,
     // Nightmare: the same telegraphs (still fair to read), but foes come round
     // to their attacks sooner, more of them press you at once, melee chains a
     // second blow, archers loose a follow-up shot, casters drop an extra circle
     nightmare: nm,
-    aiCd: nm ? 0.8 : 1,
-    aiRecover: nm ? 0.7 : 1,
-    fireTokens: nm ? 1 : 0,
-    meleeSlots: nm ? 1 : 0,
-    combo: nm ? 0.3 : 0,
+    damnation: dm,
+    aiCd: dm ? 0.72 : nm ? 0.8 : 1,
+    aiRecover: dm ? 0.55 : nm ? 0.7 : 1,
+    fireTokens: dm ? 2 : nm ? 1 : 0,
+    meleeSlots: dm ? 2 : nm ? 1 : 0,
+    combo: dm ? 0.4 : nm ? 0.3 : 0,
     doubleTap: nm,
     extraCircle: nm ? 1 : 0,
-    bossCd: nm ? 0.8 : 1,
+    bossCd: dm ? 0.68 : nm ? 0.8 : 1,
     dreadPulse: nm,
+    dreadRate: dm ? 1.35 : 1, // dread rings come this much more often
+    selfRevive: dm ? 0 : 1, // (solo's one second wind)
     minRarity: nm ? 1 : 0,
     bossRelic: nm,
     rush: !!r('rush'),

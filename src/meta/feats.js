@@ -67,6 +67,8 @@ export const FEATS = [
   { id: 'nmAwake', group: 5, name: 'Wide Awake', icon: 'eye', desc: 'Win on Nightmare without ever being downed.', on: { end: (r) => r.won && r.nightmare && r.downs === 0 } },
   { id: 'nmLucid', group: 5, name: 'Lucid Dreamer', icon: 'flame', desc: 'Win on Nightmare at 25 heat or more.', on: { end: (r) => r.won && r.nightmare && r.heat >= 25 } },
   { id: 'nmRush', group: 5, name: 'Night of Five Kings', icon: 'crown', desc: 'Finish a Boss Rush on Nightmare.', on: { end: (r) => r.won && r.rush && r.nightmare } },
+  { id: 'damned', group: 5, name: 'Beyond Damnation', icon: 'skull', desc: 'Win a run on Damnation.', on: { end: (r) => r.won && r.damnation } },
+  { id: 'damnedClean', group: 5, name: 'Unbowed', icon: 'shield', desc: 'Win on Damnation without ever being downed.', on: { end: (r) => r.won && r.damnation && r.downs === 0 } },
   { id: 'nmAbyss', group: 5, name: 'The Dream Beneath', icon: 'tentacle', desc: 'Descend into the Abyss on Nightmare.', on: { abyss: (r) => r.nightmare } },
 ];
 export const FEAT_BY_ID = Object.fromEntries(FEATS.map((f) => [f.id, f]));

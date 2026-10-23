@@ -137,6 +137,7 @@ export class Game {
     this.net = net;
     this.isSolo = !net || players.length <= 1;
     this.player = new LocalPlayer(this, { id: localId, name, classId });
+    this.player.selfRevives = this.difficulty?.selfRevive ?? 1; // (Damnation: no second wind)
     this.ended = false;
     for (const p of players) if (p.id !== localId) this.addRemote(p);
     this._setViewModel(classId);
