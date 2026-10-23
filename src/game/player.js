@@ -18,6 +18,7 @@ const WADE_C = [0.16, 0.22, 0.22]; // ripple rings on channel water
 const EYE = 1.62;
 const RADIUS = 0.38;
 const GRAVITY = 24;
+const DASH_CARRY = 0.55; // the share of a dash's speed a dash-jump keeps
 
 export function baseStats(classId) {
   const C = CLASSES[classId];
@@ -80,6 +81,8 @@ export class LocalPlayer {
     this.dashCharges = this.stats.dashCharges;
     this.dashRecharge = 0;
     this.dashT = 0; this.dashVel = new THREE.Vector3();
+    this.dashEndT = -9; // (when the last dash ended: a jump just after it is still a dash-jump)
+    this.dashJump = false; // (jumped mid-dash: the dash runs its course, then its speed carries on)
     this.invuln = 0;
     this.glide = 0;
     this.cds = {}; this.chargesLeft = {};
@@ -321,7 +324,7 @@ export class LocalPlayer {
   flatForward() { return new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)); }
 
   dash(dir, dist, dur, opts = {}) {
-    this.dashT = dur;
+    this.dashT = dur; this.dashJump = false;
     this.dashVel.copy(dir).setY(0).normalize().multiplyScalar(dist / dur);
     const iv = (opts.invuln ?? 0.2) + (this.stats.dashIv ?? 0); // (Blur widens it)
     this.invuln = Math.max(this.invuln, iv);
@@ -623,6 +626,10 @@ export class LocalPlayer {
       this.dashT -= dt;
       vx = this.dashVel.x; vz = this.dashVel.z;
       this.vel.y = Math.max(this.vel.y, 0);
+      if (this.dashT <= 0) {
+        this.dashEndT = g.time;
+        if (this.dashJump) { this.dashJump = false; this.vel.x = this.dashVel.x * DASH_CARRY; this.vel.z = this.dashVel.z * DASH_CARRY; }
+      }
     }
 
     // jump
@@ -635,6 +642,16 @@ export class LocalPlayer {
       this.grounded = false;
       this.jumpsLeft--;
       g.audio?.play('jump', { volume: 0.4 });
+      // a dash-jump: jump during a dash (or just after one) and part of its speed carries into
+      // the leap, a long bound that slides a little on landing (air control then bleeds it off)
+      if (this.dashT > 0 || g.time - this.dashEndT < 0.12) {
+        if (this.dashT > 0) this.dashJump = true; // (mid-dash: carried when it ends)
+        else { this.vel.x = this.dashVel.x * DASH_CARRY; this.vel.z = this.dashVel.z * DASH_CARRY; }
+        this.dashEndT = -9;
+        g.vfx.addFovKick(4);
+        g.audio?.play('dash', { volume: 0.3 });
+        g.events?.emit('dashJump');
+      }
       if (!this.wasGrounded && st.doubleJump) g.vfx.ring(this.pos, 1.5, fxOf('wind').core, 0.3, 0.3);
     }
     // gravity / glide
