@@ -506,6 +506,8 @@ export class UI {
       const f = Math.max(0, a.hp / a.maxHp) * 100;
       h.bossFill.style.width = f + '%';
       h.bossLag.style.width = f + '%';
+      const ex = game.time < a.exposedUntil;
+      if (this._bossEx !== ex) { this._bossEx = ex; h.boss.classList.toggle('exposed', ex); }
       if (a.dead) { setTimeout(() => h.boss.classList.add('hidden'), 1500); this.bossActor = null; }
     }
     // objective

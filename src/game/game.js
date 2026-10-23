@@ -2080,7 +2080,8 @@ export class Game {
         this.vfx.smoke(new THREE.Vector3(a.pos.x, a.pos.y + 0.3, a.pos.z), { count: 10, size: 1.6, color: [0.3, 0.26, 0.22], alpha: 0.5, speed: 4 });
         this.audio?.play('dash', { pos: a.pos, volume: 0.8 });
         break;
-      case 'exposed': // the punish window opens: a gold flare and a call over the boss
+      case 'exposed': // the punish window opens: a gold flare and a call over the boss (and its bar glows: ui)
+        a.exposedUntil = this.time + (extra.t ?? 1.4);
         this.ui?.floatText(new THREE.Vector3(a.pos.x, a.pos.y + (a.height ?? 4) + 0.6, a.pos.z), 'EXPOSED', '#ffd070', true);
         this.vfx.ring({ x: a.pos.x, y: a.pos.y + 0.15, z: a.pos.z }, 2.5 + a.radius, [2.4, 1.8, 0.6], 0.5, 0.12);
         a.hitFlash = Math.max(a.hitFlash, 0.6);

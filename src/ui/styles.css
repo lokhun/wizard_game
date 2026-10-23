@@ -404,3 +404,8 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
   .pframe::before { right: 0; }
   .abilities { padding: 14px 16px 8px; gap: 8px; }
 }
+
+/* a boss's punish window: its bar burns gold */
+.boss-bar.exposed .bar { box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px #ffd070, 0 0 0 3px #0a0807, 0 0 18px rgba(255,200,90,0.75), inset 0 0 8px #000; }
+.boss-bar.exposed .bar .fill { background: linear-gradient(180deg, #fff0b0 0%, #ffb040 30%, #d06010 70%, #6a2a04 100%); }
+.boss-bar.exposed .bname { color: #ffe0a0; }
