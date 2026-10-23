@@ -30,6 +30,12 @@ export function baseStats(classId) {
   };
 }
 
+// The ultimate can't come round faster than this from damage alone (seconds, at
+// ultRate 1). Charge-rate bonuses shorten it with diminishing returns: +100%
+// ultRate is x1.63, +200% x2.0, so a stacked build fills in ~10-12 s, never instantly.
+const ULT_FLOOR = 20;
+const ultRateEff = (r) => 1 + Math.max(0, r - 1) / (1 + 0.6 * Math.max(0, r - 1)) - Math.max(0, 1 - r);
+
 export class LocalPlayer {
   constructor(game, { id, name, classId }) {
     this.game = game;
@@ -64,6 +70,7 @@ export class LocalPlayer {
       this.chargesLeft[s] = sp.charges ?? 1;
     }
     this.ult = 0;
+    this._ultPend = 0; // charge earned by damage, paid out no faster than the ultimate's floor allows
     this.rateTimer = 0;
     this.channel = null; // {slot, S, ctx, t}
     this.castAnim = null; // for viewmodel
@@ -383,7 +390,7 @@ export class LocalPlayer {
     const dir = aim.point.clone().sub(origin).normalize();
     const ctx = makeCtx(this.game, this, { local: true, slot, origin, dir, aimPoint: aim.point, stats: this.stats });
     // consume resources
-    if (slot === 'ultimate') this.ult = 0;
+    if (slot === 'ultimate') { this.ult = 0; this._ultPend = 0; }
     else {
       this.chargesLeft[slot]--;
       if (this.cds[slot] <= 0) this.cds[slot] = this._cdOf(slot);
@@ -473,8 +480,14 @@ export class LocalPlayer {
         }
       }
     }
-    // passive ult charge trickle
-    if (this.ult < 100) this.ult = Math.min(100, this.ult + dt * 0.4 * st.ultRate);
+    // ult charge: a slow trickle, plus what damage earned, paid out no faster than
+    // one full ultimate per ULT_FLOOR seconds (ultRate shortens it, with diminishing returns)
+    if (this.ult < 100) {
+      const r = ultRateEff(st.ultRate);
+      const take = Math.min(this._ultPend, dt * (100 / ULT_FLOOR) * r);
+      this._ultPend -= take;
+      this.ult = Math.min(100, this.ult + dt * 0.4 * r + take);
+    } else this._ultPend = 0;
     // regen
     const regen = st.regen + (g.auraRegenFor?.(this) ?? 0);
     if (regen > 0 && this.alive && !this.downed && this.hp < this.maxHp) this.heal(regen * dt, true);
@@ -705,7 +718,8 @@ export class LocalPlayer {
   // called by game when this player's hits connect
   onDealtDamage(amount, killed) {
     this.damageDealt += amount;
-    this.ult = Math.min(100, this.ult + amount * 0.055 * this.stats.ultRate);
+    // (damage counts relative to the realm's toughness: late realms' bigger numbers don't charge faster)
+    this._ultPend = Math.min(100, this._ultPend + amount * 0.055 * ultRateEff(this.stats.ultRate) / (this.game.director?.floorHp?.() ?? 1));
     if (this.stats.lifesteal) this.heal(amount * this.stats.lifesteal, true);
     if (killed) {
       this.kills++;

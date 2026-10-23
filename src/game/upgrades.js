@@ -31,7 +31,7 @@ export const TOMES = [
   { id: 'split', name: 'Fractal Bolts', icon: 'split', max: 1, minRarity: 2, desc: () => `Primary projectiles split in two on hit.`, apply: (s) => { s.splitOnHit = true; } },
   { id: 'aoe', name: 'Expanding Sigils', icon: 'aoe', max: 5, desc: (m) => `+${pct(0.15 * m)} area of effect.`, apply: (s, m) => { s.aoeMult += 0.15 * m; } },
   { id: 'velocity', name: 'Velocity Rune', icon: 'speed', max: 3, desc: (m) => `+${pct(0.2 * m)} projectile speed and +${pct(0.05 * m)} damage.`, apply: (s, m) => { s.projSpeed += 0.2 * m; s.dmgMult += 0.05 * m; } },
-  { id: 'ult', name: 'Ascendant Will', icon: 'ult', max: 4, desc: (m) => `Ultimate charges ${pct(0.25 * m)} faster.`, apply: (s, m) => { s.ultRate += 0.25 * m; } },
+  { id: 'ult', name: 'Ascendant Will', icon: 'ult', max: 4, desc: (m) => `Ultimate charges ${pct(0.25 * m)} faster (stacking gives less and less; never under ~10 s).`, apply: (s, m) => { s.ultRate += 0.25 * m; } },
   { id: 'glass', name: 'Glass Cannon', icon: 'glass', max: 1, minRarity: 2, desc: () => `+50% damage, but -30% max health.`, apply: (s) => { s.dmgMult += 0.5; s.maxHp *= 0.7; } },
   { id: 'executioner', name: "Executioner's Rite", icon: 'skull', max: 3, desc: (m) => `+${pct(0.35 * m)} damage to enemies below 30% health.`, apply: (s, m) => { s.execute = (s.execute ?? 0) + 0.35 * m; } },
   { id: 'elites', name: 'Giantslayer', icon: 'skull', max: 3, desc: (m) => `+${pct(0.2 * m)} damage to elites and bosses.`, apply: (s, m) => { s.bossDmg = (s.bossDmg ?? 0) + 0.2 * m; } },
