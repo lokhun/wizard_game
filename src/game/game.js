@@ -40,6 +40,7 @@ const _v = new THREE.Vector3();
 
 // what a ping names when it lands on a thing
 const PING_NAMES = { pedestal: (it) => (it.relic ? 'Relic' : 'Tome'), chest: 'Chest', mimic: 'Chest', shop: 'Merchant', shrine: 'Shrine', altar: 'Blood Altar', gambler: 'Gambler', portal: 'Portal', victoryPortal: 'Victory', abyssPortal: 'The Abyss' };
+const _nmFog = new THREE.Color(0x2a0606);
 const DREAD_MAX = 12;
 export class Game {
   constructor({ renderer, input, audio, ui, settings }) {
@@ -231,12 +232,17 @@ export class Game {
     if (!this.menuMode) preloadEnemies([...new Set([...b0.enemies, ...b0.elites, b0.boss, 'skeleton', 'hound', 'slime', 'slimeling', ...this.encounters.warmTypes(level)].map((t) => ENEMY_DEFS[t]?.model ?? BOSS_DEFS[t]?.model ?? t))], this);
     // atmosphere
     const b = this.biome;
-    this.scene.fog = new THREE.FogExp2(b.fog.color, b.fog.density);
-    this.scene.background = new THREE.Color(b.fog.color);
-    this.particles.setFog(b.fog.density, b.fog.color);
+    // Nightmare wears its own colours: a blood-dark fog, a dimmer sky, a grade
+    // pulled toward red and a heavier vignette, in every realm
+    const nm = !!this.difficulty.nightmare && !this.menuMode;
+    const fogCol = nm ? new THREE.Color(b.fog.color).lerp(_nmFog, 0.45) : new THREE.Color(b.fog.color);
+    const fogDen = b.fog.density * (nm ? 1.12 : 1);
+    this.scene.fog = new THREE.FogExp2(fogCol, fogDen);
+    this.scene.background = fogCol.clone();
+    this.particles.setFog(fogDen, fogCol.getHex());
     this.hemi.color.set(b.ambient.sky);
     this.hemi.groundColor.set(b.ambient.ground);
-    this.hemi.intensity = b.ambient.intensity * 3;
+    this.hemi.intensity = b.ambient.intensity * 3 * (nm ? 0.82 : 1);
     this.baseHemi = this.hemi.intensity;
     this._victoryLight = false;
     this.moon.intensity = b.moon ? b.moon.intensity * 1.6 : 0;
@@ -245,7 +251,7 @@ export class Game {
     this.built.group.traverse((o) => { if (o.isMesh && !o.material.transparent && o.name?.startsWith('lvl_')) { o.castShadow = shadows; o.receiveShadow = shadows; } });
     this.shadowsOn = shadows;
     if (b.moon) this.moon.color.set(b.moon.color);
-    this.renderer.setGrade(b.grade);
+    this.renderer.setGrade(nm ? { ...b.grade, gain: (b.grade.gain ?? [1, 1, 1]).map((c, i) => c * [1.08, 0.87, 0.87][i]), lift: (b.grade.lift ?? [0, 0, 0]).map((c, i) => c + [0.006, 0, 0][i]), saturation: (b.grade.saturation ?? 0.85) * 0.92, vignette: (b.grade.vignette ?? 0.62) * 1.15 } : b.grade);
     this.viewHemi.color.set(b.ambient.sky);
     this.viewHemi.intensity = 0.6 + b.ambient.intensity;
     // interactables from the level
