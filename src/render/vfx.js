@@ -561,7 +561,9 @@ export class VFX {
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     })));
     // telegraphs
-    this.telePool = this._pool(24, () => new THREE.Mesh(plane, new THREE.ShaderMaterial({
+    // (64: an arena-wide pattern marks 40+ zones at once, and a pool that ran out stole the
+    // oldest warning still on the floor: a blow that landed with no mark)
+    this.telePool = this._pool(64, () => new THREE.Mesh(plane, new THREE.ShaderMaterial({
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }',
       fragmentShader: TELE_FRAG,
       uniforms: { uColor: { value: new THREE.Color() }, uProg: { value: 0 }, uTime: { value: 0 }, uMode: { value: 0 }, uAngle: { value: 0.6 }, uFade: { value: 1 }, uSize: { value: new THREE.Vector2(1, 1) }, uK: { value: new THREE.Vector2(1, 1) } },

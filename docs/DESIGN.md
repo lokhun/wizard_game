@@ -225,6 +225,18 @@ Anything that can hurt you must be seen in time, without looking garish.
 - **Standing in a zone** about to land tints the edges of the view in its colour, pulsing faster as it nears (`uDanger` in the grade pass).
 - **Hostile shots** carry a dark-cored, barbed ring in their colour, so an enemy bolt never looks like a wizard's own magic. A teammate's shots are drawn smaller and dimmer than your own. An enemy shot about to hit you from outside the view marks the screen edge it comes from.
 
+## Boss fights
+Each boss has three phases of four to six moves (`SCRIPTS` in `bosses.js`), and every phase adds something that moves the fight around the arena rather than only adding projectiles:
+- **The Mother of Filth:** *Belch* (a cone of bile that leaves a pool), *Flop* (she heaves into the air and lands on you, a ring of bile rolling out), *Ripple* (three rings of bile burst outward, each with a wandering gap).
+- **The Executioner:** *Combo* (a chop, then the backswing a beat later), *Leap* (from across the yard, axe overhead), *Whirlwind* (he spins down a marked lane of burning steel).
+- **Gravemaw:** *Gust* (a wingbeat that throws you back), *Fault* (a line of bursts racing out toward each wizard), *Pounce* (wings broken, it still hurls itself across the arena and lands in magma).
+- **Veyrin:** *Orbs* (slow seeking orbs that burst where they catch you), *Mirror Dance* (three blinks around you, a volley from each), *Starfall* (a cross of beams, then the same cross turned an eighth).
+- **The Hollow King:** *Grasp* (from the throne, the floor closes under you three times), *Leap* and *Riposte* (a sweep, then the thrust as you step back), *Shadow Step* (he steps out of shadow behind you, blade already moving).
+
+Two tools make that movement readable. `BossBrain.leap(x, z)` marks the landing ring at once, plays a crouch, springs the body along an arc (`bossFx('leap')` sets `airT/airDur/airH` on the actor, and every peer lifts the model over its ground position), and crashes down with `bossFx('land')`. `BossBrain.lane()` marks a lane the boss will tear down and sets it off in segments as the body passes, so a whirl or a slide carries its danger with it. The Executioner and the Hollow King have their own leap poses (crouch, airborne tuck), and the Executioner a whirl (axe at arm's length while `spin` turns the body).
+
+The telegraph pool holds 64 zones. At 24, an arena-wide pattern (Avalanche, Rune Prison or Guillotines in a full party) ran it dry, and the pool stole the oldest warning still on the floor, so a zone landed with no mark.
+
 ## Relics past the last one
 - **Ascension.** An owned relic can be raised to ★ and ★★: chests (and the merchant) offer it now and then, and fill every empty slot with it once few relics are left to find. Each star multiplies the relic's gift by 1.5 / 2, never its curse: only the stat changes that help are raised (Crown of Thorns' damage, not the damage it makes you take), and its procs hit harder (`RelicRuntime.pd(x, id)`). Relics whose gift is a rule (Phoenix Ash, Sands of the Last Breath, the Gambler's Die...) can't ascend.
 - **Abyssal relics** turn up only past the Hollow King: six great gifts bought dearly (+60% damage and area for taking 25% more; +4% damage per tome held but no healing from kills or lifesteal; +2 projectiles for −25% damage...).

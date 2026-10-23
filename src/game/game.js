@@ -2063,6 +2063,14 @@ export class Game {
       case 'fly':
         a.model?.setFlying?.(!!extra.on);
         break;
+      case 'leap': // the boss springs: dust where it left, the arc is drawn by the actor (airT)
+        a.airT = 0; a.airDur = extra.dur; a.airH = extra.h;
+        this.vfx.smoke(new THREE.Vector3(a.pos.x, a.pos.y + 0.3, a.pos.z), { count: 10, size: 1.6, color: [0.3, 0.26, 0.22], alpha: 0.5, speed: 4 });
+        this.audio?.play('dash', { pos: a.pos, volume: 0.8 });
+        break;
+      case 'land':
+        this.vfx.explosion(new THREE.Vector3(a.pos.x, a.pos.y + 0.4, a.pos.z), extra.el ?? 'earth', extra.r ?? 4, { groundY: a.pos.y });
+        break;
       case 'enrage':
         this.vfx.explosion(new THREE.Vector3(a.pos.x, a.pos.y + 2, a.pos.z), 'enemyFire', 5);
         a.model?.setTint?.(0xff3010, 0.25);

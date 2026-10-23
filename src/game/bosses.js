@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { angleDamp } from '../core/math.js';
+import { angleDamp, clamp } from '../core/math.js';
 import { rand } from '../core/rng.js';
 import { SPR } from '../render/particles.js';
 
@@ -29,6 +29,7 @@ export class BossBrain {
     this.started = false;
     this.data = {};
     this.invuln = 0;
+    this.spin = 0; this.spinT = 0; // a whirl turns the body (rad/s) while it lasts
     a.anim = 'idle';
     this.script.init?.(this);
   }
@@ -139,6 +140,50 @@ export class BossBrain {
     const r = this.g.level.roomAt(this.a.pos.x, this.a.pos.z) ?? this.data.room;
     return r ? { x0: r.x * 2 + 2, z0: r.y * 2 + 2, x1: (r.x + r.w) * 2 - 2, z1: (r.y + r.h) * 2 - 2 } : { x0: this.a.pos.x - 14, z0: this.a.pos.z - 14, x1: this.a.pos.x + 14, z1: this.a.pos.z + 14 };
   }
+  // A leap: the landing ring is marked at once; the boss crouches, springs an arc
+  // h metres high over `air` s, and crashes down. Lands in the arena, never in a wall.
+  // Returns the time to landing (the move's busy time adds the flight: see update).
+  leap(x, z, o = {}) {
+    const a = this.a, g = this.g, A = this.arena();
+    const crouch = o.crouch ?? 0.6, air = o.air ?? 0.8, r = o.r ?? 4.5;
+    x = clamp(x, A.x0 + 1.5, A.x1 - 1.5); z = clamp(z, A.z0 + 1.5, A.z1 - 1.5);
+    if (g.collision.cellBlocked(Math.floor(x / 2), Math.floor(z / 2), a.pos.y + 0.5)) { x = a.pos.x; z = a.pos.z; }
+    const yaw = Math.atan2(x - a.pos.x, z - a.pos.z), d = Math.hypot(x - a.pos.x, z - a.pos.z);
+    a.yaw = yaw;
+    this.anim('windup', o.type ?? 'leap', crouch);
+    this.circle(x, z, r, crouch + air, o.dmg ?? 1.2, o.el ?? 'physical', { kb: o.kb ?? 12 });
+    this.at(crouch, () => {
+      a.yaw = yaw;
+      this.anim(o.airAnim ?? 'attack', o.airType ?? o.type ?? 'leap', air);
+      if (d > 0.5) this.dash(yaw, d / air, air);
+      this.fx('leap', { dur: air, h: o.h ?? 4 });
+      this.sound('boss_roar', 0.5);
+    });
+    this.at(crouch + air, () => {
+      // (a pillar in the way stops the dash: land where it was aimed all the same)
+      if (Math.hypot(x - a.pos.x, z - a.pos.z) > 0.8) { a.pos.x = x; a.pos.z = z; a.net.x = x; a.net.z = z; }
+      this.anim('attack', o.landType ?? 'slam', 0.6);
+      this.shake(0.55); this.sound('boss_slam');
+      this.fx('land', { el: o.el ?? 'earth', r });
+      o.onLand?.();
+    });
+    return crouch + air;
+  }
+  // a phase's opening: the boss bounds to the middle of its arena and lands with a ring the party can jump
+  leapToCentre(o) {
+    const A = this.arena();
+    this.busy = this.leap((A.x0 + A.x1) / 2, (A.z0 + A.z1) / 2, { crouch: 0.5, air: 0.9, h: 6, r: 5, dmg: 1, ...o, onLand: () => { this.wave(2, 10, 18, 0.6, o.el ?? 'physical', 0.05); o.onLand?.(); } }) + 0.8;
+  }
+  // A lane the boss will tear down (a whirl, a slide): marked at once, it goes off in
+  // segments as the boss passes, so the danger travels with the body.
+  lane(yaw, len, w, start, speed, dmgMult, el, extra = {}) {
+    const a = this.a, n = Math.max(2, Math.ceil(len / 3)), seg = len / n;
+    for (let i = 0; i < n; i++) {
+      const x = a.pos.x + Math.sin(yaw) * seg * i, z = a.pos.z + Math.cos(yaw) * seg * i;
+      const t = start + (seg * (i + 0.5)) / speed;
+      this.hazard({ shape: 'rect', x, y: this.g.groundY(x, z), z, rot: yaw, len: seg + 0.6, w, delay: t, teleDur: t, dmg: this.dmg * dmgMult, el, kb: 10, ...extra });
+    }
+  }
   banner(text, sub, color) { this.g.net?.broadcast({ t: 'banner', a: text, b: sub, c: color }); this.g.ui?.banner(text, sub, color); }
   shake(k) { this.g.net?.broadcast({ t: 'shake', k }); this.g.vfx.addShake(k); }
   sound(name, vol = 1) { this.g.net?.broadcast({ t: 'snd', n: name, x: this.a.pos.x, y: this.a.pos.y, z: this.a.pos.z, v: vol }); this.g.audio?.play(name, { pos: this.a.pos, volume: vol }); }
@@ -193,6 +238,7 @@ export class BossBrain {
     a.state = a.anim === 'windup' ? 'windup' : 'chase';
     const out = { x: 0, z: 0 };
     const tgt = this.target;
+    if (this.spinT > 0) { this.spinT -= dt; a.yaw += this.spin * dt; }
     if (this.moveVel) {
       out.x = this.moveVel.x * dt; out.z = this.moveVel.z * dt;
       this.moveVel.t -= dt;
@@ -292,6 +338,19 @@ SCRIPTS.motherOfFilth = {
           B.at(1.0, () => B.summon(Math.random() < 0.5 ? 'slime' : 'rat', 3 + B.players().length, 5));
           return 1.8;
         } },
+        // a gout of bile in a cone before her, leaving a pool where it lands
+        { name: 'belch', w: 2, cd: 5, range: [0, 11], track: 2, run(B, t) {
+          B.anim('windup', 'spit', 0.9);
+          const yaw = B.yawTo(t.pos);
+          B.hazard({ shape: 'cone', x: B.a.pos.x, y: B.a.pos.y, z: B.a.pos.z, r: 10, rot: yaw, angle: 0.55, delay: 0.95, dmg: B.dmg * 0.9, el: 'enemyGreen', kb: 6 });
+          B.at(0.9, () => {
+            B.anim('attack', 'spit', 0.6);
+            B.sound('boss_roar', 0.5);
+            const x = B.a.pos.x + Math.sin(yaw) * 6, z = B.a.pos.z + Math.cos(yaw) * 6;
+            B.circle(x, z, 2.6, 0.35, 0.3, 'enemyGreen', { pool: [3, 4, B.dmg * 0.3] });
+          });
+          return 1.7;
+        } },
       ],
     },
     {
@@ -321,11 +380,17 @@ SCRIPTS.motherOfFilth = {
           return 1.2;
         } },
         { name: 'brood', w: 1, cd: 12, run(B) { B.anim('cast', 'summon', 1.0); B.at(0.8, () => B.summon('slime', 2, 5)); return 1.4; } },
+        // she heaves her bulk into the air and comes down on you
+        { name: 'flop', w: 2, cd: 7, range: [5, 40], run(B, t) {
+          B.leap(t.pos.x, t.pos.z, { type: 'slam', airAnim: 'windup', crouch: 0.75, air: 0.95, h: 5.5, r: 5, el: 'enemyGreen', dmg: 1.3, kb: 14,
+            onLand: () => { B.wave(2.5, 9, 13, 0.55, 'enemyGreen', 0.05); B.circle(B.a.pos.x, B.a.pos.z, 4, 0.1, 0.01, 'enemyGreen', { pool: [4.5, 5, B.dmg * 0.25] }); } });
+          return 1.4;
+        } },
       ],
     },
     {
       at: 0.33,
-      enter(B) { B.banner('ROTTING FURY', 'Toxic tides surge — JUMP the waves!', '#9adf3a'); B.sound('boss_roar'); },
+      enter(B) { B.banner('ROTTING FURY', 'Toxic tides surge — JUMP the waves!', '#9adf3a'); B.sound('boss_roar'); B.leapToCentre({ type: 'slam', airAnim: 'windup', el: 'enemyGreen' }); },
       speed: 1.3,
       moves: [
         { name: 'tide', w: 3, cd: 4, run(B) {
@@ -337,6 +402,23 @@ SCRIPTS.motherOfFilth = {
           B.anim('cast', 'spit', 1.0);
           for (let i = 0; i < 10; i++) { const p = B.roomRandom(2); B.circle(p.x, p.z, 2.4, 1.0 + i * 0.12, 0.7, 'enemyGreen', { pool: [2.2, 3, B.dmg * 0.3] }); }
           return 1.8;
+        } },
+        // rings of bile burst outward from her, each with a gap that wanders
+        { name: 'ripple', w: 2, cd: 7, run(B) {
+          B.anim('windup', 'slam', 0.8);
+          B.at(0.8, () => { B.anim('attack', 'slam', 0.5); B.shake(0.4); B.sound('boss_slam'); });
+          const ax = B.a.pos.x, az = B.a.pos.z;
+          let gap = Math.random() * Math.PI * 2;
+          for (let k = 1; k <= 3; k++) {
+            const R = 4.4 * k, n = 4 + 4 * k;
+            gap += rand(-0.9, 0.9);
+            for (let i = 0; i < n; i++) {
+              const ang = (i / n) * Math.PI * 2;
+              if (Math.abs(Math.atan2(Math.sin(ang - gap), Math.cos(ang - gap))) < 0.5) continue;
+              B.circle(ax + Math.sin(ang) * R, az + Math.cos(ang) * R, 2.0, 0.9 + k * 0.45, 0.7, 'enemyGreen');
+            }
+          }
+          return 2.4;
         } },
         { name: 'submerge', w: 2, cd: 6, run(B) { return SCRIPTS.motherOfFilth.phases[1].moves[0].run(B); } },
       ],
@@ -389,6 +471,19 @@ SCRIPTS.executioner = {
           B.at(0.9, () => { B.anim('attack', 'charge', 0.9); B.dash(yaw, 20, 0.85); B.sound('boss_roar', 0.6); });
           return 2.0;
         } },
+        // a chop, and before you've breathed, the backswing
+        { name: 'combo', w: 2, cd: 5, range: [0, 7], track: 3, run(B, t) {
+          SCRIPTS.executioner.phases[0].moves[0].run(B, t);
+          B.at(1.3, () => {
+            const p = B.target ?? t;
+            const rot = B.yawTo(p.pos);
+            B.a.yaw = rot;
+            B.anim('windup', 'sweep', 0.55);
+            B.hazard({ shape: 'cone', x: B.a.pos.x, y: B.a.pos.y, z: B.a.pos.z, r: 6.5, rot, angle: 1.3, delay: 0.55, dmg: B.dmg, el: 'physical', kb: 12 });
+            B.at(0.55, () => { B.anim('attack', 'sweep', 0.5); B.sound('swing'); });
+          });
+          return 2.6;
+        } },
       ],
     },
     {
@@ -406,11 +501,17 @@ SCRIPTS.executioner = {
         } },
         { name: 'charge', w: 1, cd: 6, range: [6, 40], run(B, t) { return SCRIPTS.executioner.phases[0].moves[2].run(B, t); } },
         { name: 'guards', w: 1, cd: 18, run(B) { B.anim('cast', 'roar', 1.2); B.at(0.8, () => B.summon('skeleton', 2 + B.players().length, 5)); return 1.5; } },
+        // from across the yard he leaps, axe overhead, and splits the ground where you stood
+        { name: 'leap', w: 2, cd: 7, range: [7, 40], run(B, t) {
+          B.leap(t.pos.x, t.pos.z, { crouch: 0.7, air: 0.85, h: 5, r: 4.5, el: 'physical', dmg: 1.4, kb: 16,
+            onLand: () => B.wave(1.5, 10, 11, 0.6, 'physical', 0.05) });
+          return 1.3;
+        } },
       ],
     },
     {
       at: 0.33,
-      enter(B) { B.banner('BLOODLUST', 'His axe burns — JUMP the shockwaves!', '#ff3020'); B.sound('boss_roar'); B.fx('enrage'); },
+      enter(B) { B.banner('BLOODLUST', 'His axe burns — JUMP the shockwaves!', '#ff3020'); B.sound('boss_roar'); B.fx('enrage'); B.leapToCentre({ el: 'enemyFire' }); },
       speed: 1.3,
       moves: [
         { name: 'quake', w: 3, cd: 3.5, run(B) {
@@ -424,6 +525,17 @@ SCRIPTS.executioner = {
           B.anim('windup', 'sweep', 0.7);
           B.at(0.7, () => { B.anim('attack', 'sweep', 0.4); for (const p of B.players()) B.aimed(p, 5, 0.5, 18, 'enemyFire', 0.5, { aoe: 1.8 }); });
           return 1.4;
+        } },
+        // a whirlwind of burning steel down a marked lane
+        { name: 'whirlwind', w: 2, cd: 7, range: [0, 30], run(B, t) {
+          const yaw = B.yawTo(t.pos), len = Math.min(18, Math.hypot(t.pos.x - B.a.pos.x, t.pos.z - B.a.pos.z) + 5), speed = 11;
+          B.a.yaw = yaw;
+          B.anim('windup', 'whirl', 0.8);
+          B.sound('boss_roar', 0.7);
+          B.lane(yaw, len, 4.2, 0.8, speed, 0.8, 'enemyFire');
+          B.at(0.8, () => { B.anim('attack', 'whirl', len / speed + 0.2); B.spin = 15; B.spinT = len / speed; B.dash(yaw, speed, len / speed); B.sound('swing'); });
+          B.at(0.8 + len / speed, () => { B.a.yaw = B.target ? B.yawTo(B.target.pos) : yaw; B.shake(0.3); });
+          return 1.5;
         } },
         { name: 'charge', w: 1, cd: 5, range: [6, 40], run(B, t) { return SCRIPTS.executioner.phases[0].moves[2].run(B, t); } },
       ],
@@ -485,6 +597,17 @@ SCRIPTS.stoneWyvern = {
           for (const p of B.players()) B.circle(p.pos.x, p.pos.z, 2.6, 1.3, 0.9, 'earth', { boulder: 1 });
           return 1.8;
         } },
+        // a beat of its great wings: a gale that throws you back across the yard
+        { name: 'gust', w: 2, cd: 6, range: [0, 14], track: 2, run(B, t) {
+          B.anim('windup', 'roar', 0.9);
+          const yaw = B.yawTo(t.pos);
+          B.hazard({ shape: 'cone', x: B.a.pos.x, y: B.a.pos.y, z: B.a.pos.z, r: 13, rot: yaw, angle: 0.8, delay: 0.9, dmg: B.dmg * 0.45, el: 'physical', kb: 26 });
+          B.at(0.9, () => {
+            B.anim('attack', 'fly', 0.7); B.sound('boss_roar', 0.6); B.shake(0.3);
+            for (let i = 0; i < 6; i++) { const yy = yaw + (i / 5 - 0.5) * 1.4; B.g.vfx.smoke(new THREE.Vector3(B.a.pos.x + Math.sin(yy) * 4, B.a.pos.y + 0.6, B.a.pos.z + Math.cos(yy) * 4), { count: 3, size: 2, color: [0.4, 0.36, 0.3], alpha: 0.45, speed: 9 }); }
+          });
+          return 1.7;
+        } },
       ],
     },
     {
@@ -501,6 +624,19 @@ SCRIPTS.stoneWyvern = {
         { name: 'stomp', w: 2, cd: 4, run(B) {
           B.anim('windup', 'slam', 0.8);
           B.at(0.8, () => { B.anim('attack', 'slam', 0.5); B.wave(2, 9, 22, 0.7, 'earth'); B.shake(0.5); B.sound('boss_slam'); });
+          return 1.6;
+        } },
+        // it drives its claws into the stone: a fault runs out toward each of you, bursting as it goes
+        { name: 'fault', w: 2, cd: 5, run(B) {
+          B.anim('windup', 'slam', 0.7);
+          B.at(0.7, () => { B.anim('attack', 'slam', 0.5); B.shake(0.45); B.sound('boss_slam'); });
+          for (const p of B.players()) {
+            const yaw = B.yawTo(p.pos), n = 11;
+            for (let i = 1; i <= n; i++) {
+              const x = B.a.pos.x + Math.sin(yaw) * i * 1.9, z = B.a.pos.z + Math.cos(yaw) * i * 1.9;
+              B.circle(x, z, 1.5, 0.85 + i * 0.07, 0.8, 'earth', { kb: 8 });
+            }
+          }
           return 1.6;
         } },
         { name: 'breath', w: 2, cd: 3.5, range: [0, 22], track: 1.2, run(B, t) { return SCRIPTS.stoneWyvern.phases[0].moves[0].run(B, t); } },
@@ -525,7 +661,13 @@ SCRIPTS.stoneWyvern = {
         } },
         { name: 'stomp', w: 2, cd: 3.5, run(B) { return SCRIPTS.stoneWyvern.phases[1].moves[1].run(B); } },
         { name: 'tail', w: 2, cd: 3, range: [0, 8], run(B, t) { return SCRIPTS.stoneWyvern.phases[1].moves[0].run(B, t); } },
-      ],
+
+        // broken wings or not, it hurls itself across the arena and lands in a burst of magma
+        { name: 'pounce', w: 2, cd: 6, range: [6, 40], run(B, t) {
+          B.leap(t.pos.x, t.pos.z, { type: 'slam', airType: 'fly', crouch: 0.6, air: 0.9, h: 6, r: 5.5, el: 'enemyFire', dmg: 1.2, kb: 16,
+            onLand: () => { for (let i = 0; i < 5; i++) { const ang = (i / 5) * Math.PI * 2 + Math.random(); B.circle(B.a.pos.x + Math.sin(ang) * 5, B.a.pos.z + Math.cos(ang) * 5, 2, 0.6, 0.6, 'enemyFire', { pool: [2.2, 4, B.dmg * 0.25] }); } } });
+          return 1.3;
+        } },      ],
     },
   ],
 };
@@ -574,6 +716,12 @@ SCRIPTS.courtArchmage = {
           B.at(0.35, () => { const p = B.roomRandom(3); B.g.actors.blinkFx(B.a.pos); B.g.net?.broadcast({ t: 'blinkfx', x: B.a.pos.x, y: B.a.pos.y, z: B.a.pos.z }); B.a.pos.x = p.x; B.a.pos.z = p.z; B.a.net.x = p.x; B.a.net.z = p.z; B.g.actors.blinkFx(B.a.pos); });
           return 0.8;
         } },
+        // slow seeking orbs that burst where they catch you: keep moving, or bait them into a wall
+        { name: 'orbs', w: 2, cd: 6, run(B) {
+          B.anim('cast', 'summon', 1.0);
+          B.at(0.8, () => { for (const p of B.players()) B.aimed(p, 3, 0.9, 6.5, 'enemyPurple', 0.6, { homing: 1.4, aoe: 2.4 }); });
+          return 1.4;
+        } },
       ],
     },
     {
@@ -589,6 +737,24 @@ SCRIPTS.courtArchmage = {
         { name: 'volley', w: 2, cd: 2, run(B, t) { return SCRIPTS.courtArchmage.phases[0].moves[0].run(B, t); } },
         { name: 'blink', w: 1, cd: 4, run(B) { return SCRIPTS.courtArchmage.phases[0].moves[3].run(B); } },
         { name: 'court', w: 1, cd: 16, run(B) { B.anim('cast', 'summon', 1.2); B.at(1.0, () => B.summon(Math.random() < 0.5 ? 'grimoire' : 'courtSorcerer', 3, 5)); return 1.5; } },
+        // she dances: three blinks around you, a volley from each new place
+        { name: 'mirrorDance', w: 2, cd: 7, run(B, t) {
+          const step = (i) => {
+            const p = B.target ?? t;
+            if (!p) return;
+            const ang = Math.random() * Math.PI * 2, A = B.arena();
+            const x = clamp(p.pos.x + Math.sin(ang) * 9, A.x0 + 1, A.x1 - 1), z = clamp(p.pos.z + Math.cos(ang) * 9, A.z0 + 1, A.z1 - 1);
+            if (B.g.collision.cellBlocked(Math.floor(x / 2), Math.floor(z / 2), B.a.pos.y + 0.5)) return;
+            B.g.actors.blinkFx(B.a.pos); B.g.net?.broadcast({ t: 'blinkfx', x: B.a.pos.x, y: B.a.pos.y, z: B.a.pos.z });
+            B.a.pos.x = x; B.a.pos.z = z; B.a.net.x = x; B.a.net.z = z;
+            B.g.actors.blinkFx(B.a.pos); B.g.net?.broadcast({ t: 'blinkfx', x, y: B.a.pos.y, z });
+            B.face(p);
+            B.anim('cast', 'cast', 0.7);
+            B.at(0.45, () => { const q = B.target; if (q) B.aimed(q, 3, 0.22, 19, ['enemyFire', 'arcane', 'frost'][i], 0.45); });
+          };
+          step(0); B.at(0.85, () => step(1)); B.at(1.7, () => step(2));
+          return 2.6;
+        } },
       ],
     },
     {
@@ -607,6 +773,17 @@ SCRIPTS.courtArchmage = {
         } },
         { name: 'spiral', w: 2, cd: 4, run(B) { return SCRIPTS.courtArchmage.phases[1].moves[0].run(B); } },
         { name: 'runes', w: 2, cd: 4, run(B) { return SCRIPTS.courtArchmage.phases[0].moves[1].run(B); } },
+        // starfall: a cross of beams, then the cross turned an eighth: stand where the second won't fall
+        { name: 'starfall', w: 2, cd: 6, run(B) {
+          B.anim('cast', 'beam', 2.0);
+          B.sound('enemy_cast', 1);
+          const base = Math.random() * Math.PI;
+          for (let k = 0; k < 2; k++) for (let i = 0; i < 4; i++) {
+            const rot = base + i * (Math.PI / 2) + k * (Math.PI / 4);
+            B.hazard({ shape: 'rect', x: B.a.pos.x, y: B.a.pos.y, z: B.a.pos.z, rot, len: 28, w: 2.6, delay: 1.1 + k * 0.85, teleDur: 0.9, dmg: B.dmg, el: k ? 'arcane' : 'enemyPurple', beam: 1 });
+          }
+          return 2.4;
+        } },
         { name: 'blink', w: 1, cd: 4, run(B) { return SCRIPTS.courtArchmage.phases[0].moves[3].run(B); } },
       ],
     },
@@ -664,6 +841,13 @@ SCRIPTS.hollowKing = {
           B.at(0.6, () => { for (const p of B.players()) B.aimed(p, 3, 0.25, 18, 'enemyPurple', 0.5, { homing: 1 }); });
           return 1.2;
         } },
+        // the king's hand: the floor closes under you three times, each a beat behind
+        { name: 'grasp', w: 2, cd: 6, run(B) {
+          B.anim('cast', 'seated', 1.6);
+          B.sound('enemy_cast', 0.9);
+          for (let k = 0; k < 3; k++) B.at(k * 0.5, () => { for (const p of B.players()) B.circle(p.pos.x, p.pos.z, 2.4, 0.95, 0.8, 'enemyPurple'); });
+          return 2.0;
+        } },
       ],
     },
     {
@@ -700,6 +884,18 @@ SCRIPTS.hollowKing = {
           return 2.0;
         } },
         { name: 'wraiths', w: 1, cd: 14, run(B) { B.anim('cast', 'summon', 1.2); B.at(1.0, () => B.summon('wraith', 2 + B.players().length, 6)); return 1.5; } },
+        // he leaps, sword reversed, and drives it into the floor where you were
+        { name: 'leap', w: 2, cd: 6, range: [7, 40], run(B, t) {
+          B.leap(t.pos.x, t.pos.z, { crouch: 0.6, air: 0.8, h: 5.5, r: 4.8, el: 'enemyPurple', dmg: 1.3, kb: 14,
+            onLand: () => B.circle(B.a.pos.x, B.a.pos.z, 4.8, 0.05, 0.01, 'enemyPurple', { pool: [4.5, 4, B.dmg * 0.2] }) });
+          return 1.2;
+        } },
+        // a sweep and, as you step back, the thrust
+        { name: 'riposte', w: 2, cd: 5, range: [0, 7], run(B, t) {
+          SCRIPTS.hollowKing.phases[1].moves[0].run(B, t);
+          B.at(1.2, () => { const p = B.target ?? t; if (p) SCRIPTS.hollowKing.phases[1].moves[1].run(B, p); });
+          return 2.7;
+        } },
       ],
     },
     {
@@ -708,6 +904,7 @@ SCRIPTS.hollowKing = {
         B.banner('ECLIPSE', 'The last light dies — hide behind the pillars!', '#ff40ff');
         B.sound('boss_roar'); B.shake(0.8);
         B.fx('eclipse');
+        B.leapToCentre({ el: 'enemyPurple' });
       },
       speed: 1.25,
       moves: [
@@ -726,6 +923,27 @@ SCRIPTS.hollowKing = {
           return 4.6;
         } },
         { name: 'rain', w: 2, cd: 4, run(B) { return SCRIPTS.hollowKing.phases[0].moves[1].run(B); } },
+        // he steps into shadow and out of it behind you, blade already moving
+        { name: 'shadowStep', w: 2, cd: 6, run(B, t) {
+          B.anim('cast', 'roar', 0.5);
+          B.at(0.45, () => {
+            const p = B.target ?? t;
+            if (!p) return;
+            const back = p.yaw ?? 0; // behind the wizard: they face -sin(yaw), -cos(yaw)
+            let x = p.pos.x + Math.sin(back) * 3.2, z = p.pos.z + Math.cos(back) * 3.2;
+            const A = B.arena();
+            x = clamp(x, A.x0 + 1, A.x1 - 1); z = clamp(z, A.z0 + 1, A.z1 - 1);
+            if (B.g.collision.cellBlocked(Math.floor(x / 2), Math.floor(z / 2), B.a.pos.y + 0.5)) return;
+            B.g.actors.blinkFx(B.a.pos); B.g.net?.broadcast({ t: 'blinkfx', x: B.a.pos.x, y: B.a.pos.y, z: B.a.pos.z });
+            B.a.pos.x = x; B.a.pos.z = z; B.a.net.x = x; B.a.net.z = z;
+            B.g.actors.blinkFx(B.a.pos); B.g.net?.broadcast({ t: 'blinkfx', x, y: B.a.pos.y, z });
+            B.face(p);
+            B.anim('windup', 'sweep', 0.75);
+            B.hazard({ shape: 'cone', x, y: B.a.pos.y, z, r: 7, rot: B.yawTo(p.pos), angle: 1.4, delay: 0.75, dmg: B.dmg * 1.1, el: 'enemyPurple', kb: 14 });
+            B.at(0.75, () => { B.anim('attack', 'sweep', 0.5); B.sound('swing'); B.shake(0.25); });
+          });
+          return 2.0;
+        } },
       ],
     },
   ],

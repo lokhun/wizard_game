@@ -149,6 +149,7 @@ export class Actor {
     this.attack = null; this.attackDef = null; this.atkTarget = null; this.brain = null; this.brainAttackType = null; this.netDur = null;
     this.leapT = 0; this.leapV = null; this.jv = null;
     this.wakeAt = 0; this.dormantT = 0; this.sinkT = 0; this.hiddenT = 0; this.deathMask = 0;
+    this.airT = 0; this.airDur = 0; this.airH = 0; // a boss's leap: the model rides an arc over its ground position (visual, every peer)
     this.reassembled = false; this.champion = null; this._champT = null;
     this._prevAnim = null; this._poseDt = 0; this._posedAnim = null; this._tint = null;
     this._mvLosT = 0; this._mvLosTgt = null; this._losMove = false; this._losT = 0; this._los = false;
@@ -611,6 +612,12 @@ export class ActorManager {
       if (a.model) {
         const m = a.model;
         m.root.position.copy(a.pos);
+        if (a.airDur > 0) {
+          a.airT += dt;
+          const u = a.airT / a.airDur;
+          if (u >= 1) a.airDur = 0;
+          else m.root.position.y += a.airH * 4 * u * (1 - u);
+        }
         m.root.rotation.y = a.yaw;
         if (a.jv) {
           // damped spring back to upright

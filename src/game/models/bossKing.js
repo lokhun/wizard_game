@@ -52,6 +52,9 @@ const B_PLUNGE_S = { chest: [0.45, 0, 0], spine: [0.35, 0, 0], head: [-0.35, 0, 
 const B_ROAR_W = { chest: [0.3, 0, 0], spine: [0.2, 0, 0], neck: [0.25, 0, 0], head: [0.2, 0, 0], armL: [-0.2, 0, -0.3], foreL: [-1.3, 0, 0], hips: [0, 0, 0, 0, -0.1, 0] };
 const B_ROAR_S = { chest: [-0.32, 0, 0], spine: [-0.14, 0, 0], neck: [-0.3, 0, 0], head: [-0.35, 0, 0], armL: [-0.6, 0, 1.25], foreL: [-0.6, 0, 0], handL: [0, 0, 0.4], thighL: [0, 0, 0.18], thighR: [0, 0, -0.18] };
 const B_BEAM_S = { chest: [0.05, 0.25, 0], spine: [0.05, 0.1, 0], head: [0, -0.2, 0], armL: [-1.55, 0, -0.1], foreL: [-0.1, 0, 0], handL: [-1.0, 0, 0], hips: [0, 0, 0, 0, -0.05, 0.05] };
+// the leap: crouched under the reversed sword, then airborne, knees drawn up, the point held down for the plunge
+const B_LEAP_W = { chest: [0.45, 0, 0], spine: [0.28, 0, 0], head: [-0.3, 0, 0], hips: [0, 0, 0, 0, -0.45, -0.05], thighL: [-1.25, 0, 0.1], shinL: [1.7, 0, 0], footL: [-0.4, 0, 0], thighR: [-1.1, 0, -0.1], shinR: [1.6, 0, 0], footR: [-0.4, 0, 0] };
+const B_LEAP_S = { chest: [-0.2, 0, 0], spine: [-0.1, 0, 0], head: [0.3, 0, 0], hips: [0, 0, 0, 0, 0.1, 0], thighL: [-1.1, 0, 0.12], shinL: [1.6, 0, 0], thighR: [-0.7, 0, -0.12], shinR: [1.3, 0, 0], footL: [0.3, 0, 0], footR: [0.3, 0, 0] };
 const SEAT = (D) => ({ hips: [0, 0, 0, 0, -D.thigh, -D.thigh * 0.85], thighL: [-1.5, 0, 0.12], thighR: [-1.5, 0, -0.12], shinL: [1.45, 0, 0], shinR: [1.45, 0, 0], spine: [0.05, 0, 0], chest: [0.05, 0, 0], head: [0.15, 0, 0] });
 
 const AX = {
@@ -74,7 +77,7 @@ const GRIPS = [{ side: -1, y: 0.2, w: 1, flip: false }, { side: 1, y: 0.04, w: 1
 const POLES = [[1, -0.6, -0.5], [-1, -0.6, -0.5]];
 
 export const hollowKing = {
-  id: 'hollowKing', height: 5.3, radius: 1.3, boss: true, eyeColor: HOLLOW, magicColor: HOLLOW, defaultAttack: 'slam', attackTypes: ['seated', 'slam', 'sweep', 'thrust', 'summon', 'roar', 'beam'], flutter: 0.03, orbSize: 0.14,
+  id: 'hollowKing', height: 5.3, radius: 1.3, boss: true, eyeColor: HOLLOW, magicColor: HOLLOW, defaultAttack: 'slam', attackTypes: ['seated', 'slam', 'sweep', 'thrust', 'summon', 'roar', 'beam', 'leap'], flutter: 0.03, orbSize: 0.14,
   build(rig) {
     rig.scale = 2.15;
     const D = humanSkeleton(rig, { thigh: 0.52, shin: 0.5, ankle: 0.08, hipW: 0.12, spine: 0.2, chest: 0.4, neck: 0.1, shoulderW: 0.26, upper: 0.37, fore: 0.35 });
@@ -210,6 +213,7 @@ export const hollowKing = {
       if (at === 'sweep') { setAx(tgt, wu ? AX.sweepW : AX.sweepS); om = wu ? 7 : 20; ze = wu ? 1 : 0.62; if (!wu && p > 0.7) { mixAx(tgt, AX.sweepS, AX.rest, smooth(0.7, 1, p) * 0.5); om = 6; } }
       else if (at === 'thrust') { setAx(tgt, wu ? AX.thrustW : AX.thrustS); om = wu ? 8 : 26; ze = wu ? 1 : 0.6; }
       else if (at === 'slam') { setAx(tgt, wu ? AX.plungeW : AX.plungeS); om = wu ? 6 : 24; ze = wu ? 1 : 0.7; }
+      else if (at === 'leap') { setAx(tgt, AX.plungeW); om = 8; ze = 0.85; }
       else if (at === 'roar') { setAx(tgt, AX.roar); om = 7; ze = 0.8; }
       else if (at === 'beam') { setAx(tgt, AX.beam); om = 8; }
       else { setAx(tgt, AX.rest); tgt.wL = 0; } // summon: sword planted, the left hand calls the dead
@@ -236,6 +240,7 @@ export const hollowKing = {
     actions: {
       sweep: act2(B_SWEEP_W, B_SWEEP_S, { hit: 0.3, recover: 0.7, recoverAmt: 0.6 }),
       thrust: act2(B_THRUST_W, B_THRUST_S, { hit: 0.22, recover: 0.7, recoverAmt: 0.6 }),
+      leap: act2(B_LEAP_W, B_LEAP_S, { hit: 0.35, recover: 2, recoverAmt: 0, windupRate: 11 }),
       slam: act2(B_PLUNGE_W, B_PLUNGE_S, { hit: 0.25, recover: 0.75, recoverAmt: 0.55, tremble: 0.02 }),
       roar: act2(B_ROAR_W, B_ROAR_S, { hit: 0.15, recover: 0.8, tremble: 0.05, strikeExtra: (P, p, m) => { const k = bump(0.1, 0.8, p) * 0.04; P.r('chest', Math.sin(m.time * 45) * k, Math.sin(m.time * 38) * k); } }),
       beam: act2({ chest: [-0.2, -0.3, 0], head: [0.1, 0.3, 0], armL: [-0.9, 0, 0.3], foreL: [-1.0, 0, 0] }, B_BEAM_S, { hit: 0.2, recover: 0.9, recoverAmt: 0.2, strikeExtra: (P, p, m) => { P.r('armL', Math.sin(m.time * 41) * 0.015); } }),
