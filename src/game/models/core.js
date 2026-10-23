@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { makeSurfaceMaterial } from '../../render/textures.js';
-import { creatureSurface } from './surfaces.js';
+import { arrayTargets } from '../../render/bake.js';
+import { creatureSurface, creatureLayer } from './surfaces.js';
 
 // ---------------------------------------------------------------------------
 // Enemy model core: material library, geometry kit, rig builder and the
@@ -294,6 +295,56 @@ const MAT_DEFS = {
 export const MAT_KEYS = [...Object.keys(MAT_DEFS), 'slime', 'ghost', 'glow', 'spirit', 'dark'];
 const libCache = new WeakMap();
 
+// The surface atlas: every MAT_DEFS surface, and a plain layer for 'dark', is
+// a layer of three texture arrays (albedo, normal, ORM), so all of an enemy's
+// opaque parts are one mesh drawn once (Rig.finish tags each vertex with its
+// layer) instead of one mesh per material: a crowd's draw calls drop ~4x.
+// Per-layer normal scale, env strength, base colour and cracks go through flat
+// varyings; the reversed copy of a double-sided part's faces (cloth) is
+// marked by BACK so its normal map bends the same way three's DoubleSide did.
+const ATLAS_KEYS = ['dark', ...Object.keys(MAT_DEFS)];
+const ATLAS_LAYER = new Map(ATLAS_KEYS.map((k, i) => [k, i]));
+const ATLAS_SIZE = 512;
+const BACK = 32;
+const MAX_LAYERS = 16;
+
+function buildAtlas(factory, env) {
+  const r = factory.renderer, gl = r.getContext();
+  const T = arrayTargets(r, ATLAS_SIZE, ATLAS_KEYS.length);
+  const layA = [], layB = [];
+  const prev = r.getRenderTarget();
+  ATLAS_KEYS.forEach((key, i) => {
+    const d = MAT_DEFS[key];
+    if (d?.csurf) creatureLayer(r, d.csurf, ATLAS_SIZE, d.seed, T, i);
+    else if (d) factory.bakeLayer(d.surf, ATLAS_SIZE, d.seed, T, i);
+    else {
+      // 'dark': untextured, roughness 0.9, no metal, no env (layer 0, so the bakes after it build its mips)
+      const fill = [[1, 1, 1, 1], [0.5, 0.5, 1, 1], [1, 0.9, 0, 0]];
+      for (let k = 0; k < 3; k++) {
+        r.setRenderTarget(T[k], i);
+        r.state.buffers.color.setMask(true);
+        gl.clearBufferfv(gl.COLOR, 0, new Float32Array(fill[k]));
+      }
+      r.setRenderTarget(prev);
+    }
+    const c = new THREE.Color(d ? 0xffffff : 0x050403);
+    layA.push(new THREE.Vector4(d?.normalScale ?? 1, d ? d.env : 0, 0, 0));
+    layB.push(new THREE.Vector4(c.r, c.g, c.b, d?.cracks ? 1 : 0));
+  });
+  while (layA.length < MAX_LAYERS) { layA.push(new THREE.Vector4()); layB.push(new THREE.Vector4()); }
+  const dummy = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+  dummy.needsUpdate = true;
+  // the maps are only there so three sets up their uvs and defines: the patch samples the arrays instead
+  const m = new THREE.MeshStandardMaterial({ map: dummy, normalMap: dummy, roughnessMap: dummy, metalnessMap: dummy, aoMap: dummy, roughness: 1, metalness: 1, vertexColors: true });
+  m.envMap = env; m.envMapIntensity = 1;
+  m.userData.atlas = true;
+  m.name = 'enemy:atlas';
+  return {
+    material: m,
+    uniforms: { uAMap: { value: T[0].texture }, uANrm: { value: T[1].texture }, uAOrm: { value: T[2].texture }, uLayA: { value: layA }, uLayB: { value: layB } },
+  };
+}
+
 function makeEnv(renderer) {
   const scene = new THREE.Scene();
   const geo = new THREE.SphereGeometry(10, 48, 24);
@@ -357,6 +408,8 @@ export function materialLib(factory) {
     return m;
   };
   lib.env = env;
+  let atlas = null;
+  lib.atlas = () => (atlas ??= buildAtlas(factory, env));
   libCache.set(factory, lib);
   return lib;
 }
@@ -376,14 +429,14 @@ const VCHUNK = /* glsl */ `
 #ifdef EN_WOBBLE
   {
     float w = sin(uTime * 2.7 + position.y * 5.0 + position.x * 3.0) * 0.5 + sin(uTime * 3.9 + position.z * 6.0 - position.y * 2.0) * 0.5;
-    transformed += objectNormal * w * uWobble * aAnim;
+    transformed += objectNormal * enFace * w * uWobble * aAnim;
   }
 #endif
 `;
 const FCHUNK = /* glsl */ `
 #ifdef EN_CRACKS
   {
-    float crack = texture2D(roughnessMap, vRoughnessMapUv).a;
+    float crack = EN_CRACK_A;
     float pulse = 0.7 + 0.3 * sin(uTime * 2.6 + vMapUv.x * 13.0 + vMapUv.y * 7.0);
     totalEmissiveRadiance += uCrack * crack * pulse;
   }
@@ -409,20 +462,58 @@ const RIM_CHUNK = `
 #endif
 `;
 
+// Atlas sampling (see buildAtlas): replaces three's map, ORM and normal-map
+// reads with the layer's texture-array reads (ORM read once, not three times)
+const ATLAS_V = /* glsl */ `
+  float enFace = aLayer >= ${BACK}.0 ? -1.0 : 1.0;
+  {
+    int li = int(aLayer + 0.5) % ${BACK};
+    vLayA = vec4(uLayA[li].xy, float(li), enFace);
+    vLayB = uLayB[li];
+  }
+`;
+function atlasFragment(src) {
+  const C = THREE.ShaderChunk;
+  const rep = (s, from, to) => { if (!s.includes(from)) throw new Error('atlas patch: missing ' + from); return s.replace(from, to); };
+  src = 'uniform highp sampler2DArray uAMap, uANrm, uAOrm;\nuniform vec3 uTintCol;\nuniform float uTintMix;\nflat in vec4 vLayA, vLayB;\n' + src;
+  // per-layer env strength: a global set at the top of main instead of the uniform
+  src = rep(src, '#include <envmap_common_pars_fragment>', rep(C.envmap_common_pars_fragment, 'uniform float envMapIntensity;', 'float envMapIntensity;'));
+  src = rep(src, '#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n  envMapIntensity = vLayA.y;');
+  src = rep(src, '#include <map_fragment>', 'diffuseColor *= texture( uAMap, vec3( vMapUv, vLayA.z ) );\ndiffuseColor.rgb *= mix( vLayB.rgb, uTintCol, uTintMix );');
+  src = rep(src, '#include <roughnessmap_fragment>', 'vec4 texelOrm = texture( uAOrm, vec3( vRoughnessMapUv, vLayA.z ) );\nfloat roughnessFactor = roughness * texelOrm.g;');
+  src = rep(src, '#include <metalnessmap_fragment>', 'float metalnessFactor = metalness * texelOrm.b;');
+  src = rep(src, '#include <aomap_fragment>', rep(C.aomap_fragment, 'texture2D( aoMap, vAoMapUv ).r', 'texelOrm.r'));
+  // the reversed copy of a double-sided face: three's DOUBLE_SIDED flips the tangent frame on back faces
+  src = rep(src, '#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n  tbn[0] *= vLayA.w; tbn[1] *= vLayA.w;');
+  src = rep(src, '#include <normal_fragment_maps>', 'vec3 mapN = texture( uANrm, vec3( vNormalMapUv, vLayA.z ) ).xyz * 2.0 - 1.0;\nmapN.xy *= vLayA.x;\nnormal = normalize( tbn * mapN );');
+  return src;
+}
+
 export function patchInstanceMaterial(mat, U, feats) {
   const keyBits = [];
   if (!mat.isMeshBasicMaterial) keyBits.push('R');
   if (feats.flutter) keyBits.push('F');
   if (feats.wobble && !mat.isMeshBasicMaterial) keyBits.push('W');
   if (feats.cracks) keyBits.push('C');
+  const atlas = feats.atlas && mat.userData.atlas ? feats.atlas : null;
+  if (atlas) keyBits.push('A');
   if (!keyBits.length) return;
   mat.defines = { ...(mat.defines || {}) };
   if (keyBits.includes('F')) mat.defines.EN_FLUTTER = '';
   if (keyBits.includes('W')) mat.defines.EN_WOBBLE = '';
-  if (keyBits.includes('C')) mat.defines.EN_CRACKS = '';
+  if (keyBits.includes('C')) {
+    mat.defines.EN_CRACKS = '';
+    mat.defines.EN_CRACK_A = atlas ? '(texelOrm.a * vLayB.w)' : 'texture2D(roughnessMap, vRoughnessMapUv).a';
+  }
   if (keyBits.includes('R')) mat.defines.EN_RIM = '';
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, U, RIM);
+    if (atlas) {
+      Object.assign(sh.uniforms, atlas.uniforms);
+      sh.fragmentShader = atlasFragment(sh.fragmentShader);
+      sh.vertexShader = `attribute float aLayer;\nuniform vec4 uLayA[${MAX_LAYERS}], uLayB[${MAX_LAYERS}];\nflat out vec4 vLayA, vLayB;\n` +
+        sh.vertexShader.replace('#include <begin_vertex>', ATLAS_V + '#include <begin_vertex>');
+    } else sh.vertexShader = '#define enFace 1.0\n' + sh.vertexShader;
     if (keyBits.includes('R')) {
       sh.fragmentShader = 'uniform vec3 uRim, uTint;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + RIM_CHUNK);
     }
@@ -570,12 +661,40 @@ export class Rig {
       g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
       g.setIndex(index);
       // parts flagged opts.own (boss fx) keep their own mesh so they can fade alone; same material type, so no new shader
-      const gk = part.opts.own ? part.mat + '#' + part.opts.own : part.mat;
+      const layer = part.opts.own ? undefined : ATLAS_LAYER.get(part.mat);
+      const gk = part.opts.own ? part.mat + '#' + part.opts.own : layer !== undefined ? '@' + part.mat : part.mat;
       if (!byMat.has(gk)) byMat.set(gk, []);
+      if (layer !== undefined) {
+        g.setAttribute('aLayer', new THREE.BufferAttribute(new Float32Array(cnt).fill(layer), 1));
+        if (MAT_DEFS[part.mat]?.side === THREE.DoubleSide) {
+          // one front-facing draw: the back of a double-sided part is a reversed copy with flipped normals
+          const b = g.clone();
+          const bn = b.getAttribute('normal').array;
+          for (let i = 0; i < bn.length; i++) bn[i] = -bn[i];
+          const bi = b.index.array;
+          for (let i = 0; i < bi.length; i += 3) { const t = bi[i + 1]; bi[i + 1] = bi[i + 2]; bi[i + 2] = t; }
+          b.getAttribute('aLayer').array.fill(layer + BACK);
+          byMat.get(gk).push(b);
+        }
+      }
       byMat.get(gk).push(g);
     }
     const skeleton = new THREE.Skeleton(this.boneList);
     const order = { dark: 0, bone: 1, glow: 3, slime: 5, ghost: 6, spirit: 7 };
+    // the atlas parts: one mesh, its parts in the draw order their own meshes had
+    const atlasKeys = [...byMat.keys()].filter((k) => k[0] === '@').sort((a, b) => (order[a.slice(1)] ?? 2) - (order[b.slice(1)] ?? 2));
+    if (atlasKeys.length) {
+      const geos = atlasKeys.flatMap((k) => byMat.get(k));
+      for (const k of atlasKeys) byMat.delete(k);
+      const geo = mergeGeometries(geos, false);
+      geos.forEach((g) => g.dispose());
+      const mesh = new THREE.SkinnedMesh(geo, lib.atlas().material);
+      mesh.name = 'mesh:atlas';
+      mesh.userData.matKey = 'atlas';
+      mesh.renderOrder = 2;
+      mesh.bind(skeleton);
+      this.root.add(mesh);
+    }
     for (const [gk, geos] of byMat) {
       const geo = mergeGeometries(geos, false);
       geos.forEach((g) => g.dispose());
@@ -724,6 +843,7 @@ export class EnemyInstance {
       uTime: { value: 0 }, uFlutter: { value: spec.flutter ?? 0.03 }, uFlutterSpeed: { value: 1 }, uWobble: { value: 0 },
       uDrag: { value: new THREE.Vector3() }, uTint: { value: new THREE.Color(0, 0, 0) }, uCrack: { value: new THREE.Color(spec.crackColor ?? 0xff5a10).multiplyScalar(spec.crackIntensity ?? 3) },
       uCrackLo: { value: 0.045 }, uCrackHi: { value: 0.012 },
+      uTintCol: { value: new THREE.Color(0, 0, 0) }, uTintMix: { value: 0 },
     };
     // per-instance materials
     const clones = new Map();
@@ -747,7 +867,8 @@ export class EnemyInstance {
           const m = base.clone();
           const key = o.userData.matKey;
           const cr = base.userData.cracks;
-          patchInstanceMaterial(m, this.U, { flutter: true, wobble: !!spec.wobble, cracks: !!cr });
+          const atlas = base.userData.atlas ? lib.atlas() : null;
+          patchInstanceMaterial(m, this.U, { flutter: true, wobble: !!spec.wobble, cracks: !!cr || (!!atlas && this._atlasCracks(o)), atlas });
           clones.set(base, m);
           this.mats.push({ m, key, color: m.color.clone(), em: m.emissive ? m.emissive.clone().multiplyScalar(m.emissiveIntensity) : null, opacity: m.opacity, transparent: m.transparent, depthWrite: m.depthWrite });
         }
@@ -775,6 +896,17 @@ export class EnemyInstance {
     this.orbSize = spec.orbSize ?? 0.08;
     this._orbK = 0;
     this.muzzle.add(this.orb);
+  }
+  // an atlas mesh needs the crack chunk only if one of its layers is cracked (a per-type program otherwise unchanged)
+  _atlasCracks(mesh) {
+    const g = mesh.geometry;
+    if (g.userData.cracks === undefined) {
+      const a = g.getAttribute('aLayer').array;
+      const cracked = new Set(ATLAS_KEYS.filter((k) => MAT_DEFS[k]?.cracks).map((k) => ATLAS_LAYER.get(k)));
+      g.userData.cracks = false;
+      for (let i = 0; i < a.length; i++) if (cracked.has(a[i] % BACK)) { g.userData.cracks = true; break; }
+    }
+    return g.userData.cracks;
   }
   get flying() { return !!this._flying; }
   // force the flying pose on/off (types whose flight is anim-driven, e.g. stoneWyvern, also honour this)
@@ -811,7 +943,8 @@ export class EnemyInstance {
     for (const e of this.mats) {
       const m = e.m;
       m.color.copy(e.color);
-      if (tc) m.color.lerp(tc, tk * (m.isMeshBasicMaterial ? 0.3 : 0.45));
+      // (the atlas mixes each layer's own base colour toward the tint in its shader)
+      if (m.userData.atlas) { this.U.uTintMix.value = tc ? tk * 0.45 : 0; if (tc) this.U.uTintCol.value.copy(tc); } else if (tc) m.color.lerp(tc, tk * (m.isMeshBasicMaterial ? 0.3 : 0.45));
       if (m.isMeshBasicMaterial) {
         if (f > 0) m.color.lerp(_white, f * 0.5);
       } else {

@@ -74,33 +74,60 @@ function bakeMaterial(renderer, vert, frag) {
   return m;
 }
 
-// Bakes a surface into three new mipmapped, tiling render targets:
-// [albedo (sRGB), normal, ORM]. A target's texture is freed with the target.
-export function bake(renderer, vert, frag, { size, seed, anisotropy }) {
+const targetOpts = (mode) => ({
+  minFilter: THREE.LinearMipmapLinearFilter,
+  magFilter: THREE.LinearFilter,
+  wrapS: THREE.RepeatWrapping,
+  wrapT: THREE.RepeatWrapping,
+  generateMipmaps: true,
+  depthBuffer: false,
+  colorSpace: mode === 0 ? THREE.SRGBColorSpace : THREE.NoColorSpace,
+});
+
+// draws the surface's three maps, binding each mode's target with bind(mode)
+function draw(renderer, vert, frag, size, seed, bind) {
   const s = state(renderer);
   const mat = bakeMaterial(renderer, vert, frag);
   mat.uniforms.uSeed.value = seed;
   mat.uniforms.uTexel.value = 1 / size;
   s.quad.material = mat;
   const prev = renderer.getRenderTarget();
-  const targets = [0, 1, 2].map((mode) => {
-    const rt = new THREE.WebGLRenderTarget(size, size, {
-      minFilter: THREE.LinearMipmapLinearFilter,
-      magFilter: THREE.LinearFilter,
-      wrapS: THREE.RepeatWrapping,
-      wrapT: THREE.RepeatWrapping,
-      generateMipmaps: true,
-      depthBuffer: false,
-      colorSpace: mode === 0 ? THREE.SRGBColorSpace : THREE.NoColorSpace,
-    });
-    rt.texture.anisotropy = anisotropy ?? renderer.capabilities.getMaxAnisotropy();
+  for (let mode = 0; mode < 3; mode++) {
     mat.uniforms.uMode.value = mode;
-    renderer.setRenderTarget(rt);
+    bind(mode);
     renderer.render(s.scene, s.camera);
+  }
+  renderer.setRenderTarget(prev);
+}
+
+// Bakes a surface into three new mipmapped, tiling render targets:
+// [albedo (sRGB), normal, ORM]. A target's texture is freed with the target.
+export function bake(renderer, vert, frag, { size, seed, anisotropy }) {
+  const targets = [0, 1, 2].map((mode) => {
+    const rt = new THREE.WebGLRenderTarget(size, size, targetOpts(mode));
+    rt.texture.anisotropy = anisotropy ?? renderer.capabilities.getMaxAnisotropy();
     return rt;
   });
-  renderer.setRenderTarget(prev);
+  draw(renderer, vert, frag, size, seed, (mode) => renderer.setRenderTarget(targets[mode]));
   return targets;
+}
+
+// Three array targets [albedo (sRGB), normal, ORM] of `layers` size² layers,
+// for many surfaces sampled by one material (bakeLayer fills a layer).
+export function arrayTargets(renderer, size, layers) {
+  return [0, 1, 2].map((mode) => {
+    const o = targetOpts(mode);
+    const rt = new THREE.WebGLArrayRenderTarget(size, size, layers, o);
+    // (set on the texture too: the array target makes its own)
+    const t = rt.texture;
+    t.minFilter = o.minFilter; t.magFilter = o.magFilter; t.wrapS = o.wrapS; t.wrapT = o.wrapT;
+    t.generateMipmaps = true; t.colorSpace = o.colorSpace;
+    t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return rt;
+  });
+}
+export function bakeLayer(renderer, vert, frag, { size, seed }, targets, layer) {
+  draw(renderer, vert, frag, size, seed, (mode) => renderer.setRenderTarget(targets[mode], layer));
 }
 
 // Compiles the bake shaders for [{ vert, frag }] in parallel, by default at

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { bake, bakeMain } from './bake.js';
+import { bake, bakeMain, bakeLayer } from './bake.js';
 
 // ---------------------------------------------------------------------------
 // GPU procedural texture generation.
@@ -533,6 +533,12 @@ export class TextureFactory {
     const set = { map, normalMap, ormMap };
     this.cache.set(key, set);
     return set;
+  }
+
+  // Bakes a surface into a layer of three array targets (bake.js arrayTargets)
+  bakeLayer(name, size, seed, targets, layer) {
+    if (!SURFS[name]) throw new Error('unknown surface ' + name);
+    bakeLayer(this.renderer, VERT, fragFor(name, NORMAL_STRENGTH[name] ?? 1), { size, seed }, targets, layer);
   }
 
   // Called once a floor is built (and the previous one disposed): frees the
