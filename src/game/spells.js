@@ -54,6 +54,35 @@ function glowTexture() {
   return new THREE.CanvasTexture(c);
 }
 
+// the mark of a hostile shot: a dark core inside a bright ring with four barbs.
+// Tinted by the element, drawn normally blended, so an enemy bolt reads as
+// something to dodge even in the colours of a wizard's own magic
+function hostileTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(0,0,0,0.55)');
+  gr.addColorStop(0.36, 'rgba(0,0,0,0.65)');
+  gr.addColorStop(0.44, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.52, 'rgba(255,255,255,0.9)');
+  gr.addColorStop(0.62, 'rgba(255,255,255,0.25)');
+  gr.addColorStop(0.75, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 128, 128);
+  g.fillStyle = 'rgba(255,255,255,0.95)';
+  for (let k = 0; k < 4; k++) {
+    const a = k * Math.PI / 2 + Math.PI / 4;
+    g.beginPath();
+    g.moveTo(64 + Math.cos(a) * 34, 64 + Math.sin(a) * 34);
+    g.lineTo(64 + Math.cos(a + 0.22) * 46, 64 + Math.sin(a + 0.22) * 46);
+    g.lineTo(64 + Math.cos(a) * 60, 64 + Math.sin(a) * 60);
+    g.lineTo(64 + Math.cos(a - 0.22) * 46, 64 + Math.sin(a - 0.22) * 46);
+    g.closePath(); g.fill();
+  }
+  return new THREE.CanvasTexture(c);
+}
+
 // emissive map for meteors: black crust with glowing fissures
 function magmaTexture() {
   const c = document.createElement('canvas');
@@ -82,6 +111,8 @@ export class SpellRuntime {
     this.timers = [];
     this.nextId = 1;
     this.glowTex = glowTexture();
+    this.hostileTex = hostileTexture();
+    this.hostileMats = new Map();
     this.spriteMats = new Map();
     this.meshCache = {};
     this._buildMeshes();
@@ -98,7 +129,7 @@ export class SpellRuntime {
   // shader prewarming: materials differ per element only by colour, so one each
   // compiles them all
   warmObjects() {
-    const out = [new THREE.Sprite(this._spriteMat('arcane')), new THREE.Mesh(this.tracerGeo, this._tracerMat('arcane'))];
+    const out = [new THREE.Sprite(this._spriteMat('arcane')), new THREE.Sprite(this._hostileMat('enemy')), new THREE.Mesh(this.tracerGeo, this._tracerMat('arcane'))];
     for (const def of Object.values(this.meshCache)) out.push(new THREE.Mesh(def.geo, def.mat ?? this._orbMat('arcane')));
     return out;
   }
@@ -179,6 +210,15 @@ export class SpellRuntime {
     this.spriteMats.set(el, m);
     return m;
   }
+  _hostileMat(el) {
+    if (this.hostileMats.has(el)) return this.hostileMats.get(el);
+    const fx = fxOf(el);
+    const c = clampHDR([fx.mid[0] * 1.2, fx.mid[1] * 1.2, fx.mid[2] * 1.2], 1.6);
+    // (same program as the core sprites: only the blending differs)
+    const m = nearFade(new THREE.SpriteMaterial({ map: this.hostileTex, color: new THREE.Color(c[0], c[1], c[2]), depthWrite: false, transparent: true, fog: false }));
+    this.hostileMats.set(el, m);
+    return m;
+  }
   _orbMat(el) {
     if (this.orbMats.has(el)) return this.orbMats.get(el);
     // churning element-coloured ball (shared program, see orbMaterial)
@@ -219,6 +259,8 @@ export class SpellRuntime {
       trail: p.trail ?? 1,
       lightI: p.light ?? 6,
       sticky: p.sticky ?? false,
+      hostile: null,
+      warned: false,
       stuck: false,
       dead: false,
       data: p.data ?? {},
@@ -232,12 +274,22 @@ export class SpellRuntime {
     group.position.copy(proj.pos);
     // big cores right at the muzzle blew the screen out: cap them (the light,
     // trail and mesh carry the size of heavier spells)
-    const coreSize = Math.min(p.core ?? 0.6, 0.85);
+    // a teammate's shots are drawn quieter than your own and the enemy's: the fight stays readable
+    const ally = proj.faction === 'player' && !proj.local;
+    if (ally) { proj.trail *= 0.6; proj.lightI *= 0.5; }
+    const coreSize = Math.min(p.core ?? 0.6, 0.85) * (ally ? 0.7 : 1);
     if (coreSize > 0) {
       const s = new THREE.Sprite(this._spriteMat(proj.el));
       s.scale.setScalar(coreSize);
       group.add(s);
       proj.sprite = s;
+    }
+    if (proj.faction === 'enemy' || proj.el.startsWith('enemy')) {
+      const s = new THREE.Sprite(this._hostileMat(proj.el.startsWith('enemy') ? proj.el : 'enemy'));
+      s.scale.setScalar(p.mesh === 'arrow' ? 0.42 : Math.max(0.55, coreSize * 1.5));
+      s.renderOrder = -1; // (under the shot's own glow: the dark core rims it, never dims it)
+      group.add(s);
+      proj.hostile = s;
     }
     if (p.mesh) {
       const def = this.meshCache[p.mesh];
@@ -504,6 +556,7 @@ export class SpellRuntime {
       else if (p.vel.lengthSq() > 0.01) p.mesh.lookAt(_v.copy(p.pos).add(p.vel));
     }
     if (p.sprite) p.sprite.material.rotation += dt;
+    if (p.hostile) p.hostile.material.rotation -= dt * 1.5;
     if (p.tracer) this._tracer(p);
     if (p.lightI > 0) g.lights.request(p.pos, p.lightColor, p.lightI, 7);
   }

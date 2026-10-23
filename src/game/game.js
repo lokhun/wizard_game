@@ -201,6 +201,7 @@ export class Game {
     this.actors.clear();
     for (const d of this.drops) this.scene.remove(d.mesh);
     this.drops = [];
+    for (const h of this.hazards) h.wall?.end();
     this.hazards = [];
     this.pools = [];
 
@@ -711,6 +712,13 @@ export class Game {
       g.uDamage.value = clamp(0.16 + beat * 0.22 + p.hurtPulse * 0.3, 0, 1);
     } else g.uDamage.value = clamp(p.hurtPulse * 0.8 + Math.max(0, lowHp - 0.6) * 1.2 * (0.7 + 0.3 * Math.sin(this.time * 6)), 0, 1);
     g.uHeal.value = Math.max(0, (this.healPulse ?? 0));
+    // inside a danger zone that hasn't landed yet: the view's edges warn in its colour, faster as it nears
+    const dz = this._inDanger(p);
+    if (dz) {
+      const k = dz.k, beat = 0.6 + 0.4 * Math.sin(this.time * (8 + 14 * k));
+      g.uDanger.value = (0.12 + 0.3 * k) * beat;
+      g.uDangerCol.value.set(dz.c[0], dz.c[1], dz.c[2]);
+    } else g.uDanger.value = 0;
     // dash / blink speed smear: held while dashing, then eases off
     this.dashFx = p.dashT > 0 ? Math.max(this.dashFx ?? 0, 1) : Math.max(0, (this.dashFx ?? 0) - dt * 4.5);
     g.uDash.value = this.dashFx * 0.85;
@@ -958,23 +966,68 @@ export class Game {
     return n;
   }
 
+  // the pending zone the player stands in that lands soonest: { k: 0..1 of its wind-up, c: colour }, or null
+  _inDanger(p) {
+    if (!p.alive || p.downed || p.dead) return null;
+    let best = null;
+    for (const h of this.hazards) {
+      if (!h.vis || h.t >= (h.delay ?? 0) || !h.delay) continue;
+      const dx = p.pos.x - h.x, dz = p.pos.z - h.z, d = Math.hypot(dx, dz), R = 0.4;
+      let inside = false;
+      if (h.shape === 'circle') inside = d <= h.r + R;
+      else if (h.shape === 'cone' || h.shape === 'arc') {
+        if (d <= h.r + R) { let diff = Math.abs(Math.atan2(dx, dz) - h.rot) % (Math.PI * 2); if (diff > Math.PI) diff = Math.PI * 2 - diff; inside = diff <= h.angle + 0.15 || d < 1; }
+      } else if (h.shape === 'rect') {
+        const fx = Math.sin(h.rot), fz = Math.cos(h.rot);
+        const along = dx * fx + dz * fz, side = Math.abs(dx * fz - dz * fx);
+        inside = along >= -0.5 && along <= h.len + 0.5 && side <= h.w / 2 + R;
+      }
+      if (!inside) continue;
+      const k = h.t / h.delay;
+      if (!best || k > best.k) best = { k, c: h.color };
+    }
+    return best;
+  }
+
+  // an enemy shot about to hit you from outside the view marks the screen edge it's coming from
+  _warnIncoming() {
+    const p = this.player;
+    if (!p.alive || p.downed || p.dead) return;
+    const cam = this.renderer.camera, fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
+    for (const pr of this.spells.projectiles) {
+      if (pr.warned || pr.dead || !(pr.faction === 'enemy' || pr.el.startsWith('enemy'))) continue;
+      const rx = p.pos.x - pr.pos.x, ry = p.pos.y + 1 - pr.pos.y, rz = p.pos.z - pr.pos.z;
+      const v2 = pr.vel.x * pr.vel.x + pr.vel.y * pr.vel.y + pr.vel.z * pr.vel.z;
+      if (v2 < 1) continue;
+      const tc = (rx * pr.vel.x + ry * pr.vel.y + rz * pr.vel.z) / v2; // time of closest approach
+      if (tc < 0 || tc > 0.9) continue;
+      const mx = rx - pr.vel.x * tc, my = ry - pr.vel.y * tc, mz = rz - pr.vel.z * tc;
+      if (mx * mx + my * my + mz * mz > 1.3 * 1.3) continue;
+      // in view? (roughly the horizontal half-angle of the camera)
+      const dx = pr.pos.x - p.pos.x, dz = pr.pos.z - p.pos.z, d = Math.hypot(dx, dz) || 1;
+      pr.warned = true;
+      if ((fx * dx + fz * dz) / d > Math.cos(THREE.MathUtils.degToRad(cam.fov * cam.aspect * 0.45))) continue;
+      this.ui?.damageDirection(pr.pos);
+    }
+  }
+
   _updateHazards(dt) {
     const p = this.player;
+    this._warnIncoming();
     for (let i = this.hazards.length - 1; i >= 0; i--) {
       const h = this.hazards[i];
       h.t += dt;
       if (h.shape === 'wave') {
         if (h.t < (h.delay ?? 0)) continue;
         const r = h.r + h.speed * (h.t - (h.delay ?? 0));
-        // visual ring
-        if (!h.ringMesh) {
-          h.ringMesh = true;
-          this.vfx.ring({ x: h.x, y: h.y ?? 0, z: h.z }, h.maxR, h.color, (h.maxR - h.r) / h.speed, 0.04);
-        }
-        if (Math.random() < 0.8) {
+        // the wave as it is: a glowing wall standing exactly on the hit radius, bright all
+        // the way out (it used to be a faint ring that eased ahead of the real one and faded)
+        if (!h.wall) h.wall = this.vfx.waveWall({ x: h.x, y: h.y ?? 0, z: h.z }, h.color.map((c) => c * 1.7), 0.7);
+        h.wall.r = r;
+        h.wall.a = Math.min(1, (h.t - (h.delay ?? 0)) * 8) * Math.min(1, (h.maxR - r) / 1.5);
+        if (Math.random() < 0.6) {
           const a = Math.random() * Math.PI * 2;
-          this.vfx.P.glow({ x: h.x + Math.cos(a) * r, y: (h.y ?? 0) + 0.2, z: h.z + Math.sin(a) * r, vy: 2, r: h.color[0], g: h.color[1], b: h.color[2], life: 0.4, size: 0.4, sprite: SPR.GLOW });
-          this.vfx.smoke({ x: h.x + Math.cos(a) * r, y: (h.y ?? 0) + 0.2, z: h.z + Math.sin(a) * r }, { count: 1, size: 0.5, alpha: 0.3, color: [0.25, 0.2, 0.15] });
+          this.vfx.P.glow({ x: h.x + Math.cos(a) * r, y: (h.y ?? 0) + 0.3, z: h.z + Math.sin(a) * r, vy: 2.5, r: h.color[0], g: h.color[1], b: h.color[2], life: 0.4, size: 0.35, sprite: SPR.GLOW });
         }
         if (!h.hitLocal && p.alive && !p.downed && !p.dead) {
           const d = Math.hypot(p.pos.x - h.x, p.pos.z - h.z);
@@ -985,7 +1038,7 @@ export class Game {
             this._knock(p, h.x, h.z, h.kb ?? 6);
           }
         }
-        if (r >= h.maxR) this.hazards.splice(i, 1);
+        if (r >= h.maxR) { h.wall?.end(); this.hazards.splice(i, 1); }
         continue;
       }
       if (h.shape === 'los') {

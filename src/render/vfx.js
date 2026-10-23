@@ -157,38 +157,68 @@ void main(){
   gl_FragColor = vec4(uColor * alpha, 1.0);
 }`;
 
+// Danger zones. One language for every shape: a crisp edge of constant width
+// (a hot core line, the zone's colour glowing just inside it, a dark halo just
+// outside so it reads on a bright floor too), the floor under it a little
+// darker, and a fill sweeping out from the origin that reaches the edge as the
+// blow lands, flashing in its last quarter. Premultiplied: rgb adds, alpha darkens.
 const TELE_FRAG = /* glsl */ `
 uniform vec3 uColor; uniform float uProg; uniform float uTime; uniform int uMode; uniform float uAngle; uniform float uFade;
+uniform vec2 uSize; uniform vec2 uK;
 varying vec2 vUv;
 void main(){
-  vec2 p = vUv * 2.0 - 1.0;
-  float inside, edge, fill;
-  if (uMode == 0) { // circle
-    float d = length(p);
-    inside = step(d, 1.0);
-    edge = smoothstep(0.93, 0.985, d) * inside;
-    fill = step(d, uProg) * inside;
-    float ringF = smoothstep(uProg - 0.04, uProg, d) * step(d, uProg) * inside;
-    // faint interior that strengthens toward the edge; the edge and sweep carry the read
-    fill = fill * (0.05 + 0.13 * d * d) + ringF * 0.8;
-  } else if (uMode == 1) { // rect, fills along +y (vUv.y)
-    inside = 1.0;
-    float ex = smoothstep(0.85, 0.97, abs(p.x));
-    float ey = smoothstep(0.92, 0.99, abs(p.y));
-    edge = max(ex, ey);
-    float y = vUv.y;
-    fill = step(y, uProg) * (0.06 + 0.1 * abs(p.x)) + smoothstep(uProg - 0.03, uProg, y) * step(y, uProg) * 0.8;
-  } else { // cone sector pointing +y, half-angle uAngle
-    float d = length(p);
-    float a = abs(atan(p.x, p.y));
-    inside = step(d, 1.0) * step(a, uAngle);
-    edge = (smoothstep(0.94, 0.985, d) + smoothstep(uAngle - 0.04, uAngle, a)) * inside;
-    fill = step(d, uProg) * inside * (0.05 + 0.13 * d * d) + smoothstep(uProg - 0.04, uProg, d) * step(d, uProg) * inside * 0.8;
-  }
-  float pulse = 0.55 + 0.2 * sin(uTime * 14.0);
-  float alpha = (edge * pulse + fill) * inside * uFade;
-  if (alpha < 0.003) discard;
-  gl_FragColor = vec4(uColor * alpha, 1.0);
+  vec2 p = (vUv * 2.0 - 1.0) * uK;
+  float e, f; // signed distance to the edge in metres (negative inside), sweep coordinate
+  if (uMode == 0) { float d = length(p); e = (d - 1.0) * uSize.x; f = d; }
+  else if (uMode == 1) { vec2 q = (abs(p) - 1.0) * uSize; e = max(q.x, q.y); f = p.y * 0.5 + 0.5; }
+  else { float d = length(p); float a = abs(atan(p.x, p.y)); e = max((d - 1.0) * uSize.x, (a - uAngle) * max(d, 0.15) * uSize.x); f = d; }
+  float inside = 1.0 - step(0.0, e);
+  float line = 1.0 - smoothstep(0.035, 0.085, abs(e + 0.07));
+  float glowIn = (1.0 - smoothstep(0.0, 0.55, -e)) * inside;
+  float halo = (1.0 - smoothstep(0.0, 0.2, e)) * (1.0 - inside);
+  float sweep = step(f, uProg) * inside;
+  float front = smoothstep(uProg - 0.06, uProg, f) * sweep;
+  float imminent = smoothstep(0.72, 1.0, uProg);
+  float pulse = 0.82 + 0.18 * sin(uTime * (9.0 + 16.0 * imminent));
+  vec3 col = uColor * (line * 1.05 * pulse + glowIn * 0.28 + sweep * (0.08 + 0.22 * imminent) + front * 0.5) + vec3(0.24 * line * pulse);
+  float dark = halo * 0.5 + inside * (0.14 + 0.1 * imminent);
+  col *= uFade; dark *= uFade;
+  if (max(max(col.r, col.g), max(col.b, dark)) < 0.003) discard;
+  gl_FragColor = vec4(col, dark);
+}`;
+
+// An expanding shockwave you must jump: a glowing wall standing exactly on the
+// hit radius (crest line near jump height), and the band it sweeps on the
+// ground. Premultiplied: it adds light and darkens what's behind a little, so
+// it reads on a bright floor as well as a dark one.
+const WALL_VERT = /* glsl */ `
+varying vec2 vUv; varying float vDepth;
+void main(){ vUv = uv; vec4 mv = modelViewMatrix * vec4(position, 1.0); vDepth = -mv.z; gl_Position = projectionMatrix * mv; }`;
+const WALL_FRAG = /* glsl */ `
+uniform vec3 uColor; uniform float uAlpha; uniform float uTime;
+varying vec2 vUv; varying float vDepth;
+void main(){
+  float y = vUv.y;
+  float body = pow(1.0 - y, 1.5);
+  float crest = smoothstep(0.5, 0.6, y) * (1.0 - smoothstep(0.6, 0.72, y));
+  float foot = 1.0 - smoothstep(0.0, 0.12, y);
+  float streak = 0.72 + 0.28 * sin(vUv.x * 150.0 + uTime * 4.0 - y * 7.0);
+  float glow = body * 0.42 * streak + crest * 0.95 + foot * 0.6;
+  // (a wave sweeping over the camera must not flood the screen)
+  float a = glow * uAlpha * mix(0.1, 1.0, smoothstep(0.8, 4.5, vDepth));
+  if (a < 0.003) discard;
+  gl_FragColor = vec4(uColor * a, min(1.0, a * 0.4));
+}`;
+const BAND_FRAG = /* glsl */ `
+uniform vec3 uColor; uniform float uAlpha; uniform float uR; uniform float uW; uniform float uS;
+varying vec2 vUv; varying float vDepth;
+void main(){
+  float x = abs(length(vUv * 2.0 - 1.0) * uS - uR);
+  float band = 1.0 - smoothstep(uW * 0.7, uW, x);
+  float rim = smoothstep(uW * 0.6, uW * 0.85, x) * (1.0 - smoothstep(uW * 0.85, uW, x));
+  float a = (band * 0.25 + rim * 0.8) * uAlpha * mix(0.2, 1.0, smoothstep(0.8, 4.0, vDepth));
+  if (a < 0.003) discard;
+  gl_FragColor = vec4(uColor * a, min(1.0, a * 0.5));
 }`;
 
 const BEAM_VERT = /* glsl */ `
@@ -534,8 +564,8 @@ export class VFX {
     this.telePool = this._pool(24, () => new THREE.Mesh(plane, new THREE.ShaderMaterial({
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }',
       fragmentShader: TELE_FRAG,
-      uniforms: { uColor: { value: new THREE.Color() }, uProg: { value: 0 }, uTime: { value: 0 }, uMode: { value: 0 }, uAngle: { value: 0.6 }, uFade: { value: 1 } },
-      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      uniforms: { uColor: { value: new THREE.Color() }, uProg: { value: 0 }, uTime: { value: 0 }, uMode: { value: 0 }, uAngle: { value: 0.6 }, uFade: { value: 1 }, uSize: { value: new THREE.Vector2(1, 1) }, uK: { value: new THREE.Vector2(1, 1) } },
+      transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
     })));
     // beams (unit cylinder along +Y from 0..1)
     const beamGeo = new THREE.CylinderGeometry(1, 1, 1, 12, 1, true);
@@ -608,11 +638,26 @@ export class VFX {
       m.frustumCulled = false;
       return m;
     });
+    // shockwave walls and their ground bands (see waveWall)
+    const wallGeo = new THREE.CylinderGeometry(1, 1, 1, 72, 1, true);
+    wallGeo.translate(0, 0.5, 0);
+    const premul = { transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor };
+    this.wallPool = this._pool(8, () => {
+      const m = new THREE.Mesh(wallGeo, new THREE.ShaderMaterial({ vertexShader: WALL_VERT, fragmentShader: WALL_FRAG, uniforms: { uColor: { value: new THREE.Color() }, uAlpha: { value: 0 }, uTime: { value: 0 } }, side: THREE.DoubleSide, ...premul }));
+      m.material.forceSinglePass = true;
+      m.frustumCulled = false;
+      return m;
+    });
+    this.bandPool = this._pool(8, () => {
+      const m = new THREE.Mesh(plane, new THREE.ShaderMaterial({ vertexShader: WALL_VERT, fragmentShader: BAND_FRAG, uniforms: { uColor: { value: new THREE.Color() }, uAlpha: { value: 0 }, uR: { value: 1 }, uW: { value: 0.7 }, uS: { value: 1 } }, ...premul }));
+      m.frustumCulled = false;
+      return m;
+    });
     this._up = new THREE.Vector3(0, 1, 0);
     this._tv = new THREE.Vector3();
     // draw one invisible item of each new pool for a couple of frames so their
     // shaders compile up front instead of hitching on the first cast
-    this._warm = [this.slashPool.items[0], this.funnelPool.items[0], this.conePool.items[0], this.decalPool.items[1]];
+    this._warm = [this.slashPool.items[0], this.funnelPool.items[0], this.conePool.items[0], this.decalPool.items[1], this.wallPool.items[0], this.bandPool.items[0]];
     this._warm[3].material = this._warm[3].userData.glow;
     for (const m of this._warm) { m.userData.fc = m.frustumCulled; m.visible = true; m.frustumCulled = false; if (m.material.uniforms?.uAlpha) m.material.uniforms.uAlpha.value = 0; else m.material.opacity = 0; }
     this._warmFrames = 3;
@@ -782,6 +827,35 @@ export class VFX {
     this.flash(new THREE.Vector3(pos.x, (pos.y ?? 0) + 0.6, pos.z), color, 22, radius * 3.5, 0.5);
   }
 
+  // A shockwave's wall and ground band, moved by its owner every frame:
+  // h.r (radius), h.a (0..1), h.end() when it's spent. color: linear RGB.
+  waveWall(pos, color, halfWidth = 0.7, height = 0.8) {
+    const w = this.wallPool.get(), b = this.bandPool.get();
+    const wu = w.material.uniforms, bu = b.material.uniforms;
+    const c = clampHDR(color, 2.2, _rc);
+    wu.uColor.value.setRGB(c[0], c[1], c[2]);
+    bu.uColor.value.setRGB(c[0], c[1], c[2]);
+    bu.uW.value = halfWidth;
+    w.position.set(pos.x, (pos.y ?? 0) - 0.05, pos.z);
+    b.position.set(pos.x, (pos.y ?? 0) + 0.07, pos.z);
+    const h = { r: 0.1, a: 0, end: null };
+    const step = () => {
+      const r = Math.max(0.05, h.r);
+      w.scale.set(r, height, r);
+      wu.uAlpha.value = h.a; wu.uTime.value = this.time;
+      const S = r + halfWidth + 0.2;
+      b.scale.setScalar(S);
+      bu.uS.value = S; bu.uR.value = r; bu.uAlpha.value = h.a;
+    };
+    step();
+    this._track(w, 1e9, step);
+    const ew = this.active[this.active.length - 1];
+    this._track(b, 1e9, null);
+    const eb = this.active[this.active.length - 1];
+    h.end = () => { ew.t = ew.life; eb.t = eb.life; };
+    return h;
+  }
+
   // returns a handle so callers can cancel; fills over `dur`, then fades.
   telegraph(pos, opts) {
     const m = this.telePool.get();
@@ -792,14 +866,19 @@ export class VFX {
     u.uColor.value.setRGB(...(opts.color ?? [2.5, 0.25, 0.1]));
     m.position.set(pos.x, (pos.y ?? 0) + 0.05, pos.z);
     m.rotation.set(0, opts.rot ?? 0, 0);
+    // the quad reaches PAD past the zone so the halo has room outside its edge
+    const PAD = 0.25;
     if (mode === 1) {
       // rect: width x length, extends forward from pos along rot
-      m.scale.set(opts.width / 2, 1, opts.length / 2);
+      const hx = opts.width / 2, hz = opts.length / 2;
+      m.scale.set(hx + PAD, 1, hz + PAD);
+      u.uSize.value.set(hx, hz); u.uK.value.set((hx + PAD) / hx, (hz + PAD) / hz);
       m.position.x += Math.sin(opts.rot ?? 0) * opts.length / 2;
       m.position.z += Math.cos(opts.rot ?? 0) * opts.length / 2;
       m.rotation.y = (opts.rot ?? 0) + Math.PI;
     } else {
-      m.scale.setScalar(opts.radius);
+      m.scale.setScalar(opts.radius + PAD);
+      u.uSize.value.set(opts.radius, opts.radius); u.uK.value.setScalar((opts.radius + PAD) / opts.radius);
       if (mode === 2) m.rotation.y = (opts.rot ?? 0) + Math.PI;
     }
     const dur = opts.dur ?? 1;

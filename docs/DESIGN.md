@@ -205,6 +205,13 @@ Every realm has its own pair of themes, one for exploring and one for its fights
 - **Boss phases drive the music.** Each phase raises its intensity (`audio.setMusicIntensity`), and parts marked `min: 1` / `min: 2` join in.
 - `tools/music.html` plays every theme at any intensity. `node scripts/music.mjs` checks each melody's downbeats against its chords and flags augmented or diminished triads; `--render` renders every theme offline and prints its loudness. Explore themes sit near -19 dB RMS, fights near -14, bosses near -11.5.
 
+## Reading danger
+Anything that can hurt you must be seen in time, without looking garish.
+- **Danger zones** (circle, lane, cone) share one look (`TELE_FRAG` in `vfx.js`): a crisp edge of constant width (a hot core line, the zone's colour glowing just inside, a dark halo just outside, so it reads on a bright floor as on a dark one), the floor under it a little darker, and a fill sweeping out from the origin that reaches the edge as the blow lands and flashes in its last quarter.
+- **Shockwaves** are a glowing wall standing exactly on the hit radius, with a crest line near jump height and the band it sweeps on the ground (`vfx.waveWall`). The old ring eased ahead of the real wave and faded as it travelled; the wall stays bright all the way out and dims only as it passes over the camera.
+- **Standing in a zone** about to land tints the edges of the view in its colour, pulsing faster as it nears (`uDanger` in the grade pass).
+- **Hostile shots** carry a dark-cored, barbed ring in their colour, so an enemy bolt never looks like a wizard's own magic. A teammate's shots are drawn smaller and dimmer than your own. An enemy shot about to hit you from outside the view marks the screen edge it comes from.
+
 ## Performance rules
 - **No shader compiles after load.** A compile is a visible freeze (worst on Windows/ANGLE). Each floor load prewarms everything that can appear: the realm's enemies, bosses and summons, projectile visuals, effect pools, drops, reward pedestal, portal and ground eruptions. It compiles against the scene's HDR target (compiling against the canvas gives different program keys), in parallel on the driver (`KHR_parallel_shader_compile`) behind a loading veil. `scripts/hitch.js` traces frames and reports any program compiled after load.
   - The warm set is kept alive until the next floor: three.js destroys a program when its last material is disposed, so cleaning up the last enemy of a type would otherwise make the next wave recompile.
