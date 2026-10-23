@@ -401,12 +401,13 @@ export class Game {
     const sp = this.player.cls.spells;
     // shown one at a time, and never over a boss fight, a cinematic or a menu
     this._tipQ = [
-      'WASD to move · Mouse to aim · Space to jump',
+      `${['forward', 'left', 'back', 'right'].map(keyOf).join('')} to move · Mouse to aim · ${keyOf('jump')} to jump`,
       `Hold Left Click — ${sp.primary.name}`,
       `Right Click — ${sp.secondary.name}`,
       `${keyOf('ability1')} — ${sp.ability1.name} · ${keyOf('ability2')} — ${sp.ability2.name}`,
       `${keyOf('dash')} to dash — you are briefly invulnerable`,
       'Kill an enemy mid-windup to interrupt its attack',
+      'Dash through a blow at the last moment: a perfect dodge',
       `${keyOf('interact')} to interact · ${keyOf('map')} for the map · ${keyOf('ping')} to ping`,
     ];
     this._tipT = 2.5;

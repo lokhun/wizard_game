@@ -237,7 +237,7 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .end-box table { border-collapse: collapse; margin: 10px 0 18px; font-family: var(--serif); }
 .end-box td { padding: 4px 16px; border-bottom: 1px solid #2a221b; }
 .end-box td:last-child { text-align: right; color: var(--gold); }
-.help-box { max-width: 760px; align-items: stretch; }
+.help-box { max-width: 760px; align-items: stretch; max-height: 94vh; overflow-y: auto; }
 .help-box .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 30px; font-size: 15px; }
 .help-box .k { font-family: var(--serif); color: var(--bronze-hi); }
 .help-box p { font-size: 15.5px; line-height: 1.5; margin: 6px 0; }
