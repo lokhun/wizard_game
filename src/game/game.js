@@ -622,6 +622,7 @@ export class Game {
     this.events.emit('tick', realDt);
     this._updateDoorSigns(realDt);
     this._roomMusic(realDt);
+    this._ventTells(realDt);
     this._ambient(realDt);
     this.critters?.update(dt, this.time, this.renderer.camera.position, this.allPlayers());
     // big boss arenas outgrow the light pool: lift the ambient a little while you stand in one
@@ -1953,6 +1954,17 @@ export class Game {
   // ======================================================================
   // visual effects requested by the boss scripts (all peers)
   // ======================================================================
+  // a sealed room's trap vents smoulder between bursts, so a grate reads as a trap before it fires
+  _ventTells(dt) {
+    const r = this.level?.roomAt(this.player.pos.x, this.player.pos.z);
+    if (!r?.vents || !r._locked || r.cleared) return;
+    const b = this.biome.id, c = b === 'sewers' ? [0.5, 1.2, 0.15] : b === 'keep' ? [0.9, 0.25, 1.4] : [1.4, 0.5, 0.12];
+    for (const v of r.vents) {
+      if (Math.random() > dt * 6) continue;
+      this.vfx.P.glow({ x: v.x + rand(-0.45, 0.45), y: this.groundY(v.x, v.z) + 0.1, z: v.z + rand(-0.45, 0.45), vy: rand(0.6, 1.4), r: c[0], g: c[1], b: c[2], life: 0.9, size: 0.12, sprite: SPR.GLOW });
+    }
+  }
+
   // places of rest have their own pieces: the merchant's waltz, a shrine's hush, a vault's
   // glitter. Checked twice a second, switched once you've stood in the room a second
   _roomMusic(dt) {

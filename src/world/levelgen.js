@@ -704,6 +704,11 @@ function decorateRoom(level, room, rng) {
     for (let k = 0, n = rng.int(2, 4); k < 30 && room.vents.length < n; k++) {
       const s = randFloorSpot(2);
       if (!s || room.vents.some((v) => Math.hypot(v.x - s[0], v.z - s[1]) < 5)) continue;
+      // level ground all round (a burst's circle lies flat: on a step it would be half hidden)
+      const vx = Math.floor(s[0] / T), vy = Math.floor(s[1] / T), h0 = level.hgt[level.idx(vx, vy)];
+      let flat = true;
+      for (let dy = -1; dy <= 1 && flat; dy++) for (let dx = -1; dx <= 1; dx++) { const j = level.idx(vx + dx, vy + dy); if (level.hgt[j] !== h0 || level.kind[j] === K_WATER || level.cells[j] !== FLOOR) { flat = false; break; } }
+      if (!flat) continue;
       room.vents.push({ x: s[0], z: s[1] });
       P('grate', s[0], s[1], { rot: rng.int(0, 3) * Math.PI / 2 });
     }
