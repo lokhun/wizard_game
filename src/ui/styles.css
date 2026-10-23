@@ -223,7 +223,7 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
   box-shadow: inset 0 0 0 2px #0a0807, inset 0 0 0 3px var(--bronze), inset 0 0 0 5px #0a0807, inset 0 0 0 6px var(--bronze-lo), inset 0 0 18px rgba(0,0,0,0.85);
   background: repeating-conic-gradient(from -1deg, rgba(226,196,138,0.55) 0 2deg, transparent 2deg 30deg); -webkit-mask: radial-gradient(circle, transparent 96px, #000 97px); mask: radial-gradient(circle, transparent 96px, #000 97px); }
 .mm-frame .pip { position: absolute; left: 50%; top: -3px; width: 8px; height: 8px; margin-left: -4px; transform: rotate(45deg); background: var(--bronze-hi); box-shadow: 0 0 6px rgba(255,200,120,0.8); }
-.minimap.big { right: 50%; top: 50%; width: min(80vh, 80vw); height: min(80vh, 80vw); transform: translate(50%, -50%); border-radius: 4px; background: rgba(8,7,6,0.9); box-shadow: 0 0 0 1px var(--bronze-lo), 0 0 40px rgba(0,0,0,0.8); }
+.minimap.big { z-index: 6; right: 50%; top: 50%; width: min(80vh, 80vw); height: min(80vh, 80vw); transform: translate(50%, -50%); border-radius: 4px; background: rgba(8,7,6,0.9); box-shadow: 0 0 0 1px var(--bronze-lo), 0 0 40px rgba(0,0,0,0.8); }
 .minimap.big + .mm-frame { display: none; }
 
 /* (as wide as fits between the realm name and the minimap at any HUD scale: the zoom multiplies the width back) */

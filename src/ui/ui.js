@@ -555,8 +555,9 @@ export class UI {
     const p = game.player;
     const W = cvs.width, H = cvs.height;
     g.clearRect(0, 0, W, H);
-    const scale = big ? Math.min(W / (L.W * T) * 1.9, H / (L.H * T) * 1.9) : 3.2;
     if (this._mmCenterL !== L) { this._mmCenterL = L; this._mmCenter = this._levelCenter(L); }
+    // the big map fits the rooms' extent (with a margin), not the whole level grid
+    const scale = big ? Math.min(W / (this._mmCenter.w + 8), H / (this._mmCenter.h + 8)) : 3.2;
     const cx = big ? this._mmCenter : p.pos;
     g.save();
     g.translate(W / 2, H / 2);
@@ -646,7 +647,7 @@ export class UI {
   _levelCenter(L) {
     let minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
     for (const r of L.rooms) { minX = Math.min(minX, r.x * T); maxX = Math.max(maxX, (r.x + r.w) * T); minZ = Math.min(minZ, r.y * T); maxZ = Math.max(maxZ, (r.y + r.h) * T); }
-    return { x: (minX + maxX) / 2, z: (minZ + maxZ) / 2 };
+    return { x: (minX + maxX) / 2, z: (minZ + maxZ) / 2, w: maxX - minX, h: maxZ - minZ };
   }
 
   // ---------------------------------------------------------------- 2D overlay
