@@ -189,6 +189,7 @@ export class UI {
           </div>
           <div class="title" id="lobbyCode" style="font-size:34px;letter-spacing:0.3em;color:var(--gold)"></div>
           <div id="lobbyPlayers" style="display:flex;flex-direction:column;gap:4px;margin-top:6px"></div>
+          <div id="lobbySworn" class="hidden" style="color:#ff9a70;font-size:13px;margin-top:6px;font-family:var(--serif)"></div>
           <div id="lobbyStatus" style="color:var(--text-dim);font-size:13px;margin-top:6px"></div>
         </div>
         ${ascension && ascension.max > 0 ? `<div class="panel" style="padding:10px 16px;display:flex;align-items:center;gap:12px">
@@ -234,8 +235,11 @@ export class UI {
     }
     el.querySelector('#bBack').onclick = onBack;
     const api = {
-      setLobby: ({ code, players, status, isHost, canStart, link }) => {
+      setLobby: ({ code, players, status, isHost, canStart, link, sworn }) => {
         el.querySelector('#lobbyCode').textContent = code ?? '';
+        const sw = el.querySelector('#lobbySworn');
+        sw.textContent = sworn ? `${isHost ? 'You have sworn the party to' : 'The host has sworn the party to'}: ${sworn}` : '';
+        sw.classList.toggle('hidden', !sworn);
         el.querySelector('#lobbyStatus').textContent = status ?? '';
         el.querySelector('#lobbyPlayers').innerHTML = (players ?? []).map((p) => `
           <div style="display:flex;align-items:center;gap:10px">${classEmblem(p.classId, hex(CLASS_META[p.classId].color), 26)}

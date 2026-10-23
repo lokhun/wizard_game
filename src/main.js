@@ -19,7 +19,7 @@ import { sigilTexture } from './game/models/wizard/sigil.js';
 import { TextureFactory, surfaceBakes } from './render/textures.js';
 import { warmBakes } from './render/bake.js';
 import { installShaderFixes } from './render/shaderFixes.js';
-import { attachMeta, loadProfile, resetProfile, difficultyFor, cleanPacts, pactsUnlocked, toggleNightmare, pactStrip, showPactBoard, showCodex, showDailyRite, riteLine, demoSummary, FEATS } from './meta/index.js';
+import { attachMeta, loadProfile, resetProfile, difficultyFor, cleanPacts, heatOf, PACT_BY_ID, pactsUnlocked, toggleNightmare, pactStrip, showPactBoard, showCodex, showDailyRite, riteLine, demoSummary, FEATS } from './meta/index.js';
 
 // Optional modules (resolved at build time; missing files are simply skipped)
 const optional = import.meta.glob(['./audio/audio.js', './game/enemyModels.js', './game/wizardModels.js']);
@@ -294,7 +294,12 @@ function showSelect(lobbyInfo) {
     selected: selectedClass,
     lobby: lobbyInfo,
     // the host swears the pacts for the whole party
-    pacts: (!lobbyInfo || lobbyInfo.isHost) ? { html: (id) => pactStrip(id), bind: (box, id, rerender) => { const b = box.querySelector('#bPacts'); if (b) b.onclick = () => showPactBoard(ui, { classId: id, onClose: rerender }); const n = box.querySelector('#bNight'); if (n) n.onclick = () => { ui.audio?.play(toggleNightmare() ? 'boss_roar' : 'ui_click', { volume: 0.5 }); rerender(); }; } } : null,
+    pacts: (!lobbyInfo || lobbyInfo.isHost) ? { html: (id) => pactStrip(id), bind: (box, id, rerender) => {
+      // (a host's change goes straight to the party, so everyone sees what they are in for)
+      const changed = () => { rerender(); if (lobbyInfo?.isHost) pushRoster(); };
+      const b = box.querySelector('#bPacts'); if (b) b.onclick = () => showPactBoard(ui, { classId: id, onClose: changed });
+      const n = box.querySelector('#bNight'); if (n) n.onclick = () => { ui.audio?.play(toggleNightmare() ? 'boss_roar' : 'ui_click', { volume: 0.5 }); changed(); };
+    } } : null,
     onSelect: (id) => {
       selectedClass = id;
       settings.lastClass = id;
@@ -318,6 +323,14 @@ function showSelect(lobbyInfo) {
   refreshLobby();
 }
 
+// what the host has sworn the party to, in a line for the lobby: "Nightmare · heat 14 · Iron Hides II, Wrath"
+function swornLine(pk) {
+  pk = cleanPacts(pk);
+  const h = heatOf(pk);
+  if (!h) return '';
+  const names = Object.keys(pk).filter((id) => id !== 'nightmare').map((id) => PACT_BY_ID[id].name + (PACT_BY_ID[id].max > 1 ? ' ' + 'I'.repeat(pk[id]) : ''));
+  return [pk.nightmare ? 'Nightmare' : '', `heat ${h}`, names.join(', ')].filter(Boolean).join(' · ');
+}
 function refreshLobby() {
   if (!lobby?.api || !net) return;
   const link = `${location.origin}${location.pathname}?join=${net.code}`;
@@ -328,6 +341,7 @@ function refreshLobby() {
     canStart: net.isHost,
     link,
     status: net.isHost ? (lobby.players.length < 2 ? 'Share the code — friends join from the main menu or via the invite link.' : `${lobby.players.length} wizards in the party`) : 'Waiting for the host to begin…',
+    sworn: swornLine(net.isHost ? currentPacts() : lobby.hostPacts),
   });
 }
 
@@ -445,7 +459,7 @@ async function doJoin(code, api) {
 
 function pushRoster() {
   if (!net?.isHost) return;
-  net.broadcast({ t: 'roster', players: lobby.players });
+  net.broadcast({ t: 'roster', players: lobby.players, pk: currentPacts() });
   refreshLobby();
 }
 
@@ -483,6 +497,7 @@ function onLobbyMessage(msg, from) {
   } else {
     if (msg.t === 'roster') {
       lobby.players = msg.players;
+      lobby.hostPacts = cleanPacts(msg.pk);
       refreshLobby();
       if (mode === 'run') {
         for (const p of msg.players) if (p.id !== net.id) game.addRemote(p);

@@ -6,7 +6,7 @@ import { PACT_BY_ID } from './pacts.js';
 
 export { loadProfile, saveProfile, resetProfile } from './profile.js';
 export { FEATS } from './feats.js';
-export { difficultyFor, dailyRite, heatOf, cleanPacts } from './pacts.js';
+export { difficultyFor, dailyRite, heatOf, cleanPacts, PACT_BY_ID } from './pacts.js';
 export { showCodex, showPactBoard, pactStrip, pactsUnlocked, nightmareOn, toggleNightmare, showDailyRite, riteLine } from './codex.js';
 
 // Wire the meta layer onto a game: the run tracker listens to game.events,
