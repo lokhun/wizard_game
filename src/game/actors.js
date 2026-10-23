@@ -6,6 +6,7 @@ import { fxOf } from '../render/vfx.js';
 import { rand } from '../core/rng.js';
 import { angleDamp, clamp } from '../core/math.js';
 import { Pathing } from './pathing.js';
+import { STEP } from '../world/collision.js';
 import { getEnemyModel } from './models.js';
 import { BossBrain } from './bosses.js';
 
@@ -1096,7 +1097,7 @@ export class ActorManager {
       // line of sight to the target, re-checked a few times a second per actor
       if (!(a._mvLosT > g.time) || a._mvLosTgt !== tgt) {
         a._mvLosT = g.time + 0.1 + Math.random() * 0.1; a._mvLosTgt = tgt;
-        a._losMove = dist < 25 && g.collision.los(a.pos.x, a.pos.y + 0.8, a.pos.z, tp.x, tp.y + 0.8, tp.z);
+        a._losMove = dist < 25 && g.collision.los(a.pos.x, a.pos.y + 0.8, a.pos.z, tp.x, tp.y + 0.8, tp.z) && (tp.y - a.pos.y < STEP || this.pathing.walkLine(a.pos.x, a.pos.z, tp.x, tp.z));
       }
       const los = a._losMove && dist < 25;
       move = true;

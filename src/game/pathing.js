@@ -1,4 +1,5 @@
 import { T, FLOOR } from '../world/levelgen.js';
+import { STEP } from '../world/collision.js';
 
 // Flow fields: BFS distance maps from a target cell over walkable cells.
 // Enemies descend the gradient to reach their target around obstacles.
@@ -43,8 +44,9 @@ export class Pathing {
         const ni = ny * W + nx;
         if (!this.walk(ni)) continue;
         if (dx && dy && (!this.walk(y * W + nx) || !this.walk(ny * W + x))) continue;
-        // forbid big step-ups
-        if (L.hgt[ni] - L.hgt[i] > 0.8) continue;
+        // forbid big step-ups (the field grows out from the target, so a walker goes ni -> i:
+        // it may drop off any ledge but climbs only what collision lets it, STEP)
+        if (L.hgt[i] - L.hgt[ni] > STEP) continue;
         const nd = d + (dx && dy ? 3 : 2);
         if (nd < dist[ni]) { dist[ni] = nd; q[tail++] = ni; }
       }
@@ -72,6 +74,7 @@ export class Pathing {
       if (!L.inb(nx, ny)) continue;
       const ni = ny * L.W + nx;
       if (DX[k] && DY[k] && (!this.walk(cy * L.W + nx) || !this.walk(ny * L.W + cx))) continue;
+      if (L.hgt[ni] - L.hgt[i] > STEP) continue; // (nearer by the ramp is no use at the foot of the cliff)
       if (f.dist[ni] < best) { best = f.dist[ni]; bi = ni; }
     }
     if (bi < 0) { out.x = 0; out.z = 0; return f.dist[i] === 0; }
@@ -79,6 +82,23 @@ export class Pathing {
     const dx = tx - x, dz = tz - z;
     const d = Math.hypot(dx, dz) || 1;
     out.x = dx / d; out.z = dz / d;
+    return true;
+  }
+
+  // can a walker go straight from (ax,az) to (bx,bz) without meeting a ledge too tall to climb?
+  // (sight carries over a plateau's edge; feet don't)
+  walkLine(ax, az, bx, bz) {
+    const L = this.level;
+    const dx = bx - ax, dz = bz - az, n = Math.ceil(Math.hypot(dx, dz) / (T * 0.5));
+    let prev = -1;
+    for (let s = 0; s <= n; s++) {
+      const cx = Math.floor((ax + dx * s / n) / T), cy = Math.floor((az + dz * s / n) / T);
+      if (!L.inb(cx, cy)) return false;
+      const i = cy * L.W + cx;
+      if (i === prev) continue;
+      if (prev >= 0 && L.hgt[i] - L.hgt[prev] > STEP) return false;
+      prev = i;
+    }
     return true;
   }
 

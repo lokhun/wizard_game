@@ -536,7 +536,7 @@ export class UI {
     const cvs = this.h.minimap;
     cvs.classList.toggle('big', big);
     this._mmT = (this._mmT ?? 0) + 1;
-    if (!big && this._mmT % 3) return;
+    if (!big && this._mmT % 3 !== 1) return; // (every third frame, starting with the first)
     const g = this.mm;
     const L = game.level;
     const p = game.player;
