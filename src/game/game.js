@@ -880,9 +880,10 @@ export class Game {
         const pp = this.player.pos, dx = a.pos.x - pp.x, dz = a.pos.z - pp.z, dl = Math.hypot(dx, dz) || 1;
         this.actors.jolt(a, dx / dl, dz / dl, (res.crit ? 1 : 0.55) * Math.min(1, 0.35 + (dmg / a.maxHp) * 5));
       }
-      if (!H.noNumber) this.ui?.damageNumber(pos, dmg, elShow, res.crit, H.tag === 'dot', a.id);
+      if (!H.noNumber) this.ui?.damageNumber(pos, dmg, elShow, res.crit || H.weak, H.tag === 'dot', a.id);
       if (H.tag !== 'dot') {
-        this.ui?.hitmarker(res.crit, a.hp - dmg <= 0);
+        this.ui?.hitmarker(res.crit, a.hp - dmg <= 0, H.weak);
+        if (H.weak) { this.events.emit('weakHit'); if (this.time - (this._weakSndT ?? 0) > 0.08) { this._weakSndT = this.time; this.audio?.play('hitmarker', { volume: 0.7 }); } }
         if (this.time - this.hitSoundT > 0.05) {
           this.hitSoundT = this.time;
           this.audio?.play(a.def.hitSound ?? 'enemy_hit', { pos, volume: 0.6 });
@@ -1262,7 +1263,7 @@ export class Game {
     this.spells.spawn({
       local: true, faction: 'enemy', el, pos, vel: new THREE.Vector3(e.vx, e.vy, e.vz), radius: e.mesh === 'arrow' ? 0.15 : 0.3,
       life: e.gravity ? 4 : 3.5, gravity: e.gravity ?? 0, core: e.mesh === 'arrow' ? 0 : 0.7, mesh: e.mesh, light: e.mesh === 'arrow' ? 0 : 5, trail: e.mesh === 'arrow' ? 0.2 : 1,
-      homing: e.homing ?? 0, hit: { dmg: e.dmg, st: e.st, by: e.src != null ? this.actors.byId.get(e.src) : null, move: e.mv }, // (by, not attacker: thorns answers only blows in reach)
+      homing: e.homing ?? 0, homeOn: e.tg, hit: { dmg: e.dmg, st: e.st, by: e.src != null ? this.actors.byId.get(e.src) : null, move: e.mv }, // (by, not attacker: thorns answers only blows in reach)
       aoe: e.aoe ? { radius: e.aoe, dmg: e.dmg * 0.6, el } : null,
       onExpire: e.pool ? (pr, p) => this.spawnPoolLocal(p, e.pool[0], e.pool[1], e.pool[2], el) : null,
     });
@@ -1419,6 +1420,19 @@ export class Game {
     me.addBuff('converge', 6, { dmgMult: 0.25 });
     this.ui?.streak?.('CONVERGENCE', `With ${r.name} · +25% damage`, '#ffd870');
     this.events.emit('converge');
+  }
+  // An interrupt (a foe killed or staggered mid-wind-up) pays the wizard who did it: ult charge
+  // and a call (host decides; a client's credit goes to it as 'intr')
+  creditInterrupt(a, src) {
+    if (src === this.player.id) this.onInterrupt(a.pos.x, a.pos.y + a.height + 0.6, a.pos.z);
+    else if (src && this.remotes.has(src)) this.net?.sendTo(src, { t: 'intr', x: a.pos.x, y: a.pos.y + a.height + 0.6, z: a.pos.z });
+  }
+  onInterrupt(x, y, z) {
+    const p = this.player;
+    p.ult = Math.min(100, p.ult + 5);
+    this.ui?.floatText(new THREE.Vector3(x, y + 0.35, z), 'INTERRUPT +5% ULT', '#ffd870');
+    if (this.time - (this._intrSndT ?? 0) > 0.15) { this._intrSndT = this.time; this.audio?.play('crit', { volume: 0.5 }); }
+    this.events.emit('interrupt');
   }
   // the Hoarder's comings and goings, called out on every peer
   hoarderNews(kind, a) {

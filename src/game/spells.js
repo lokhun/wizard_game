@@ -11,6 +11,14 @@ import { segPointDist2 } from '../core/math.js';
 // and on co-op peers (local=false: visuals only), so everyone sees every spell.
 // ---------------------------------------------------------------------------
 
+// a direct hit on a weak point (Spells.update) deals this much more: aim pays
+export const WEAK_MULT = 1.35;
+// is (x, y, z) on a's weak point? the head of an upright body (its top quarter), the front of a long one
+export function isWeak(a, x, y, z) {
+  if (a.hitL > a.hitR * 0.9) return (x - a.pos.x) * Math.sin(a.yaw) + (z - a.pos.z) * Math.cos(a.yaw) > a.hitL * 0.45;
+  const y0 = a.pos.y + a.hitY0, y1 = a.pos.y + a.hitH;
+  return y >= y1 - (y1 - y0) * 0.25;
+}
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _ta = new THREE.Vector3(), _ts = new THREE.Vector3(), _tn = new THREE.Vector3();
@@ -249,6 +257,7 @@ export class SpellRuntime {
       bounce: p.bounce ?? 0,
       homing: p.homing ?? 0,
       homingRange: p.homingRange ?? 18,
+      homeOn: p.homeOn, // (an enemy shot homes only on the wizard it was loosed at)
       hit: p.hit ?? null,
       aoe: p.aoe ?? null,
       onHit: p.onHit,
@@ -388,11 +397,20 @@ export class SpellRuntime {
           p.vel.lerp(_v2, Math.min(1, p.homing * dt));
           p.vel.setLength(sp);
         }
-      } else if (p.homing > 0 && p.faction === 'enemy' && g.player && !g.player.dead) {
-        const sp = p.vel.length();
-        _v2.set(g.player.pos.x - p.pos.x, g.player.pos.y + 1.2 - p.pos.y, g.player.pos.z - p.pos.z).normalize().multiplyScalar(sp);
-        p.vel.lerp(_v2, Math.min(1, p.homing * dt));
-        p.vel.setLength(sp);
+      } else if (p.homing > 0 && p.faction === 'enemy' && g.player && !g.player.dead && p.age < 1.6 && (p.homeOn === undefined || p.homeOn === g.player.id)) {
+        // Fair homing: it bends only toward the wizard it was loosed at (a shot at a teammate
+        // never swerves onto you), only while they are ahead of it, never in its last 5 m (a late sidestep or
+        // dash beats it), and only for its first 1.6 s
+        _v2.set(g.player.pos.x - p.pos.x, g.player.pos.y + 1.2 - p.pos.y, g.player.pos.z - p.pos.z);
+        const d = _v2.length();
+        if (d > 5) {
+          const sp = p.vel.length();
+          _v2.divideScalar(d);
+          if (_v2.dot(_v.copy(p.vel).divideScalar(sp || 1)) > 0.64) {
+            p.vel.lerp(_v2.multiplyScalar(sp), Math.min(1, p.homing * dt));
+            p.vel.setLength(sp);
+          }
+        }
       }
       if (p.gravity) p.vel.y -= p.gravity * dt;
       if (p.drag) p.vel.multiplyScalar(Math.exp(-p.drag * dt));
@@ -452,7 +470,8 @@ export class SpellRuntime {
           const hp = new THREE.Vector3(c.x, Math.max(ay0 + 0.3, Math.min(ay1 - 0.2, p.pos.y)), c.z);
           if (p.hit && p.local) {
             const vlen = p.vel.length() || 1;
-            g.hitActor(a, { ...p.hit, src: p.owner, kbDir: [p.vel.x / vlen, p.vel.z / vlen] }, hp);
+            const weak = isWeak(a, c.x, p.pos.y, c.z);
+            g.hitActor(a, { ...p.hit, src: p.owner, kbDir: [p.vel.x / vlen, p.vel.z / vlen], weak, dmg: p.hit.dmg * (weak ? WEAK_MULT : 1) }, hp);
           }
           p.onHit?.(p, a, hp);
           if (!p.aoe || p.pierce > 0) g.vfx.impact(hp, p.el, 0.7);

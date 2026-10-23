@@ -123,6 +123,16 @@ export function showSummary(ui, S, { party = [], remotes = new Map(), onMenu, on
     tile('Biggest hit', S.biggest, 'num', S.biggestOn ? 'on ' + esc(S.biggestOn) : '&nbsp;', rec.biggest, 4),
     tile('Damage taken', S.taken, 'num', S.downs ? `downed ${S.downs}×` : 'never downed', false, 5),
   ].join('');
+  // mastery: the numbers that climb as you play better (never with the build), each against your best
+  const B = S.best ?? {};
+  const vs = (k, unit = '') => (rec[k] ? `best was ${B[k]}${unit}` : B[k] > 0 ? `best ${B[k]}${unit}` : '');
+  const and = (a, b) => (b ? `${a} · ${b}` : a);
+  const mastery = [
+    tile('Perfect dodges', S.dodges ?? 0, 'num', vs('dodges'), rec.dodges, 6),
+    tile('Interrupts', S.interrupts ?? 0, 'num', vs('interrupts'), rec.interrupts, 7),
+    tile('Weak points', Math.max(0, S.weakPct ?? -1), S.weakPct >= 0 ? 'pct' : 'none', S.weakPct >= 0 ? and('of aimed hits', vs('weakPct', '%')) : 'too few aimed hits', rec.weakPct, 8),
+    tile('Flawless chambers', S.flawless ?? 0, 'num', and(`of ${S.chambers ?? 0}`, vs('flawless')), rec.flawless, 9),
+  ].join('');
   const left = coop ? '' : `<div class="rs-sec"><h3>The build</h3><div class="rs-build">${buildIcons(S, 22)}</div></div>${featList(S.feats)}`;
   const m = ui._modal(`
     <div class="rs panel" style="--acc:${acc};--deep:${deep}">
@@ -148,6 +158,7 @@ export function showSummary(ui, S, { party = [], remotes = new Map(), onMenu, on
       </div>
       <div class="rs-main">
       <div class="rs-tiles">${tiles}</div>
+      ${S.dodges === undefined ? '' : `<div class="rs-mastery"><h3>Mastery</h3>${mastery}</div>`}
       ${coop ? `<div class="rs-sec"><h3>The party</h3><div class="rs-party" id="rsParty"></div></div>` : ''}
       <div class="rs-body"${coop ? ' style="grid-template-columns:minmax(0,1fr)"' : ''}>
         ${left ? `<div>${left}${!coop ? recapHTML(S.recap, true) : ''}</div>` : ''}
@@ -177,7 +188,7 @@ export function showSummary(ui, S, { party = [], remotes = new Map(), onMenu, on
   // ---- count-ups, then the record flourishes
   const nums = [...m.querySelectorAll('.tv[data-to]')];
   const t0 = performance.now();
-  const fmt = (v, f) => (f === 'time' ? fmtTime(v) : f === 'realm' ? `${Math.round(v)}<span style="font-size:0.55em;color:var(--text-dim)"> / ${BIOMES.length}</span>` : fmtNum(v));
+  const fmt = (v, f) => (f === 'time' ? fmtTime(v) : f === 'realm' ? `${Math.round(v)}<span style="font-size:0.55em;color:var(--text-dim)"> / ${BIOMES.length}</span>` : f === 'pct' ? `${Math.round(v)}%` : f === 'none' ? '—' : fmtNum(v));
   const step = (now) => {
     if (!m.isConnected) return;
     let running = false;

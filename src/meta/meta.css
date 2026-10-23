@@ -115,6 +115,11 @@
 .rs-pc .kb { font-size: 12.5px; color: #e07a6a; }
 .rs-wait { color: var(--text-dim); font-style: italic; font-size: 14px; animation: blink 1.6s infinite; padding: 20px 0; text-align: center; }
 
+.rs-mastery { display: grid; grid-template-columns: auto repeat(4, 1fr); gap: 10px; align-items: stretch; }
+.rs-mastery h3 { margin: 0; align-self: center; font-family: var(--serif); font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--bronze-hi); padding-right: 4px; }
+.rs-mastery .rs-tile { padding: 5px 12px 4px; display: grid; grid-template-columns: 1fr auto; align-items: baseline; column-gap: 8px; }
+.rs-mastery .rs-tile .tv { font-size: 21px; margin: 0; grid-row: 1 / 3; grid-column: 2; align-self: center; }
+.rs-mastery .rs-tile .ts { font-size: 11.5px; }
 .rs-foot { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 2px; }
 .rs-foot .hint { font-family: var(--serif); font-size: 11px; color: var(--text-dim); letter-spacing: 0.2em; margin-left: 4px; opacity: 0.8; }
 .rs-note { text-align: center; color: var(--text-dim); font-size: 12.5px; }

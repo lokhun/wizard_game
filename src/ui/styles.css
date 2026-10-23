@@ -126,6 +126,9 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .hitmarker i:nth-child(4) { bottom: 0; left: 50%; width: 2px; height: 9px; margin-left: -1px; }
 .hitmarker.crit i { background: #ffc040; }
 .hitmarker.kill i { background: #ff3030; }
+/* a weak point: gold, with a ring (and the number reads like a crit) */
+.hitmarker.weak i { background: #ffd450; box-shadow: 0 0 6px rgba(255,200,80,0.9), 0 0 2px #000; }
+.hitmarker.weak::after { content: ''; position: absolute; inset: 6px; border: 2px solid rgba(255,212,80,0.85); border-radius: 50%; }
 
 .hp-wrap { position: absolute; left: 24px; bottom: 22px; width: 380px; --pc: #e2c48a; }
 /* the player's plate: a class medallion on a smoky bronze-trimmed slab */

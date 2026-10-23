@@ -43,6 +43,8 @@ export class RunTracker {
     E.on('itemUsed', () => this.run && this.fire('itemUsed', ++this.run.items));
     E.on('converge', () => this.run && this.fire('converge'));
     E.on('hoarder', () => this.run && this.fire('hoarder'));
+    E.on('interrupt', () => this.run && this.fire('interrupt', ++this.run.interrupts));
+    E.on('weakHit', () => this.run && ++this.run.weakHits === 150 && this.fire('deadeye'));
     E.on('end', (won) => this.end(won));
     E.on('abandon', () => this.abandon());
     E.on('net:rsum', (msg) => this.remoteSummary(msg));
@@ -59,7 +61,7 @@ export class RunTracker {
       classId: g.player.classId, name: g.player.name, coop: !g.isSolo, heat: d.heat ?? 0, pacts: { ...(d.pacts ?? {}) }, daily: d.daily ?? null,
       kills: 0, bestiary: {}, bosses: [], reactions: 0, biggest: 0, biggestOn: '', taken: 0, downs: 0, dashes: 0,
       tomesTaken: 0, bestRarity: -1, augments: 0, rooms: [], cur: null, flawlessChain: 0, killer: null, killerType: null,
-      feats: [], maxFloor: 0, won: false, ended: false, abyss: 0, winTime: 0, dodges: 0, items: 0, nightmare: !!d.nightmare, damnation: !!d.damnation, rush: !!d.rush,
+      feats: [], maxFloor: 0, won: false, ended: false, abyss: 0, winTime: 0, dodges: 0, items: 0, interrupts: 0, weakHits: 0, direct: 0, nightmare: !!d.nightmare, damnation: !!d.damnation, rush: !!d.rush,
     };
     this._kt = [];
     this._dash = g.player.dashCharges;
@@ -143,6 +145,7 @@ export class RunTracker {
   hit(dmg, a, res, H) {
     const r = this.run;
     if (res?.reaction && H?.tag !== 'dot') { r.reactions++; this.fire('reaction', r.reactions); }
+    if (H?.weak !== undefined) r.direct++; // (only aimed direct hits carry a weak flag)
     if (H?.tag === 'dot' || dmg <= r.biggest) return;
     r.biggest = dmg;
     r.biggestOn = a?.def?.name ?? '';
@@ -234,6 +237,9 @@ export class RunTracker {
       kills: r.kills, partyKills: g.stats.kills, damage: Math.round(p.damageDealt ?? 0), biggest: Math.round(r.biggest), biggestOn: r.biggestOn,
       taken: Math.round(r.taken), downs: r.downs, reactions: r.reactions, gold: Math.round(g.stats.gold ?? 0), heat: r.heat, pacts: r.pacts, daily: r.daily,
       abyss: r.abyss, fell: !!r.fell, recap: r.won && !r.fell ? [] : (r.recap ?? []), nightmare: r.nightmare, damnation: r.damnation, rush: r.rush, dread: g.player.dread ?? 0, killer: r.won && !r.fell ? null : r.killer, coop: r.coop, practice: this.practice, feats: [...r.feats],
+      // mastery: what a better player does more of, whatever the build
+      dodges: r.dodges, interrupts: r.interrupts, weakPct: r.direct >= 20 ? Math.round(100 * r.weakHits / r.direct) : -1, flawless: r.rooms.filter((x) => x.done && x.dmg === 0).length, chambers: r.rooms.filter((x) => x.done).length,
+      best: this._best ?? null,
       tomes: [...tomes.values()], relics: p.relics.map((x) => x.def?.id).filter(Boolean),
       rooms: r.rooms.map((c) => [c.f, c.type, Math.round(c.t), Math.round(c.dmg), (c.done ? 1 : 0) | (c.trial ? 2 : 0), c.kills]),
     };
@@ -292,6 +298,18 @@ export class RunTracker {
     p.records.biggestHit = Math.max(p.records.biggestHit, Math.round(r.biggest));
     p.records.mostDamage = Math.max(p.records.mostDamage, damage);
     p.records.mostKills = Math.max(p.records.mostKills, r.kills);
+    // mastery records (perfect dodges, interrupts, weak-point share, flawless chambers); the previous bests ride along to the summary
+    const pr = p.records, weakPct = r.direct >= 20 ? Math.round(100 * r.weakHits / r.direct) : -1;
+    const flawless = r.rooms.filter((x) => x.done && x.dmg === 0).length;
+    this._best = { dodges: pr.mostDodges, interrupts: pr.mostInterrupts, weakPct: pr.bestWeakPct, flawless: pr.mostFlawless };
+    if (veteran && r.dodges > pr.mostDodges && r.dodges >= 3) rec.dodges = true;
+    if (veteran && r.interrupts > pr.mostInterrupts && r.interrupts >= 3) rec.interrupts = true;
+    if (veteran && weakPct > pr.bestWeakPct && pr.bestWeakPct >= 0) rec.weakPct = true;
+    if (veteran && flawless > pr.mostFlawless && flawless >= 2) rec.flawless = true;
+    pr.mostDodges = Math.max(pr.mostDodges, r.dodges);
+    pr.mostInterrupts = Math.max(pr.mostInterrupts, r.interrupts);
+    pr.bestWeakPct = Math.max(pr.bestWeakPct, weakPct);
+    pr.mostFlawless = Math.max(pr.mostFlawless, flawless);
     p.runs++; c.runs++;
     if (r.won) {
       p.wins++; c.wins++;

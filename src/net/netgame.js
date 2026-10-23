@@ -143,6 +143,7 @@ export function handleGameMessage(game, msg, from) {
     case 'eair': { const a = game.actors.byId.get(msg.id); if (a) { a.airT = 0; a.airDur = msg.d; a.airH = msg.h; } break; } // a foe's leap: its arc (Actors._strike 'leap')
     case 'hoard': game.hoarderNews(msg.k, game.actors.byId.get(msg.id)); break; // a Hoarder appears / is caught
     case 'escape': game.actors.escape(game.actors.byId.get(msg.id)); game.hoarderNews('escape'); break;
+    case 'intr': game.onInterrupt(msg.x, msg.y, msg.z); break; // our blow broke a foe's wind-up
     case 'itemfx': { if (msg.i === 'strike') strike(game, msg); else ITEMS[msg.i]?.show(game, msg); break; } // a teammate's item: its look
     case 'healfx': { const a = game.actors.byId.get(msg.id); if (a) game.vfx.burst(new THREE.Vector3(a.pos.x, a.pos.y + a.height * 0.6, a.pos.z), { element: msg.s ? 'holy' : 'poison', count: 12, speed: 1.5, upward: 1, life: 0.8, size: 0.12 }); break; }
     case 'drop': if (!game.isHost) game.spawnDrop(msg.ty, new THREE.Vector3(msg.x, msg.y, msg.z), msg.v, msg.id); break;

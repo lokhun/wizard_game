@@ -273,7 +273,7 @@ export class UI {
           <div><span class="k">Esc</span> pause & settings</div><div><span class="k">${esc(keyOf('ping'))}</span> ping a foe, item or spot</div>
           <div><span class="k">${esc(keyOf('item'))}</span> use your item</div><div></div>
         </div>
-        <p><b style="color:var(--bronze-hi)">Skill pays:</b> dash through a blow at the last moment for a <i>perfect dodge</i> (+25% damage for a few seconds), and kill a foe mid-windup to interrupt its attack. In a party, two ultimates unleashed within 3 seconds and 20 m of each other <i>converge</i>: a blast between you and +25% damage for both. <i>Items</i> (a fire flask, a frost phial, a rallying bell...) drop from elites and bosses, wait in chests and sit on the merchant's table: you carry one at a time, so spend it. A boss that lands a leap, ends a whirl or a charge is <i>EXPOSED</i> for a moment (+30% damage): dodge the blow, then punish it. When you fall, <i>What hit you</i> shows the blows that did it.</p>
+        <p><b style="color:var(--bronze-hi)">Skill pays:</b> dash through a blow at the last moment for a <i>perfect dodge</i> (+25% damage for a few seconds); aim for the head (the front of a beast) and a direct hit strikes a <i>weak point</i> for +35%, marked in gold; stagger or kill a foe as it winds up and you <i>interrupt</i> the blow (+5% ultimate). Enemy shots only bend toward you early in their flight: a late sidestep always beats them. The run summary scores your mastery against your best. In a party, two ultimates unleashed within 3 seconds and 20 m of each other <i>converge</i>: a blast between you and +25% damage for both. <i>Items</i> (a fire flask, a frost phial, a rallying bell...) drop from elites and bosses, wait in chests and sit on the merchant's table: you carry one at a time, so spend it. A boss that lands a leap, ends a whirl or a charge is <i>EXPOSED</i> for a moment (+30% damage): dodge the blow, then punish it. When you fall, <i>What hit you</i> shows the blows that did it.</p>
         <p><b style="color:var(--bronze-hi)">For a harder fight:</b> <i>Nightmare</i> (on the wizard select) makes foes smarter and relentless and gives every boss a new move; chambers cleared without a scratch earn Dread Marks (+5% damage each). <i>Boss Rush</i> pits you against the five bosses back to back. After your first victory, <i>Pacts</i> raise the heat for finer rewards, and the Hollow King's fall opens the endless <i>Abyss</i>.</p>
         <p><b style="color:var(--bronze-hi)">Elemental reactions:</b> combine schools for bonus effects — <i>Melt</i> (fire on frozen), <i>Shatter</i> (shards, earth or blades on frozen), <i>Overload</i> (lightning on burning), <i>Electrocute</i> (lightning on wet foes in water), <i>Combust</i> (fire on poison), <i>Purge</i> (holy on hexed) and more. In co-op, set up reactions for each other!</p>
         <p><b style="color:var(--bronze-hi)">Co-op:</b> one wizard hosts and shares the party code. Fallen wizards can be revived by holding <b>${esc(keyOf('interact'))}</b> beside them. Wizards who bleed out return when the chamber is cleared. Each player picks their own rewards — no loot stealing.</p>
@@ -902,11 +902,12 @@ export class UI {
     this.numbers.push({ pos: pos.clone(), amount, key, text: String(Math.round(amount)), color: col, crit, dot: !!dot, t: 0, life: dot ? 1.3 : crit ? 1.0 : 0.8, ox: (Math.random() - 0.5) * 30 });
   }
   floatText(pos, text, color = '#fff', big = false) { this.floats.push({ pos: pos.clone(), text, color, big, t: 0 }); }
-  hitmarker(crit, kill) {
+  hitmarker(crit, kill, weak = false) {
     if (!this.h) return;
     const el = this.h.hit;
     el.classList.toggle('crit', crit);
     el.classList.toggle('kill', kill);
+    el.classList.toggle('weak', weak && !kill);
     el.style.opacity = 1;
     el.style.transform = `translate(-50%,-50%) rotate(45deg) scale(${kill ? 1.4 : crit ? 1.2 : 1})`;
     this.hitT = kill ? 0.25 : 0.12;

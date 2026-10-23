@@ -25,7 +25,7 @@ export function baseStats(classId) {
     maxHp: C.hp, moveSpeed: 6.0 * C.speed, dmgMult: 1, critChance: 0.05, critMult: 1.75, cdr: 0, rateMult: 0,
     aoeMult: 1, projSpeed: 1, extraProj: 0, pierce: 0, bounce: 0, homing: 0, lifesteal: 0, armor: 0,
     dashCharges: 2, dashCd: 3.0, ultRate: 1, elementMult: {}, vs: {}, infuse: null, regen: 0, killHeal: 0,
-    goldMult: 1, extraLives: 0, thorns: 0, dodge: 0, cdRate: 1, statusPower: 1, jumpPower: 1, sustainMult: 1,
+    goldMult: 1, extraLives: 0, thorns: 0, dashIv: 0, pdDur: 0, cdRate: 1, statusPower: 1, jumpPower: 1, sustainMult: 1,
     ...structuredClone(C.stats ?? {}),
   };
 }
@@ -177,10 +177,6 @@ export class LocalPlayer {
     if (this.invuln > 0 && amount > 0 && fromPos && this._dashIv > g.time && !g.godMode) this._perfectDodge(); // (blows only: a pool has no fromPos)
     if (this.invuln > 0 || g.godMode) return 0;
     if (this.parryT > 0) { this._parrySuccess(fromPos); return 0; }
-    if (this.stats.dodge && Math.random() < this.stats.dodge) {
-      g.ui?.floatText(this.eye.clone().add(new THREE.Vector3(0, 0.3, 0)), 'DODGE', '#ccc');
-      return 0;
-    }
     let dmg = amount * (1 - this.stats.armor) * (g.difficulty?.playerDamage ?? 1);
     if (this.shield > 0) {
       const absorbed = Math.min(this.shield, dmg);
@@ -282,7 +278,7 @@ export class LocalPlayer {
     const g = this.game;
     if (g.time < (this._pdT ?? 0)) return;
     this._pdT = g.time + 1;
-    this.addBuff('perfectDodge', 3, { dmgMult: 0.25 });
+    this.addBuff('perfectDodge', 3 + (this.stats.pdDur ?? 0), { dmgMult: 0.25 });
     this.ult = Math.min(100, this.ult + 6);
     if (g.isSolo) g.slowMo(0.4, 0.35);
     g.vfx.addFovKick(-6);
@@ -326,8 +322,9 @@ export class LocalPlayer {
   dash(dir, dist, dur, opts = {}) {
     this.dashT = dur;
     this.dashVel.copy(dir).setY(0).normalize().multiplyScalar(dist / dur);
-    this.invuln = Math.max(this.invuln, opts.invuln ?? 0.2);
-    this._dashIv = this.game.time + (opts.invuln ?? 0.2); // (a blow that lands in here is a perfect dodge)
+    const iv = (opts.invuln ?? 0.2) + (this.stats.dashIv ?? 0); // (Blur widens it)
+    this.invuln = Math.max(this.invuln, iv);
+    this._dashIv = this.game.time + iv; // (a blow that lands in here is a perfect dodge)
     this.game.vfx.addFovKick(6);
     if (this.game.player === this) this.game.dashFx = 1;
   }

@@ -53,7 +53,8 @@ export const TOMES = [
   { id: 'feast', name: 'Soul Feast', icon: 'skull', max: 2, rare: 0.5, desc: (m) => `Kills heal ${Math.round(2 * m)} health (with lifesteal, at most 3% max health a second).`, apply: (s, m) => { s.killHeal += 2 * m; } },
   { id: 'swift', name: 'Wind Walker', icon: 'speed', max: 4, desc: (m) => `+${pct(0.08 * m)} move speed.`, apply: (s, m) => { s.moveSpeed *= 1 + 0.08 * m; } },
   { id: 'dash', name: 'Phase Step', icon: 'dash', max: 2, desc: () => `+1 dash charge and dashes recharge 20% faster.`, apply: (s) => { s.dashCharges += 1; s.dashCd *= 0.8; } },
-  { id: 'evasion', name: 'Blur', icon: 'dash', max: 3, desc: (m) => `${pct(0.06 * m)} chance to dodge attacks.`, apply: (s, m) => { s.dodge = 1 - (1 - (s.dodge ?? 0)) * (1 - 0.06 * m); } },
+  // (a skill tome, not a dice roll: it widens the window a dash beats a blow in, and pays perfect dodges longer)
+  { id: 'evasion', name: 'Blur', icon: 'dash', max: 3, desc: (m) => `Dashes stay untouchable ${Math.round(70 * m)} ms longer, and a perfect dodge's +25% damage lasts ${(1.5 * m).toFixed(1)} s longer.`, apply: (s, m) => { s.dashIv += 0.07 * m; s.pdDur += 1.5 * m; } },
   { id: 'thorns', name: 'Briar Ward', icon: 'thorn', max: 3, desc: (m) => `Attackers take ${Math.round(15 * m)} damage.`, apply: (s, m) => { s.thorns += 15 * m; } },
   { id: 'greed', name: "Miser's Ledger", icon: 'gold', max: 3, desc: (m) => `+${pct(0.25 * m)} gold found.`, apply: (s, m) => { s.goldMult += 0.25 * m; } },
   { id: 'phoenix', name: 'Phoenix Feather', icon: 'phoenix', max: 1, minRarity: 3, desc: () => `When you would fall, rise again at 50% health (once).`, apply: (s) => { s.extraLives = (s.extraLives ?? 0) + 1; }, once: true },

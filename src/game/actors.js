@@ -447,6 +447,9 @@ export class ActorManager {
       a.poiseT = 2;
       if (a.poiseDmg > (def.poise ?? 20) && !a.boss && a.state !== 'spawn') {
         a.poiseDmg = 0;
+        // breaking a foe's footing mid-wind-up interrupts the blow it was winding up (its mark is
+        // wiped on every peer as the stagger arrives: see update) and pays whoever did it
+        if (a.state === 'windup' && a.faction === 'enemy') this.g.creditInterrupt?.(a, H.src);
         this._setState(a, 'stagger', 'stagger');
       }
       a.hitFlash = Math.max(a.hitFlash, 0.45);
@@ -475,6 +478,7 @@ export class ActorManager {
       this._rebuildLists();
       return;
     }
+    if (a.state === 'windup' && !a.boss && a.faction === 'enemy' && killer) this.g.creditInterrupt?.(a, killer);
     a.dead = true;
     a.deadT = 0;
     a.anim = 'death';
@@ -675,6 +679,8 @@ export class ActorManager {
           g.lights.request(a.pos, 0xffc040, 2.2, 5);
         }
         if (a._tele) this._teleFollow(a);
+        // staggered out of a wind-up: the blow it was winding up never lands
+        if (a.anim === 'stagger' && a._prevAnim === 'windup') g.cancelHazardsFrom?.(a.id, _v.set(a.pos.x, a.pos.y + a.height + 0.4, a.pos.z));
         a._prevAnim = a.anim;
         const frozen = (a.mask & ST.frozen) !== 0;
         const animDt = frozen ? 0 : dt * (a.mask & ST.slow ? 0.5 : 1);
@@ -1326,7 +1332,7 @@ export class ActorManager {
           const tx = tgt.pos.x + (tgt.vel?.x ?? 0) * lead, tz = tgt.pos.z + (tgt.vel?.z ?? 0) * lead;
           const d = new THREE.Vector3(tx - muzzle.x, tY - muzzle.y, tz - muzzle.z).normalize();
           d.applyAxisAngle(new THREE.Vector3(0, 1, 0), spread);
-          g.broadcastEnemyProjectile({ x: muzzle.x, y: muzzle.y, z: muzzle.z, vx: d.x * at.speed, vy: d.y * at.speed, vz: d.z * at.speed, el: at.el ?? 'enemy', dmg, mesh: at.mesh, homing: at.homing ?? 0, aoe: at.aoe ?? 0, st: at.st, src: a.id, mv: at.id });
+          g.broadcastEnemyProjectile({ x: muzzle.x, y: muzzle.y, z: muzzle.z, vx: d.x * at.speed, vy: d.y * at.speed, vz: d.z * at.speed, el: at.el ?? 'enemy', dmg, mesh: at.mesh, homing: at.homing ?? 0, tg: at.homing ? tgt.id : undefined, aoe: at.aoe ?? 0, st: at.st, src: a.id, mv: at.id });
         }
         g.audio?.play('enemy_projectile', { pos: muzzle, volume: 0.6 });
         // Nightmare: a follow-up shot a beat later, aimed afresh (a sidestep that beat the first may not beat the second)

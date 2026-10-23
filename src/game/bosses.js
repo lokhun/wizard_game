@@ -110,7 +110,7 @@ export class BossBrain {
     const d0 = new THREE.Vector3(p.pos.x - m.x, p.pos.y + 1.1 - m.y, p.pos.z - m.z).normalize();
     for (let i = 0; i < n; i++) {
       const s = n > 1 ? (i / (n - 1) - 0.5) * spread * 2 : 0;
-      this.proj(m, d0.clone().applyAxisAngle(UP, s), speed, el, dmgMult, extra);
+      this.proj(m, d0.clone().applyAxisAngle(UP, s), speed, el, dmgMult, extra.homing ? { ...extra, tg: p.id } : extra);
     }
     this.g.audio?.play('enemy_projectile', { pos: m });
   }
