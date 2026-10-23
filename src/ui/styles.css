@@ -265,26 +265,57 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .modal h2 { font-family: 'Cinzel', var(--serif); font-weight: 600; color: var(--bronze-hi); letter-spacing: 0.1em; margin: 0 0 6px; font-size: 34px; text-shadow: 0 0 20px rgba(226,196,138,0.3); }
 .modal .msub { color: var(--text-dim); font-family: var(--serif); letter-spacing: 0.25em; text-transform: uppercase; font-size: 12px; margin-bottom: 28px; }
 .choices { display: flex; gap: 22px; flex-wrap: wrap; justify-content: center; }
-.tome { width: 250px; min-height: 330px; padding: 22px 18px; display: flex; flex-direction: column; align-items: center; text-align: center; cursor: pointer; transition: all 0.18s; border: 1px solid #3a2e22; background: linear-gradient(180deg, #1d1814, #0b0908); position: relative; animation: tomeIn 0.4s ease backwards; }
+.tome { width: 250px; min-height: 318px; padding: 28px 20px 16px; display: flex; flex-direction: column; align-items: center; text-align: center; cursor: pointer; transition: transform 0.18s, box-shadow 0.18s; position: relative; overflow: visible; animation: tomeIn 0.4s ease backwards; --rc: #c8c0b0;
+  border: none;
+  background: radial-gradient(ellipse 80% 45% at 50% 30%, color-mix(in srgb, var(--rc) 16%, transparent), transparent 70%), linear-gradient(180deg, #221c17 0%, #14100d 55%, #0b0908 100%);
+  box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px color-mix(in srgb, var(--rc) 50%, #3a2e22), 0 0 0 4px #0a0807, 0 0 0 5px #3a2e22, inset 0 1px 0 rgba(255,230,180,0.08), inset 0 0 44px rgba(0,0,0,0.7), 0 16px 34px rgba(0,0,0,0.75); }
 .tome:nth-child(2) { animation-delay: 0.08s; } .tome:nth-child(3) { animation-delay: 0.16s; }
 @keyframes tomeIn { from { opacity: 0; transform: translateY(30px) scale(0.95); } }
-.tome:hover { transform: translateY(-6px); box-shadow: 0 0 30px var(--rc, rgba(226,196,138,0.35)); border-color: var(--rc, var(--bronze)); }
-.tome .rar { font-family: var(--serif); font-size: 11px; letter-spacing: 0.35em; text-transform: uppercase; margin-bottom: 14px; }
-.tome .tname { font-family: var(--serif); font-size: 19px; margin: 14px 0 10px; letter-spacing: 0.05em; color: #f0e4cc; }
+/* a gem on the crown of the card, in the card's colour */
+.tome::before { content: ''; position: absolute; left: 50%; top: -8px; width: 13px; height: 13px; margin-left: -6.5px; transform: rotate(45deg); background: linear-gradient(135deg, #fff6e0, var(--rc) 55%, color-mix(in srgb, var(--rc) 50%, #000)); box-shadow: 0 0 0 2px #0a0807, 0 0 0 3px color-mix(in srgb, var(--rc) 60%, #3a2e22), 0 0 12px var(--rc); z-index: 1; }
+/* engraved corners */
+.tome::after { content: ''; position: absolute; inset: 7px; pointer-events: none; opacity: 0.55; --c: color-mix(in srgb, var(--rc) 70%, #e2c48a);
+  background: linear-gradient(var(--c), var(--c)) 0 0 / 16px 1px no-repeat, linear-gradient(var(--c), var(--c)) 0 0 / 1px 16px no-repeat,
+    linear-gradient(var(--c), var(--c)) 100% 0 / 16px 1px no-repeat, linear-gradient(var(--c), var(--c)) 100% 0 / 1px 16px no-repeat,
+    linear-gradient(var(--c), var(--c)) 0 100% / 16px 1px no-repeat, linear-gradient(var(--c), var(--c)) 0 100% / 1px 16px no-repeat,
+    linear-gradient(var(--c), var(--c)) 100% 100% / 16px 1px no-repeat, linear-gradient(var(--c), var(--c)) 100% 100% / 1px 16px no-repeat; }
+.tome:hover { transform: translateY(-7px); box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px var(--rc), 0 0 0 4px #0a0807, 0 0 0 5px color-mix(in srgb, var(--rc) 40%, #3a2e22), inset 0 1px 0 rgba(255,230,180,0.12), inset 0 0 44px rgba(0,0,0,0.6), 0 0 34px color-mix(in srgb, var(--rc) 45%, transparent), 0 20px 40px rgba(0,0,0,0.8); }
+.tome:hover .ticon { transform: scale(1.06); }
+.tome .rar { font-family: var(--serif); font-size: 11px; letter-spacing: 0.38em; text-transform: uppercase; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; text-shadow: 0 0 10px color-mix(in srgb, var(--rc) 60%, transparent); }
+.tome .rar::before, .tome .rar::after { content: ''; width: 26px; height: 1px; background: linear-gradient(90deg, transparent, var(--rc)); }
+.tome .rar::after { background: linear-gradient(270deg, transparent, var(--rc)); }
+.tome .tname { font-family: var(--serif); font-size: 19px; margin: 16px 0 10px; padding-bottom: 10px; letter-spacing: 0.05em; color: #f4e8d0; text-shadow: 0 2px 3px #000;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--rc) 55%, transparent), transparent) 50% 100% / 70% 1px no-repeat; }
 .tome .tdesc { font-size: 16px; line-height: 1.4; color: var(--text); }
-.tome .ticon { width: 84px; height: 84px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,0.06), rgba(0,0,0,0)); }
-.tome.augment { border-color: var(--ac-dim); box-shadow: inset 0 0 34px var(--ac-glow); }
-.tome.augment:hover { border-color: var(--ac); box-shadow: 0 0 30px var(--ac-dim), inset 0 0 34px var(--ac-glow); }
-.tome .augtag { color: var(--ac); font-family: var(--serif); font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; margin: -8px 0 10px; }
-.tome .tkey { margin-top: auto; padding-top: 14px; font-family: var(--serif); font-size: 12px; color: var(--text-dim); }
-.shop-grid { display: grid; grid-template-columns: repeat(3, 230px); gap: 14px; }
-.shop-item { padding: 14px; display: flex; gap: 12px; cursor: pointer; border: 1px solid #3a2e22; background: linear-gradient(180deg, #1d1814, #0b0908); transition: all 0.15s; }
-.shop-item:hover { border-color: var(--bronze); }
-.shop-item.sold { opacity: 0.35; pointer-events: none; }
-.shop-item .sname { font-family: var(--serif); font-size: 15px; }
-.shop-item .sdesc { font-size: 13.5px; color: var(--text-dim); margin: 4px 0; }
-.shop-item .price { font-family: var(--serif); color: var(--gold); font-size: 15px; }
-.shop-item.cant .price { color: #a04040; }
+/* the sigil in a ringed medallion */
+.tome .ticon { width: 92px; height: 92px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: transform 0.2s;
+  background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--rc) 22%, #1a1511), #080605 72%);
+  box-shadow: 0 0 0 2px #0a0807, 0 0 0 3px color-mix(in srgb, var(--rc) 70%, #3a2e22), 0 0 0 5px #0a0807, 0 0 0 6px #3a2e22, inset 0 0 18px #000, 0 0 26px color-mix(in srgb, var(--rc) 35%, transparent); }
+/* the rarer tomes shimmer: a band of light crossing the card now and then (transform only) */
+/* the rarer tomes burn brighter: the crown gem pulses, a legendary's frame breathes gold */
+.tome.r-epic::before, .tome.r-legendary::before { animation: gemPulse 1.8s ease-in-out infinite; }
+.tome.r-legendary { animation: tomeIn 0.4s ease backwards, legend 2.4s ease-in-out 0.5s infinite; }
+@keyframes gemPulse { 50% { box-shadow: 0 0 0 2px #0a0807, 0 0 0 3px var(--rc), 0 0 22px var(--rc), 0 0 40px color-mix(in srgb, var(--rc) 50%, transparent); } }
+@keyframes legend { 50% { box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px #ffd070, 0 0 0 4px #0a0807, 0 0 0 5px #8a6a30, inset 0 1px 0 rgba(255,230,180,0.12), inset 0 0 44px rgba(0,0,0,0.6), 0 0 30px rgba(255,176,48,0.35), 0 16px 34px rgba(0,0,0,0.75); } }
+.tome.r-legendary { background: radial-gradient(ellipse 80% 45% at 50% 30%, rgba(255,176,48,0.22), transparent 70%), linear-gradient(180deg, #2a2013 0%, #16110b 55%, #0b0908 100%); }
+.tome.augment { box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px var(--ac-dim), 0 0 0 4px #0a0807, 0 0 0 5px #3a2e22, inset 0 0 34px var(--ac-glow), 0 16px 34px rgba(0,0,0,0.75); }
+.tome.augment:hover { box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px var(--ac), 0 0 0 4px #0a0807, 0 0 0 5px var(--ac-dim), inset 0 0 34px var(--ac-glow), 0 0 30px var(--ac-dim), 0 20px 40px rgba(0,0,0,0.8); }
+.tome .augtag { color: var(--ac, var(--rc)); font-family: var(--serif); font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; margin: -8px 0 10px; }
+.tome .tkey { margin-top: auto; padding: 1px 8px; font-family: var(--serif); font-size: 11px; color: var(--bronze-hi); background: #0a0807; border: 1px solid #3a2e22; position: static; }
+.shop-grid { display: grid; grid-template-columns: repeat(3, 250px); gap: 16px; }
+.shop-item { padding: 14px 14px 12px; display: flex; gap: 14px; cursor: pointer; position: relative; transition: transform 0.15s, box-shadow 0.15s; --rc: #e8d8b0;
+  background: radial-gradient(ellipse 60% 80% at 0% 50%, color-mix(in srgb, var(--rc) 12%, transparent), transparent 70%), linear-gradient(180deg, #201a15, #0d0b09);
+  box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px color-mix(in srgb, var(--rc) 35%, #3a2e22), inset 0 1px 0 rgba(255,230,180,0.06), inset 0 0 26px rgba(0,0,0,0.6), 0 8px 18px rgba(0,0,0,0.6); }
+.shop-item:hover { transform: translateY(-3px); box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px var(--rc), inset 0 0 26px rgba(0,0,0,0.5), 0 0 22px color-mix(in srgb, var(--rc) 35%, transparent), 0 12px 24px rgba(0,0,0,0.7); }
+.shop-item.sold { opacity: 0.35; pointer-events: none; filter: grayscale(0.7); }
+.shop-item .sicon { flex: 0 0 auto; width: 54px; height: 54px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--rc) 20%, #1a1511), #080605 72%); box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px color-mix(in srgb, var(--rc) 60%, #3a2e22), inset 0 0 10px #000; }
+.shop-item .sbody { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.shop-item .sname { font-family: var(--serif); font-size: 15px; letter-spacing: 0.03em; }
+.shop-item .sdesc { font-size: 13.5px; color: var(--text-dim); margin: 4px 0 8px; line-height: 1.3; }
+.shop-item .price { margin-top: auto; align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; font-family: var(--serif); color: var(--gold); font-size: 14px; padding: 1px 9px 1px 6px; background: #0a0807; border: 1px solid rgba(240,192,80,0.35); }
+.shop-item.cant .price { color: #c05050; border-color: rgba(192,80,80,0.4); }
+.shop-item.cant .price svg { opacity: 0.5; }
 
 .pause-box, .settings-box, .end-box, .help-box { padding: 30px 40px; min-width: 420px; display: flex; flex-direction: column; gap: 12px; align-items: center; }
 .settings-box .row { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 18px; font-family: var(--serif); font-size: 14px; letter-spacing: 0.06em; }
@@ -336,12 +367,10 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .rsetrow span { color: var(--text-dim); margin-right: 8px; }
 .rsetrow span.on { color: var(--sc); }
 .relic-pause { margin-top: 8px; max-height: 38vh; overflow-y: auto; }
-.tome.relic { border-color: color-mix(in srgb, var(--rc) 45%, #3a2e22); }
 .tome.relic .augtag { border: 1px solid; padding: 1px 6px; }
 .tome.relic .rset-next { font-size: 13px; margin-top: 8px; font-style: italic; }
-.tome.cursed { border: 2px double #e0306a; background: linear-gradient(180deg, #24101a, #0b0608); box-shadow: inset 0 0 40px rgba(160,20,60,0.25); }
+.tome.cursed { --rc: #e0306a !important; background: radial-gradient(ellipse 80% 45% at 50% 30%, rgba(224,48,106,0.2), transparent 70%), linear-gradient(180deg, #24101a, #0b0608); }
 .tome.cursed .tname { color: #ffb8cc; }
-.tome.cursed:hover { box-shadow: 0 0 34px rgba(224,48,106,0.55), inset 0 0 40px rgba(160,20,60,0.3); }
 .relic-tab .compact .rrow { font-size: 11.5px; line-height: 1.25; }
 .relic-tab .compact .rlist { gap: 4px; }
 .relic-tab .compact .rsetrow { font-size: 11.5px; }

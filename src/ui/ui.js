@@ -1023,10 +1023,10 @@ export class UI {
       const r = RARITY[c.rarity];
       // spell augments: tagged with the spell they change, in the class colour
       const ac = c.def.aug ? hex(CLASS_META[c.def.cls]?.color ?? 0xffffff) : null;
-      return `<div class="tome card${ac ? ' augment' : ''}" data-i="${i}" style="--rc:${r.color}${ac ? `;--ac:${ac};--ac-dim:${ac}99;--ac-glow:${ac}26` : ''}">
+      return `<div class="tome card r-${r.id}${ac ? ' augment' : ''}" data-i="${i}" style="--rc:${ac ?? r.color}${ac ? `;--ac:${ac};--ac-dim:${ac}99;--ac-glow:${ac}26` : ''}">
         <div class="rar" style="color:${r.color}">${c.from !== undefined ? `${RARITY[c.from].name} → ` : ''}${r.name}</div>
         ${ac ? `<div class="augtag">Augment · ${esc(c.def.spellName)}</div>` : ''}
-        <div class="ticon" style="box-shadow:0 0 30px ${ac ?? r.color}55">${iconSVG(c.def.icon, ac ?? (c.def.el ? hex(ELEMENT_COLORS[c.def.el] ?? 0xffffff) : r.color === '#c8c0b0' ? col : r.color), 54)}</div>
+        <div class="ticon">${iconSVG(c.def.icon, ac ?? (c.def.el ? hex(ELEMENT_COLORS[c.def.el] ?? 0xffffff) : r.color === '#c8c0b0' ? col : r.color), 54)}</div>
         <div class="tname">${c.def.name}</div>
         <div class="tdesc">${c.def.desc(c.mult)}</div>${c.dr && c.dr < 0.999 ? `<div class="tdesc" style="opacity:0.6;font-size:0.85em">Already held: ${Math.round(c.dr * 100)}% strength</div>` : ''}
         <div class="tkey">[${i + 1}]</div>
@@ -1051,9 +1051,10 @@ export class UI {
     const render = () => items.map((it, i) => {
       const r = it.rarity !== undefined ? RARITY[it.rarity] : null;
       if (it.available && !it.available(player)) return '';
-      return `<div class="shop-item ${it.sold ? 'sold' : ''} ${player.gold < it.price ? 'cant' : ''}" data-i="${i}">
-        <div>${iconSVG(it.icon, r ? r.color : it.relic ? it.color ?? '#ffb030' : '#e8d8b0', 40)}</div>
-        <div><div class="sname" style="color:${r ? r.color : it.relic ? it.color ?? '#ffb030' : 'var(--text)'}">${it.name}</div><div class="sdesc">${it.desc}</div><div class="price">${it.sold ? 'SOLD' : it.price + ' gold'}</div></div>
+      const c = r ? r.color : it.relic ? it.color ?? '#ffb030' : '#e8d8b0';
+      return `<div class="shop-item ${it.sold ? 'sold' : ''} ${player.gold < it.price ? 'cant' : ''}" data-i="${i}" style="--rc:${c}">
+        <div class="sicon">${iconSVG(it.icon, c, 34)}</div>
+        <div class="sbody"><div class="sname" style="color:${r || it.relic ? c : '#f0e2c4'}">${it.name}</div><div class="sdesc">${it.desc}</div><div class="price">${it.sold ? 'SOLD' : `${iconSVG('gold', '#f0c050', 14)} ${it.price}`}</div></div>
       </div>`;
     }).join('');
     const m = this._modal(`
