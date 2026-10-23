@@ -2075,6 +2075,10 @@ export class Game {
       case 'fly':
         a.model?.setFlying?.(!!extra.on);
         break;
+      case 'laststand': // the theme at full cry, a red flash
+        this.audio?.setMusicIntensity?.(2);
+        this.screenTint([1.35, 0.85, 0.8], 0.8);
+        break;
       case 'leap': // the boss springs: dust where it left, the arc is drawn by the actor (airT)
         a.airT = 0; a.airDur = extra.dur; a.airH = extra.h;
         this.vfx.smoke(new THREE.Vector3(a.pos.x, a.pos.y + 0.3, a.pos.z), { count: 10, size: 1.6, color: [0.3, 0.26, 0.22], alpha: 0.5, speed: 4 });

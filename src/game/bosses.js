@@ -174,7 +174,7 @@ export class BossBrain {
     return crouch + air;
   }
   // a boss's last stand: once, below 12% health, announced
-  lastStand(title, sub, color) { this.banner(title, sub, color); this.sound('boss_roar'); this.shake(0.6); }
+  lastStand(title, sub, color) { this.banner(title, sub, color); this.sound('boss_roar'); this.shake(0.6); this.fx('laststand'); }
   // the punish window: dodge the big blow, then make it pay
   expose(t = 1.4) { this.exposed = t; this.fx('exposed', { t }); }
   // a phase's opening: the boss bounds to the middle of its arena and lands with a ring the party can jump
