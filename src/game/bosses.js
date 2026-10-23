@@ -173,6 +173,8 @@ export class BossBrain {
     });
     return crouch + air;
   }
+  // a boss's last stand: once, below 12% health, announced
+  lastStand(title, sub, color) { this.banner(title, sub, color); this.sound('boss_roar'); this.shake(0.6); }
   // the punish window: dodge the big blow, then make it pay
   expose(t = 1.4) { this.exposed = t; this.fx('exposed', { t }); }
   // a phase's opening: the boss bounds to the middle of its arena and lands with a ring the party can jump
@@ -437,6 +439,14 @@ SCRIPTS.motherOfFilth = {
           return 2.4;
         } },
         { name: 'submerge', w: 2, cd: 6, run(B) { return SCRIPTS.motherOfFilth.phases[1].moves[0].run(B); } },
+        // last stand: the Deluge, three tides in a row
+        { name: 'deluge', w: 50, cd: 999, when: (B) => B.hpf < 0.12, run(B) {
+          B.lastStand('THE DELUGE', 'Three tides — JUMP them all!', '#9adf3a');
+          B.anim('windup', 'slam', 1.0);
+          for (let i = 0; i < 3; i++) B.at(1.0 + i * 0.9, () => { B.anim('attack', 'slam', 0.5); B.wave(2, 9 + i, 26, 0.7, 'enemyGreen'); B.shake(0.4); B.sound('boss_slam'); });
+          B.at(3.6, () => B.expose(1.8));
+          return 3.8;
+        } },
       ],
     },
   ],
@@ -565,6 +575,21 @@ SCRIPTS.executioner = {
           return 1.5;
         } },
         { name: 'charge', w: 1, cd: 5, range: [6, 40], run(B, t) { return SCRIPTS.executioner.phases[0].moves[2].run(B, t); } },
+        // last stand: the Final Verdict, four chops each aimed afresh, then the ground burns
+        { name: 'verdict', w: 50, cd: 999, when: (B) => B.hpf < 0.12, run(B, t) {
+          B.lastStand('THE FINAL VERDICT', 'Four blows — keep moving!', '#ff3020');
+          const chop = () => {
+            const p = B.target ?? t;
+            if (!p) return;
+            B.a.yaw = B.yawTo(p.pos);
+            B.anim('windup', 'slam', 0.7);
+            B.circle(p.pos.x, p.pos.z, 3, 0.7, 1.1, 'enemyFire');
+            B.at(0.7, () => { B.anim('attack', 'slam', 0.3); B.shake(0.35); B.sound('boss_slam'); });
+          };
+          for (let i = 0; i < 4; i++) B.at(0.6 + i * 0.9, chop);
+          B.at(4.4, () => { B.wave(1.5, 11, 24, 0.7, 'enemyFire'); B.expose(2); });
+          return 5.0;
+        } },
       ],
     },
   ],
@@ -712,6 +737,16 @@ SCRIPTS.stoneWyvern = {
         { name: 'stomp', w: 2, cd: 3.5, run(B) { return SCRIPTS.stoneWyvern.phases[1].moves[1].run(B); } },
         { name: 'tail', w: 2, cd: 3, range: [0, 8], run(B, t) { return SCRIPTS.stoneWyvern.phases[1].moves[0].run(B, t); } },
 
+        // last stand: its Last Breath sweeps a full circle: run with the fire
+        { name: 'lastBreath', w: 50, cd: 999, when: (B) => B.hpf < 0.12, run(B, t) {
+          B.lastStand('LAST BREATH', 'The fire turns all the way round — run with it!', '#ff6020');
+          B.anim('windup', 'breath', 1.0);
+          const base = B.yawTo(t.pos), dir = Math.random() < 0.5 ? 1 : -1, n = 12;
+          for (let i = 0; i < n; i++) B.hazard({ shape: 'cone', x: B.a.pos.x, y: B.a.pos.y, z: B.a.pos.z, r: 16, rot: base + dir * i * (Math.PI * 2 / n), angle: 0.3, delay: 1.2 + i * 0.22, teleDur: 0.8 + i * 0.22, dmg: B.dmg * 0.8, el: 'enemyFire', st: { burn: [3, 6] } });
+          B.at(1.0, () => { B.anim('attack', 'breath', n * 0.22 + 0.4); B.fx('breath', { yaw: base, sweep: dir * Math.PI * 2, dur: n * 0.22 + 0.2 }); });
+          B.at(1.4 + n * 0.22, () => B.expose(1.8));
+          return 1.6 + n * 0.22;
+        } },
         // broken wings or not, it hurls itself across the arena and lands in a burst of magma
         { name: 'pounce', w: 2, cd: 6, range: [6, 40], run(B, t) {
           B.leap(t.pos.x, t.pos.z, { type: 'slam', airType: 'fly', crouch: 0.6, air: 0.9, h: 6, r: 5.5, el: 'enemyFire', dmg: 1.2, kb: 16,
@@ -831,6 +866,22 @@ SCRIPTS.courtArchmage = {
         } },
         { name: 'spiral', w: 2, cd: 4, run(B) { return SCRIPTS.courtArchmage.phases[1].moves[0].run(B); } },
         { name: 'runes', w: 2, cd: 4, run(B) { return SCRIPTS.courtArchmage.phases[0].moves[1].run(B); } },
+        // last stand: she unravels, ring upon ring of bolts with gaps to weave through
+        { name: 'unravel', w: 50, cd: 999, when: (B) => B.hpf < 0.12, run(B) {
+          B.lastStand('UNRAVELLING', 'Ring upon ring — find the gaps!', '#ff60ff');
+          B.anim('cast', 'spin', 3.4);
+          for (let k = 0; k < 6; k++) {
+            B.at(0.8 + k * 0.45, () => {
+              const n = 16, gap = Math.floor(Math.random() * n), p = new THREE.Vector3(B.a.pos.x, B.a.pos.y + 1.2, B.a.pos.z);
+              B._projMv = 'Unravelling';
+              for (let i = 0; i < n; i++) { if (i === gap || i === (gap + 1) % n) continue; const ang = (i / n) * Math.PI * 2 + k * 0.2; B.proj(p, new THREE.Vector3(Math.sin(ang), 0, Math.cos(ang)), 8 + k * 0.6, k % 2 ? 'arcane' : 'enemyPurple', 0.4); }
+              B._projMv = null;
+              B.sound('enemy_projectile');
+            });
+          }
+          B.at(3.6, () => B.expose(1.8));
+          return 4.0;
+        } },
         // starfall: a cross of beams, then the cross turned an eighth: stand where the second won't fall
         { name: 'starfall', w: 2, cd: 6, run(B) {
           B.anim('cast', 'beam', 2.0);
