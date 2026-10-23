@@ -184,7 +184,7 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .slot.ready { animation: slotReady 0.45s ease-out; }
 @keyframes slotReady { 0% { box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px #fff4d8, 0 0 0 3px #0a0807, inset 0 0 22px color-mix(in srgb, var(--pc) 80%, transparent), 0 0 22px color-mix(in srgb, var(--pc) 70%, transparent); } }
 @keyframes pulse { 0%,100% { box-shadow: 0 0 14px rgba(255,200,90,0.45), inset 0 0 12px rgba(255,200,90,0.2);} 50% { box-shadow: 0 0 28px rgba(255,200,90,0.85), inset 0 0 22px rgba(255,200,90,0.4);} }
-.slot .cd { position: absolute; inset: 0; background: conic-gradient(rgba(4,3,2,0.8) var(--p, 0%), rgba(255,230,180,0.5) var(--p, 0%) calc(var(--p, 0%) + 0.6%), rgba(0,0,0,0) 0); }
+.slot .cd { position: absolute; inset: 0; background: conic-gradient(rgba(4,3,2,0.8) var(--p, 0%), rgba(255,230,180,0.18) var(--p, 0%) calc(var(--p, 0%) + 1.2%), rgba(0,0,0,0) 0); }
 .slot .cdtxt { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--serif); font-size: 19px; color: #fff; text-shadow: 0 0 4px #000, 0 0 2px #000; }
 .slot .key { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); font-family: var(--serif); font-size: 10px; letter-spacing: 0.05em; background: linear-gradient(180deg, #2a2119, #0c0a08); border: 1px solid var(--bronze-lo); padding: 0 6px; line-height: 15px; color: var(--bronze-hi); box-shadow: 0 2px 4px rgba(0,0,0,0.7); }
 .slot .charges { position: absolute; bottom: 2px; right: 4px; font-family: var(--serif); font-size: 12px; color: #fff; text-shadow: 0 1px 2px #000; }
