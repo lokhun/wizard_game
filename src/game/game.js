@@ -20,6 +20,7 @@ import { resolveHit, ST, REACTIONS } from '../game/combat.js';
 import { getViewModel, preloadEnemies, getEnemyModel, getAvatar, setEnemyRim } from './models.js';
 import { Critters } from '../world/critters.js';
 import { rollTomes, rollRelics, RARITY, TOMES } from './upgrades.js';
+import { ITEMS, randomItem, itemK } from './items.js';
 import { RelicRuntime } from './relics.js';
 import { relicColor, relicDesc } from './relicDefs.js';
 import { makeChest, makePedestal, makePortal } from './interactables.js';
@@ -913,6 +914,7 @@ export class Game {
     const gold = Math.round((a.def.gold ?? 1) * (a.elite ? 4 : 1) * (1 + this.floorIndex * 0.2) * 0.85 * this.encounters.goldMult(a));
     if (gold > 0) this.spawnDrop('gold', a.pos, gold);
     if (Math.random() < (a.elite ? 1 : a.boss ? 0 : 0.1 * (this.difficulty.orbChance ?? 1))) this.spawnDrop('health', a.pos, 18 + this.floorIndex * 4);
+    if (!a.boss && Math.random() < (a.elite ? 0.35 : (a.def.cost ?? 1) >= 8 ? 0.06 : 0.012)) this.spawnDrop('item', a.pos, randomItem());
     // kill credit
     if (killer === this.player.id) this.onLocalKill(a);
     else if (killer) this.net?.sendTo(killer, { t: 'kc', id: a.id, el, x: a.pos.x, z: a.pos.z, hx: a.deathMask & ST.hex ? 1 : 0, b: a.deathMask & ST.burn ? 1 : 0, m: a.deathMask });
@@ -1316,7 +1318,7 @@ export class Game {
     if (this.isHost && id === undefined) this.net?.broadcast({ t: 'drop', id: did, ty: type, x: pos.x, y: pos.y, z: pos.z, v: value });
     const count = type === 'gold' ? Math.min(8, Math.ceil(value / 3)) : 1;
     for (let i = 0; i < count; i++) {
-      const mesh = makeDropMesh(type);
+      const mesh = makeDropMesh(type, value);
       const d = {
         id: did, sub: i, type, value: type === 'gold' ? value / count : value,
         pos: new THREE.Vector3(pos.x, pos.y + 1, pos.z),
@@ -1336,7 +1338,7 @@ export class Game {
       d.t += dt;
       const gy = this.groundY(d.pos.x, d.pos.z) + 0.25;
       const dist = d.pos.distanceTo(eye);
-      const magnet = d.t > 0.6 && p.alive && !p.downed && (d.type === 'gold' ? dist < 6 : dist < 5 && p.hp < p.maxHp);
+      const magnet = d.t > 0.6 && p.alive && !p.downed && (d.type === 'gold' ? dist < 6 : d.type === 'item' ? dist < 1.9 && !p.item : dist < 5 && p.hp < p.maxHp);
       if (magnet) {
         const dir = eye.clone().sub(d.pos).normalize();
         d.vel.lerp(dir.multiplyScalar(14), Math.min(1, dt * 6));
@@ -1347,13 +1349,14 @@ export class Game {
       d.pos.addScaledVector(d.vel, dt);
       if (!magnet && d.pos.y < gy) { d.pos.y = gy; d.vel.y = Math.abs(d.vel.y) * 0.35; }
       d.mesh.position.copy(d.pos);
-      d.mesh.rotation.y += dt * 4;
+      d.mesh.rotation.y += dt * (d.type === 'item' ? 1.5 : 4);
       if (d.type === 'health') this.lights.request(d.pos, 0xff3040, 2, 3);
+      else if (d.type === 'item') { d.mesh.position.y += 0.25 + Math.sin(d.t * 2.4) * 0.08; this.lights.request(d.pos, ITEMS[d.value]?.light ?? 0xffd080, 1.2, 3); }
       if (dist < 0.9 && magnet) {
         this._collect(d);
         this.scene.remove(d.mesh);
         this.drops.splice(i, 1);
-      } else if (d.t > 60) { this.scene.remove(d.mesh); this.drops.splice(i, 1); }
+      } else if (d.t > 60 && d.type !== 'item') { this.scene.remove(d.mesh); this.drops.splice(i, 1); }
     }
   }
   _collect(d) {
@@ -1366,12 +1369,36 @@ export class Game {
       this.audio?.play('pickup_gold', { volume: 0.5 });
       this.ui?.goldPulse();
       this.relics?.onGold();
+    } else if (d.type === 'item') {
+      this.giveItem(d.value);
     } else if (d.type === 'health') {
       p.heal(d.value);
       this.healPulse = 0.6;
       this.audio?.play('pickup_health');
       if (d.id > 0) this.net?.broadcastOrSend({ t: 'pick', id: d.id });
     }
+  }
+  // ---- consumable items (items.js): one slot, the item key
+  // take an item into the slot; one already held is left on the ground at your feet
+  giveItem(id, quiet = false) {
+    const p = this.player, def = ITEMS[id];
+    if (!def) return;
+    if (p.item && p.item !== id) this.spawnDrop('item', p.pos, p.item, -1);
+    p.item = id;
+    if (!quiet) { this.ui?.toast(`${def.name} — [${keyOf('item')}] to use`, def.color); this.audio?.play('pickup_essence'); }
+    this.events.emit('itemGot', id);
+  }
+  useItem() {
+    const p = this.player, id = p.item, def = ITEMS[id];
+    if (!def || !p.alive || p.downed || p.dead || this.ui?.modalOpen) { if (!def) this.audio?.play('ui_error', { volume: 0.4 }); return; }
+    p.item = null;
+    const e = p.eye, f = p.forward();
+    const at = { x: e.x + f.x * 0.6, y: e.y - 0.25, z: e.z + f.z * 0.6, dx: f.x, dy: f.y + 0.15, dz: f.z };
+    def.use(this, p, itemK(this), at);
+    def.show(this, id === 'flask' ? at : { x: p.pos.x, y: p.pos.y, z: p.pos.z });
+    this.net?.broadcast({ t: 'itemfx', i: id, ...(id === 'flask' ? at : { x: p.pos.x, y: p.pos.y, z: p.pos.z }) });
+    this.vfx.addFovKick?.(2);
+    this.events.emit('itemUsed', id);
   }
   removeDrop(id) {
     for (let i = this.drops.length - 1; i >= 0; i--) {
@@ -1681,6 +1708,7 @@ export class Game {
     if (this.difficulty.bossRelic) { this.spawnPedestal(room, 2, false, -2.2); this.spawnPedestal(room, 3, true, 2.2); } // (Nightmare: a relic from every boss)
     else this.spawnPedestal(room, 2);
     if (this.isHost) this.spawnDrop('gold', new THREE.Vector3(room.cx, 0, room.cz + 3), 60 + this.floorIndex * 30);
+    if (this.isHost) this.spawnDrop('item', new THREE.Vector3(room.cx - 2, this.groundY(room.cx - 2, room.cz + 3), room.cz + 3), randomItem());
     const ex = room.exit;
     const portal = makePortal(this, new THREE.Vector3(ex.x, this.groundY(ex.x, ex.z), ex.z));
     this.interactables.push(portal);
@@ -1801,6 +1829,14 @@ export class Game {
       const score = d - facing * 2;
       if (facing > 0.2 && score < bd) { bd = score; best = it; }
     }
+    // an item on the ground while the slot is full: interact swaps
+    if (p.item) {
+      for (const d of this.drops) {
+        if (d.type !== 'item' || d.t < 0.6) continue;
+        const dd = d.pos.distanceTo(eye);
+        if (dd < 2.4 && dd - 1 < bd) { bd = dd - 1; best = (this._itemSwap ??= { kind: 'itemDrop', r: 3, pos: null, label: '', drop: null }); best.drop = d; best.pos = d.pos; best.label = `Take ${ITEMS[d.value]?.name ?? 'item'} (leave ${ITEMS[p.item]?.name ?? 'yours'})`; }
+      }
+    }
     // reviving downed teammates
     let reviveTarget = null;
     if (!p.downed) {
@@ -1853,6 +1889,13 @@ export class Game {
         offer();
         break;
       }
+      case 'itemDrop': {
+        const d = it.drop, k = this.drops.indexOf(d);
+        if (k < 0) break;
+        this.scene.remove(d.mesh); this.drops.splice(k, 1);
+        this.giveItem(d.value);
+        break;
+      }
       case 'chest': {
         it.open();
         this.net?.broadcastOrSend({ t: 'chest', id: it.id });
@@ -1861,6 +1904,7 @@ export class Game {
         const gold = 25 + this.floorIndex * 15;
         p.gold += gold; this.stats.gold += gold;
         this.ui?.toast(`+${gold} gold`);
+        if (Math.random() < 0.45) this.spawnDrop('item', it.pos, randomItem(), -1); // (only the opener sees it, as chests are per wizard)
         const relics = rollRelics(p, 3);
         if (relics.length) this.ui?.chooseRelic(relics, (r) => { if (r) this.grantRelic(r); });
         break;
@@ -2140,7 +2184,27 @@ function signTexture(ch, color) {
   return t;
 }
 
-function makeDropMesh(type) {
+const ITEM_DROP = new Map();
+function itemDropMats(id) {
+  let m = ITEM_DROP.get(id);
+  if (m) return m;
+  const c = new THREE.Color(ITEMS[id]?.color ?? '#ffd080');
+  m = {
+    orb: new THREE.MeshBasicMaterial({ color: c.clone().multiplyScalar(0.95) }),
+    halo: new THREE.SpriteMaterial({ color: c.clone().multiplyScalar(0.45), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, map: HALO_MAT.map }),
+    glyph: new THREE.SpriteMaterial({ map: signTexture(ITEMS[id]?.glyph ?? '?', ITEMS[id]?.color ?? '#ffd080'), depthWrite: false, transparent: true }),
+  };
+  ITEM_DROP.set(id, m);
+  return m;
+}
+function makeDropMesh(type, value) {
+  if (type === 'item') {
+    const m = itemDropMats(value), g = new THREE.Group();
+    const orb = new THREE.Mesh(ORB_GEO, m.orb); orb.scale.setScalar(1.1); g.add(orb);
+    const halo = new THREE.Sprite(m.halo); halo.scale.setScalar(1.1); g.add(halo);
+    const glyph = new THREE.Sprite(m.glyph); glyph.scale.setScalar(0.55); glyph.position.y = 0.62; g.add(glyph);
+    return g;
+  }
   if (type === 'gold') {
     const m = new THREE.Mesh(COIN_GEO, COIN_MAT);
     m.rotation.x = Math.PI / 2;
@@ -2176,6 +2240,7 @@ function makeShopStock(game, p) {
   items.bought = 0;
   items.push({ name: 'Healing Draught', desc: 'Restore 50% health.', icon: 'heart', base: 30 + f * 12, apply: (pl) => { pl.heal(pl.maxHp * 0.5); game.healPulse = 1; } });
   items.push({ name: 'Elixir of Vigor', desc: '+25 max health.', icon: 'heart', base: 70 + f * 22, apply: (pl) => { pl.upgrades.push({ def: TOMES.find((t) => t.id === 'vitality'), rarity: 0, mult: 1.25 }); pl.recomputeStats(); } });
+  { const id = randomItem(), d = ITEMS[id]; items.push({ name: d.name, desc: d.desc + ' (Item: one use.)', icon: d.icon, color: d.color, relic: true, base: 45 + f * 14, apply: () => game.giveItem(id) }); }
   const tomes = rollTomes(p, 3, 1);
   for (const t of tomes) items.push({ name: t.def.name, desc: (t.def.aug ? `Augment · ${t.def.spellName}. ` : '') + t.def.desc(t.mult), icon: t.def.icon, rarity: t.rarity, base: [60, 110, 180, 290][t.rarity] + f * 28, apply: () => game.grantTome(t) });
   const rel = rollRelics(p, 1);

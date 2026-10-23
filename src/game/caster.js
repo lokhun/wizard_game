@@ -271,7 +271,7 @@ export function makeCtx(game, caster, o) {
 // with embers and a little soot - a carpet of fire, not a field of candles.
 // Rate-based (zz.eF* accumulators), so it is the same at any frame rate.
 const _zl = new THREE.Vector3();
-function burningGround(game, zz, dt) {
+export function burningGround(game, zz, dt) {
   const vfx = game.vfx, fx = fxOf('fire');
   const R = zz.radius, cx = zz.pos.x, cy = zz.pos.y, cz = zz.pos.z;
   // catches fast, then gutters out over the last third of its life

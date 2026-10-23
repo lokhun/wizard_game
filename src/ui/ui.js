@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { iconSVG, classEmblem } from './icons.js';
+import { ITEMS } from '../game/items.js';
 import { CLASS_LIST, SLOTS } from '../game/classes.js';
 import { CLASS_META, ELEMENT_COLORS } from '../game/classMeta.js';
 import { RARITY } from '../game/upgrades.js';
@@ -270,8 +271,9 @@ export class UI {
           <div><span class="k">${esc(keyOf('dash'))}</span> dash (brief invulnerability)</div><div><span class="k">${esc(keyOf('jump'))}</span> jump — leap over shockwaves</div>
           <div><span class="k">${esc(keyOf('interact'))}</span> interact / revive allies</div><div><span class="k">${esc(BINDS.map.map(keyLabel).join(' / '))}</span> map</div>
           <div><span class="k">Esc</span> pause & settings</div><div><span class="k">${esc(keyOf('ping'))}</span> ping a foe, item or spot</div>
+          <div><span class="k">${esc(keyOf('item'))}</span> use your item</div><div></div>
         </div>
-        <p><b style="color:var(--bronze-hi)">Skill pays:</b> dash through a blow at the last moment for a <i>perfect dodge</i> (+25% damage for a few seconds), and kill a foe mid-windup to interrupt its attack. A boss that lands a leap, ends a whirl or a charge is <i>EXPOSED</i> for a moment (+30% damage): dodge the blow, then punish it. When you fall, <i>What hit you</i> shows the blows that did it.</p>
+        <p><b style="color:var(--bronze-hi)">Skill pays:</b> dash through a blow at the last moment for a <i>perfect dodge</i> (+25% damage for a few seconds), and kill a foe mid-windup to interrupt its attack. <i>Items</i> (a fire flask, a frost phial, a rallying bell...) drop from elites and bosses, wait in chests and sit on the merchant's table: you carry one at a time, so spend it. A boss that lands a leap, ends a whirl or a charge is <i>EXPOSED</i> for a moment (+30% damage): dodge the blow, then punish it. When you fall, <i>What hit you</i> shows the blows that did it.</p>
         <p><b style="color:var(--bronze-hi)">For a harder fight:</b> <i>Nightmare</i> (on the wizard select) makes foes smarter and relentless and gives every boss a new move; chambers cleared without a scratch earn Dread Marks (+5% damage each). <i>Boss Rush</i> pits you against the five bosses back to back. After your first victory, <i>Pacts</i> raise the heat for finer rewards, and the Hollow King's fall opens the endless <i>Abyss</i>.</p>
         <p><b style="color:var(--bronze-hi)">Elemental reactions:</b> combine schools for bonus effects — <i>Melt</i> (fire on frozen), <i>Shatter</i> (shards, earth or blades on frozen), <i>Overload</i> (lightning on burning), <i>Electrocute</i> (lightning on wet foes in water), <i>Combust</i> (fire on poison), <i>Purge</i> (holy on hexed) and more. In co-op, set up reactions for each other!</p>
         <p><b style="color:var(--bronze-hi)">Co-op:</b> one wizard hosts and shares the party code. Fallen wizards can be revived by holding <b>${esc(keyOf('interact'))}</b> beside them. Wizards who bleed out return when the chamber is cleared. Each player picks their own rewards — no loot stealing.</p>
@@ -385,7 +387,7 @@ export class UI {
           </div>
         </div>
       </div>
-      <div class="abilities" style="--pc:${col}">${SLOTS.map((s) => `
+      <div class="abilities" style="--pc:${col}"><div class="slot itemslot empty" data-slot="item"><div class="iic"></div><div class="key">${slotKey('item')}</div></div>${SLOTS.map((s) => `
         <div class="slot ${s === 'ultimate' ? 'ult' : ''}" data-slot="${s}">
           ${s === 'ultimate' ? '<div class="ult-fill"></div>' : ''}
           ${iconSVG(c.spells[s].icon, col, s === 'ultimate' ? 42 : 34)}
@@ -399,7 +401,7 @@ export class UI {
       <div class="click-hint hidden">CLICK TO CONTINUE</div>`;
     const q = (s) => this.hudEl.querySelector(s);
     this.h = {
-      hpWrap: q('.hp-wrap'), hp: q('#hpBar .fill'), hpLag: q('#hpBar .lag'), hpShield: q('#hpBar .shield'), hpTxt: q('#hpBar .txt'),
+      hpWrap: q('.hp-wrap'), itemSlot: q('.itemslot'), itemIcon: q('.itemslot .iic'), hp: q('#hpBar .fill'), hpLag: q('#hpBar .lag'), hpShield: q('#hpBar .shield'), hpTxt: q('#hpBar .txt'),
       dash: q('.dash-pips'), res: q('.resource'), buffs: q('.buffs'),
       slots: Object.fromEntries(SLOTS.map((s) => [s, q(`.slot[data-slot="${s}"]`)])),
       gold: q('#goldTxt'), goldBox: q('.gold-box'), dread: q('#dreadTxt'), dreadBox: q('.gold-box .dread'), prompt: q('.prompt'), toasts: q('.toasts'), banner: q('.banner'),
@@ -488,6 +490,17 @@ export class UI {
       const pv = pctCd.toFixed(1) + '%';
       if (q.cd && q.cd._p !== pv) { q.cd._p = pv; q.cd.style.setProperty('--p', pv); }
       setText(q.cdtxt, String(txt));
+    }
+    // the item slot: redrawn only when the item changes
+    if (this._itemKey !== p.item) {
+      const was = this._itemKey;
+      this._itemKey = p.item;
+      const d = p.item ? ITEMS[p.item] : null;
+      h.itemIcon.innerHTML = d ? iconSVG(d.icon, d.color, 30) : '';
+      h.itemSlot.classList.toggle('empty', !d);
+      h.itemSlot.style.setProperty('--ic', d?.color ?? '#5a4426');
+      h.itemSlot.title = d ? `${d.name}: ${d.desc}` : 'No item';
+      if (d && was !== undefined) { h.itemSlot.classList.remove('ready'); void h.itemSlot.offsetWidth; h.itemSlot.classList.add('ready'); }
     }
     // gold
     setText(h.gold, String(Math.floor(p.gold)));

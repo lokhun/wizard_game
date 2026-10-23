@@ -107,6 +107,7 @@ export class LocalPlayer {
     this.histT = 0;
     this.stepDist = 0;
     this.gold = 0;
+    this.item = null; // the consumable in the item slot (items.js), or null
     this.essence = 0;
     this.hurtPulse = 0;
     this.lookDelta = { x: 0, y: 0 };
@@ -739,6 +740,7 @@ export class LocalPlayer {
     if (input.was('ability1')) this._tryOrBuzz('ability1');
     if (input.was('ability2')) this._tryOrBuzz('ability2');
     if (input.was('ultimate')) this._tryOrBuzz('ultimate');
+    if (input.was('item')) this.game.useItem();
   }
 
   _tryOrBuzz(slot) {

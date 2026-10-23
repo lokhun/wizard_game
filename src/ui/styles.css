@@ -415,3 +415,13 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 /* Settings: HUD scale. Each corner group is zoomed in place (the full-screen layers are not, so
    centring and the 2D overlay are unaffected) */
 .hp-wrap, .abilities, .gold-box, .minimap, .mm-frame, .boss-bar, .floor-info, .team, .toasts { zoom: var(--hud-scale, 1); }
+
+/* the item slot: a round flask-bay at the left of the spell bar, in the item's colour */
+.slot.itemslot { width: 50px; height: 50px; border-radius: 50%; margin-right: 6px; align-self: center; --ic: #5a4426;
+  box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px color-mix(in srgb, var(--ic) 70%, #3a2e22), 0 0 0 3px #0a0807, inset 0 0 14px #000, 0 0 14px color-mix(in srgb, var(--ic) 30%, transparent), 0 6px 12px rgba(0,0,0,0.7);
+  background: radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--ic) 22%, #1a1511), #080605 72%); }
+.slot.itemslot::before { display: none; }
+.slot.itemslot.empty { opacity: 0.55; }
+.slot.itemslot.empty .iic::after { content: '—'; color: var(--bronze-lo); font-family: var(--serif); }
+.slot.itemslot .iic { display: flex; align-items: center; justify-content: center; }
+.slot.itemslot .key { top: auto; bottom: -11px; }

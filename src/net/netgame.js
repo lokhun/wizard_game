@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ITEMS, strike } from '../game/items.js';
 
 // In-run network message handling for both host and clients.
 export function handleGameMessage(game, msg, from) {
@@ -139,6 +140,7 @@ export function handleGameMessage(game, msg, from) {
     case 'bfx': game.bossFx(msg.k, game.actors.byId.get(msg.id), msg); break;
     case 'blinkfx': game.actors.blinkFx(new THREE.Vector3(msg.x, msg.y, msg.z)); break;
     case 'eair': { const a = game.actors.byId.get(msg.id); if (a) { a.airT = 0; a.airDur = msg.d; a.airH = msg.h; } break; } // a foe's leap: its arc (Actors._strike 'leap')
+    case 'itemfx': { if (msg.i === 'strike') strike(game, msg); else ITEMS[msg.i]?.show(game, msg); break; } // a teammate's item: its look
     case 'healfx': { const a = game.actors.byId.get(msg.id); if (a) game.vfx.burst(new THREE.Vector3(a.pos.x, a.pos.y + a.height * 0.6, a.pos.z), { element: msg.s ? 'holy' : 'poison', count: 12, speed: 1.5, upward: 1, life: 0.8, size: 0.12 }); break; }
     case 'drop': if (!game.isHost) game.spawnDrop(msg.ty, new THREE.Vector3(msg.x, msg.y, msg.z), msg.v, msg.id); break;
     case 'floor': if (!game.isHost) game.transitionToFloor(msg.i); break;

@@ -227,6 +227,18 @@ Anything that can hurt you must be seen in time, without looking garish.
 - **Standing in a zone** about to land tints the edges of the view in its colour, pulsing faster as it nears (`uDanger` in the grade pass).
 - **Hostile shots** carry a dark-cored, barbed ring in their colour, so an enemy bolt never looks like a wizard's own magic. A teammate's shots are drawn smaller and dimmer than your own. An enemy shot about to hit you from outside the view marks the screen edge it comes from.
 
+## Items
+One consumable slot, used with the item key (X), shown as a round bay at the left of the spell bar (`items.js`). Seven items, each a decision about when, not whether:
+- **Fire Flask:** a lobbed flask (a flat throw lands ~9 m off; aim up to throw further) that bursts for heavy fire damage and leaves the ground burning 4 s.
+- **Frost Phial:** every foe within 8 m frozen 3 s (strike them with earth, blades or physical blows to shatter for 2.5x).
+- **Warding Sigil:** you and allies within 10 m shielded for 35% of your health, foes nearby thrown back.
+- **Quicksilver:** hasted 8 s and every spell on cooldown 4 s sooner.
+- **Storm in a Bottle:** eight lightning strikes on the foes around you over 2 s.
+- **Healing Draught:** 45% health.
+- **Rallying Bell:** fallen allies within 16 m rise and everyone in reach heals 25% (alone: 35% and a shield).
+
+Damage grows with the realm and the Abyss (`itemK`) and then with the wizard's own stats (it lands through `hitActor`). Sources: elites drop one 35% of the time (heavier foes 6%, others 1.2%), every boss leaves one, a chest holds one 45% of the time, and the merchant always has one. Like gold, a dropped item is every wizard's own (the host sends one `drop`, each peer keeps its copy); a chest's is the opener's only. Walking over an item fills an empty slot; with the slot full the interact key swaps, leaving the old one where the new one lay. Using one runs the effect on the user's machine and broadcasts `itemfx` so the party sees it.
+
 ## HUD
 One visual language for everything on screen: smoky slabs, bronze rings and rules, diamonds as ornaments, a rarity or class colour as the accent (`--rc` / `--pc`). All of it is CSS and inline SVG; the per-frame HUD code writes only what changed (`setStyle` / `setText`, classes toggled on state changes), and the only running animations are transform-only (the boss bar's sheen) or on modal cards.
 - **The wizard's plate:** a class medallion in a bronze ring (it pulses red below 30% health), a glassy health bar ticked every 10% with the shield as a gold band inside it, dash charges as diamonds lit in the class colour.
