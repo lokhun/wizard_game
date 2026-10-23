@@ -30,6 +30,7 @@ export class BossBrain {
     this.data = {};
     this.invuln = 0;
     this.spin = 0; this.spinT = 0; // a whirl turns the body (rad/s) while it lasts
+    this.pressT = 0; // a final phase's arena pressure (phase.press) comes round on its own clock
     this.exposed = 0; // after a committed move (a leap's crash, a whirl, a charge) the boss takes +30% for a moment
     a.anim = 'idle';
     this.script.init?.(this);
@@ -223,6 +224,7 @@ export class BossBrain {
       this.busy = 0;
       // visual only: every peer's model plays its phase-change moment (see Game.bossFx)
       this.fx('phase', { n: this.phase });
+      this.pressT = phases[this.phase].press?.every ?? 0;
       phases[this.phase].enter?.(this);
     }
     // timed events
@@ -232,6 +234,12 @@ export class BossBrain {
       if (e.t <= 0) { this.events.splice(i, 1); e.fn(); }
     }
     for (const k in this.cds) this.cds[k] -= dt;
+    // arena pressure: the last phase sets off telegraphed hazards around the arena whatever the boss is doing
+    const press = phases[this.phase].press;
+    if (press && !a.hiddenT) {
+      this.pressT -= dt * Math.max(0.3, am);
+      if (this.pressT <= 0) { this.pressT = press.every; const mv = this.move; this.move = { name: press.name }; press.run(this); this.move = mv; }
+    }
     // Nightmare: between (and over) its moves the boss looses dread rings, two
     // staggered rings of slow bolts whose gaps you weave through; faster each phase
     if (this.g.difficulty?.dreadPulse && this.fightT > 4 && !a.hiddenT) {
@@ -397,6 +405,8 @@ SCRIPTS.motherOfFilth = {
     {
       at: 0.33,
       enter(B) { B.banner('ROTTING FURY', 'Toxic tides surge — JUMP the waves!', '#9adf3a'); B.sound('boss_roar'); B.leapToCentre({ type: 'slam', airAnim: 'windup', el: 'enemyGreen' }); },
+      // bile geysers burst from the drains, leaving pools
+      press: { name: 'Bile Geyser', every: 7, run(B) { for (let i = 0; i < 3; i++) { const p = B.roomRandom(3); B.circle(p.x, p.z, 2.3, 1.4 + i * 0.2, 0.6, 'enemyGreen', { pool: [2.4, 4, B.dmg * 0.25] }); } } },
       speed: 1.3,
       moves: [
         { name: 'tide', w: 3, cd: 4, run(B) {
@@ -519,6 +529,16 @@ SCRIPTS.executioner = {
     {
       at: 0.33,
       enter(B) { B.banner('BLOODLUST', 'His axe burns — JUMP the shockwaves!', '#ff3020'); B.sound('boss_roar'); B.fx('enrage'); B.leapToCentre({ el: 'enemyFire' }); },
+      // the gallows' blades swing down across the yard: two lanes, each through a wizard or a random spot
+      press: { name: 'Gallows Blades', every: 8, run(B) {
+        const A = B.arena(), ps = B.players();
+        for (let i = 0; i < 2; i++) {
+          const q = ps[i % Math.max(1, ps.length)]?.pos ?? B.roomRandom(3), rot = Math.random() * Math.PI;
+          const L = 34, x = q.x - Math.sin(rot) * L / 2, z = q.z - Math.cos(rot) * L / 2;
+          B.hazard({ shape: 'rect', x: clamp(x, A.x0 - 8, A.x1 + 8), y: B.a.pos.y, z: clamp(z, A.z0 - 8, A.z1 + 8), rot, len: L, w: 2, delay: 1.5 + i * 0.5, teleDur: 1.3, dmg: B.dmg * 0.7, el: 'physical', kb: 10 });
+        }
+        B.sound('swing', 0.6);
+      } },
       speed: 1.3,
       moves: [
         { name: 'quake', w: 3, cd: 3.5, run(B) {
@@ -673,6 +693,8 @@ SCRIPTS.stoneWyvern = {
     {
       at: 0.3,
       enter(B) { B.banner('MAGMA HEART', 'Molten fury erupts from its cracks', '#ff6020'); B.sound('boss_roar'); B.fx('enrage'); },
+      // the ground splits: magma vents open near each wizard
+      press: { name: 'Magma Vent', every: 7, run(B) { for (const p of B.players()) { const ang = Math.random() * Math.PI * 2; B.circle(p.pos.x + Math.sin(ang) * 3, p.pos.z + Math.cos(ang) * 3, 2.4, 1.4, 0.6, 'enemyFire', { pool: [2.4, 4, B.dmg * 0.25] }); } } },
       speed: 1.3,
       moves: [
         { name: 'sweepBreath', w: 3, cd: 4, run(B, t) {
@@ -788,6 +810,14 @@ SCRIPTS.courtArchmage = {
     {
       at: 0.33,
       enter(B) { B.banner('ARCANE CATACLYSM', 'Reality unravels', '#ff60ff'); B.sound('boss_roar'); B.fx('enrage'); },
+      // the hall's wards misfire: two beams cross the arena through its middle
+      press: { name: 'Ward Surge', every: 8, run(B) {
+        const A = B.arena(), cx = (A.x0 + A.x1) / 2, cz = (A.z0 + A.z1) / 2, base = Math.random() * Math.PI;
+        for (let i = 0; i < 2; i++) {
+          const rot = base + i * Math.PI / 2, L = 40;
+          B.hazard({ shape: 'rect', x: cx - Math.sin(rot) * L / 2, y: B.a.pos.y, z: cz - Math.cos(rot) * L / 2, rot, len: L, w: 2.2, delay: 1.5, teleDur: 1.3, dmg: B.dmg * 0.7, el: 'arcane', beam: 1 });
+        }
+      } },
       speed: 1.25,
       moves: [
         { name: 'beams', w: 3, cd: 4, run(B, t) {
@@ -934,6 +964,8 @@ SCRIPTS.hollowKing = {
         B.fx('eclipse');
         B.leapToCentre({ el: 'enemyPurple' });
       },
+      // rifts of void open in the dark
+      press: { name: 'Void Rift', every: 9, run(B) { for (let i = 0; i < 3; i++) { const p = B.roomRandom(3); B.circle(p.x, p.z, 2.6, 1.4 + i * 0.25, 0.65, 'enemyPurple'); } } },
       speed: 1.25,
       moves: [
         { name: 'voidSpiral', w: 2, cd: 5, run(B) {
