@@ -605,6 +605,26 @@ SCRIPTS.stoneWyvern = {
           for (const p of B.players()) B.circle(p.pos.x, p.pos.z, 2.6, 1.3, 0.9, 'earth', { boulder: 1 });
           return 1.8;
         } },
+        // it wheels across the yard to a new side, dropping fire along its path
+        { name: 'wheel', w: 2, cd: 6, when: (B) => B.data.fly, run(B, t) {
+          const A = B.arena(), cx = (A.x0 + A.x1) / 2, cz = (A.z0 + A.z1) / 2;
+          // the far side of the target from where it hangs now, 12 m off it
+          let ang = Math.atan2(B.a.pos.x - t.pos.x, B.a.pos.z - t.pos.z) + Math.PI + rand(-0.8, 0.8);
+          let x = clamp(t.pos.x + Math.sin(ang) * 12, A.x0 + 2, A.x1 - 2), z = clamp(t.pos.z + Math.cos(ang) * 12, A.z0 + 2, A.z1 - 2);
+          if (B.g.collision.cellBlocked(Math.floor(x / 2), Math.floor(z / 2), B.a.pos.y + 0.5)) { x = cx; z = cz; }
+          const yaw = Math.atan2(x - B.a.pos.x, z - B.a.pos.z), d = Math.hypot(x - B.a.pos.x, z - B.a.pos.z), T = 1.3;
+          B.a.yaw = yaw;
+          B.anim('windup', 'fly', 0.5);
+          B.sound('boss_roar', 0.5);
+          const n = 5;
+          for (let i = 1; i <= n; i++) {
+            const k = i / (n + 1), px = B.a.pos.x + (x - B.a.pos.x) * k, pz = B.a.pos.z + (z - B.a.pos.z) * k;
+            B.circle(px, pz, 2.3, 0.5 + T * k + 0.35, 0.7, 'enemyFire', { meteor: 1 });
+          }
+          B.at(0.5, () => { B.anim('attack', 'fly', T); B.dash(yaw, d / T, T); });
+          B.at(0.5 + T, () => { const p = B.target; if (p) B.face(p); });
+          return 1.0;
+        } },
         // a beat of its great wings: a gale that throws you back across the yard
         { name: 'gust', w: 2, cd: 6, range: [0, 14], track: 2, run(B, t) {
           B.anim('windup', 'roar', 0.9);

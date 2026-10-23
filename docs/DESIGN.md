@@ -229,7 +229,7 @@ Anything that can hurt you must be seen in time, without looking garish.
 Each boss has three phases of four to six moves (`SCRIPTS` in `bosses.js`), and every phase adds something that moves the fight around the arena rather than only adding projectiles:
 - **The Mother of Filth:** *Belch* (a cone of bile that leaves a pool), *Flop* (she heaves into the air and lands on you, a ring of bile rolling out), *Ripple* (three rings of bile burst outward, each with a wandering gap).
 - **The Executioner:** *Combo* (a chop, then the backswing a beat later), *Leap* (from across the yard, axe overhead), *Whirlwind* (he spins down a marked lane of burning steel).
-- **Gravemaw:** *Gust* (a wingbeat that throws you back), *Fault* (a line of bursts racing out toward each wizard), *Pounce* (wings broken, it still hurls itself across the arena and lands in magma).
+- **Gravemaw:** *Wheel* (in flight it banks across the arena to a new side, dropping marked fire along its path), *Gust* (a wingbeat that throws you back), *Fault* (a line of bursts racing out toward each wizard), *Pounce* (wings broken, it still hurls itself across the arena and lands in magma).
 - **Veyrin:** *Orbs* (slow seeking orbs that burst where they catch you), *Mirror Dance* (three blinks around you, a volley from each), *Starfall* (a cross of beams, then the same cross turned an eighth).
 - **The Hollow King:** *Grasp* (from the throne, the floor closes under you three times), *Leap* and *Riposte* (a sweep, then the thrust as you step back), *Shadow Step* (he steps out of shadow behind you, blade already moving).
 
