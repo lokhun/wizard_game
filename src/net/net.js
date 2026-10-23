@@ -116,7 +116,9 @@ export class Net {
           console.warn('peer error', err);
         });
         peer.on('connection', (conn) => this._accept(conn));
-        peer.on('disconnected', () => { if (!this.closed) peer.reconnect(); });
+        // (only the live host peer reconnects: a peer an id clash destroyed still fires this, and
+        // reconnecting a destroyed peer throws)
+        peer.on('disconnected', () => { if (!this.closed && peer === this.peer && !peer.destroyed) { try { peer.reconnect(); } catch (e) { console.warn('peer reconnect', e); } } });
       };
       attempt(3);
     }));
