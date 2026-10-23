@@ -93,6 +93,10 @@ How the research in `RESEARCH.md` turned into the game.
 ## Ultimate charge
 - The ultimate charges from a slow trickle (0.4/s) and from damage dealt (0.055 per point, divided by the realm's health scale `Director.floorHp()`, so late realms' bigger numbers don't charge it faster). Damage's charge is banked (`_ultPend`) and paid out no faster than one full ultimate per `ULT_FLOOR` (20 s). `ultRate` bonuses scale both, with diminishing returns (`ultRateEff`: +100% is x1.63, +200% x2.0). Measured with the playthrough bot: ~20 s between ultimates in every realm (it was 21 s in the first and 0.8 s in the last), ~12 s with three Rare Ascendant Wills.
 
+## Sustain
+- Lifesteal and on-kill healing share one budget: at most 3% of max health a second (`SUSTAIN_CAP`, banked up to one second's worth; the Blood Mage's passive doubles it, `sustainMult`), and lifesteal counts damage relative to the realm's toughness (divided by `Director.floorHp()`). Regen runs at 35% within 4 s of being hit, so it mends between fights rather than tanking them.
+- The sustain tomes are offered half as often (`rare: 0.5` in the tome weights) and stack less: Vampiric Codex 2% a rank (2 ranks), Soul Feast 2 a kill (2 ranks), Troll Blood 0.6/s (3 ranks). Measured: a stacked Legendary sustain build healed a 100-health wizard from 1 to full in under a second of fighting at the Hollow Throne; now ~4.6/s.
+
 ## Perfect dodge
 - A blow (anything with a source position: hazards, projectiles, swings; not pools or damage over time) that lands while a dash's invulnerability is up is a perfect dodge (`Player._perfectDodge`): +25% damage for 3 s (a buff), +6 ultimate, a gold float and a crit sound, and in solo a 0.4 s slow motion (never in co-op, where the world's clock is shared). At most once a second. The tracker counts them for the Matador feat (25 in a run).
 

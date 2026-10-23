@@ -25,7 +25,7 @@ export function baseStats(classId) {
     maxHp: C.hp, moveSpeed: 6.0 * C.speed, dmgMult: 1, critChance: 0.05, critMult: 1.75, cdr: 0, rateMult: 0,
     aoeMult: 1, projSpeed: 1, extraProj: 0, pierce: 0, bounce: 0, homing: 0, lifesteal: 0, armor: 0,
     dashCharges: 2, dashCd: 3.0, ultRate: 1, elementMult: {}, vs: {}, infuse: null, regen: 0, killHeal: 0,
-    goldMult: 1, extraLives: 0, thorns: 0, dodge: 0, cdRate: 1, statusPower: 1, jumpPower: 1,
+    goldMult: 1, extraLives: 0, thorns: 0, dodge: 0, cdRate: 1, statusPower: 1, jumpPower: 1, sustainMult: 1,
     ...structuredClone(C.stats ?? {}),
   };
 }
@@ -34,6 +34,8 @@ export function baseStats(classId) {
 // ultRate 1). Charge-rate bonuses shorten it with diminishing returns: +100%
 // ultRate is x1.63, +200% x2.0, so a stacked build fills in ~10-12 s, never instantly.
 const ULT_FLOOR = 20;
+// all lifesteal and on-kill healing together: at most this share of max health a second
+const SUSTAIN_CAP = 0.03;
 const ultRateEff = (r) => 1 + Math.max(0, r - 1) / (1 + 0.6 * Math.max(0, r - 1)) - Math.max(0, 1 - r);
 
 export class LocalPlayer {
@@ -178,6 +180,13 @@ export class LocalPlayer {
     if (this.hp <= 0) this._goDown();
     this.recomputeStats();
     return dmg;
+  }
+
+  _sustain(n) {
+    const take = Math.min(n, this._sustainLeft);
+    if (take <= 0) return;
+    this._sustainLeft -= take;
+    this.heal(take, true);
   }
 
   heal(n, silent = false) {
@@ -488,8 +497,11 @@ export class LocalPlayer {
       this._ultPend -= take;
       this.ult = Math.min(100, this.ult + dt * 0.4 * r + take);
     } else this._ultPend = 0;
-    // regen
-    const regen = st.regen + (g.auraRegenFor?.(this) ?? 0);
+    // the sustain budget refills (a second's worth at most banked)
+    const cap = this.maxHp * SUSTAIN_CAP * (st.sustainMult ?? 1);
+    this._sustainLeft = Math.min(cap, (this._sustainLeft ?? cap) + cap * dt);
+    // regen: mostly a mender between fights (35% within 4 s of being hit)
+    const regen = st.regen * (g.time - this.lastDamageT < 4 ? 0.35 : 1) + (g.auraRegenFor?.(this) ?? 0);
     if (regen > 0 && this.alive && !this.downed && this.hp < this.maxHp) this.heal(regen * dt, true);
 
     // history for rewind
@@ -720,10 +732,13 @@ export class LocalPlayer {
     this.damageDealt += amount;
     // (damage counts relative to the realm's toughness: late realms' bigger numbers don't charge faster)
     this._ultPend = Math.min(100, this._ultPend + amount * 0.055 * ultRateEff(this.stats.ultRate) / (this.game.director?.floorHp?.() ?? 1));
-    if (this.stats.lifesteal) this.heal(amount * this.stats.lifesteal, true);
+    // lifesteal and on-kill healing share one budget: at most SUSTAIN_CAP of max
+    // health a second (the Blood Mage's passive doubles it), and lifesteal counts
+    // damage relative to the realm's toughness like the ultimate does
+    if (this.stats.lifesteal) this._sustain(amount * this.stats.lifesteal / (this.game.director?.floorHp?.() ?? 1));
     if (killed) {
       this.kills++;
-      if (this.stats.killHeal) this.heal(this.stats.killHeal, true);
+      if (this.stats.killHeal) this._sustain(this.stats.killHeal);
       if (this.stats.hasteOnKill) { this.hasteT = 3; this.recomputeStats(); }
     }
   }

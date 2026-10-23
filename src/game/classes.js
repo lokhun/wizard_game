@@ -1088,8 +1088,8 @@ export const CLASSES = {
   bloodmage: {
     hp: 130, speed: 1.02, role: 'Risk & Reward', difficulty: 3,
     blurb: 'Spends their own life as fuel. Grows deadlier the closer they come to death, but heals by bleeding enemies.',
-    passive: { name: 'Frenzy', desc: 'Below 40% HP deal +35% damage. All damage heals for 6% (lifesteal).' },
-    stats: { lifesteal: 0.06, frenzy: 0.35 },
+    passive: { name: 'Frenzy', desc: 'Below 40% HP deal +35% damage. All damage heals for 6% (lifesteal), up to twice the usual cap.' },
+    stats: { lifesteal: 0.06, frenzy: 0.35, sustainMult: 2 },
     spells: {
       primary: {
         name: 'Blood Lance', icon: 'drop', desc: 'Fast lances of blood that cause Bleeding.', mode: 'auto', rate: 0.28, style: 'flick', hand: 'left',
