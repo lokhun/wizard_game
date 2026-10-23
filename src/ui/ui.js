@@ -369,32 +369,36 @@ export class UI {
       <div class="hitmarker"><i></i><i></i><i></i><i></i></div>
       <div class="damage-dir"></div>
       <div class="floor-info"><div class="fname"></div><div class="fsub"></div><div class="objective"></div></div>
-      <canvas class="minimap"></canvas>
-      <div class="boss-bar hidden"><div class="bname"></div><div class="btitle"></div><div class="bar"><div class="lag"></div><div class="fill"></div><div class="phase-marks"></div></div></div>
+      <canvas class="minimap"></canvas><div class="mm-frame"><i class="pip"></i></div>
+      <div class="boss-bar hidden"><div class="bname"></div><div class="btitle"></div><div class="bframe"><i class="cap l"></i><div class="bar"><div class="lag"></div><div class="fill"></div><div class="sheen"></div><div class="phase-marks"></div></div><i class="cap r"></i></div></div>
       <div class="wave-ind"></div>
       <div class="team"></div>
-      <div class="hp-wrap">
+      <div class="hp-wrap" style="--pc:${col}">
         <div class="buffs"></div>
-        <div class="hp-name"><span>${esc(p.name)}</span><span class="cls">${p.meta.name}</span></div>
-        <div class="bar" id="hpBar"><div class="lag"></div><div class="fill"></div><div class="shield"></div><div class="txt"></div></div>
-        <div class="dash-pips"></div>
-        <div class="resource"></div>
+        <div class="pframe">
+          <div class="medal">${classEmblem(p.classId, col, 40)}</div>
+          <div class="pmain">
+            <div class="hp-name"><span>${esc(p.name)}</span><span class="cls">${p.meta.name}</span></div>
+            <div class="bar" id="hpBar"><div class="lag"></div><div class="fill"></div><div class="shield"></div><div class="ticks"></div><div class="txt"></div></div>
+            <div class="pfoot"><div class="dash-pips"></div><div class="resource"></div></div>
+          </div>
+        </div>
       </div>
-      <div class="abilities">${SLOTS.map((s) => `
+      <div class="abilities" style="--pc:${col}">${SLOTS.map((s) => `
         <div class="slot ${s === 'ultimate' ? 'ult' : ''}" data-slot="${s}">
           ${s === 'ultimate' ? '<div class="ult-fill"></div>' : ''}
           ${iconSVG(c.spells[s].icon, col, s === 'ultimate' ? 42 : 34)}
           <div class="cd"></div><div class="cdtxt"></div><div class="key">${slotKey(s)}</div><div class="charges"></div>
         </div>`).join('')}
       </div>
-      <div class="gold-box"><span class="dread hidden" title="Dread Marks: +5% damage each, earned by flawless chambers">${iconSVG('skull', '#ff5a4a', 22)}<span id="dreadTxt">0</span></span>${iconSVG('gold', '#f0c050', 26)}<span id="goldTxt">0</span></div>
+      <div class="gold-box"><span class="dread hidden" title="Dread Marks: +5% damage each, earned by flawless chambers">${iconSVG('skull', '#ff5a4a', 20)}<span id="dreadTxt">0</span></span><span class="coin">${iconSVG('gold', '#f0c050', 24)}<span id="goldTxt">0</span></span></div>
       <div class="prompt"></div>
       <div class="toasts"></div>
       <div class="banner"><div class="b1"></div><div class="line"></div><div class="b2"></div></div>
       <div class="click-hint hidden">CLICK TO CONTINUE</div>`;
     const q = (s) => this.hudEl.querySelector(s);
     this.h = {
-      hp: q('#hpBar .fill'), hpLag: q('#hpBar .lag'), hpShield: q('#hpBar .shield'), hpTxt: q('#hpBar .txt'),
+      hpWrap: q('.hp-wrap'), hp: q('#hpBar .fill'), hpLag: q('#hpBar .lag'), hpShield: q('#hpBar .shield'), hpTxt: q('#hpBar .txt'),
       dash: q('.dash-pips'), res: q('.resource'), buffs: q('.buffs'),
       slots: Object.fromEntries(SLOTS.map((s) => [s, q(`.slot[data-slot="${s}"]`)])),
       gold: q('#goldTxt'), goldBox: q('.gold-box'), dread: q('#dreadTxt'), dreadBox: q('.gold-box .dread'), prompt: q('.prompt'), toasts: q('.toasts'), banner: q('.banner'),
@@ -432,6 +436,8 @@ export class UI {
     setStyle(h.hp, 'width', hpPct.toFixed(1) + '%');
     setStyle(h.hpLag, 'width', hpPct.toFixed(1) + '%');
     setStyle(h.hpShield, 'width', Math.min(100, (p.shield / p.maxHp) * 100).toFixed(1) + '%');
+    const low = hpPct < 30 && !p.dead;
+    if (this._low !== low) { this._low = low; h.hpWrap.classList.toggle('low', low); }
     setText(h.hpTxt, p.downed ? `DOWNED ${Math.ceil(p.downT)}s` : p.dead ? 'SLAIN' : `${Math.ceil(p.hp)} / ${p.maxHp}${p.shield > 0 ? ` (+${Math.ceil(p.shield)})` : ''}`);
     // dash
     const pips = p.stats.dashCharges;
@@ -474,6 +480,10 @@ export class UI {
         }
         if (q.charges) setText(q.charges, maxCh > 1 ? String(p.chargesLeft[s]) : '');
       }
+      // a spell coming off cooldown flashes its slot once
+      const cooling = pctCd > 0;
+      if (el._cooling && !cooling) { el.classList.remove('ready'); void el.offsetWidth; el.classList.add('ready'); }
+      el._cooling = cooling;
       const pv = pctCd.toFixed(1) + '%';
       if (q.cd && q.cd._p !== pv) { q.cd._p = pv; q.cd.style.setProperty('--p', pv); }
       setText(q.cdtxt, String(txt));
@@ -487,7 +497,7 @@ export class UI {
     if (tk !== this._teamKey) {
       this._teamKey = tk;
       h.team.innerHTML = team.map((r) => `
-        <div class="tm ${r.downed || r.dead ? 'down' : ''}"><div class="row">${classEmblem(r.classId, hex(r.meta.color), 22)}<span style="flex:1">${esc(r.name)}</span><span>${r.dead ? 'SLAIN' : r.downed ? 'DOWN' : Math.ceil(r.hp)}</span></div>
+        <div class="tm ${r.downed || r.dead ? 'down' : ''}" style="--pc:${hex(r.meta.color)}"><div class="row"><span class="tmedal">${classEmblem(r.classId, hex(r.meta.color), 18)}</span><span class="tname">${esc(r.name)}</span><span class="thp">${r.dead ? 'SLAIN' : r.downed ? 'DOWN' : Math.ceil(r.hp)}</span></div>
         <div class="bar small"><div class="fill" style="width:${Math.max(0, r.hp / r.maxHp) * 100}%"></div></div></div>`).join('');
     }
     // boss

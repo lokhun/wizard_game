@@ -52,7 +52,7 @@ const GRADE_MAIN = /* glsl */ `
       // healing warms the screen edge green; a tint, not a wash over the view
       col = mix(col, col * vec3(0.9, 1.3, 0.95) + vec3(0.012, 0.055, 0.022), min(uHeal, 1.0) * edge * 0.85);
       // standing in a danger zone about to land: a thin rim of its colour at the edges of the view
-      if (uDanger > 0.002) col += uDangerCol * smoothstep(0.42, 0.78, length(dc) * 1.4) * uDanger;
+      if (uDanger > 0.002) col += uDangerCol * smoothstep(0.56, 0.98, length(dc) * 1.4) * uDanger * 0.8;
       if (dashEdge > 0.0) {
         float ang = atan(dc.y, dc.x);
         float lane = floor(ang * 64.0);
