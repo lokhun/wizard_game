@@ -59,8 +59,12 @@ export class Input {
     this.onLockChange = null;
 
     window.addEventListener('keydown', (e) => {
-      if (e.repeat) return;
-      if (e.code === 'Tab') e.preventDefault();
+      // Tab is held for the big map: its auto-repeats must be stopped too, or
+      // each one moved the browser's focus on to the next button (or out of
+      // the page, which dropped every held key and closed the map)
+      const typing = !!e.target?.closest?.('input, textarea, [contenteditable]');
+      if (e.code === 'Tab' && !typing) e.preventDefault();
+      if (e.repeat || typing) return; // (typing in a text box - chat, a name - isn't playing)
       this.down.add(e.code);
       this.pressed.add(e.code);
     });
@@ -94,12 +98,16 @@ export class Input {
     });
   }
 
-  lock() {
+  // `again` (optional) is asked before a retry: the browser refuses a lock
+  // requested too soon after one was released, so a refused one tries once
+  // more a moment later if the caller still wants it
+  lock(again) {
     if (this.locked) return;
+    const retry = () => setTimeout(() => { if (!this.locked && (!again || again())) { try { this.canvas.requestPointerLock()?.catch?.(() => {}); } catch { /* ignore */ } } }, 250);
     try {
       const p = this.canvas.requestPointerLock({ unadjustedMovement: true });
-      if (p && p.catch) p.catch(() => { try { this.canvas.requestPointerLock(); } catch { /* ignore */ } });
-    } catch { /* ignore */ }
+      if (p && p.catch) p.catch(() => { try { const q = this.canvas.requestPointerLock(); if (q && q.catch) q.catch(retry); } catch { retry(); } });
+    } catch { retry(); }
   }
   unlock() { if (document.pointerLockElement) document.exitPointerLock(); }
 

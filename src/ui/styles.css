@@ -23,6 +23,17 @@ canvas#game { position: fixed; inset: 0; width: 100vw; height: 100vh; display: b
 #ui { position: fixed; inset: 0; pointer-events: none; z-index: 2; }
 #ui .interactive, #ui button, #ui input, #ui select, #ui .card, #ui .clickable { pointer-events: auto; }
 #fx2d { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 1; }
+/* party chat (ui/chat.js): lower left, over the HUD and lobby */
+.chat { position: fixed; left: 18px; bottom: 165px; width: min(400px, 42vw); z-index: 40; pointer-events: none; display: flex; flex-direction: column; gap: 6px; }
+.chat.hidden { display: none; }
+.chat-log { max-height: 190px; overflow: hidden; display: flex; flex-direction: column; gap: 2px; font-size: 14px; line-height: 1.35; }
+.chat.typing .chat-log { overflow-y: auto; background: rgba(8, 7, 6, 0.6); padding: 6px 8px; border: 1px solid #3a2e22; pointer-events: auto; }
+.chat-line { color: #eee4cf; text-shadow: 0 1px 2px #000, 0 0 6px #000; transition: opacity 0.6s; word-wrap: break-word; user-select: text; }
+.chat-line b { color: var(--bronze-hi); font-weight: 600; }
+.chat-line.mine b { color: #8fd0ff; }
+.chat-line.gone { opacity: 0; }
+.chat-in { pointer-events: auto; font: inherit; font-size: 14px; color: var(--text); background: rgba(10, 9, 8, 0.92); border: 1px solid var(--bronze); padding: 7px 9px; outline: none; user-select: text; }
+.chat-in.hidden { display: none; }
 
 /* ---------- generic panels & buttons */
 .panel {
@@ -134,6 +145,9 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .bar .shield { position: absolute; left: 0; top: -6px; height: 4px; background: linear-gradient(90deg, rgba(255,240,180,0.95), rgba(220,180,90,0.85)); box-shadow: 0 0 6px rgba(255,220,140,0.6); }
 .bar .txt { position: absolute; inset: 0; text-align: center; font-family: var(--serif); font-size: 12.5px; line-height: 19px; color: #fff; text-shadow: 0 1px 2px #000; letter-spacing: 0.05em; }
 .bar.small { height: 9px; }
+/* teammates: ally colours (set per bar in --hpc), a lighter frame, never the red of your own or a foe's */
+.bar.ally { height: 10px; border-color: rgba(220, 240, 220, 0.55); }
+.bar.ally .fill { background: linear-gradient(180deg, var(--hpc, #4ade80), color-mix(in srgb, var(--hpc, #4ade80) 55%, #000)); }
 .dash-pips { display: flex; gap: 5px; margin-top: 6px; }
 .dash-pips i { width: 26px; height: 5px; background: #2a241e; border: 1px solid #000; }
 .dash-pips i.on { background: linear-gradient(90deg, #c8b080, #8a7048); box-shadow: 0 0 5px rgba(226,196,138,0.5); }
@@ -227,6 +241,13 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .shop-item .sname { font-family: var(--serif); font-size: 15px; }
 .shop-item .sdesc { font-size: 13.5px; color: var(--text-dim); margin: 4px 0; }
 .shop-item .price { font-family: var(--serif); color: var(--gold); font-size: 15px; }
+/* what you're buying: your current value -> the new one */
+.shop-item .sdiff { margin: 2px 0 6px; padding: 5px 8px; background: rgba(0, 0, 0, 0.35); border-left: 2px solid #5a4630; font-size: 12.5px; display: grid; gap: 2px; }
+.shop-item .sdiff > div { display: flex; gap: 6px; align-items: baseline; }
+.shop-item .sdiff .k { color: var(--text-dim); flex: 1; }
+.shop-item .sdiff .a { color: #a89a86; }
+.shop-item .sdiff .arr { color: #6e604e; }
+.shop-item .sdiff .b { color: #7dff9a; font-weight: 600; }
 .shop-item.cant .price { color: #a04040; }
 
 .pause-box, .settings-box, .end-box, .help-box { padding: 30px 40px; min-width: 420px; display: flex; flex-direction: column; gap: 12px; align-items: center; }

@@ -115,8 +115,21 @@ export class LocalPlayer {
 
   // --------------------------------------------------------------- stats
   recomputeStats() {
+    const s = this.computeStats();
+    const oldMax = this.maxHp;
+    this.maxHp = Math.round(s.maxHp);
+    if (this.maxHp > oldMax) this.hp += this.maxHp - oldMax;
+    this.hp = Math.min(this.hp, this.maxHp);
+    if (this.dashCharges > s.dashCharges) this.dashCharges = s.dashCharges;
+    this.stats = s;
+  }
+
+  // The stats this wizard has, with `extra` tomes ({def, mult}) on top. Pure:
+  // the merchant previews a tome's from -> to with it before you buy.
+  computeStats(extra = []) {
     const s = baseStats(this.classId);
     for (const u of this.upgrades) u.def.apply(s, u.mult, this);
+    for (const u of extra) u.def.apply(s, u.mult, this);
     for (const r of this.relics) r.def.apply?.(s, this);
     applyRelicSets(s, this);
     for (const b of this.buffs) {
@@ -131,12 +144,7 @@ export class LocalPlayer {
     if (s.airDmg && !this.grounded) s.dmgMult += s.airDmg;
     s.armor = Math.min(0.8, s.armor);
     s.cdr = Math.min(0.6, s.cdr);
-    const oldMax = this.maxHp;
-    this.maxHp = Math.round(s.maxHp);
-    if (this.maxHp > oldMax) this.hp += this.maxHp - oldMax;
-    this.hp = Math.min(this.hp, this.maxHp);
-    if (this.dashCharges > s.dashCharges) this.dashCharges = s.dashCharges;
-    this.stats = s;
+    return s;
   }
 
   addBuff(id, dur, mods) {
