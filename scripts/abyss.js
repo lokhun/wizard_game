@@ -32,7 +32,7 @@
   for (let i = 0; i < 40 && (g.transitioning || g.loadingFloor); i++) { await new Promise((r) => setTimeout(r, 250)); window.__sim(0.25); }
   await new Promise((r) => setTimeout(r, 500));
   const r = g.meta.run;
-  log.push(`after descent: abyss=${g.abyss} floor=${g.floorIndex} ended=${g.ended} hp=${p.hp}/${p.maxHp} run.won=${r?.won} run.abyss=${r?.abyss} winTime=${Math.round(r?.winTime)}`);
+  log.push(`after descent: abyss=${g.abyss} floor=${g.floorIndex} ended=${g.ended} hp=${p.hp}/${p.maxHp} run.won=${r?.won} run.abyss=${r?.abyss} winTime=${Math.round(r?.winTime)} curse=${JSON.stringify(g.difficulty.pacts)} heat=${g.difficulty.heat}`);
   log.push(`scale F5 hp ${hp0.toFixed(2)} dmg ${dmg0.toFixed(2)} -> abyss F1 hp ${g.director.hpScale().toFixed(2)} dmg ${g.director.dmgScale().toFixed(2)}`);
   log.push(`feats: ${r?.feats.join(',')}`);
   // fight the first room of the Abyss and note elites/twin affixes

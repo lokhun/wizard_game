@@ -5,6 +5,7 @@ import { Particles, SPR } from '../render/particles.js';
 import { VFX, fxOf } from '../render/vfx.js';
 import { generateLevel, ROOM, T, K_ALT, K_WATER, WATER_Y } from '../world/levelgen.js';
 import { keyOf } from '../core/input.js';
+import { PACTS, PACT_BY_ID, difficultyFor } from '../meta/pacts.js';
 import { buildLevel } from '../world/builder.js';
 import { Collision } from '../world/collision.js';
 import { BIOMES } from '../world/biomes.js';
@@ -1501,11 +1502,24 @@ export class Game {
     if (!this.isHost || this.transitioning || this.ended) return;
     this.transitioning = true;
     const d = this.abyss + 1;
-    this.net?.broadcast({ t: 'abyss', d });
-    this.enterAbyss(d);
+    // each descent binds one more pact rank, the Abyssal curse: every depth plays
+    // differently, and its heat counts toward the heat's rewards like any other
+    const pk = this.difficulty.pacts ?? {};
+    const open = PACTS.filter((pc) => (pk[pc.id] ?? 0) < pc.max);
+    let c = null;
+    if (open.length) { let r = Math.random() * open.reduce((s, pc) => s + pc.heat, 0); c = open.find((pc) => (r -= pc.heat) <= 0)?.id ?? open[0].id; }
+    this.net?.broadcast({ t: 'abyss', d, c });
+    this.enterAbyss(d, c);
   }
-  enterAbyss(d) {
+  enterAbyss(d, curse = null) {
     this.abyss = d;
+    const pc = PACT_BY_ID[curse];
+    if (pc && pc.id !== 'nightmare') {
+      const pk = { ...(this.difficulty.pacts ?? {}) };
+      pk[pc.id] = Math.min(pc.max, (pk[pc.id] ?? 0) + 1);
+      this.difficulty = difficultyFor(pk, { daily: this.difficulty.daily ?? null });
+      this._curseNote = `Abyssal curse — ${pc.name}${pc.max > 1 ? ' ' + 'I'.repeat(pk[pc.id]) : ''}: ${pc.desc(pk[pc.id])}`;
+    }
     this.events.emit('abyss', d);
     this.audio?.play('boss_roar', { volume: 0.6 });
     this.ui?.fadeOut(1.4, () => {
@@ -1515,6 +1529,7 @@ export class Game {
       if (p.dead || p.downed) p.revive(1);
       p.heal(p.maxHp);
       this.ui?.fadeIn(1.6);
+      if (this._curseNote) { const n = this._curseNote; this._curseNote = null; setTimeout(() => !this.ended && this.ui?.toast(n, '#ff5878'), 5200); }
     });
   }
 
