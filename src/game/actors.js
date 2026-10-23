@@ -149,7 +149,8 @@ export class Actor {
     this.attack = null; this.attackDef = null; this.atkTarget = null; this.brain = null; this.brainAttackType = null; this.netDur = null;
     this.leapT = 0; this.leapV = null; this.jv = null;
     this.wakeAt = 0; this.dormantT = 0; this.sinkT = 0; this.hiddenT = 0; this.deathMask = 0;
-    this.airT = 0; this.airDur = 0; this.airH = 0; this.exposedUntil = 0; // a boss's leap: the model rides an arc over its ground position (visual, every peer)
+    this.airT = 0; this.airDur = 0; this.airH = 0; this.exposedUntil = 0;
+    this.hoardT = 0; this.coinT = 0; this._escaping = false; // a Hoarder's run (fleeing time, the next coin it drops) // a boss's leap: the model rides an arc over its ground position (visual, every peer)
     this.reassembled = false; this.champion = null; this._champT = null;
     this._prevAnim = null; this._poseDt = 0; this._posedAnim = null; this._tint = null;
     this._mvLosT = 0; this._mvLosTgt = null; this._losMove = false; this._losT = 0; this._los = false;
@@ -300,6 +301,44 @@ export class ActorManager {
       if (!b.dormant || b.wakeAt) continue;
       if ((b.pos.x - a.pos.x) ** 2 + (b.pos.z - a.pos.z) ** 2 < 13 * 13) b.wakeAt = g.time + 0.3 + Math.random() * 0.5;
     }
+  }
+
+  // A Hoarder runs from the nearest wizard, steering round walls and zigzagging,
+  // leaks a coin now and then, and slips away after 15 s (host)
+  _flee(a, dt, mm, out) {
+    const g = this.g;
+    a.hoardT += dt;
+    // (escape after this frame's actor loop: it disposes the model the loop is still posing)
+    if (a.hoardT > 15) { if (!a._escaping) { a._escaping = true; g.spells.after(0, () => this.escape(a)); } return out; }
+    a.coinT -= dt;
+    if (a.coinT <= 0) { a.coinT = 1.1; g.spawnDrop('gold', a.pos, 2 + g.floorIndex); }
+    let near = null, nd = Infinity;
+    for (const p of g.allPlayers()) { if (!p.alive || p.dead) continue; const d = Math.hypot(p.pos.x - a.pos.x, p.pos.z - a.pos.z); if (d < nd) { nd = d; near = p; } }
+    const speed = a.def.speed * mm * a.speedMult * (nd < 14 ? 1 : 0.55);
+    let base = near ? Math.atan2(a.pos.x - near.pos.x, a.pos.z - near.pos.z) : a.yaw;
+    base += Math.sin(g.time * 3.1 + a.id) * 0.45; // a zigzag, so it is not a straight shot
+    let dir = null;
+    for (const off of [0, 0.6, -0.6, 1.2, -1.2, 1.8, -1.8, 2.5, -2.5]) {
+      const ang = base + off, sx = Math.sin(ang), sz = Math.cos(ang);
+      const c = (k) => g.collision.cellBlocked(Math.floor((a.pos.x + sx * k) / 2), Math.floor((a.pos.z + sz * k) / 2), a.pos.y);
+      if (!c(1.2) && !c(2.6)) { dir = ang; break; }
+    }
+    if (dir === null) dir = base + Math.PI;
+    out.x = Math.sin(dir) * speed * dt; out.z = Math.cos(dir) * speed * dt;
+    a.yaw = angleDamp(a.yaw, dir, 12, dt);
+    a.anim = 'move';
+    return out;
+  }
+  // a Hoarder that got away: a puff of gold and it is gone (everyone; the host sends 'escape')
+  escape(a) {
+    const g = this.g;
+    if (!a || a.dead) return;
+    g.vfx.burst(new THREE.Vector3(a.pos.x, a.pos.y + 0.5, a.pos.z), { count: 30, speed: 4, upward: 1.5, life: 0.9, size: 0.08, sprite: SPR.SPARK, color: [2.6, 1.9, 0.6], gravity: 4 });
+    g.vfx.smoke(new THREE.Vector3(a.pos.x, a.pos.y + 0.4, a.pos.z), { count: 6, size: 1, color: [0.5, 0.42, 0.2], alpha: 0.5 });
+    g.audio?.play('blink', { pos: a.pos });
+    if (g.isHost) { g.net?.broadcast({ t: 'escape', id: a.id }); g.hoarderNews('escape', a); }
+    a.dead = true;
+    this.remove(a);
   }
 
   // Melee blows are only made at the strike, so the wind-up is the warning: a glint at the head,
@@ -631,6 +670,10 @@ export class ActorManager {
         }
         if (a._laserBeam && (g.time > a._laserEnd || a.anim !== 'windup')) { a._laserBeam.release(0.05); a._laserBeam = null; }
         if (a.anim === 'windup' && a._prevAnim !== 'windup') this._windupTell(a);
+        if (a.def.hoarder) {
+          if (Math.random() < dt * 22) g.vfx.P.glow({ x: a.pos.x + rand(-0.35, 0.35), y: a.pos.y + rand(0.3, 0.9), z: a.pos.z + rand(-0.35, 0.35), vx: 0, vy: 0.7, vz: 0, r: 2.6, g: 1.9, b: 0.6, r2: 0.8, g2: 0.4, b2: 0.05, life: 0.7, size: 0.07, sprite: SPR.SPARK, drag: 1 });
+          g.lights.request(a.pos, 0xffc040, 2.2, 5);
+        }
         if (a._tele) this._teleFollow(a);
         a._prevAnim = a.anim;
         const frozen = (a.mask & ST.frozen) !== 0;
@@ -1003,6 +1046,7 @@ export class ActorManager {
       if (a.stateT > 0.9) this._setState(a, 'chase', 'idle');
       return out;
     }
+    if (def.ai === 'flee') return this._flee(a, dt, mm, out);
     if (a.state === 'collapsed') {
       if (a.stateT > 3.0) {
         this._setState(a, 'spawn', 'spawn');

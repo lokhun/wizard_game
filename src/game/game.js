@@ -914,7 +914,15 @@ export class Game {
     const gold = Math.round((a.def.gold ?? 1) * (a.elite ? 4 : 1) * (1 + this.floorIndex * 0.2) * 0.85 * this.encounters.goldMult(a));
     if (gold > 0) this.spawnDrop('gold', a.pos, gold);
     if (Math.random() < (a.elite ? 1 : a.boss ? 0 : 0.1 * (this.difficulty.orbChance ?? 1))) this.spawnDrop('health', a.pos, 18 + this.floorIndex * 4);
-    if (!a.boss && Math.random() < (a.elite ? 0.35 : (a.def.cost ?? 1) >= 8 ? 0.06 : 0.012)) this.spawnDrop('item', a.pos, randomItem());
+    if (!a.boss && !a.def.hoarder && Math.random() < (a.elite ? 0.35 : (a.def.cost ?? 1) >= 8 ? 0.06 : 0.012)) this.spawnDrop('item', a.pos, randomItem());
+    // a caught Hoarder bursts: a fountain of gold and an item for everyone
+    if (a.def.hoarder) {
+      this.spawnDrop('gold', a.pos, 60 + this.floorIndex * 30);
+      this.spawnDrop('gold', a.pos, 30 + this.floorIndex * 15);
+      this.spawnDrop('item', a.pos, randomItem());
+      this.net?.broadcast({ t: 'hoard', k: 'caught', id: a.id });
+      this.hoarderNews('caught', a);
+    }
     // kill credit
     if (killer === this.player.id) this.onLocalKill(a);
     else if (killer) this.net?.sendTo(killer, { t: 'kc', id: a.id, el, x: a.pos.x, z: a.pos.z, hx: a.deathMask & ST.hex ? 1 : 0, b: a.deathMask & ST.burn ? 1 : 0, m: a.deathMask });
@@ -1377,6 +1385,12 @@ export class Game {
       this.audio?.play('pickup_health');
       if (d.id > 0) this.net?.broadcastOrSend({ t: 'pick', id: d.id });
     }
+  }
+  // the Hoarder's comings and goings, called out on every peer
+  hoarderNews(kind, a) {
+    if (kind === 'spawn') { this.ui?.toast('A Hoarder! Catch it before it escapes', '#ffc040'); this.audio?.play('pickup_gold', { volume: 0.9 }); }
+    else if (kind === 'caught') { this.ui?.banner('HOARD BROKEN', 'Gold for everyone', '#ffc040', 2.5); this.audio?.play('chest_open'); if (a) this.vfx.burst(new THREE.Vector3(a.pos.x, a.pos.y + 0.6, a.pos.z), { count: 50, speed: 7, upward: 2, life: 1.4, size: 0.09, sprite: SPR.SPARK, color: [2.8, 2, 0.6], gravity: 10 }); }
+    else if (kind === 'escape') this.ui?.toast('The Hoarder got away...', '#a08850');
   }
   // ---- consumable items (items.js): one slot, the item key
   // take an item into the slot; one already held is left on the ground at your feet

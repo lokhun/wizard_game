@@ -23,6 +23,12 @@ export const ENEMY_DEFS = {
     attacks: [{ id: 'bite', kind: 'lunge', range: 1.6, arc: 1.4, windup: 0.32, recover: 0.6, anim: 'bite', leap: 5 }],
     flank: true, pack: [3, 6],
   },
+  // the Hoarder: a fat, gilded rat that bolts from the party and escapes after 15 s;
+  // caught, it bursts into gold and an item for every wizard (Director._spawnHoarder)
+  hoarder: {
+    name: 'Hoarder', model: 'rat', scale: 1.55, tint: 0xffc040, hp: 150, speed: 7.2, dmg: 0, cost: 0, ai: 'flee', poise: 999, gold: 0, sound: 'rat_squeak', deathSound: 'rat_death', hitSound: 'enemy_hit',
+    attacks: [], hoarder: true, statusResist: 1.5,
+  },
   slime: {
     name: 'Sewer Ooze', hp: 70, speed: 2.6, dmg: 10, cost: 3, ai: 'melee', poise: 30, gold: 2, sound: 'slime_squish', deathSound: 'slime_death', hitSound: 'slime_squish',
     attacks: [{ id: 'engulf', kind: 'lunge', range: 1.9, arc: 1.6, windup: 0.6, recover: 0.8, anim: 'attack', leap: 6 }],

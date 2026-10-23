@@ -37,7 +37,7 @@ const SQUADS = {
 };
 // Does this actor take part in the fight in `room`? (shared by the encounter and the HUD)
 export function fightsHere(a, room) {
-  if (a.faction !== 'enemy' || (a.dead && !a.collapsed) || a.dormant) return false;
+  if (a.faction !== 'enemy' || (a.dead && !a.collapsed) || a.dormant || a.def.hoarder) return false; // (a Hoarder never holds a room shut)
   return !a.homeRoom || !room || a.homeRoom === room;
 }
 
@@ -211,12 +211,34 @@ export class Director {
       const e = this._entryPoint(room, p.pos);
       g.requestTeleport(p.id, e.x, e.z);
     }
+    // now and then a Hoarder bolts through the fight (at most one a realm)
+    if (room.type === ROOM.COMBAT && this._hoardFloor !== this.floor && Math.random() < 0.2) { // (Math.random: the seeded rng plans the waves)
+      this._hoardFloor = this.floor;
+      g.spells.after(3 + Math.random() * 3, () => { if (this.active?.room === room) this._spawnHoarder(room); });
+    }
     if (room.type === ROOM.BOSS) this._startBoss(room);
     else if (room.sentriesPlaced) {
       // the sentries are the first wave
       this.active.waveIdx = 0;
       for (const id of room.sentryIds) if (g.actors.byId.get(id)?.alive) this.active.spawned.add(id);
     } else this._nextWave();
+  }
+
+  _spawnHoarder(room) {
+    const g = this.g, ps = g.allPlayers().filter((p) => p.alive && !p.dead);
+    // the open cell of the room furthest from the party
+    let best = null, bd = -1;
+    for (let i = 0; i < 24; i++) {
+      const x = (room.x + 1.5 + Math.random() * (room.w - 3)) * 2, z = (room.y + 1.5 + Math.random() * (room.h - 3)) * 2;
+      if (g.collision.cellBlocked(Math.floor(x / 2), Math.floor(z / 2), g.groundY(x, z) + 0.5)) continue;
+      const d = Math.min(...ps.map((p) => Math.hypot(p.pos.x - x, p.pos.z - z)), 99);
+      if (d > bd) { bd = d; best = { x, z }; }
+    }
+    if (!best) return;
+    const a = this.spawnEnemy('hoarder', best.x, best.z, { noCredit: true });
+    a.homeRoom = null;
+    g.hoarderNews('spawn', a);
+    g.net?.broadcast({ t: 'hoard', k: 'spawn', id: a.id });
   }
 
   _planWaves(room) {

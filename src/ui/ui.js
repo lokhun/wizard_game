@@ -596,6 +596,7 @@ export class UI {
       if (a.dead || a.faction !== 'enemy') continue;
       const rm = L.roomAt(a.pos.x, a.pos.z);
       if (!rm || !rm.visited) continue;
+      if (a.def.hoarder) { g.fillStyle = '#ffd040'; g.beginPath(); g.arc(a.pos.x * scale, a.pos.z * scale, 4.5, 0, Math.PI * 2); g.fill(); g.fillStyle = '#ff4030'; continue; }
       g.beginPath(); g.arc(a.pos.x * scale, a.pos.z * scale, a.boss ? 6 : 2.5, 0, Math.PI * 2); g.fill();
     }
     // players
