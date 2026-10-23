@@ -117,6 +117,10 @@ export class SpellRuntime {
     this.projectiles = [];
     this.zones = [];
     this.timers = [];
+    // the spell slot whose code is running (set by the caster around a cast): every projectile, zone and
+    // timer made meanwhile keeps it and restores it around its own callbacks, so damage dealt
+    // seconds later still knows its spell (Player.dmgBy, the run summary's breakdown)
+    this.slot = null;
     this.nextId = 1;
     this.glowTex = glowTexture();
     this.hostileTex = hostileTexture();
@@ -241,6 +245,7 @@ export class SpellRuntime {
   spawn(p) {
     const proj = {
       id: this.nextId++,
+      slot: this.slot,
       local: p.local ?? true,
       faction: p.faction ?? 'player',
       owner: p.owner ?? 0,
@@ -370,6 +375,7 @@ export class SpellRuntime {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
       if (p.dead) { this._remove(i); continue; }
+      this.slot = p.slot;
       p.age += dt;
       if (p.age >= p.life) { this.kill(p, p.pos); this._remove(i); continue; }
       p.onTick?.(p, dt);
@@ -540,6 +546,7 @@ export class SpellRuntime {
     // zones
     for (let i = this.zones.length - 1; i >= 0; i--) {
       const z = this.zones[i];
+      this.slot = z.slot;
       z.age += dt;
       z.acc += dt;
       z.visual?.(z, dt);
@@ -558,9 +565,11 @@ export class SpellRuntime {
       t.t -= dt;
       if (t.t <= 0) {
         this.timers.splice(i, 1);
+        this.slot = t.slot;
         t.fn();
       }
     }
+    this.slot = null;
   }
 
   _visual(p, dt) {
@@ -611,11 +620,11 @@ export class SpellRuntime {
 
   // -------------------------------------------------------------- zones & timers
   zone(z) {
-    const zone = { age: 0, acc: 0, interval: 0.25, life: 3, ...z };
+    const zone = { age: 0, acc: 0, interval: 0.25, life: 3, slot: this.slot, ...z };
     this.zones.push(zone);
     return zone;
   }
-  after(t, fn) { this.timers.push({ t, fn }); }
+  after(t, fn) { this.timers.push({ t, fn, slot: this.slot }); }
 
   clear() {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {

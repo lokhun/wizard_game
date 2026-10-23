@@ -61,7 +61,7 @@ export function handleGameMessage(game, msg, from) {
       const a = game.actors.byId.get(msg.id);
       if (a) {
         game.ui?.damageNumber(new THREE.Vector3(a.pos.x, a.pos.y + a.height * 0.8, a.pos.z), msg.d, 'fire', false, true, a.id);
-        game.player.onDealtDamage(msg.d, false);
+        game.player.onDealtDamage(msg.d, false, a, 'dot');
         game.stats.damage += msg.d;
       }
       break;

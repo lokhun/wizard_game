@@ -894,7 +894,7 @@ export class Game {
     }
     // predicted health for responsiveness
     const willKill = a.hp - dmg <= 0;
-    p.onDealtDamage(dmg, false);
+    p.onDealtDamage(dmg, false, a, H.tag === 'dot' ? 'dot' : H.tag === 'reaction' ? 'reaction' : this.spells.slot ?? 'other');
     this.stats.damage += dmg;
     this.events.emit('hit', dmg, a, res, H);
     const kbMult = st.kbMult ?? 1;
@@ -912,10 +912,11 @@ export class Game {
     if (a.faction !== 'enemy') return;
     this.stats.kills++;
     // drops
-    const gold = Math.round((a.def.gold ?? 1) * (a.elite ? 4 : 1) * (1 + this.floorIndex * 0.2) * 0.85 * this.encounters.goldMult(a));
+    const share = this.director.partyShare(); // (a party meets more foes; everyone collects every coin)
+    const gold = Math.floor((a.def.gold ?? 1) * (a.elite ? 4 : 1) * (1 + this.floorIndex * 0.2) * 0.85 * this.encounters.goldMult(a) * share + Math.random()); // (rounded at random: cheap foes still pay on average)
     if (gold > 0) this.spawnDrop('gold', a.pos, gold);
     if (Math.random() < (a.elite ? 1 : a.boss ? 0 : 0.1 * (this.difficulty.orbChance ?? 1))) this.spawnDrop('health', a.pos, 18 + this.floorIndex * 4);
-    if (!a.boss && !a.def.hoarder && Math.random() < (a.elite ? 0.35 : (a.def.cost ?? 1) >= 8 ? 0.06 : 0.012)) this.spawnDrop('item', a.pos, randomItem());
+    if (!a.boss && !a.def.hoarder && Math.random() < (a.elite ? 0.35 : (a.def.cost ?? 1) >= 8 ? 0.06 : 0.012) * share) this.spawnDrop('item', a.pos, randomItem());
     // a caught Hoarder bursts: a fountain of gold and an item for everyone
     if (a.def.hoarder) {
       this.spawnDrop('gold', a.pos, 60 + this.floorIndex * 30);
@@ -960,10 +961,12 @@ export class Game {
     this._streakT = t;
     const tier = STREAKS.find((s) => s.n === this._streakN) ?? (this._streakN > 12 && this._streakN % 4 === 0 ? STREAKS[STREAKS.length - 1] : null);
     if (!tier) return;
-    const gold = Math.round(tier.gold * (1 + 0.5 * this.floorIndex) * (this.difficulty.goldMult ?? 1));
+    // each tier pays its gold once a streak; past 12 the callouts go on for ultimate only, so a
+    // packed room (a full party's worth of foes) can't print gold
+    const gold = this._streakN > 12 ? 0 : Math.round(tier.gold * (1 + 0.5 * this.floorIndex) * (this.difficulty.goldMult ?? 1));
     p.gold += gold; this.stats.gold += gold;
     p.ult = Math.min(100, p.ult + tier.ult);
-    this.ui?.streak(this._streakN > 12 ? `${tier.name} ×${this._streakN}` : tier.name, `+${gold} gold`, tier.color);
+    this.ui?.streak(this._streakN > 12 ? `${tier.name} ×${this._streakN}` : tier.name, gold ? `+${gold} gold` : `+${tier.ult}% ultimate`, tier.color);
     this.audio?.play(this._streakN >= 8 ? 'level_up' : 'ui_click', { volume: this._streakN >= 8 ? 0.45 : 0.6 });
   }
 
@@ -972,7 +975,7 @@ export class Game {
     const pos = new THREE.Vector3(a.pos.x, a.pos.y + a.height * 0.8, a.pos.z);
     if (src === this.player.id) this.ui?.damageNumber(pos, Math.round(dot), a.st.burn?.t > 0 ? 'fire' : a.st.poison?.t > 0 ? 'poison' : 'blood', false, true, a.id);
     else if (src) this.net?.sendTo(src, { t: 'dn', id: a.id, d: Math.round(dot) });
-    if (src === this.player.id) { this.player.onDealtDamage(dot, false); this.stats.damage += dot; }
+    if (src === this.player.id) { this.player.onDealtDamage(dot, false, a, 'dot'); this.stats.damage += dot; }
   }
 
   // ======================================================================
@@ -1459,7 +1462,9 @@ export class Game {
     else p.item = null;
     const e = p.eye, f = p.forward();
     const at = { x: e.x + f.x * 0.6, y: e.y - 0.25, z: e.z + f.z * 0.6, dx: f.x, dy: f.y + 0.15, dz: f.z };
+    this.spells.slot = 'item';
     def.use(this, p, itemK(this), at);
+    this.spells.slot = null;
     def.show(this, id === 'flask' ? at : { x: p.pos.x, y: p.pos.y, z: p.pos.z });
     this.net?.broadcast({ t: 'itemfx', i: id, ...(id === 'flask' ? at : { x: p.pos.x, y: p.pos.y, z: p.pos.z }) });
     this.vfx.addFovKick?.(2);

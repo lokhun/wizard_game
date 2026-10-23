@@ -13,6 +13,8 @@ import { BOSS_DEFS } from '../game/enemyDefs.js';
 // ---------------------------------------------------------------------------
 
 const FIGHT = new Set(['combat', 'elite', 'trial', 'boss']);
+// damage that isn't a spell's own, by its source (Player.dmgBy): its name and icon on the run summary
+const SOURCE = { dot: ['Burns & poisons', 'drop'], reaction: ['Reactions', 'hex'], item: ['Items', 'bomb'], other: ['Relics & the rest', 'glyph'] };
 const MULTI_WINDOW = 0.3; // kills this close together count as one spell's work
 
 // an attack's id or a boss move's name as words: 'sweepBreath' -> 'Sweep Breath'
@@ -240,6 +242,9 @@ export class RunTracker {
       // mastery: what a better player does more of, whatever the build
       dodges: r.dodges, interrupts: r.interrupts, weakPct: r.direct >= 20 ? Math.round(100 * r.weakHits / r.direct) : -1, flawless: r.rooms.filter((x) => x.done && x.dmg === 0).length, chambers: r.rooms.filter((x) => x.done).length,
       best: this._best ?? null,
+      // where the damage came from, biggest first: [name, icon, damage] (spells by name; DoTs, reactions, items, the rest)
+      dmgBy: Object.entries(p.dmgBy ?? {}).filter(([, v]) => v >= 1).sort((a, b) => b[1] - a[1]).slice(0, 7)
+        .map(([k, v]) => [p.cls?.spells?.[k]?.name ?? SOURCE[k]?.[0] ?? k, p.cls?.spells?.[k]?.icon ?? SOURCE[k]?.[1] ?? 'star', Math.round(v)]),
       tomes: [...tomes.values()], relics: p.relics.map((x) => x.def?.id).filter(Boolean),
       rooms: r.rooms.map((c) => [c.f, c.type, Math.round(c.t), Math.round(c.dmg), (c.done ? 1 : 0) | (c.trial ? 2 : 0), c.kills]),
     };

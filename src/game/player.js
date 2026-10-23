@@ -117,6 +117,7 @@ export class LocalPlayer {
     this.leanK = 0;
     this.kills = 0;
     this.damageDealt = 0;
+    this.dmgBy = { primary: 0, secondary: 0, ability1: 0, ability2: 0, ultimate: 0, dot: 0, reaction: 0, item: 0, other: 0 }; // (where it came from: the run summary)
     this.hasteT = 0;
     this.counters = {};
     this.inWater = false;
@@ -432,11 +433,15 @@ export class LocalPlayer {
     if (sp.mode === 'channel') {
       const S = {};
       this.channel = { slot, S, ctx, t: 0, max: sp.channel.max ?? 3 };
+      this.game.spells.slot = slot;
       sp.channel.start(ctx, S);
+      this.game.spells.slot = null;
       this.game.net?.sendCast({ pid: this.id, slot, o: origin, d: dir, ap: aim.point, chan: 1, au: this.stats.augSlot?.[slot] });
     } else {
       const edgeBefore = this.edge;
+      this.game.spells.slot = slot;
       sp.cast(ctx);
+      this.game.spells.slot = null;
       this.game.net?.sendCast({ pid: this.id, slot, o: origin, d: dir, ap: aim.point, ch: edgeBefore, au: this.stats.augSlot?.[slot] });
     }
     this.game.onLocalCast?.(slot);
@@ -451,7 +456,9 @@ export class LocalPlayer {
   endChannel() {
     if (!this.channel) return;
     const sp = this.cls.spells[this.channel.slot];
+    this.game.spells.slot = this.channel.slot;
     sp.channel.end(this.channel.ctx, this.channel.S);
+    this.game.spells.slot = null;
     // cooldown scales with how long the channel was held
     const used = Math.min(1, this.channel.t / this.channel.max);
     this.cds[this.channel.slot] = Math.max(0.5, this._cdOf(this.channel.slot) * (0.35 + 0.65 * used));
@@ -713,7 +720,9 @@ export class LocalPlayer {
         ch.ctx.dir.copy(aim.point).sub(ch.ctx.origin).normalize();
         ch.ctx.aimPoint.copy(aim.point);
         ch.ctx.stats = this.stats;
+        this.game.spells.slot = ch.slot;
         sp.channel.update(ch.ctx, ch.S, dt);
+        this.game.spells.slot = null;
         if (this.castAnim) this.castAnim.t = Math.min(this.castAnim.t, 0.2);
       }
       return;
@@ -748,14 +757,16 @@ export class LocalPlayer {
   }
 
   // called by game when this player's hits connect
-  onDealtDamage(amount, killed) {
+  onDealtDamage(amount, killed, a, by = 'other') {
     this.damageDealt += amount;
-    // (damage counts relative to the realm's toughness: late realms' bigger numbers don't charge faster)
-    this._ultPend = Math.min(100, this._ultPend + amount * 0.055 * ultRateEff(this.stats.ultRate) / (this.game.director?.floorHp?.() ?? 1));
+    this.dmgBy[by] = (this.dmgBy[by] ?? 0) + amount;
+    // (damage counts relative to the foes' toughness: late realms' bigger numbers, and a party's bigger fights, don't charge faster)
+    const tough = this.game.director?.earnScale(a) ?? 1;
+    this._ultPend = Math.min(100, this._ultPend + amount * 0.055 * ultRateEff(this.stats.ultRate) / tough);
     // lifesteal and on-kill healing share one budget: at most SUSTAIN_CAP of max
     // health a second (the Blood Mage's passive doubles it), and lifesteal counts
     // damage relative to the realm's toughness like the ultimate does
-    if (this.stats.lifesteal) this._sustain(amount * this.stats.lifesteal / (this.game.director?.floorHp?.() ?? 1));
+    if (this.stats.lifesteal) this._sustain(amount * this.stats.lifesteal / tough);
     if (killed) {
       this.kills++;
       if (this.stats.killHeal) this._sustain(this.stats.killHeal);

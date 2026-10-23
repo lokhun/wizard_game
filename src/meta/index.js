@@ -49,6 +49,7 @@ export function demoSummary(ui, kind = 'win') {
     tomes: [...pick(6).map((t, i) => [t.id, [0, 1, 2, 3, 1, 0][i], i === 0 ? 3 : 1]), ...TOMES.filter((t) => t.aug && t.cls === 'pyromancer').slice(0, 2).map((t) => [t.id, 2, 1])],
     relics: RELICS.slice(0, won ? 3 : 1).map((r) => r.id),
     dodges: won ? 41 : 9, interrupts: won ? 27 : 6, weakPct: won ? 38 : -1, flawless: won ? 11 : 2, chambers: won ? 26 : 13, best: { dodges: 33, interrupts: 30, weakPct: 31, flawless: 8 },
+    dmgBy: [['Fire Bolt', 'bolt', 61210], ['Burns & poisons', 'drop', 38400], ['Fireball', 'fireball', 24800], ['Meteor Storm', 'meteor', 15400], ['Reactions', 'hex', 5300], ['Blazing Step', 'dash', 2100], ['Items', 'bomb', 1010]],
     rooms: [], records: won ? { fastest: true, biggest: true, heat: true, dodges: true, weakPct: true } : { floor: true, daily: true },
   };
   if (!won) S.recap = [{ name: 'a Gargoyle (hasted champion)', move: 'Dive', dmg: 64, n: 2 }, { name: 'a Skeleton Archer', move: 'Volley', dmg: 31, n: 3 }, { name: 'lingering flames', move: '', dmg: 12, n: 4 }];

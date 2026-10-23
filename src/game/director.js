@@ -101,6 +101,19 @@ export class Director {
   // on top of revives) - and the fight gets bigger, not just longer.
   hpScale() { return this.floorHp() * (1 + 0.28 * (this.partySize() - 1)) * (this.g.difficulty?.enemyHp ?? 1); }
   dmgScale() { return this.floorDmg() * (1 + 0.12 * (this.partySize() - 1)) * (this.g.difficulty?.enemyDamage ?? 1); }
+  // A party meets more foes, but the wave cap and squad shapes keep it under countScale: measured
+  // over the planned waves of every realm, a party of two meets ~1.5x a solo player's bodies and
+  // 1.41x their gold, a party of four ~2.5x and 2.30x.
+  // Every wizard picks up every coin, so each kill's gold (and its chance of an item) is shared out
+  // over that: a wizard's income stays what it is alone (Game.onActorKilled).
+  partyShare() { return 1 / (1 + 0.43 * (this.partySize() - 1)); }
+  // What a wizard's damage on a is worth (ultimate charge, lifesteal) is counted against the realm's
+  // toughness and, in a party, against each wizard's share of the fight's extra bodies and health
+  // (~1.15x the damage each in a party of four). A boss is split by the party already: no discount.
+  earnScale(a) {
+    const k = this.partySize() - 1;
+    return this.floorHp() * (a?.boss || !k ? 1 : Math.max(1, (1 + 0.5 * k) * (1 + 0.28 * k) / (1 + k)));
+  }
   countScale() { return (1 + 0.75 * (this.partySize() - 1)) * (this.g.difficulty?.enemyCount ?? 1) * (1 + 0.15 * this.depth); }
   // The Abyss: each descent past the Hollow King. The realms start again from the
   // first, but they count on (realm 5·depth + floor): every one past the fifth makes
