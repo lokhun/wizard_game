@@ -370,10 +370,10 @@ export class ActorManager {
       if (a.def.deathPool) g.spawnPool(a.pos, a.def.deathPool.radius, a.def.deathPool.dur, a.def.deathPool.dps * g.director.dmgScale(), 'enemyGreen');
       if (a.def.deathExplode || hasAffix(a, 'volatile')) {
         const de = a.def.deathExplode ?? { radius: 3, el: 'enemyFire' };
-        g.broadcastHazard({ shape: 'circle', x: a.pos.x, y: a.pos.y, z: a.pos.z, r: de.radius, delay: 0.6, dmg: a.dmg * 1.2, el: de.el, vis: 1 });
+        g.broadcastHazard({ shape: 'circle', x: a.pos.x, y: a.pos.y, z: a.pos.z, r: de.radius, delay: 0.6, dmg: a.dmg * 1.2, el: de.el, vis: 1, cause: `${/^[AEIOU]/.test(a.def.name ?? '') ? 'an' : 'a'} ${a.def.name ?? 'foe'}'s death throes` });
       } else if (g.difficulty?.volatileDead && !a.boss && a.faction === 'enemy') {
         // the Volatile Dead pact: every fallen foe bursts after a short fuse
-        g.broadcastHazard({ shape: 'circle', x: a.pos.x, y: a.pos.y, z: a.pos.z, r: 1.3 + a.radius, delay: 1.0, dmg: a.dmg * 0.6, el: 'enemyFire', kb: 5, vis: 1 });
+        g.broadcastHazard({ shape: 'circle', x: a.pos.x, y: a.pos.y, z: a.pos.z, r: 1.3 + a.radius, delay: 1.0, dmg: a.dmg * 0.6, el: 'enemyFire', kb: 5, vis: 1, cause: 'a volatile corpse' });
       }
     }
     this.deathFx(a, el);
@@ -819,7 +819,7 @@ export class ActorManager {
     for (let i = 0; i < n; i++) {
       const ang = Math.random() * Math.PI * 2, d = i === 0 ? 0 : 2.2 + Math.random() * 2.5;
       const x = tgt.pos.x + Math.cos(ang) * d, z = tgt.pos.z + Math.sin(ang) * d;
-      g.broadcastHazard({ shape: 'circle', x, y: g.groundY(x, z), z, r: 2.2, delay: 1.15 + i * 0.25, dmg: a.dmg * 0.8, el: 'enemyFire', kb: 6, vis: 1, src: a.id, fx: 'enemyFire', meteor: 1 });
+      g.broadcastHazard({ shape: 'circle', x, y: g.groundY(x, z), z, r: 2.2, delay: 1.15 + i * 0.25, dmg: a.dmg * 0.8, el: 'enemyFire', kb: 6, vis: 1, src: a.id, mv: 'bombardment', fx: 'enemyFire', meteor: 1 });
     }
     g.audio?.play('telegraph', { pos: a.pos, volume: 0.6 });
   }
@@ -1087,17 +1087,17 @@ export class ActorManager {
     a.yaw = yaw;
     // telegraphs are broadcast now so they resolve at the strike moment
     if (at.kind === 'nova') {
-      g.broadcastHazard({ shape: 'circle', x: a.pos.x, y: a.pos.y, z: a.pos.z, r: at.radius, delay: at.windup, dmg, el: at.el ?? 'enemy', st: at.st, kb: 10, vis: 1, src: a.id });
+      g.broadcastHazard({ shape: 'circle', x: a.pos.x, y: a.pos.y, z: a.pos.z, r: at.radius, delay: at.windup, dmg, el: at.el ?? 'enemy', st: at.st, kb: 10, vis: 1, src: a.id, mv: at.id });
     } else if (at.kind === 'circle') {
       const n = (at.count ?? 1) + (a.faction === 'enemy' && !at.ahead ? g.difficulty?.extraCircle ?? 0 : 0);
       for (let i = 0; i < n; i++) {
         let cx = tgt.pos.x, cz = tgt.pos.z;
         if (at.ahead) { cx = a.pos.x + Math.sin(yaw) * at.ahead; cz = a.pos.z + Math.cos(yaw) * at.ahead; }
         if (i > 0) { cx += rand(-4, 4); cz += rand(-4, 4); }
-        g.broadcastHazard({ shape: 'circle', x: cx, y: g.groundY(cx, cz), z: cz, r: at.radius, delay: at.windup, dmg, el: at.el ?? 'enemy', st: at.st, kb: 6, vis: 1, src: a.id, fx: at.el ?? 'enemy' });
+        g.broadcastHazard({ shape: 'circle', x: cx, y: g.groundY(cx, cz), z: cz, r: at.radius, delay: at.windup, dmg, el: at.el ?? 'enemy', st: at.st, kb: 6, vis: 1, src: a.id, mv: at.id, fx: at.el ?? 'enemy' });
       }
     } else if (at.kind === 'charge') {
-      g.broadcastHazard({ shape: 'rect', x: a.pos.x, y: a.pos.y, z: a.pos.z, rot: yaw, len: at.len, w: at.width, delay: at.windup + 0.25, dmg, el: 'physical', kb: 14, vis: 1, src: a.id, teleDur: at.windup });
+      g.broadcastHazard({ shape: 'rect', x: a.pos.x, y: a.pos.y, z: a.pos.z, rot: yaw, len: at.len, w: at.width, delay: at.windup + 0.25, dmg, el: 'physical', kb: 14, vis: 1, src: a.id, mv: at.id, teleDur: at.windup });
     }
     if (at.kind === 'heal' || at.kind === 'summon') g.audio?.play('enemy_cast', { pos: a.pos });
     else if (at.windup >= 0.7) g.audio?.play('telegraph', { pos: a.pos, volume: 0.6 });
@@ -1130,14 +1130,14 @@ export class ActorManager {
     a._combo = D?.combo && (at.kind === 'melee' || at.kind === 'lunge') && !a.boss && Math.random() < D.combo * (a.elite ? 1.7 : 1) ? at : null; // (kept apart: recover drops a.attack)
     switch (at.kind) {
       case 'melee':
-        g.broadcastHazard({ shape: 'arc', x: a.pos.x, y: a.pos.y, z: a.pos.z, r: at.range + a.radius, rot: a.yaw, angle: at.arc * 0.5, delay: 0.08, dmg, el: at.el ?? 'physical', st: at.st, kb: at.kb ?? 5, vis: 0, src: a.id });
+        g.broadcastHazard({ shape: 'arc', x: a.pos.x, y: a.pos.y, z: a.pos.z, r: at.range + a.radius, rot: a.yaw, angle: at.arc * 0.5, delay: 0.08, dmg, el: at.el ?? 'physical', st: at.st, kb: at.kb ?? 5, vis: 0, src: a.id, mv: at.id });
         g.audio?.play('swing', { pos: a.pos, volume: 0.7 });
         break;
       case 'lunge': {
         const leap = at.leap ?? 6;
         a.leapT = 0.22; a.leapV = { x: fx * leap / 0.22 * 0.6, z: fz * leap / 0.22 * 0.6 };
         const land = Math.min(dist, leap * 0.6 * 0.22 * (1 / 0.22) * 0.22 + 0.5);
-        g.broadcastHazard({ shape: 'arc', x: a.pos.x + fx * land, y: a.pos.y, z: a.pos.z + fz * land, r: at.range * 0.6 + a.radius, rot: a.yaw, angle: at.arc * 0.5, delay: 0.18, dmg, el: at.el ?? 'physical', st: at.st, kb: 4, vis: 0, src: a.id });
+        g.broadcastHazard({ shape: 'arc', x: a.pos.x + fx * land, y: a.pos.y, z: a.pos.z + fz * land, r: at.range * 0.6 + a.radius, rot: a.yaw, angle: at.arc * 0.5, delay: 0.18, dmg, el: at.el ?? 'physical', st: at.st, kb: 4, vis: 0, src: a.id, mv: at.id });
         g.audio?.play('swing', { pos: a.pos, volume: 0.6 });
         break;
       }
@@ -1164,7 +1164,7 @@ export class ActorManager {
           const tx = tgt.pos.x + (tgt.vel?.x ?? 0) * lead, tz = tgt.pos.z + (tgt.vel?.z ?? 0) * lead;
           const d = new THREE.Vector3(tx - muzzle.x, tY - muzzle.y, tz - muzzle.z).normalize();
           d.applyAxisAngle(new THREE.Vector3(0, 1, 0), spread);
-          g.broadcastEnemyProjectile({ x: muzzle.x, y: muzzle.y, z: muzzle.z, vx: d.x * at.speed, vy: d.y * at.speed, vz: d.z * at.speed, el: at.el ?? 'enemy', dmg, mesh: at.mesh, homing: at.homing ?? 0, aoe: at.aoe ?? 0, st: at.st });
+          g.broadcastEnemyProjectile({ x: muzzle.x, y: muzzle.y, z: muzzle.z, vx: d.x * at.speed, vy: d.y * at.speed, vz: d.z * at.speed, el: at.el ?? 'enemy', dmg, mesh: at.mesh, homing: at.homing ?? 0, aoe: at.aoe ?? 0, st: at.st, src: a.id, mv: at.id });
         }
         g.audio?.play('enemy_projectile', { pos: muzzle, volume: 0.6 });
         // Nightmare: a follow-up shot a beat later, aimed afresh (a sidestep that beat the first may not beat the second)
@@ -1178,7 +1178,7 @@ export class ActorManager {
         const T = Math.max(0.5, flat / at.speed);
         const gr = 14;
         const vy = ((tgt.pos.y - muzzle.y) + 0.5 * gr * T * T) / T;
-        g.broadcastEnemyProjectile({ x: muzzle.x, y: muzzle.y, z: muzzle.z, vx: (tx - muzzle.x) / T, vy, vz: (tz - muzzle.z) / T, el: at.el ?? 'enemyGreen', dmg, gravity: gr, pool: at.pool ? [at.pool.radius, at.pool.dur, at.pool.dps * g.director.dmgScale()] : null });
+        g.broadcastEnemyProjectile({ x: muzzle.x, y: muzzle.y, z: muzzle.z, vx: (tx - muzzle.x) / T, vy, vz: (tz - muzzle.z) / T, el: at.el ?? 'enemyGreen', dmg, gravity: gr, pool: at.pool ? [at.pool.radius, at.pool.dur, at.pool.dps * g.director.dmgScale()] : null, src: a.id, mv: at.id });
         g.audio?.play('enemy_projectile', { pos: muzzle, volume: 0.6 });
         break;
       }

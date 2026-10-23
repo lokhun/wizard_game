@@ -67,7 +67,8 @@ export class BossBrain {
     a.yaw = angleDamp(a.yaw, Math.atan2(p.pos.x - a.pos.x, p.pos.z - a.pos.z), rate, dt);
   }
   yawTo(p) { return Math.atan2(p.x - this.a.pos.x, p.z - this.a.pos.z); }
-  hazard(h) { this.g.broadcastHazard({ src: this.a.id, el: 'enemy', vis: 1, ...h }); }
+  // (mv names the move, for the death recap)
+  hazard(h) { this.g.broadcastHazard({ src: this.a.id, el: 'enemy', vis: 1, mv: this.move?.title ?? this.move?.name, ...h }); }
   circle(x, z, r, delay, dmgMult = 1, el = 'enemy', extra = {}) {
     this.hazard({ shape: 'circle', x, y: this.g.groundY(x, z), z, r, delay, dmg: this.dmg * dmgMult, el, fx: el, ...extra });
   }
@@ -76,7 +77,7 @@ export class BossBrain {
     this.hazard({ shape: 'wave', x: a.pos.x, y: a.pos.y, z: a.pos.z, r: r0, speed, maxR, delay, dmg: this.dmg * dmgMult, el, fx: el });
   }
   proj(pos, dir, speed, el = 'enemy', dmgMult = 0.6, extra = {}) {
-    this.g.broadcastEnemyProjectile({ x: pos.x, y: pos.y, z: pos.z, vx: dir.x * speed, vy: dir.y * speed, vz: dir.z * speed, el, dmg: this.dmg * dmgMult, ...extra });
+    this.g.broadcastEnemyProjectile({ x: pos.x, y: pos.y, z: pos.z, vx: dir.x * speed, vy: dir.y * speed, vz: dir.z * speed, el, dmg: this.dmg * dmgMult, src: this.a.id, mv: this._projMv ?? this.move?.title ?? this.move?.name, ...extra });
   }
   muzzle() { return this.g.actors.muzzlePos(this.a); }
   ring(n, speed, el, dmgMult = 0.5, offset = 0, y = 1.2) {
@@ -134,10 +135,11 @@ export class BossBrain {
   _dread() {
     const n = 12 + 2 * this.phase, off = Math.random() * Math.PI * 2, step = Math.PI * 2 / n;
     this.fx('dread');
+    const ring = (o) => { this._projMv = 'Dread Ring'; this.ring(n, 6.5 + this.phase * 0.6, 'enemyFire', 0.3, o, y()); this._projMv = null; };
     // at chest height above the ground, even from a boss on the wing
     const y = () => 1.0 - (this.a.pos.y - this.g.groundY(this.a.pos.x, this.a.pos.z));
-    this.at(0.75, () => this.ring(n, 6.5 + this.phase * 0.6, 'enemyFire', 0.3, off, y()));
-    this.at(1.25, () => this.ring(n, 6.5 + this.phase * 0.6, 'enemyFire', 0.3, off + step / 2, y()));
+    this.at(0.75, () => ring(off));
+    this.at(1.25, () => ring(off + step / 2));
   }
 
   idleType() { const t = this.script.idleType; return typeof t === 'function' ? t(this) : (t ?? ''); }

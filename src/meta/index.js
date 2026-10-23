@@ -50,6 +50,7 @@ export function demoSummary(ui, kind = 'win') {
     relics: RELICS.slice(0, won ? 3 : 1).map((r) => r.id),
     rooms: [], records: won ? { fastest: true, biggest: true, heat: true } : { floor: true, daily: true },
   };
+  if (!won) S.recap = [{ name: 'a Gargoyle (hasted champion)', move: 'Dive', dmg: 64, n: 2 }, { name: 'a Skeleton Archer', move: 'Volley', dmg: 31, n: 3 }, { name: 'lingering flames', move: '', dmg: 12, n: 4 }];
   if (kind === 'abyss') Object.assign(S, { abyss: 2, fell: true, killer: 'a Fallen Knight (frenzied, volatile champion)', heat: 14, time: 3920, records: { abyss: true, heat: true } });
   const types = ['combat', 'combat', 'trial', 'combat', 'elite', 'boss'];
   for (let f = 0; f <= S.floor; f++) {

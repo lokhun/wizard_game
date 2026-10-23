@@ -43,6 +43,7 @@ A first-person, co-op wizard roguelike for the browser. Fight your way up from t
   - Champion enemies carry affixes: hasted, vampiric, volatile, shielded, frenzied (attacks twice as often) or bombardier (calls meteor barrages down on you).
   - Boss intro cinematics, and fallen co-op players spectate their teammates.
 - **Reasons to come back:**
+  - A **death recap**: when you go down, the blows of the last few seconds, by foe and by move ("a Hellhound · Bite ×2 · 52"), so every death is a lesson. The run summary keeps it.
   - A **run summary** on every victory and defeat: time, realm, kills, damage, your biggest hit, the build you bound, what killed you and a chronicle of every fight. In co-op, every wizard gets a column.
   - A persistent **Codex**: 41 feats with in-run toasts, per-wizard records (wins, best realm, fastest victory, highest heat, deepest Abyss), a bestiary and lifetime totals.
   - **Nightmare**, open from the start for those who came for a fight: foes attack sooner, chain melee blows, loose follow-up shots and press you in greater numbers, and bosses weave dread rings between their moves and each gains a signature move (Bile Lattice, Headsman's Frenzy, Avalanche, Rune Prison, Crown of Swords). Every telegraph stays the same length, so it is hard but fair. Flawless chambers earn Dread Marks (+5% damage each, up to 12), no tome comes Common, and every boss leaves a relic.

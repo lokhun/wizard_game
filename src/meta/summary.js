@@ -77,6 +77,13 @@ function featList(ids, inline = false) {
 const tile = (label, value, fmt, sub, rec, i) => `<div class="rs-tile${rec ? ' rec' : ''}" style="animation-delay:${0.1 + i * 0.06}s"><div class="tl">${label}</div><div class="tv" data-to="${value}" data-fmt="${fmt}">${fmt === 'time' ? '0:00' : '0'}</div><div class="ts">${sub || '&nbsp;'}</div>${rec ? '<div class="ribbon">★ NEW RECORD</div>' : ''}</div>`;
 
 // one wizard's column (co-op)
+// the blows that ended the run, heaviest first
+function recapHTML(rc, titled = false) {
+  if (!rc?.length) return '';
+  const rows = rc.map((h) => `<div class="rc-row"><span class="rc-n">${esc(h.name)}${h.move ? ` <em>· ${esc(h.move)}</em>` : ''}${h.n > 1 ? ` ×${h.n}` : ''}</span><b>${fmtNum(h.dmg)}</b></div>`).join('');
+  return titled ? `<div class="rs-sec"><h3>What hit you</h3><div class="rs-recap">${rows}</div></div>` : `<div class="rs-recap small">${rows}</div>`;
+}
+
 function partyCol(S, me, best) {
   const c = CLASS_META[S.classId] ?? CLASS_META.pyromancer;
   const col = hex(c.color);
@@ -86,7 +93,7 @@ function partyCol(S, me, best) {
     <table>${row('kills', 'Foes slain', S.kills, fmtNum(S.kills))}${row('damage', 'Damage dealt', S.damage, fmtNum(S.damage))}${row('biggest', 'Biggest hit', S.biggest, fmtNum(S.biggest))}${row('reactions', 'Reactions', S.reactions, fmtNum(S.reactions))}
     <tr><td>Taken · downed</td><td>${fmtNum(S.taken)} · ${S.downs}×</td></tr></table>
     <div class="rs-build">${buildIcons(S, 18)}</div>
-    ${S.killer ? `<div class="kb">Felled by ${esc(S.killer)}</div>` : ''}
+    ${S.killer ? `<div class="kb">Felled by ${esc(S.killer)}</div>` : ''}${recapHTML(S.recap)}
     ${S.feats?.length ? `<div class="rs-feats inline">${S.feats.map((id) => FEAT_BY_ID[id]).filter(Boolean).map((f) => `<div class="rs-feat" title="${esc(f.desc)}">${iconSVG(f.icon, '#f0c050', 18)}<div class="n">${esc(f.name)}</div></div>`).join('')}</div>` : ''}
   </div>`;
 }
@@ -142,7 +149,7 @@ export function showSummary(ui, S, { party = [], remotes = new Map(), onMenu, on
       <div class="rs-tiles">${tiles}</div>
       ${coop ? `<div class="rs-sec"><h3>The party</h3><div class="rs-party" id="rsParty"></div></div>` : ''}
       <div class="rs-body"${coop ? ' style="grid-template-columns:minmax(0,1fr)"' : ''}>
-        ${left ? `<div>${left}</div>` : ''}
+        ${left ? `<div>${left}${!coop ? recapHTML(S.recap, true) : ''}</div>` : ''}
         <div class="rs-sec"><h3>Chronicle${coop ? ' · your fights' : ''}</h3><div class="rs-chron${coop ? ' two' : ''}">${chronicle(S)}</div></div>
       </div>
       </div>

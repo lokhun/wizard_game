@@ -231,3 +231,10 @@
 .dr .btns .btn { min-width: 160px; }
 
 .cx-table .nmw { color: #ff8070; font-size: 12px; white-space: nowrap; }
+
+.rs-recap { display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+.rs-recap.small { font-size: 12px; margin-top: 4px; }
+.rs-recap .rc-row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 8px; background: rgba(120,20,10,0.12); border-left: 2px solid #8a2a1a; }
+.rs-recap .rc-n { color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rs-recap .rc-n em { color: var(--text-dim); font-style: normal; }
+.rs-recap b { color: #ff8a70; font-variant-numeric: tabular-nums; }

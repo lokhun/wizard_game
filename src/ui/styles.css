@@ -293,3 +293,10 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .keys-box .keys-grid .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .keys-box .kb { min-width: 92px; }
 .keys-box .kb.cap { border-color: var(--gold); color: var(--gold); box-shadow: 0 0 12px rgba(240,192,80,0.3); }
+
+.recap { position: absolute; left: 50%; top: max(30%, 230px); transform: translateX(-50%); min-width: 280px; max-width: 420px; padding: 8px 12px; background: rgba(12,4,3,0.72); border: 1px solid #5a1a10; font-family: var(--serif); font-size: 13px; color: var(--text); opacity: 0; transition: opacity 0.4s; pointer-events: none; }
+.recap.show { opacity: 1; }
+.recap .rh { font-family: 'Cinzel', var(--serif); font-size: 11px; letter-spacing: 0.25em; text-transform: uppercase; color: #ff8a70; margin-bottom: 4px; }
+.recap .rr { display: flex; justify-content: space-between; gap: 14px; padding: 2px 0; }
+.recap .rr em { color: var(--text-dim); font-style: normal; }
+.recap .rr b { color: #ff8a70; font-variant-numeric: tabular-nums; }

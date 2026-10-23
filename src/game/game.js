@@ -968,7 +968,7 @@ export class Game {
           const airborne = p.pos.y - this.groundY(p.pos.x, p.pos.z) > 0.45;
           if (Math.abs(d - r) < 0.7 && !airborne) {
             h.hitLocal = true;
-            p.takeDamage(h.dmg, h.el, new THREE.Vector3(h.x, 0, h.z));
+            p.takeDamage(h.dmg, h.el, new THREE.Vector3(h.x, 0, h.z), { by: h.src ? this.actors.byId.get(h.src) : null, move: h.mv, cause: h.cause });
             this._knock(p, h.x, h.z, h.kb ?? 6);
           }
         }
@@ -1072,7 +1072,7 @@ export class Game {
     if (hit && h.shape !== 'los' && p.pos.y - (h.y ?? gy) > 2.5) hit = false;
     if (hit) {
       const attacker = h.src ? this.actors.byId.get(h.src) : null;
-      const taken = p.takeDamage(h.dmg, h.el, new THREE.Vector3(h.x, 0, h.z), { attacker });
+      const taken = p.takeDamage(h.dmg, h.el, new THREE.Vector3(h.x, 0, h.z), { attacker, move: h.mv, cause: h.cause });
       if (taken > 0) {
         if (h.kb) this._knock(p, h.x, h.z, h.kb);
         if (h.st?.stun) { p.stunT = h.st.stun; }
@@ -1104,7 +1104,7 @@ export class Game {
     this.spells.spawn({
       local: true, faction: 'enemy', el, pos, vel: new THREE.Vector3(e.vx, e.vy, e.vz), radius: e.mesh === 'arrow' ? 0.15 : 0.3,
       life: e.gravity ? 4 : 3.5, gravity: e.gravity ?? 0, core: e.mesh === 'arrow' ? 0 : 0.7, mesh: e.mesh, light: e.mesh === 'arrow' ? 0 : 5, trail: e.mesh === 'arrow' ? 0.2 : 1,
-      homing: e.homing ?? 0, hit: { dmg: e.dmg, st: e.st },
+      homing: e.homing ?? 0, hit: { dmg: e.dmg, st: e.st, by: e.src != null ? this.actors.byId.get(e.src) : null, move: e.mv }, // (by, not attacker: thorns answers only blows in reach)
       aoe: e.aoe ? { radius: e.aoe, dmg: e.dmg * 0.6, el } : null,
       onExpire: e.pool ? (pr, p) => this.spawnPoolLocal(p, e.pool[0], e.pool[1], e.pool[2], el) : null,
     });
@@ -1547,6 +1547,7 @@ export class Game {
 
   onLocalDowned() {
     this.ui?.banner('YOU HAVE FALLEN', this.isSolo ? '' : 'Hold on — an ally can revive you', '#c02020');
+    this.ui?.recap(this.meta?.recap?.());
   }
   onLocalDied() {
     this.ui?.banner('SLAIN', this.isSolo ? '' : 'You will return when the chamber is cleared', '#801010');

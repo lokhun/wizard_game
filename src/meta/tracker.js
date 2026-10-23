@@ -15,6 +15,9 @@ import { BOSS_DEFS } from '../game/enemyDefs.js';
 const FIGHT = new Set(['combat', 'elite', 'trial', 'boss']);
 const MULTI_WINDOW = 0.3; // kills this close together count as one spell's work
 
+// an attack's id or a boss move's name as words: 'sweepBreath' -> 'Sweep Breath'
+const moveName = (m) => String(m).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase()).slice(0, 32);
+
 export class RunTracker {
   constructor(game, hooks = {}) {
     this.g = game;
@@ -83,11 +86,30 @@ export class RunTracker {
     const r = this.run, p = this.g.player;
     r.taken += dmg;
     if (r.cur) r.cur.dmg += dmg;
+    // the last few seconds of blows, for the death recap
+    const src = this.source(el, opts, from);
+    const rec = this._recent ??= [];
+    rec.push({ t: this.g.time, dmg, name: src.name, move: opts?.move ? moveName(opts.move) : '' });
+    if (rec.length > 24) rec.shift();
     // a lethal blow names the killer (a phoenix feather may still save you: downs are counted in tick)
     if (p.hp <= 0) {
-      const src = this.source(el, opts, from);
       r.killer = src.name; r.killerType = src.type;
+      r.recap = this.recap();
     }
+  }
+
+  // What brought you down: the blows of the last 8 seconds, gathered by source and
+  // move, heaviest first: [{ name, move, dmg, n }]
+  recap(window = 8) {
+    const now = this.g.time, by = new Map();
+    for (const h of this._recent ?? []) {
+      if (now - h.t > window) continue;
+      const k = h.name + '|' + h.move;
+      const e = by.get(k) ?? { name: h.name, move: h.move, dmg: 0, n: 0 };
+      e.dmg += h.dmg; e.n++;
+      by.set(k, e);
+    }
+    return [...by.values()].sort((a, b) => b.dmg - a.dmg).slice(0, 4);
   }
 
   // Name what dealt a blow. Melee and telegraphed attacks carry their attacker;
@@ -100,6 +122,7 @@ export class RunTracker {
       return { name: (a.boss || /^The /.test(n) ? n : (/^[AEIOU]/.test(n) ? 'an ' : 'a ') + n) + (a.affix ? ` (${a.affix}${a.affix2 ? ' ' + a.affix2 : ''} champion)` : ''), type: a.type };
     };
     if (opts?.attacker?.def) return named(opts.attacker);
+    if (opts?.by?.def) return named(opts.by);
     const g = this.g, at = from ?? g.player.pos;
     let best = null, bd = Infinity;
     for (const a of g.actors.hostiles()) {
@@ -206,7 +229,7 @@ export class RunTracker {
       v: 1, pid: p.id, name: p.name, classId: r.classId, won: r.won, time: Math.round(r.time), floor: r.maxFloor, biome: g.level?.biome?.id ?? '',
       kills: r.kills, partyKills: g.stats.kills, damage: Math.round(p.damageDealt ?? 0), biggest: Math.round(r.biggest), biggestOn: r.biggestOn,
       taken: Math.round(r.taken), downs: r.downs, reactions: r.reactions, gold: Math.round(g.stats.gold ?? 0), heat: r.heat, pacts: r.pacts, daily: r.daily,
-      abyss: r.abyss, fell: !!r.fell, nightmare: r.nightmare, dread: g.player.dread ?? 0, killer: r.won && !r.fell ? null : r.killer, coop: r.coop, practice: this.practice, feats: [...r.feats],
+      abyss: r.abyss, fell: !!r.fell, recap: r.won && !r.fell ? [] : (r.recap ?? []), nightmare: r.nightmare, dread: g.player.dread ?? 0, killer: r.won && !r.fell ? null : r.killer, coop: r.coop, practice: this.practice, feats: [...r.feats],
       tomes: [...tomes.values()], relics: p.relics.map((x) => x.def?.id).filter(Boolean),
       rooms: r.rooms.map((c) => [c.f, c.type, Math.round(c.t), Math.round(c.dmg), (c.done ? 1 : 0) | (c.trial ? 2 : 0), c.kills]),
     };

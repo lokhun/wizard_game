@@ -881,6 +881,17 @@ export class UI {
     this._promptKey = key;
     this.h.prompt.innerHTML = text ? `${esc(text)}${progress !== undefined ? `<div class="progress"><i style="width:${Math.min(100, progress * 100)}%"></i></div>` : ''}` : '';
   }
+  // the blows that just put you down (tracker.recap), under the banner for a few seconds
+  recap(rows) {
+    if (!this.h || !rows?.length) return;
+    let el = this._recapEl;
+    if (!el) { el = this._recapEl = document.createElement('div'); el.className = 'recap'; this.h.banner.parentElement.appendChild(el); }
+    el.innerHTML = `<div class="rh">What hit you</div>` + rows.map((h) => `<div class="rr"><span>${esc(h.name)}${h.move ? ` <em>· ${esc(h.move)}</em>` : ''}${h.n > 1 ? ` ×${h.n}` : ''}</span><b>${Math.round(h.dmg)}</b></div>`).join('');
+    el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+    clearTimeout(this._recapT);
+    this._recapT = setTimeout(() => el.classList.remove('show'), 7000);
+  }
+
   banner(a, b = '', color = '#e2c48a', dur = 3) {
     if (!this.h) return;
     const el = this.h.banner;
