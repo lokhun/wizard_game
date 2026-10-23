@@ -19,9 +19,9 @@
 import { I } from './instruments.js';
 import { rnd, pick, mtof } from './core.js';
 
-const SCALES = {
+export const SCALES = {
   aeolian: [0, 2, 3, 5, 7, 8, 10], phrygian: [0, 1, 3, 5, 7, 8, 10], dorian: [0, 2, 3, 5, 7, 9, 10],
-  harmonic: [0, 2, 3, 5, 7, 8, 11], locrian: [0, 1, 3, 5, 6, 8, 10],
+  harmonic: [0, 2, 3, 5, 7, 8, 11], locrian: [0, 1, 3, 5, 6, 8, 10], ionian: [0, 2, 4, 5, 7, 9, 11], lydian: [0, 2, 4, 6, 7, 9, 11],
 };
 const deg = (sc, d) => { const n = sc.length, o = Math.floor(d / n); return sc[d - o * n] + 12 * o; };
 export const melDeg = (ch) => (ch >= '0' && ch <= '9' ? +ch : ch >= 'A' && ch <= 'E' ? 10 + ch.charCodeAt(0) - 65 : ch >= 'a' && ch <= 'f' ? -1 - (ch.charCodeAt(0) - 97) : null);
@@ -155,6 +155,52 @@ export const THEMES = {
     },
   }),
 
+  // ======================================================== places of rest
+  // the Wandering Merchant: a lute waltz in D dorian
+  shop: song({
+    bpm: 96, gain: 4.6, root: 50, scale: 'dorian', drone: [-24], dronePeak: 0.02, droneCut: 260,
+    form: ['A', 'B'],
+    sec: {
+      A: { bars: 8, steps: 12, prog: [0, 3, 0, 4, 2, 6, 3, 0], parts: [
+        { b: 'pluck', p: '1...35..35..', o: -12, v: 0.05 },
+        { d: 'frame', p: 'X...x...x...', v: 0.1 },
+        { m: 'flute', o: 12, v: 0.032, l: ['4.3.2.', '3.4.5.', '4.2.0.', '4.....', '2.4.6.', '6.4.2.', '3.5.4.', '0.....'] },
+      ] },
+      B: { bars: 8, steps: 12, prog: [0, 3, 0, 4, 2, 6, 3, 0], parts: [
+        { b: 'harp', p: '1...5...8...', o: 0, v: 0.04 },
+        { d: 'shaker', p: '..x...x...x.', v: 0.03 },
+        { m: 'reed', o: 12, v: 0.03, l: ['7.....', '5.4.3.', '7.4...', '4.....', '9.8.6.', '8.....', 'A.8.6.', '7.....'] },
+        { b: 'pluck', p: '1.....5.....', o: -12, v: 0.045 },
+      ] },
+    },
+  }),
+  // a shrine or an altar: a hush of choir, harp and bells
+  shrine: song({
+    bpm: 54, gain: 2.3, root: 48, scale: 'ionian', drone: [-12, -5], dronePeak: 0.025, droneCut: 400,
+    form: ['A'],
+    sec: {
+      A: { bars: 8, prog: [0, 3, 5, 4, 0, 3, 4, 0], parts: [
+        { c: 'pad', p: bars(2, 'X'), v: 0.05, vowel: 'o', o: 12 },
+        { b: 'harp', p: '1.5.8.A.B.A.8.5.', o: 12, v: 0.03 },
+        { m: 'flute', o: 24, v: 0.028, l: ['4...2...', '5...3...', '5...2...', '4...6...', '7...4...', '3...5...', '4...1...', '0.......'] },
+        chance(0.02, (m, t, X) => I.bell(m, t, X.root + 36 + pick([0, 4, 7]), 0.025, 5)),
+      ] },
+    },
+  }),
+  // a treasure vault or a secret room: celesta and glass, glittering
+  vault: song({
+    bpm: 72, gain: 3.3, root: 47, scale: 'lydian', drone: [-12], dronePeak: 0.025, droneCut: 300,
+    form: ['A'],
+    sec: {
+      A: { bars: 4, prog: [0, 1, 0, 4], parts: [
+        { b: 'celesta', p: '1358A8531358A853', o: 24, v: 0.016 },
+        { c: 'pad', p: bars(4, 'X'), v: 0.035, vowel: 'e', o: 12 },
+        { b: 'glass', p: '8...............', o: 12, v: 0.016 },
+        { d: 'heart', p: bars(2, 'X'), v: 0.12 },
+      ] },
+    },
+  }),
+
   // ======================================================= the Drowned Sewers (E phrygian)
   'explore:sewers': song({
     bpm: 66, gain: 1.79, root: 52, scale: 'phrygian', drone: [-24, -17], dronePeak: 0.04, droneCut: 170,
@@ -169,7 +215,7 @@ export const THEMES = {
       B: { bars: 8, prog: [0, 1, 6, 0, 5, 1, 0, 0], parts: [
         { c: 'pad', p: bars(2, 'X'), v: 0.04, vowel: 'u' },
         { b: 'pluck', p: '1.......5.......', o: -12, v: 0.06 },
-        { m: 'reed', o: 12, v: 0.035, l: ['0...1.0.', '1...5...', '6...3.1.', '0.......', '5...2.0.', '3...1.0.', '0...4.0.', '0.......'] },
+        { m: 'reed', o: 12, v: 0.035, l: ['0...1.0.', '1...5...', '6...3.1.', '0.......', '5...2.0.', '3...1.0.', '0...4.0.', '0.......'], alts: [['4...2...', '3...1...', '1...3.1.', '0...2.4.', '5...4.2.', '1...3.5.', '2...0...', '4.......']] },
         chance(0.06, (m, t, X) => I.drip(m, t, X.root + 24 + pick([0, 3, 7, 12]), rnd(0.015, 0.03))),
         { d: 'taiko', p: bars(2, 'X'), v: 0.15, a: [52] },
       ] },
@@ -238,7 +284,7 @@ export const THEMES = {
         { d: 'anvil', p: bars(2, 'X'), v: 0.045, prob: 0.6, a: [640] },
         { d: 'rim', p: 'x.......x.......', v: 0.035 },
         chance(0.012, (m, t) => I.chains(m, t, 0.035)),
-        { m: 'cello', o: 0, v: 0.05, l: ['4...2.0.', '3...5.3.', '4...1.4.', '2...0...', '5...7.5.', '3...7.5.', '4...1.4.', '1.......'] },
+        { m: 'cello', o: 0, v: 0.05, l: ['4...2.0.', '3...5.3.', '4...1.4.', '2...0...', '5...7.5.', '3...7.5.', '4...1.4.', '1.......'], alts: [['7...4.2.', '5...3...', '1...4...', '0...2.4.', '9...7.5.', '7...5.3.', '4...1...', '4.......']] },
       ] },
       B: { bars: 8, prog: [5, [3, 7, 10], 3, 4, 5, [3, 7, 10], 4, 0], parts: [
         { c: 'pad', p: bars(2, 'X'), v: 0.035, vowel: 'o' },
@@ -311,7 +357,7 @@ export const THEMES = {
       M: { bars: 8, prog: [0, 3, 0, 6, 2, 6, 3, 0], parts: [
         { b: 'harp', p: '1.5.8.5.3.8.5.8.', o: 12, v: 0.035 },
         { c: 'pad', p: bars(2, 'X'), v: 0.028, vowel: 'a', o: 12 },
-        { m: 'flute', o: 24, v: 0.035, l: ['4...2.0.', '3...5.3.', '4.5.4.2.', '6...8.6.', '2...4.7.', '6...8.A.', 'A...7.5.', '7.......'] },
+        { m: 'flute', o: 24, v: 0.035, l: ['4...2.0.', '3...5.3.', '4.5.4.2.', '6...8.6.', '2...4.7.', '6...8.A.', 'A...7.5.', '7.......'], alts: [['7...4.2.', '5...3...', '4...2.4.', '8...6...', '6...4.2.', 'A...8...', '7...5.3.', '4.......']] },
         { d: 'taiko', p: bars(2, 'X'), v: 0.15, a: [60] },
       ] },
       B: { bars: 8, prog: [4, 2, 6, 3, 4, 2, 3, 3], parts: [

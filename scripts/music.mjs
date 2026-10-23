@@ -3,9 +3,8 @@
 //   PORT=5190 node scripts/music.mjs --render [sec]
 //                                     renders every theme offline (tools/music.html) and prints levels,
 //                                     at intensity 0 and, for bosses, 2
-import { THEMES, chordOf, melDeg } from '../src/audio/themes.js';
+import { THEMES, chordOf, melDeg, SCALES as SC } from '../src/audio/themes.js';
 
-const SC = { aeolian: [0, 2, 3, 5, 7, 8, 10], phrygian: [0, 1, 3, 5, 7, 8, 10], dorian: [0, 2, 3, 5, 7, 9, 10], harmonic: [0, 2, 3, 5, 7, 8, 11], locrian: [0, 1, 3, 5, 6, 8, 10] };
 const deg = (sc, d) => { const n = sc.length, o = Math.floor(d / n); return sc[d - o * n] + 12 * o; };
 let bad = 0;
 for (const [name, th] of Object.entries(THEMES)) {

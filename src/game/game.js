@@ -5,7 +5,7 @@ import { Particles, SPR } from '../render/particles.js';
 import { VFX, fxOf } from '../render/vfx.js';
 import { generateLevel, ROOM, T, K_ALT, K_WATER, WATER_Y } from '../world/levelgen.js';
 import { keyOf } from '../core/input.js';
-import { PACTS, PACT_BY_ID, difficultyFor } from '../meta/pacts.js';
+import { PACTS, PACT_BY_ID, difficultyFor, abyssLaws, lawAt } from '../meta/pacts.js';
 import { buildLevel } from '../world/builder.js';
 import { Collision } from '../world/collision.js';
 import { BIOMES } from '../world/biomes.js';
@@ -41,6 +41,14 @@ const _v = new THREE.Vector3();
 
 // what a ping names when it lands on a thing
 const PING_NAMES = { pedestal: (it) => (it.relic ? 'Relic' : 'Tome'), chest: 'Chest', mimic: 'Chest', shop: 'Merchant', shrine: 'Shrine', altar: 'Blood Altar', gambler: 'Gambler', portal: 'Portal', victoryPortal: 'Victory', abyssPortal: 'The Abyss' };
+// the Abyss's depths: violet, drowned teal, crimson, ashen gold (then round again)
+const ABYSS_TINT = [
+  { fog: 0x2a1040, gain: [1.0, 0.92, 1.08], sat: 1.0, rim: 0xa070ff },
+  { fog: 0x0a3030, gain: [0.9, 1.04, 1.02], sat: 0.95, rim: 0x40e0c0 },
+  { fog: 0x3a0808, gain: [1.08, 0.88, 0.88], sat: 0.9, rim: 0xff4040 },
+  { fog: 0x2a2618, gain: [1.05, 1.0, 0.86], sat: 0.85, rim: 0xffe0a0 },
+];
+const PLACE_MUSIC = { shop: 'shop', gambler: 'shop', shrine: 'shrine', altar: 'shrine', treasure: 'vault', secret: 'vault' };
 const _nmFog = new THREE.Color(0x2a0606);
 const DREAD_MAX = 12;
 export class Game {
@@ -123,6 +131,7 @@ export class Game {
   startRun({ seed, localId, name, classId, isHost, net, players = [], floor = 0, abyss = 0 }) {
     this.player?.endChannel();
     this.abyss = abyss; // the Abyss: how many times the party has descended past the Hollow King
+    if (abyss) this.difficulty = abyssLaws(this.difficulty, abyss);
     this.cinematic = null;
     this.ui?.letterbox?.(false);
     for (const r of this.remotes.values()) r.dispose();
@@ -240,6 +249,9 @@ export class Game {
     const nm = !!this.difficulty.nightmare && !this.menuMode;
     this.audio?.setDread?.(nm);
     const fogCol = nm ? new THREE.Color(b.fog.color).lerp(_nmFog, 0.45) : new THREE.Color(b.fog.color);
+    // each depth of the Abyss wears its own colours over the realm's
+    const ab = this.abyss && !this.menuMode ? ABYSS_TINT[(this.abyss - 1) % ABYSS_TINT.length] : null;
+    if (ab) fogCol.lerp(new THREE.Color(ab.fog), 0.4);
     const fogDen = b.fog.density * (nm ? 1.12 : 1);
     this.scene.fog = new THREE.FogExp2(fogCol, fogDen);
     this.scene.background = fogCol.clone();
@@ -255,7 +267,9 @@ export class Game {
     this.built.group.traverse((o) => { if (o.isMesh && !o.material.transparent && o.name?.startsWith('lvl_')) { o.castShadow = shadows; o.receiveShadow = shadows; } });
     this.shadowsOn = shadows;
     if (b.moon) this.moon.color.set(b.moon.color);
-    this.renderer.setGrade(nm ? { ...b.grade, gain: (b.grade.gain ?? [1, 1, 1]).map((c, i) => c * [1.08, 0.87, 0.87][i]), lift: (b.grade.lift ?? [0, 0, 0]).map((c, i) => c + [0.006, 0, 0][i]), saturation: (b.grade.saturation ?? 0.85) * 0.92, vignette: (b.grade.vignette ?? 0.62) * 1.15 } : b.grade);
+    let grade = b.grade;
+    if (ab) grade = { ...grade, gain: (grade.gain ?? [1, 1, 1]).map((c, i) => c * ab.gain[i]), saturation: (grade.saturation ?? 0.85) * ab.sat };
+    this.renderer.setGrade(nm ? { ...b.grade, gain: (b.grade.gain ?? [1, 1, 1]).map((c, i) => c * [1.08, 0.87, 0.87][i]), lift: (b.grade.lift ?? [0, 0, 0]).map((c, i) => c + [0.006, 0, 0][i]), saturation: (b.grade.saturation ?? 0.85) * 0.92, vignette: (b.grade.vignette ?? 0.62) * 1.15 } : grade);
     this.viewHemi.color.set(b.ambient.sky);
     this.viewHemi.intensity = 0.6 + b.ambient.intensity;
     // interactables from the level
@@ -294,7 +308,8 @@ export class Game {
     level.startRoom.visited = true;
     if (this.difficulty.rush && !this.menuMode) this._rushFloor(level, index);
     this._buildDoorSigns();
-    setEnemyRim(b.rim ?? 0x806a60, b.rimK ?? 0.45);
+    const abr = this.abyss && !this.menuMode ? ABYSS_TINT[(this.abyss - 1) % ABYSS_TINT.length] : null;
+    setEnemyRim(abr ? abr.rim : b.rim ?? 0x806a60, abr ? 0.7 : b.rimK ?? 0.45);
     this.audio?.setAmbience(b.id);
     this.audio?.setMusic(this._mus('explore'));
     this.audio?.play('floor_enter');
@@ -600,6 +615,7 @@ export class Game {
     this._updateTips(realDt);
     this.events.emit('tick', realDt);
     this._updateDoorSigns(realDt);
+    this._roomMusic(realDt);
     this._ambient(realDt);
     this.critters?.update(dt, this.time, this.renderer.camera.position, this.allPlayers());
     // big boss arenas outgrow the light pool: lift the ambient a little while you stand in one
@@ -1175,6 +1191,9 @@ export class Game {
 
   // enemy projectiles (spawned identically on all peers)
   broadcastEnemyProjectile(e) {
+    // (the Abyss's laws quicken straight shots; a lob keeps the arc it was aimed with)
+    const k = this.difficulty.projSpeed ?? 1;
+    if (k !== 1 && !e.gravity) { e.vx *= k; e.vy *= k; e.vz *= k; }
     this.net?.broadcast({ t: 'ep', e });
     this.spawnEnemyProjectile(e);
   }
@@ -1527,6 +1546,8 @@ export class Game {
     this.ui?.bossIntro(a);
     this.audio?.play('boss_intro');
     this.audio?.setMusic(this._mus('boss'));
+    // in the Abyss a boss's theme starts a step harder
+    if (this.abyss) this.audio?.setMusicIntensity?.(1);
   }
 
   // a cast everyone should notice: an ultimate flares the caster's rune circle on the ground
@@ -1627,12 +1648,15 @@ export class Game {
   enterAbyss(d, curse = null) {
     this.abyss = d;
     const pc = PACT_BY_ID[curse];
+    let pk = this.difficulty.pacts ?? {};
     if (pc && pc.id !== 'nightmare') {
-      const pk = { ...(this.difficulty.pacts ?? {}) };
+      pk = { ...pk };
       pk[pc.id] = Math.min(pc.max, (pk[pc.id] ?? 0) + 1);
-      this.difficulty = difficultyFor(pk, { daily: this.difficulty.daily ?? null });
       this._curseNote = `Abyssal curse — ${pc.name}${pc.max > 1 ? ' ' + 'I'.repeat(pk[pc.id]) : ''}: ${pc.desc(pk[pc.id])}`;
     }
+    // the pacts as they now stand, then every Abyssal law down to this depth
+    this.difficulty = abyssLaws(difficultyFor(pk, { daily: this.difficulty.daily ?? null }), d);
+    const law = lawAt(d);
     this.events.emit('abyss', d);
     this.audio?.play('boss_roar', { volume: 0.6 });
     this.ui?.fadeOut(1.4, () => {
@@ -1642,6 +1666,7 @@ export class Game {
       if (p.dead || p.downed) p.revive(1);
       p.heal(p.maxHp);
       this.ui?.fadeIn(1.6);
+      setTimeout(() => { if (!this.ended) { this.ui?.banner(`ABYSS ${d} · ${law.name.toUpperCase()}`, law.desc, law.color, 5); this.ui?.toast(`Abyssal law — ${law.name}: ${law.desc}`, law.color); } }, 2600);
       if (this._curseNote) { const n = this._curseNote; this._curseNote = null; setTimeout(() => !this.ended && this.ui?.toast(n, '#ff5878'), 5200); }
     });
   }
@@ -1898,6 +1923,20 @@ export class Game {
   // ======================================================================
   // visual effects requested by the boss scripts (all peers)
   // ======================================================================
+  // places of rest have their own pieces: the merchant's waltz, a shrine's hush, a vault's
+  // glitter. Checked twice a second, switched once you've stood in the room a second
+  _roomMusic(dt) {
+    if ((this._musT = (this._musT ?? 0) - dt) > 0) return;
+    this._musT = 0.5;
+    const cur = this.audio?._musicState;
+    if (!cur || this.ended || this.menuMode || /^(combat|boss|victory|defeat)/.test(cur)) { this._musWant = null; return; }
+    const r = this.level.roomAt(this.player.pos.x, this.player.pos.z);
+    const want = PLACE_MUSIC[r?.type] ?? this._mus('explore');
+    if (want === cur) { this._musWant = null; return; }
+    if (this._musWant === want) this.audio.setMusic(want);
+    this._musWant = want;
+  }
+
   // the piece for a moment of play: the realm's own explore / combat theme
   // (the Abyss has its own), the floor boss's own theme
   _mus(state) { return themeFor(state, this.abyss ? 'abyss' : this.biome?.id, this.biome?.boss); }
@@ -1905,7 +1944,7 @@ export class Game {
   bossFx(kind, a, extra) {
     if (!a) return;
     // each phase drives the boss's theme harder
-    if (kind === 'phase') this.audio?.setMusicIntensity?.(Math.min(2, extra?.n ?? 1));
+    if (kind === 'phase') this.audio?.setMusicIntensity?.(Math.min(2, (extra?.n ?? 1) + (this.abyss ? 1 : 0)));
     // the boss model reacts to its own moments (phase change, submerge, enrage...): visual only
     a.model?.bossFx?.(kind, extra ?? {});
     switch (kind) {

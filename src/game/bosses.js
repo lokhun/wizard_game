@@ -48,9 +48,21 @@ export class BossBrain {
   get hpf() { return this.a.hp / this.a.maxHp - (this.g.difficulty?.bossEnrage ?? 0); }
   get dmg() { return this.a.dmg; }
 
+  // Bosses can't be out-scaled past their fight: no one blow takes more than a
+  // tenth of one, and a phase threshold holds (damage past it is lost and the boss
+  // turns untouchable for a moment as it changes), so even a build that nukes the
+  // rooms has to see every phase through
   modifyDamage(dmg, H) {
     if (this.invuln > 0) return 0;
-    return this.script.modifyDamage ? this.script.modifyDamage(this, dmg, H) : dmg;
+    if (this.script.modifyDamage) dmg = this.script.modifyDamage(this, dmg, H);
+    const a = this.a, max = a.maxHp;
+    dmg = Math.min(dmg, max * 0.1);
+    const nx = this.script.phases[this.phase + 1];
+    if (nx?.at !== undefined && nx.at < 1) {
+      const T = nx.at * max;
+      if (a.hp > T && a.hp - dmg <= T) { dmg = a.hp - T + 0.01; this.invuln = 1.5; }
+    }
+    return dmg;
   }
 
   // ------------------------------------------------ helpers used by scripts
@@ -197,7 +209,7 @@ export class BossBrain {
     if (!tgt) { this.anim('idle', this.idleType(), 1); return out; }
     // choose a move
     const dist = Math.hypot(tgt.pos.x - a.pos.x, tgt.pos.z - a.pos.z);
-    const nm = this.g.difficulty?.nightmare && S.nightmare && this.phase >= (S.nightmare.minPhase ?? 1) ? S.nightmare : null;
+    const nm = (this.g.difficulty?.nightmare || this.g.difficulty?.bossSig) && S.nightmare && this.phase >= (S.nightmare.minPhase ?? 1) ? S.nightmare : null;
     const pool = (nm ? [...phases[this.phase].moves, nm] : phases[this.phase].moves).filter((m) => (this.cds[m.name] ?? 0) <= 0 && (!m.range || (dist >= m.range[0] && dist <= m.range[1])) && (!m.when || m.when(this)));
     if (pool.length) {
       let tot = 0;

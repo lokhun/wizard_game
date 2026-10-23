@@ -202,7 +202,9 @@ A locked room must always open. The director's watchdog (`Director._encounter`) 
 Every realm has its own pair of themes, one for exploring and one for its fights, and every boss has its own theme (`src/audio/themes.js`; the Abyss has its own pair too). They are generated live by the step sequencer in `music.js`, written as data for `song()`: a key and mode, sections of chords one per bar, and parts (drum patterns, chord-tone lines, melodies in scale degrees, struck chords).
 - **Each realm sounds like itself.** The Drowned Sewers: E phrygian, drips and a murky choir. The Oubliette: C minor, an anvil and chains, a cello. The Moonlit Bailey: A dorian, harp and flute; its fights are a military march. The Hall of Whispers: B harmonic minor, music box and harpsichord. The Hollow Throne: F minor, organ and tolling bells. The Abyss: C# locrian, glass and heartbeats.
 - **Bosses:** the Mother of Filth lurches in 6/8; the Executioner marches to the Dies irae; the Stone Wyvern's horn call rides a wall of drums; the Court Archmage plays an organ toccata; the Hollow King's anthem rises to a Neapolitan chord.
-- **Boss phases drive the music.** Each phase raises its intensity (`audio.setMusicIntensity`), and parts marked `min: 1` / `min: 2` join in.
+- **Places of rest have their own pieces:** the merchant's lute waltz, a shrine's choir and bells, a treasure vault's celesta and glass. They take over once you've stood in the room a second (`Game._roomMusic`).
+- **Melodies vary:** a section may carry alternative lines, one picked each time it starts, so a long floor doesn't loop one tune.
+- **Boss phases drive the music.** Each phase raises its intensity (`audio.setMusicIntensity`), and parts marked `min: 1` / `min: 2` join in. In the Abyss a boss's theme starts a step harder.
 - `tools/music.html` plays every theme at any intensity. `node scripts/music.mjs` checks each melody's downbeats against its chords and flags augmented or diminished triads; `--render` renders every theme offline and prints its loudness. Explore themes sit near -19 dB RMS, fights near -14, bosses near -11.5.
 
 ## Reading danger
