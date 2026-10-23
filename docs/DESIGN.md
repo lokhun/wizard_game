@@ -217,6 +217,14 @@ Anything that can hurt you must be seen in time, without looking garish.
 - **Abyssal relics** turn up only past the Hollow King: six great gifts bought dearly (+60% damage and area for taking 25% more; +4% damage per tome held but no healing from kills or lifesteal; +2 projectiles for −25% damage...).
 - Relic procs grow with the realm and keep growing in the Abyss (they used to fall back to the first realm's strength when the realms started again).
 
+## Battlefields
+About half the fight rooms of every realm rise or fall (`elevate` in `levelgen.js`), chosen per realm:
+- **Tiers:** the room climbs in two 0.6 m steps along its long axis.
+- **Pit:** a sunken bowl, two steps down.
+- **Plateau:** a 1.2 m table in the middle, sheer but for a ramp on two opposite sides.
+
+Fights must keep flowing. The outer two rows of a room stay at floor level (doors, clutter, torches), every rise a wizard or foe must climb is a step under `STEP` (0.75 m), and only a plateau's flanks are sheer, which can always be dropped from and walked round. A check over 60 generated floors finds every cell of every elevated room reachable on foot from its doors.
+
 ## Performance rules
 - **No shader compiles after load.** A compile is a visible freeze (worst on Windows/ANGLE). Each floor load prewarms everything that can appear: the realm's enemies, bosses and summons, projectile visuals, effect pools, drops, reward pedestal, portal and ground eruptions. It compiles against the scene's HDR target (compiling against the canvas gives different program keys), in parallel on the driver (`KHR_parallel_shader_compile`) behind a loading veil. `scripts/hitch.js` traces frames and reports any program compiled after load.
   - The warm set is kept alive until the next floor: three.js destroys a program when its last material is disposed, so cleaning up the last enemy of a type would otherwise make the next wave recompile.
