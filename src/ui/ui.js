@@ -3,7 +3,7 @@ import { iconSVG, classEmblem } from './icons.js';
 import { CLASS_LIST, SLOTS } from '../game/classes.js';
 import { CLASS_META, ELEMENT_COLORS } from '../game/classMeta.js';
 import { RARITY } from '../game/upgrades.js';
-import { ROOM, T } from '../world/levelgen.js';
+import { ROOM, T, K_WATER } from '../world/levelgen.js';
 import { BIOMES } from '../world/biomes.js';
 import { fightsHere } from '../game/director.js';
 import { updateRelicShelf, relicListHTML, relicCard } from './relicUI.js';
@@ -607,6 +607,22 @@ export class UI {
       const x = r.x * T * S, y = r.y * T * S, w = r.w * T * S, hh = r.h * T * S;
       g.fillStyle = r.visited ? (active === r.id ? 'rgba(160,40,30,0.55)' : 'rgba(120,100,75,0.45)') : 'rgba(60,50,40,0.3)';
       g.fillRect(x, y, w, hh);
+      // a visited room's ground as it lies: raised floor lighter, pits darker, water blue-grey, vents marked
+      if (r.visited) {
+        for (let cy = r.y; cy < r.y + r.h; cy++) for (let cx = r.x; cx < r.x + r.w; cx++) {
+          const i = L.idx(cx, cy);
+          if (L.roomId[i] !== r.id) continue;
+          const hgt = L.hgt[i];
+          if (L.kind[i] === K_WATER) g.fillStyle = 'rgba(70,110,130,0.45)';
+          else if (L.cells[i] !== 1) g.fillStyle = 'rgba(20,16,12,0.55)';
+          else if (hgt > 0.3) g.fillStyle = `rgba(235,215,170,${Math.min(0.32, 0.16 * hgt)})`;
+          else if (hgt < -0.3) g.fillStyle = `rgba(0,0,0,${Math.min(0.4, -0.2 * hgt)})`;
+          else continue;
+          g.fillRect(cx * T * S, cy * T * S, T * S + 0.5, T * S + 0.5);
+        }
+        g.fillStyle = 'rgba(255,120,40,0.75)';
+        for (const v of r.vents ?? []) { g.beginPath(); g.arc(v.x * S, v.z * S, 2.2, 0, Math.PI * 2); g.fill(); }
+      }
       g.strokeStyle = r.visited ? 'rgba(226,196,138,0.8)' : 'rgba(226,196,138,0.3)';
       g.lineWidth = 1.5;
       g.strokeRect(x, y, w, hh);
