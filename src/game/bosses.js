@@ -30,6 +30,7 @@ export class BossBrain {
     this.data = {};
     this.invuln = 0;
     this.spin = 0; this.spinT = 0; // a whirl turns the body (rad/s) while it lasts
+    this.exposed = 0; // after a committed move (a leap's crash, a whirl, a charge) the boss takes +30% for a moment
     a.anim = 'idle';
     this.script.init?.(this);
   }
@@ -56,6 +57,7 @@ export class BossBrain {
   modifyDamage(dmg, H) {
     if (this.invuln > 0) return 0;
     if (this.script.modifyDamage) dmg = this.script.modifyDamage(this, dmg, H);
+    if (this.exposed > 0) dmg *= 1.3;
     const a = this.a, max = a.maxHp;
     dmg = Math.min(dmg, max * 0.1);
     const nx = this.script.phases[this.phase + 1];
@@ -165,10 +167,13 @@ export class BossBrain {
       this.anim('attack', o.landType ?? 'slam', 0.6);
       this.shake(0.55); this.sound('boss_slam');
       this.fx('land', { el: o.el ?? 'earth', r });
+      this.expose(1.4);
       o.onLand?.();
     });
     return crouch + air;
   }
+  // the punish window: dodge the big blow, then make it pay
+  expose(t = 1.4) { this.exposed = t; this.fx('exposed', { t }); }
   // a phase's opening: the boss bounds to the middle of its arena and lands with a ring the party can jump
   leapToCentre(o) {
     const A = this.arena();
@@ -206,6 +211,7 @@ export class BossBrain {
     const a = this.a;
     const S = this.script;
     this.invuln = Math.max(0, this.invuln - dt);
+    this.exposed = Math.max(0, this.exposed - dt);
     // phase transitions
     const phases = S.phases;
     this.fightT = (this.fightT ?? 0) + dt;
@@ -469,6 +475,7 @@ SCRIPTS.executioner = {
           B.a.yaw = yaw;
           B.hazard({ shape: 'rect', x: B.a.pos.x, y: B.a.pos.y, z: B.a.pos.z, rot: yaw, len: 18, w: 3.4, delay: 1.1, teleDur: 0.9, dmg: B.dmg * 1.2, el: 'physical', kb: 16 });
           B.at(0.9, () => { B.anim('attack', 'charge', 0.9); B.dash(yaw, 20, 0.85); B.sound('boss_roar', 0.6); });
+          B.at(1.75, () => B.expose(1.2));
           return 2.0;
         } },
         // a chop, and before you've breathed, the backswing
@@ -534,7 +541,7 @@ SCRIPTS.executioner = {
           B.sound('boss_roar', 0.7);
           B.lane(yaw, len, 4.2, 0.8, speed, 0.8, 'enemyFire');
           B.at(0.8, () => { B.anim('attack', 'whirl', len / speed + 0.2); B.spin = 15; B.spinT = len / speed; B.dash(yaw, speed, len / speed); B.sound('swing'); });
-          B.at(0.8 + len / speed, () => { B.a.yaw = B.target ? B.yawTo(B.target.pos) : yaw; B.shake(0.3); });
+          B.at(0.8 + len / speed, () => { B.a.yaw = B.target ? B.yawTo(B.target.pos) : yaw; B.shake(0.3); B.expose(1.6); });
           return 1.5;
         } },
         { name: 'charge', w: 1, cd: 5, range: [6, 40], run(B, t) { return SCRIPTS.executioner.phases[0].moves[2].run(B, t); } },
@@ -588,6 +595,7 @@ SCRIPTS.stoneWyvern = {
           B.a.yaw = yaw;
           B.hazard({ shape: 'rect', x: B.a.pos.x, y: B.a.pos.y, z: B.a.pos.z, rot: yaw, len: 20, w: 4, delay: 1.1, teleDur: 0.9, dmg: B.dmg * 1.1, el: 'physical', kb: 16 });
           B.at(0.9, () => { B.anim('attack', 'fly', 0.9); B.dash(yaw, 24, 0.8); B.sound('boss_roar', 0.6); });
+          B.at(1.7, () => B.expose(1.2));
           return 2.0;
         } },
         { name: 'rocks', w: 2, cd: 6, run(B) {

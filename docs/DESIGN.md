@@ -235,6 +235,8 @@ Each boss has three phases of four to six moves (`SCRIPTS` in `bosses.js`), and 
 
 Two tools make that movement readable. `BossBrain.leap(x, z)` marks the landing ring at once, plays a crouch, springs the body along an arc (`bossFx('leap')` sets `airT/airDur/airH` on the actor, and every peer lifts the model over its ground position), and crashes down with `bossFx('land')`. `BossBrain.lane()` marks a lane the boss will tear down and sets it off in segments as the body passes, so a whirl or a slide carries its danger with it. The Executioner and the Hollow King have their own leap poses (crouch, airborne tuck), and the Executioner a whirl (axe at arm's length while `spin` turns the body).
 
+**Exposed.** A committed move leaves an opening: a leap's crash, the end of a whirlwind, the Executioner's charge or Gravemaw's dive marks the boss EXPOSED for 1.2–1.6 s (+30% damage taken, applied before the per-hit cap; `BossBrain.expose`, a gold flare and call via `bossFx('exposed')`). The rhythm the fights reward is dodge, then punish.
+
 The telegraph pool holds 64 zones. At 24, an arena-wide pattern (Avalanche, Rune Prison or Guillotines in a full party) ran it dry, and the pool stole the oldest warning still on the floor, so a zone landed with no mark.
 
 ## Relics past the last one
