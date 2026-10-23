@@ -323,7 +323,7 @@ export class ActorManager {
     const reach = at.kind === 'lunge' ? (at.leap ?? 6) * 0.132 + 0.5 + at.range * 0.6 + a.radius : at.range + a.radius;
     if (d > reach + 2.5) return;
     const gy = g.groundY(a.pos.x, a.pos.z);
-    g.vfx.telegraph({ x: a.pos.x, y: gy, z: a.pos.z }, { shape: 'cone', radius: reach, angle: Math.min(1.5, (at.arc ?? 1.4) * 0.5 + 0.1), rot: a.yaw, dur: at.windup ?? 0.5, color: [1.0, 0.17, 0.05] });
+    g.vfx.telegraph({ x: a.pos.x, y: gy, z: a.pos.z }, { shape: 'cone', radius: reach, angle: Math.min(1.5, (at.arc ?? 1.4) * 0.5 + 0.1), rot: a.yaw, dur: at.windup ?? 0.5, color: g.teleColor(at.el ?? 'physical', 0.7) });
     a._teleE = g.vfx.active[g.vfx.active.length - 1];
     a._tele = a._teleE.mesh;
   }

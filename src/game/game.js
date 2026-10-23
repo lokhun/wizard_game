@@ -972,11 +972,17 @@ export class Game {
     this.addHazard(h);
   }
 
+  // a danger zone's colour by element (k dims it for lesser warnings);
+  // the high-contrast setting draws every danger zone in one bright yellow, whatever its element
+  teleColor(el, k = 1) {
+    if (this.contrastTele) return [1.7, 1.45, 0.15];
+    const c = el === 'enemyGreen' || el === 'poison' ? [1.0, 2.2, 0.2] : el === 'enemyPurple' || el === 'arcane' || el === 'necrotic' ? [1.6, 0.3, 2.6] : el === 'holy' ? [2.4, 1.9, 0.6] : el === 'frost' ? [0.6, 1.6, 2.6] : [2.6, 0.35, 0.1];
+    return [c[0] * 0.55 * k, c[1] * 0.55 * k, c[2] * 0.55 * k];
+  }
+
   addHazard(h) {
     const hz = { ...h, t: 0, done: false, hitLocal: false };
-    const color = h.el === 'enemyGreen' || h.el === 'poison' ? [1.0, 2.2, 0.2] : h.el === 'enemyPurple' || h.el === 'arcane' || h.el === 'necrotic' ? [1.6, 0.3, 2.6] : h.el === 'holy' ? [2.4, 1.9, 0.6] : h.el === 'frost' ? [0.6, 1.6, 2.6] : [2.6, 0.35, 0.1];
-    // (the high-contrast setting draws every danger zone in one bright yellow, whatever its element)
-    hz.color = this.contrastTele ? [1.7, 1.45, 0.15] : color.map((c) => c * 0.55);
+    hz.color = this.teleColor(h.el);
     if (h.vis && h.shape !== 'arc' && h.shape !== 'wave' && h.shape !== 'los') {
       const dur = h.teleDur ?? h.delay;
       const color = hz.color;
@@ -1250,6 +1256,17 @@ export class Game {
       aoe: e.aoe ? { radius: e.aoe, dmg: e.dmg * 0.6, el } : null,
       onExpire: e.pool ? (pr, p) => this.spawnPoolLocal(p, e.pool[0], e.pool[1], e.pool[2], el) : null,
     });
+    // a lob falls from above, often from out of view: mark where it will come down
+    if (e.gravity) {
+      const g = e.gravity;
+      let x = e.x, z = e.z, t = 0;
+      for (let i = 0; i < 3; i++) {
+        const gy = this.groundY(x, z);
+        t = (e.vy + Math.sqrt(Math.max(0, e.vy * e.vy + 2 * g * (e.y - gy)))) / g;
+        x = e.x + e.vx * t; z = e.z + e.vz * t;
+      }
+      if (t > 0.25 && t < 4) this.vfx.telegraph({ x, y: this.groundY(x, z), z }, { shape: 'circle', radius: Math.max(0.9, e.pool?.[0] ?? 0, e.aoe ?? 0), dur: t, color: this.teleColor(el, 0.8) });
+    }
   }
   enemyAreaHit(pos, radius, dmg, el, st) {
     const p = this.player;
