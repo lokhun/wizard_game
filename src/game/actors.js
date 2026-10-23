@@ -52,6 +52,7 @@ export class Actor {
     this.affix = opts.affix ?? null;
     this.affix2 = opts.affix2 ?? null; // (the Exalted pact: a second affix)
     this._combo = null; this._tap = false; // (Nightmare: a chained melee blow, a follow-up shot in flight)
+    this._lbl = ''; this._lblFor = null; this._lblA = null; this._lblB = null; // (the HUD's cached champion label)
     this.pos = new THREE.Vector3(opts.x, opts.y ?? 0, opts.z);
     this.vel = new THREE.Vector3();
     this.kb = new THREE.Vector3();

@@ -11,6 +11,7 @@ import { KEYS as BINDS, REBINDABLE, keyOf, keyLabel, applyBindings } from '../co
 
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 // the key shown on a spell slot follows the player's bindings
+const capAffix = (k) => (k ? k[0].toUpperCase() + k.slice(1) + ' ' : '');
 const slotKey = (s) => (s === 'primary' ? 'LMB' : s === 'secondary' ? 'RMB' : keyOf(s));
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -717,9 +718,9 @@ export class UI {
       g.fillRect(s.x - w / 2, s.y, w * Math.max(0, a.hp / a.maxHp), hgt);
       if (a.shieldHp > 0) { g.fillStyle = '#ffe080'; g.fillRect(s.x - w / 2, s.y - 3, w * Math.min(1, a.shieldHp / a.maxHp), 2); }
       if (a.elite) {
-        const cap = (k) => (k ? k[0].toUpperCase() + k.slice(1) + ' ' : '');
-        const label = cap(a.affix) + cap(a.affix2) + a.def.name;
-        const b = this._textBitmap(label, '600 11px Cinzel, serif', '#ffb050', { lw: 0 });
+        // (built once per affix set, not every frame; a champion's name comes after spawn)
+        if (a._lblFor !== a.def || a._lblA !== a.affix || a._lblB !== a.affix2) { a._lblFor = a.def; a._lblA = a.affix; a._lblB = a.affix2; a._lbl = capAffix(a.affix) + capAffix(a.affix2) + a.def.name; }
+        const b = this._textBitmap(a._lbl, '600 11px Cinzel, serif', '#ffb050', { lw: 0 });
         const lw = b.w / 2 + 2;
         this._blitText(g, b, Math.max(lw, Math.min(innerWidth - lw, s.x)), s.y - 9);
       }
