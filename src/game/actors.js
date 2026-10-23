@@ -172,7 +172,7 @@ function bodyOf(type) {
 const CORPSE_LINGER = 7;
 const CORPSE_CAP = 16;
 const RANGED_KINDS = new Set(['shoot', 'lob', 'circle']);
-const LOS_KINDS = new Set(['lunge', 'charge', 'circle', 'shoot', 'lob']); // _canUse reads los for these
+const LOS_KINDS = new Set(['lunge', 'charge', 'leap', 'circle', 'shoot', 'lob']); // _canUse reads los for these
 
 export class ActorManager {
   constructor(game) {
@@ -1050,7 +1050,8 @@ export class ActorManager {
           if (Math.random() < 0.5) g.vfx.smoke(_v.set(a.pos.x, a.pos.y + 0.3, a.pos.z), { count: 1, size: 0.6, color: [0.3, 0.25, 0.2], alpha: 0.4 });
         }
       }
-      if (a.stateT > 0.35) this._setState(a, 'recover', 'idle');
+      // (a charge runs its whole marked lane and a leap lands before the foe recovers)
+      if (a.stateT > 0.35 && !(a.leapT > 0)) this._setState(a, 'recover', 'idle');
       return out;
     }
     if (a.state === 'recover') {
@@ -1156,6 +1157,7 @@ export class ActorManager {
     switch (at.kind) {
       case 'melee': return reach <= at.range - 0.3;
       case 'lunge': return reach <= at.range && reach >= (at.minRange ?? 0) && los;
+      case 'leap': return dist <= at.range && dist >= (at.minRange ?? 6) && los;
       case 'charge': return dist < at.len * 0.9 && dist > 3 && los;
       case 'nova': return reach < at.radius * 0.7;
       case 'circle': return los && dist < 22 && (at.ahead ? reach < at.ahead + at.radius * 0.5 : true);
@@ -1193,6 +1195,13 @@ export class ActorManager {
         if (i > 0) { cx += rand(-4, 4); cz += rand(-4, 4); }
         g.broadcastHazard({ shape: 'circle', x: cx, y: g.groundY(cx, cz), z: cz, r: at.radius, delay: at.windup, dmg, el: at.el ?? 'enemy', st: at.st, kb: 6, vis: 1, src: a.id, mv: at.id, fx: at.el ?? 'enemy' });
       }
+    } else if (at.kind === 'leap') {
+      // the landing ring is marked at once, where the target stood (clamped to open floor)
+      const T = at.air ?? 0.8;
+      let lx = tgt.pos.x, lz = tgt.pos.z;
+      if (g.collision.cellBlocked(Math.floor(lx / 2), Math.floor(lz / 2), a.pos.y + 0.5)) { lx = a.pos.x; lz = a.pos.z; }
+      a.atkTarget.x = lx; a.atkTarget.z = lz;
+      g.broadcastHazard({ shape: 'circle', x: lx, y: g.groundY(lx, lz), z: lz, r: at.radius ?? 3, delay: at.windup + T, dmg, el: at.el ?? 'physical', st: at.st, kb: at.kb ?? 12, vis: 1, src: a.id, mv: at.id, fx: 'earth' });
     } else if (at.kind === 'charge') {
       g.broadcastHazard({ shape: 'rect', x: a.pos.x, y: a.pos.y, z: a.pos.z, rot: yaw, len: at.len, w: at.width, delay: at.windup + 0.25, dmg, el: 'physical', kb: 14, vis: 1, src: a.id, mv: at.id, teleDur: at.windup });
     }
@@ -1236,6 +1245,18 @@ export class ActorManager {
         const land = Math.min(dist, leap * 0.6 * 0.22 * (1 / 0.22) * 0.22 + 0.5);
         g.broadcastHazard({ shape: 'arc', x: a.pos.x + fx * land, y: a.pos.y, z: a.pos.z + fz * land, r: at.range * 0.6 + a.radius, rot: a.yaw, angle: at.arc * 0.5, delay: 0.18, dmg, el: at.el ?? 'physical', st: at.st, kb: 4, vis: 0, src: a.id, mv: at.id });
         g.audio?.play('swing', { pos: a.pos, volume: 0.6 });
+        break;
+      }
+      case 'leap': {
+        // springs along an arc to the marked ring; the ring does the damage as it lands
+        const T = at.air ?? 0.8, lx = a.atkTarget.x - a.pos.x, lz = a.atkTarget.z - a.pos.z;
+        a.yaw = Math.atan2(lx, lz);
+        a.leapT = T; a.leapV = { x: lx / T, z: lz / T };
+        a.airT = 0; a.airDur = T; a.airH = at.h ?? 3.5;
+        g.net?.broadcast({ t: 'eair', id: a.id, d: T, h: a.airH });
+        g.audio?.play('dash', { pos: a.pos, volume: 0.7 });
+        g.vfx.smoke(_v.set(a.pos.x, a.pos.y + 0.3, a.pos.z), { count: 8, size: 1.2, color: [0.3, 0.26, 0.22], alpha: 0.5, speed: 3 });
+        g.spells.after(T, () => { if (!a.dead) { g.vfx.addShake(0.25); g.audio?.play('boss_slam', { pos: a.pos, volume: 0.6 }); } });
         break;
       }
       case 'charge':

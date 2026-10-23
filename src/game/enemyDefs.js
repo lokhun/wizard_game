@@ -208,6 +208,8 @@ export const ENEMY_DEFS = {
       // a slow, enormous overhead: the ground cracks in a long line ahead of it
       { id: 'overhead', kind: 'circle', radius: 3.0, ahead: 2.8, windup: 1.25, recover: 1.2, anim: 'overhead', el: 'physical', st: { stun: 0.6 }, dmgMult: 1.4 },
       { id: 'sweep', kind: 'melee', range: 3.6, arc: 2.4, windup: 0.85, recover: 0.9, anim: 'sweep', kb: 16, cd: 3 },
+      // too slow to chase: it leaps on a wizard who keeps away, and lands where they stood
+      { id: 'leap', kind: 'leap', range: 15, minRange: 6.5, radius: 3.2, air: 0.85, h: 4, windup: 0.9, recover: 1.1, anim: 'overhead', el: 'physical', kb: 14, cd: 9, dmgMult: 1.2 },
     ],
     armor: 0.25,
   },
