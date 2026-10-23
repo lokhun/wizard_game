@@ -171,6 +171,9 @@ The target pace is quicker than Dark and Darker, nowhere near a boomer shooter, 
 - **Reactions** are resolved on the attacker's machine, using the target's replicated status flags. The host then applies the numbers.
 - **Enemy attacks become "hazards"** that are broadcast to every peer. Each player's own machine decides whether they were hit, so dodging is always judged on what that player actually saw.
 
+## No softlocks
+A locked room must always open. The director's watchdog (`Director._encounter`) counts progress as any foe falling or losing health: after 20 s with none, every foe the fight still counts is pulled to the party wherever it is (wedged in a wall, fallen out of the level, wandered into another room); after 65 s with none, what remains is banished and the doors open. A boss whose spawn failed is called again once. In co-op the host re-sends which room is shut and which are cleared every 2 s (`locks`), so a peer that missed a door opening never stays locked in. A wizard drawn into a fight appears just inside the door nearest them, not in the middle of the room.
+
 ## Networking
 - **Topology:** WebRTC through PeerJS. The host is authoritative for AI, room state, drops and actor HP.
 - **Clients** own their own movement and health. Hit detection for a player's spells runs on that player's machine.

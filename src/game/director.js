@@ -135,6 +135,14 @@ export class Director {
     const g = this.g;
     const L = this.level;
     if (!L) return;
+    // every 2 s the party hears which room is shut and which are cleared: a peer that
+    // missed a door opening is never left locked in an empty room
+    if (g.net && (this._lockSyncT = (this._lockSyncT ?? 0) + dt) > 2) {
+      this._lockSyncT = 0;
+      const cl = [];
+      for (const r of L.rooms) if (r.cleared) cl.push(r.id);
+      g.net.broadcast({ t: 'locks', f: g.floorIndex, ab: g.abyss ?? 0, on: this.active ? this.active.room.id : -1, cl });
+    }
     // sentry squads appear (idle) as the party approaches their room (never mid-fight)
     if (!this.active) for (const room of L.rooms) {
       if (!room.sentries || room.sentriesPlaced || room.cleared) continue;
@@ -185,7 +193,8 @@ export class Director {
     // pull stragglers into the room
     for (const p of g.allPlayers()) {
       if (g.level.roomAt(p.pos.x, p.pos.z) === room) continue;
-      g.requestTeleport(p.id, room.cx + (Math.random() - 0.5) * 3, room.cz + (Math.random() - 0.5) * 3);
+      const e = this._entryPoint(room, p.pos);
+      g.requestTeleport(p.id, e.x, e.z);
     }
     if (room.type === ROOM.BOSS) this._startBoss(room);
     else if (room.sentriesPlaced) {
@@ -355,16 +364,16 @@ export class Director {
       const out = g.level.roomAt(p.pos.x, p.pos.z) !== R;
       const k = 'out_' + p.id;
       A[k] = out ? (A[k] ?? 0) + dt : 0;
-      if (A[k] > 1.5) { A[k] = 0; g.requestTeleport(p.id, R.cx + (Math.random() - 0.5) * 3, R.cz + (Math.random() - 0.5) * 3); }
+      if (A[k] > 1.5) { A[k] = 0; const e = this._entryPoint(R, p.pos); g.requestTeleport(p.id, e.x, e.z); }
     }
-    let alive = 0;
+    let alive = 0, hp = 0;
     for (const id of A.spawned) {
       const a = g.actors.byId.get(id);
-      if (a && (!a.dead || a.collapsed)) alive++;
+      if (a && (!a.dead || a.collapsed)) { alive++; hp += a.hp; }
     }
     // also count other hostiles that belong to this fight (summons etc.), but never the
     // sleeping or leashed sentries of other rooms: they would hold these doors shut forever
-    for (const a of g.actors.list) if (fightsHere(a, A.room) && !A.spawned.has(a.id)) alive++;
+    for (const a of g.actors.list) if (fightsHere(a, A.room) && !A.spawned.has(a.id)) { alive++; hp += a.hp; }
     const wave = A.waves[A.waveIdx];
     if (!A.boss && wave && A.waveIdx < A.waves.length - 1) {
       // next wave when the current one is mostly dead, or after a long time
@@ -373,24 +382,69 @@ export class Director {
       if ((alive <= Math.max(1, Math.floor(wave.length * frac)) && A.waveT > 2.5) || A.waveT > 40) this._nextWave();
       return;
     }
-    if (A.boss && !A.bossId) return;
-    // a fight that stalls (no foe has fallen for 35 s and only a few remain) pulls its
-    // stragglers in: a foe wedged behind cover or out of reach must never hold the doors shut
-    if (alive !== A.lastAlive) { A.lastAlive = alive; A.progT = A.t; }
-    if (!A.boss && alive > 0 && alive <= 3 && A.t - (A.progT ?? 0) > 35) { A.progT = A.t; this._pullStragglers(A); }
+    if (A.boss && !A.bossId) {
+      // (a boss that never appeared - its spawn failed - is called again once)
+      if (A.t > 10 && !A.bossRetry) { A.bossRetry = true; this._startBoss(R); }
+      return;
+    }
+    // The softlock watchdog: progress is any foe falling or losing health. A fight with
+    // none for 20 s pulls every foe it still counts to the party, wherever it is (wedged
+    // in a wall, fallen out of the level, wandered off, invisible); with none for 45 s
+    // more, what remains is banished and the doors open. Nothing may hold them shut.
+    if (alive !== A.lastAlive || hp < (A.lastHp ?? Infinity) - 0.5) A.progT = A.t;
+    A.lastAlive = alive; A.lastHp = hp;
+    const stall = A.t - (A.progT ?? 0);
+    if (alive > 0 && stall > 20 && A.t - (A.pullT ?? -99) > 20) { A.pullT = A.t; this._pullStragglers(A); }
+    if (alive > 0 && !A.boss && stall > 65) { A.progT = A.t; this._banish(A); }
     if (alive === 0 && A.t > 2) {
       A.clearT += dt;
       if (A.clearT > 0.6) this.clearRoom();
     }
   }
 
+  // every foe the fight counts, its own and the strays that join it
+  _counted(A) {
+    const g = this.g, out = [];
+    for (const id of A.spawned) { const a = g.actors.byId.get(id); if (a && (!a.dead || a.collapsed)) out.push(a); }
+    for (const a of g.actors.list) if (fightsHere(a, A.room) && !A.spawned.has(a.id)) out.push(a);
+    return out;
+  }
+
+  // what's left of a fight that can't be finished: gone in a puff of smoke, loot and all
+  _banish(A) {
+    const g = this.g;
+    for (const a of this._counted(A)) {
+      if (a.boss) continue;
+      g.actors.blinkFx(a.pos);
+      g.net?.broadcast({ t: 'blinkfx', x: a.pos.x, y: a.pos.y, z: a.pos.z });
+      a.reassembled = true; a.collapsed = false;
+      a.hp = 0;
+      g.actors.kill(a, 0, 'holy');
+    }
+  }
+
+  // where a wizard drawn into a fight appears: just inside the door nearest them
+  _entryPoint(room, from) {
+    const L = this.level, col = this.g.collision;
+    const doors = room.doors.map((d) => L.doors[d]).sort((a, b) => Math.hypot(a.x - from.x, a.z - from.z) - Math.hypot(b.x - from.x, b.z - from.z));
+    for (const d of doors) {
+      for (const k of [1.6, 2.2, 2.8, 3.4]) {
+        for (const side of [0, 0.6, -0.6]) {
+          const x = d.x - d.nx * k * T + d.ny * side * T, z = d.z - d.ny * k * T - d.nx * side * T;
+          if (L.roomAt(x, z) === room && !col.pushOut(x, z, 0.5) && !col.cellBlocked(Math.floor(x / T), Math.floor(z / T), this.g.groundY(x, z) + 0.5)) return { x, z };
+        }
+      }
+    }
+    return { x: room.cx + (Math.random() - 0.5) * 3, z: room.cz + (Math.random() - 0.5) * 3 };
+  }
+
   _pullStragglers(A) {
     const g = this.g, room = A.room;
     const ps = g.allPlayers().filter((p) => p.alive && !p.dead && g.level.roomAt(p.pos.x, p.pos.z) === room);
     const c = ps[0]?.pos ?? { x: room.cx, z: room.cz };
-    for (const id of A.spawned) {
-      const a = g.actors.byId.get(id);
-      if (!a || a.dead || a.dormant || a.boss) continue;
+    for (const a of this._counted(A)) {
+      // (a boss keeps its arena: it's only brought back when it has left the room)
+      if (a.dead || a.dormant || (a.boss && g.level.roomAt(a.pos.x, a.pos.z) === room)) continue;
       for (let k = 0; k < 16; k++) {
         const ang = Math.random() * Math.PI * 2, r = 5 + Math.random() * 3;
         const x = c.x + Math.cos(ang) * r, z = c.z + Math.sin(ang) * r;

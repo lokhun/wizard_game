@@ -108,6 +108,19 @@ export function handleGameMessage(game, msg, from) {
       if (msg.clear) { room.cleared = true; game.onRoomCleared(room); }
       break;
     }
+    case 'locks': {
+      // the host's view of the doors (sent every 2 s): open any this peer still holds shut
+      if (game.isHost || game.loadingFloor || msg.f !== game.floorIndex || (msg.ab ?? 0) !== (game.abyss ?? 0)) return;
+      const cl = new Set(msg.cl);
+      for (const room of game.level.rooms) {
+        if (cl.has(room.id) && !room.cleared) {
+          room.cleared = true;
+          if (room._locked) game.setRoomLocked(room.id, false);
+          game.onRoomCleared(room);
+        } else if (room._locked && room.id !== msg.on) game.setRoomLocked(room.id, false);
+      }
+      break;
+    }
     case 'visit': { const room = game.level.rooms[msg.r]; if (room) room.visited = true; break; }
     case 'wave': game.ui?.wave(msg.n, msg.of); break;
     case 'boss': {
