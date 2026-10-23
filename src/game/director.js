@@ -348,6 +348,15 @@ export class Director {
       g.onTrialResult?.(R, false);
     }
     A.waveT += dt;
+    // a wizard who ends up outside the fight (a rewind, a blink, a shove through a
+    // closing door...) is drawn back in after a moment: the doors only open on a clear
+    for (const p of g.allPlayers()) {
+      if (!p.alive || p.dead) continue;
+      const out = g.level.roomAt(p.pos.x, p.pos.z) !== R;
+      const k = 'out_' + p.id;
+      A[k] = out ? (A[k] ?? 0) + dt : 0;
+      if (A[k] > 1.5) { A[k] = 0; g.requestTeleport(p.id, R.cx + (Math.random() - 0.5) * 3, R.cz + (Math.random() - 0.5) * 3); }
+    }
     let alive = 0;
     for (const id of A.spawned) {
       const a = g.actors.byId.get(id);

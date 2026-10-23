@@ -302,8 +302,12 @@ export class LocalPlayer {
 
   rewind(sec) {
     const target = this.game.time - sec;
-    let best = this.history[0];
-    for (const h of this.history) if (Math.abs(h.t - target) < Math.abs(best.t - target)) best = h;
+    // inside a locked chamber, only the moments spent inside it: a rewind must never
+    // carry you back out through the doors that just shut behind you
+    const L = this.game.level, here = L?.roomAt(this.pos.x, this.pos.z);
+    const ok = (h) => !here?._locked || L.roomAt(h.x, h.z) === here;
+    let best = null;
+    for (const h of this.history) if (ok(h) && (!best || Math.abs(h.t - target) < Math.abs(best.t - target))) best = h;
     if (!best) return null;
     this.pos.set(best.x, best.y, best.z);
     this.vel.set(0, 0, 0);
