@@ -113,6 +113,8 @@ export class Game {
     this.hitSoundT = 0;
     // what happened, for whoever listens (run tracking, feats, the run summary: src/meta)
     this.events = new Emitter();
+    this._learned = null; this._dashN = 0; // (once-ever tips: learn())
+    this.events.on('dashJump', () => this.learn('dashjump'));
     // (Nightmare) a chamber you leave untouched earns a Dread Mark: watch what the local player takes per fight
     this.events.on('roomLock', (room, on) => { if (on) { this._fightRoom = room; this._fightHurt = 0; } });
     this.events.on('hurt', (dmg) => { if (this._fightRoom) this._fightHurt += dmg; });
@@ -433,13 +435,26 @@ export class Game {
       `Right Click — ${sp.secondary.name}`,
       `${keyOf('ability1')} — ${sp.ability1.name} · ${keyOf('ability2')} — ${sp.ability2.name}`,
       `${keyOf('dash')} to dash — you are briefly invulnerable`,
-      'Kill an enemy mid-windup to interrupt its attack',
+      'Stagger or kill a foe as it winds up to interrupt its attack',
       'Dash through a blow at the last moment: a perfect dodge',
       `${keyOf('interact')} to interact · ${keyOf('map')} for the map · ${keyOf('ping')} to ping`,
     ];
     this._tipT = 2.5;
     // contextual tips fire when they become relevant
-    this._ctxTips = { sigil: 'Sigils above doorways reveal what lies beyond', ult: `R — ${sp.ultimate.name} is ready`, keg: 'Red powder kegs explode — lure foes close, then strike' };
+    this._ctxTips = { sigil: 'Sigils above doorways reveal what lies beyond', ult: `${keyOf('ultimate')} — ${sp.ultimate.name} is ready`, keg: 'Red powder kegs explode — lure foes close, then strike' };
+  }
+
+  // A once-ever tip for a mechanic a player might not find alone (kept across runs, so a veteran
+  // still hears of one added later): shown the first time it matters; with no text, only marked
+  // as known (the player found it themselves).
+  learn(id, text) {
+    if (this.menuMode) return;
+    let L = this._learned;
+    if (!L) { try { L = new Set(JSON.parse(localStorage.getItem('arcane-ascent-learned') ?? '[]')); } catch { L = new Set(); } this._learned = L; }
+    if (L.has(id)) return;
+    L.add(id);
+    try { localStorage.setItem('arcane-ascent-learned', JSON.stringify([...L])); } catch { /* ignore */ }
+    if (text) this.ui?.toast(text, '#e2c48a');
   }
 
   _updateTips(dt) {
@@ -883,7 +898,7 @@ export class Game {
       if (!H.noNumber) this.ui?.damageNumber(pos, dmg, elShow, res.crit || H.weak, H.tag === 'dot', a.id);
       if (H.tag !== 'dot') {
         this.ui?.hitmarker(res.crit, a.hp - dmg <= 0, H.weak);
-        if (H.weak) { this.events.emit('weakHit'); if (this.time - (this._weakSndT ?? 0) > 0.08) { this._weakSndT = this.time; this.audio?.play('hitmarker', { volume: 0.7 }); } }
+        if (H.weak) { this.events.emit('weakHit'); this.learn('weak', 'Weak point! Aimed hits to the head (the front of a beast) deal +35%'); if (this.time - (this._weakSndT ?? 0) > 0.08) { this._weakSndT = this.time; this.audio?.play('hitmarker', { volume: 0.7 }); } }
         if (this.time - this.hitSoundT > 0.05) {
           this.hitSoundT = this.time;
           this.audio?.play(a.def.hitSound ?? 'enemy_hit', { pos, volume: 0.6 });
@@ -2075,7 +2090,10 @@ export class Game {
     this.ui?.toast(`${r.def.cursed ? 'Cursed relic' : 'Relic'}: ${r.def.name}`, relicColor(r.def));
   }
   onLocalCast(slot) { this.relics?.onCast(slot); }
-  onLocalDash() { this.relics?.onDash(); }
+  onLocalDash() {
+    this.relics?.onDash();
+    if (++this._dashN === 6) this.learn('dashjump', `${keyOf('jump')} during a dash to dash-jump: a long, fast bound`);
+  }
   buy(item, stock) {
     const p = this.player;
     if (item.sold || p.gold < item.price || (item.available && !item.available(p))) { this.audio?.play('ui_error'); return false; }
