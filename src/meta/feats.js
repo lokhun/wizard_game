@@ -25,6 +25,9 @@ export const FEATS = [
   { id: 'gauntlet', group: 0, name: 'The Gauntlet', icon: 'boss', desc: 'Finish a Boss Rush.', on: { end: (r) => r.won && r.rush } },
   { id: 'gauntletFast', group: 0, name: 'Breakneck', icon: 'hourglass', desc: 'Finish a Boss Rush in under 12 minutes.', on: { end: (r) => r.won && r.rush && r.winTime < 12 * 60 } },
   { id: 'fellowship', group: 0, name: 'Fellowship', icon: 'army', desc: 'Win a run in co-op.', on: { end: (r) => r.won && r.coop } },
+  { id: 'convergence', group: 0, name: 'Convergence', icon: 'ult', desc: 'Unleash your ultimate together with an ally\'s (within 3 seconds and 20 m).', on: { converge: () => true } },
+  { id: 'hoardbreaker', group: 0, name: 'Hoard Breaker', icon: 'gold', desc: 'Catch a Hoarder before it escapes.', on: { hoarder: () => true } },
+  { id: 'quartermaster', group: 2, name: 'Quartermaster', icon: 'bomb', desc: 'Use 8 items in one run.', on: { itemUsed: (r, p, n) => n >= 8 } },
   { id: 'lifeline', group: 0, name: 'Lifeline', icon: 'heart', desc: 'Revive a fallen ally.', on: { revive: () => true } },
   // ---------------- mastery (single feats of skill)
   { id: 'untouched', group: 1, name: 'Untouched', icon: 'shield', desc: 'Clear a chamber without taking damage.', on: { roomClear: (r, p, x) => x.type !== 'boss' && x.dmg === 0 } },

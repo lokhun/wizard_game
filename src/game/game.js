@@ -1423,7 +1423,7 @@ export class Game {
   // the Hoarder's comings and goings, called out on every peer
   hoarderNews(kind, a) {
     if (kind === 'spawn') { this.ui?.toast('A Hoarder! Catch it before it escapes', '#ffc040'); this.audio?.play('pickup_gold', { volume: 0.9 }); }
-    else if (kind === 'caught') { this.ui?.banner('HOARD BROKEN', 'Gold for everyone', '#ffc040', 2.5); this.audio?.play('chest_open'); if (a) this.vfx.burst(new THREE.Vector3(a.pos.x, a.pos.y + 0.6, a.pos.z), { count: 50, speed: 7, upward: 2, life: 1.4, size: 0.09, sprite: SPR.SPARK, color: [2.8, 2, 0.6], gravity: 10 }); }
+    else if (kind === 'caught') { this.events.emit('hoarder'); this.ui?.banner('HOARD BROKEN', 'Gold for everyone', '#ffc040', 2.5); this.audio?.play('chest_open'); if (a) this.vfx.burst(new THREE.Vector3(a.pos.x, a.pos.y + 0.6, a.pos.z), { count: 50, speed: 7, upward: 2, life: 1.4, size: 0.09, sprite: SPR.SPARK, color: [2.8, 2, 0.6], gravity: 10 }); }
     else if (kind === 'escape') this.ui?.toast('The Hoarder got away...', '#a08850');
   }
   // ---- consumable items (items.js): one slot, the item key

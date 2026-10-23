@@ -40,6 +40,9 @@ export class RunTracker {
     E.on('abyss', (d) => this.run && this.abyss(d));
     E.on('dread', (n) => this.run && this.fire('dread', n));
     E.on('perfectDodge', () => this.run && this.fire('perfectDodge', ++this.run.dodges));
+    E.on('itemUsed', () => this.run && this.fire('itemUsed', ++this.run.items));
+    E.on('converge', () => this.run && this.fire('converge'));
+    E.on('hoarder', () => this.run && this.fire('hoarder'));
     E.on('end', (won) => this.end(won));
     E.on('abandon', () => this.abandon());
     E.on('net:rsum', (msg) => this.remoteSummary(msg));
@@ -56,7 +59,7 @@ export class RunTracker {
       classId: g.player.classId, name: g.player.name, coop: !g.isSolo, heat: d.heat ?? 0, pacts: { ...(d.pacts ?? {}) }, daily: d.daily ?? null,
       kills: 0, bestiary: {}, bosses: [], reactions: 0, biggest: 0, biggestOn: '', taken: 0, downs: 0, dashes: 0,
       tomesTaken: 0, bestRarity: -1, augments: 0, rooms: [], cur: null, flawlessChain: 0, killer: null, killerType: null,
-      feats: [], maxFloor: 0, won: false, ended: false, abyss: 0, winTime: 0, dodges: 0, nightmare: !!d.nightmare, damnation: !!d.damnation, rush: !!d.rush,
+      feats: [], maxFloor: 0, won: false, ended: false, abyss: 0, winTime: 0, dodges: 0, items: 0, nightmare: !!d.nightmare, damnation: !!d.damnation, rush: !!d.rush,
     };
     this._kt = [];
     this._dash = g.player.dashCharges;
