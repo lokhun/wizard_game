@@ -50,6 +50,8 @@ export const NEW_RELICS = [
   { id: 'afterimage', set: 'arcanum', name: 'Mirror of Echoes', icon: 'blink', desc: 'Dashing leaves an afterimage behind that explodes after 1s for 45 arcane damage.' },
   { id: 'laurel', set: 'arcanum', name: "Victor's Laurel", icon: 'laurel', desc: 'Every chamber you clear permanently grants +2% damage.',
     apply: (s, p) => { s.dmgMult += 0.02 * (p.laurels ?? 0); } },
+  // ---------------- Items (no set)
+  { id: 'satchel', name: 'Bottomless Satchel', icon: 'chest', desc: 'Each item you use has a 35% chance not to be used up.' },
   // ---------------- Cursed
   { id: 'crownthorns', set: 'fang', cursed: true, name: 'Crown of Thorns', icon: 'crown', desc: '+45% damage, but you take 30% more damage.',
     apply: (s) => { s.dmgMult += 0.45; s.armor -= 0.3; } },

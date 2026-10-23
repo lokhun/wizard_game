@@ -1439,7 +1439,10 @@ export class Game {
   useItem() {
     const p = this.player, id = p.item, def = ITEMS[id];
     if (!def || !p.alive || p.downed || p.dead || this.ui?.modalOpen) { if (!def) this.audio?.play('ui_error', { volume: 0.4 }); return; }
-    p.item = null;
+    // (the Bottomless Satchel: a chance it isn't used up, more with each ascension star)
+    const sat = p.relics.find((r) => r.def.id === 'satchel');
+    if (sat && Math.random() < 0.35 * (1 + 0.5 * (sat.stars ?? 0))) { const t = p.eye.add(p.forward().multiplyScalar(2)); this.ui?.floatText(t, 'KEPT', def.color); }
+    else p.item = null;
     const e = p.eye, f = p.forward();
     const at = { x: e.x + f.x * 0.6, y: e.y - 0.25, z: e.z + f.z * 0.6, dx: f.x, dy: f.y + 0.15, dz: f.z };
     def.use(this, p, itemK(this), at);
