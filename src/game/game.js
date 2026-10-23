@@ -235,6 +235,7 @@ export class Game {
     // Nightmare wears its own colours: a blood-dark fog, a dimmer sky, a grade
     // pulled toward red and a heavier vignette, in every realm
     const nm = !!this.difficulty.nightmare && !this.menuMode;
+    this.audio?.setDread?.(nm);
     const fogCol = nm ? new THREE.Color(b.fog.color).lerp(_nmFog, 0.45) : new THREE.Color(b.fog.color);
     const fogDen = b.fog.density * (nm ? 1.12 : 1);
     this.scene.fog = new THREE.FogExp2(fogCol, fogDen);

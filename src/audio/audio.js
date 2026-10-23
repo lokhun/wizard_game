@@ -319,6 +319,14 @@ export class GameAudio {
   }
 
   // ---------------------------------------------------------------- music ---
+  // Nightmare's dread colours the music from the next piece on
+  setDread(on) {
+    on = !!on;
+    if (on === !!this.dread) return;
+    this.dread = on;
+    const s = this._musicState;
+    if (s && this._music) { this._musicState = null; this.setMusic(s); }
+  }
   setMusic(state) {
     if (state !== null && state !== undefined && !GameAudio.MUSIC_STATES.includes(state)) { this._warn('music:' + state); return; }
     state = state || null;

@@ -166,8 +166,14 @@ export const MUSIC = {
 export class MusicPlayer {
   constructor(audio, state, dest) {
     this.a = audio; this.ctx = audio.ctx; this.state = state; this.def = MUSIC[state];
-    this.out = this.ctx.createGain(); this.out.gain.value = 0; this.out.connect(dest);
-    this.spb = 60 / this.def.bpm / 4; // seconds per 16th step
+    this.out = this.ctx.createGain(); this.out.gain.value = 0;
+    // dread (Nightmare): the same music, darker and a breath slower, over a low tritone
+    this.dread = !!audio.dread && state !== 'menu' && state !== 'victory';
+    if (this.dread) {
+      this.dark = this.ctx.createBiquadFilter(); this.dark.type = 'lowpass'; this.dark.frequency.value = 1900; this.dark.Q.value = 0.5;
+      this.out.connect(this.dark); this.dark.connect(dest);
+    } else this.out.connect(dest);
+    this.spb = 60 / this.def.bpm / 4 * (this.dread ? 1.06 : 1); // seconds per 16th step
     this.i = 0; this.next = this.ctx.currentTime + 0.08; this.alive = true; this.held = [];
   }
   voice(t, verb, sustain = false) {
@@ -177,6 +183,7 @@ export class MusicPlayer {
     const g = this.out.gain, now = this.ctx.currentTime;
     g.setValueAtTime(0, now); g.linearRampToValueAtTime(this.def.gain, now + fade);
     if (this.def.setup) this.def.setup(this);
+    if (this.dread) I.drone(this, [32, 20], 0.022, 180); // G# under the D: the devil's interval
   }
   tick(ahead) {
     if (!this.alive) return;
@@ -195,5 +202,5 @@ export class MusicPlayer {
     for (const v of this.held) v.release(fade);
     return now + fade + 0.1; // time after which out can be disconnected
   }
-  dispose() { try { this.out.disconnect(); } catch { /* */ } }
+  dispose() { try { this.out.disconnect(); this.dark?.disconnect(); } catch { /* */ } }
 }
