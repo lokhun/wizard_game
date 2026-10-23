@@ -421,7 +421,7 @@ export class LocalPlayer {
     const dir = aim.point.clone().sub(origin).normalize();
     const ctx = makeCtx(this.game, this, { local: true, slot, origin, dir, aimPoint: aim.point, stats: this.stats });
     // consume resources
-    if (slot === 'ultimate') { this.ult = 0; this._ultPend = 0; }
+    if (slot === 'ultimate') { this.ult = 0; this._ultPend = 0; this.game.noteUlt?.(this.id); }
     else {
       this.chargesLeft[slot]--;
       if (this.cds[slot] <= 0) this.cds[slot] = this._cdOf(slot);

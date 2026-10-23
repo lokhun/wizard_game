@@ -1386,6 +1386,40 @@ export class Game {
       if (d.id > 0) this.net?.broadcastOrSend({ t: 'pick', id: d.id });
     }
   }
+  // Convergence: two wizards' ultimates within 3 s and 20 m of each other erupt together.
+  // Each machine sees both casts (its own, and the teammate's 'cast'), so each fires
+  // its own share: a blast between the two (its damage the local wizard's) and a surge
+  noteUlt(pid) {
+    (this._ults ??= new Map()).set(pid, this.time);
+    const me = this.player;
+    if (this.time < (this._convT ?? 0) || !me.alive || me.downed) return;
+    const myT = this._ults.get(me.id);
+    if (myT === undefined || this.time - myT > 3) return;
+    for (const r of this.remotes.values()) {
+      const t = this._ults.get(r.id);
+      if (t === undefined || this.time - t > 3 || r.dead || r.downed) continue;
+      if (Math.hypot(r.pos.x - me.pos.x, r.pos.z - me.pos.z) > 20) continue;
+      this._convT = this.time + 6;
+      this._converge(r);
+      return;
+    }
+  }
+  _converge(r) {
+    const me = this.player;
+    const mid = new THREE.Vector3((me.pos.x + r.pos.x) / 2, 0, (me.pos.z + r.pos.z) / 2);
+    mid.y = this.groundY(mid.x, mid.z) + 1;
+    const k = 1 + 0.5 * (this.floorIndex + 5 * (this.abyss ?? 0));
+    this.spells.damageArea(mid, 8, { dmg: 55 * k, el: 'arcane', kb: 12, src: me.id });
+    this.vfx.explosion(mid, 'holy', 8, { groundY: mid.y - 1 });
+    this.vfx.ring({ x: mid.x, y: mid.y - 0.9, z: mid.z }, 12, [2.6, 2.1, 0.9], 0.8, 0.22);
+    this.vfx.lightning(new THREE.Vector3(me.pos.x, me.pos.y + 1.2, me.pos.z), new THREE.Vector3(r.pos.x, r.pos.y + 1.2, r.pos.z), { color: [2.4, 2, 1] });
+    this.vfx.addShake(0.6);
+    this.audio?.play('explosion_big', { pos: mid });
+    this.audio?.play('ultimate_ready');
+    me.addBuff('converge', 6, { dmgMult: 0.25 });
+    this.ui?.streak?.('CONVERGENCE', `With ${r.name} · +25% damage`, '#ffd870');
+    this.events.emit('converge');
+  }
   // the Hoarder's comings and goings, called out on every peer
   hoarderNews(kind, a) {
     if (kind === 'spawn') { this.ui?.toast('A Hoarder! Catch it before it escapes', '#ffc040'); this.audio?.play('pickup_gold', { volume: 0.9 }); }
