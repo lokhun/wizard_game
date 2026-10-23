@@ -230,6 +230,8 @@ About half the fight rooms of every realm rise or fall (`elevate` in `levelgen.j
 - **Pit:** a sunken bowl, two steps down.
 - **Plateau:** a 1.2 m table in the middle, sheer but for a ramp on two opposite sides.
 
+**The high ground pays:** a wizard standing 0.6 m or more above a foe (on a plateau, a higher tier, the rim of a pit) hits it 15% harder; a jump doesn't count, and bosses are exempt. The first time it happens a toast says so.
+
 Fights must keep flowing. The outer two rows of a room stay at floor level (doors, clutter, torches), every rise a wizard or foe must climb is a step under `STEP` (0.75 m), and only a plateau's flanks are sheer, which can always be dropped from and walked round. A check over 60 generated floors finds every cell of every elevated room reachable on foot from its doors.
 
 ## Performance rules

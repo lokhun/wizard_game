@@ -38,6 +38,8 @@ const _dir = { x: 0, z: 0 };
 // hitH above the feet. Measured from the model's bounds once per model type (in
 // the pose it spawns in), never smaller than the body, and capped so wings,
 // banners and raised weapons don't count for much.
+// damage from a wizard standing 0.6 m or more above the foe (see damage)
+const HIGH_GROUND = 1.15;
 const HIT_SHAPES = new Map();
 const _hb = new THREE.Box3(), _hb2 = new THREE.Box3();
 function hitShapeOf(type, model, r0, h0) {
@@ -336,6 +338,19 @@ export class ActorManager {
       this.wake(a);
     }
     if (def.armor) dmg *= 1 - def.armor;
+    // the high ground: a wizard striking from a ledge, a plateau or the rim of a pit hits harder
+    if (H.src && !a.boss) {
+      const ps = g.allPlayers();
+      for (let i = 0; i < ps.length; i++) {
+        const pl = ps[i];
+        if (pl.id !== H.src) continue;
+        if (g.groundY(pl.pos.x, pl.pos.z) - a.pos.y >= 0.6) { // (the ground stood on: a jump isn't high ground)
+          dmg *= HIGH_GROUND;
+          if (pl === g.player && !g._highTip) { g._highTip = true; g.ui?.toast('High ground: your blows land 15% harder from above', '#e8d080'); }
+        }
+        break;
+      }
+    }
     if (def.frontShield && H.kbDir) {
       // blocked from the front
       const fx = Math.sin(a.yaw), fz = Math.cos(a.yaw);
