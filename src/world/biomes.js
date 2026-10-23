@@ -29,7 +29,7 @@ export const BIOMES = [
     corridorWidth: 2,
   },
   {
-    id: 'dungeon', rim: 0x9a6a48,
+    id: 'dungeon', rim: 0x9a6a48, rimK: 0.8, // (a strong rim: in its gloom a foe past the wizard's light is otherwise only its eyes)
     name: 'The Oubliette',
     subtitle: 'Prison of the Forgotten',
     wall: 'dungeonWall',
@@ -54,7 +54,7 @@ export const BIOMES = [
     corridorWidth: 2,
   },
   {
-    id: 'courtyard', rim: 0x6a86c0,
+    id: 'courtyard', rim: 0x6a86c0, rimK: 0.55,
     name: 'The Moonlit Bailey',
     subtitle: 'Courtyard of the Fallen Guard',
     wall: 'castleWall',
@@ -79,7 +79,7 @@ export const BIOMES = [
     corridorWidth: 3,
   },
   {
-    id: 'keep', rim: 0x8a6a9a,
+    id: 'keep', rim: 0x8a6a9a, rimK: 0.65,
     name: 'The Hall of Whispers',
     subtitle: 'Keep of the Court Archmage',
     wall: 'plaster',
@@ -103,7 +103,7 @@ export const BIOMES = [
     corridorWidth: 2,
   },
   {
-    id: 'throne', rim: 0x8a60c0,
+    id: 'throne', rim: 0x8a60c0, rimK: 0.75,
     name: 'The Hollow Throne',
     subtitle: 'Seat of the Hollow King',
     wall: 'castleWall',
