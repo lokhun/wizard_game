@@ -978,7 +978,7 @@ export class Game {
         if (!h.hitLocal && p.alive && !p.downed && !p.dead) {
           const d = Math.hypot(p.pos.x - h.x, p.pos.z - h.z);
           const airborne = p.pos.y - this.groundY(p.pos.x, p.pos.z) > 0.45;
-          if (Math.abs(d - r) < 0.7 && !airborne) {
+          if (Math.abs(d - r) < 0.7 && !airborne && this.collision.los(h.x, (h.y ?? 0) + 1.0, h.z, p.pos.x, p.pos.y + 1.0, p.pos.z)) {
             h.hitLocal = true;
             p.takeDamage(h.dmg, h.el, new THREE.Vector3(h.x, 0, h.z), { by: h.src ? this.actors.byId.get(h.src) : null, move: h.mv, cause: h.cause });
             this._knock(p, h.x, h.z, h.kb ?? 6);
@@ -998,6 +998,17 @@ export class Game {
       this._resolveHazard(h);
       this.hazards.splice(i, 1);
     }
+  }
+
+  _hazardReaches(h, to, gy) {
+    let ox = h.x, oz = h.z;
+    if (h.shape === 'rect') {
+      const fx = Math.sin(h.rot), fz = Math.cos(h.rot);
+      const t = Math.max(0, Math.min(h.len, (to.x - h.x) * fx + (to.z - h.z) * fz));
+      ox = h.x + fx * t; oz = h.z + fz * t;
+      if (!this.collision.los(h.x, gy + 1.0, h.z, ox, gy + 1.0, oz)) return false; // (the lane itself runs into the wall)
+    }
+    return this.collision.los(ox, gy + 1.0, oz, to.x, to.y + 1.0, to.z);
   }
 
   _resolveHazard(h) {
@@ -1047,7 +1058,7 @@ export class Game {
           const along = dx * fx + dz * fz, side = Math.abs(dx * fz - dz * fx);
           inside = along >= -0.5 && along <= h.len + 0.5 && side <= h.w / 2 + al.radius;
         }
-        if (inside) this.actors.damage(al, { dmg: h.dmg, el: h.el });
+        if (inside && this._hazardReaches(h, al.pos, gy)) this.actors.damage(al, { dmg: h.dmg, el: h.el });
       }
     }
     // does it hit me?
@@ -1080,6 +1091,9 @@ export class Game {
       }
       default: break;
     }
+    // walls stop blows: a swing, a breath, a blast or a charge lane reaches you only
+    // with a clear line from where it comes (a lane: from its nearest point to you)
+    if (hit && h.shape !== 'los' && !this._hazardReaches(h, p.pos, gy)) hit = false;
     // vertical tolerance (jumping over low swings doesn't count for circles)
     if (hit && h.shape !== 'los' && p.pos.y - (h.y ?? gy) > 2.5) hit = false;
     if (hit) {

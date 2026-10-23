@@ -32,6 +32,50 @@ export const ANIMS = ['idle', 'move', 'windup', 'attack', 'cast', 'stagger', 'de
 const _v = new THREE.Vector3();
 const _dir = { x: 0, z: 0 };
 
+// What spells hit is a capsule fitted to the model, apart from the body radius
+// that walls, doors and crowding use: radius hitR around a segment of half-length
+// hitL along the facing (long bodies: hounds, rats, the wyvern), from hitY0 to
+// hitH above the feet. Measured from the model's bounds once per model type (in
+// the pose it spawns in), never smaller than the body, and capped so wings,
+// banners and raised weapons don't count for much.
+const HIT_SHAPES = new Map();
+const _hb = new THREE.Box3(), _hb2 = new THREE.Box3();
+function hitShapeOf(type, model, r0, h0) {
+  let s = HIT_SHAPES.get(type);
+  if (s) return s;
+  _hb.makeEmpty();
+  const root = model.root;
+  const sc = root.scale.x, px = root.position.x, py = root.position.y, pz = root.position.z, ry = root.rotation.y;
+  root.scale.setScalar(1); root.position.set(0, 0, 0); root.rotation.set(0, 0, 0);
+  root.updateMatrixWorld(true);
+  root.traverse((o) => {
+    if (!o.isMesh || !o.visible || !o.geometry || o.material?.transparent) return;
+    if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+    _hb.union(_hb2.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld));
+  });
+  root.scale.setScalar(sc); root.position.set(px, py, pz); root.rotation.y = ry;
+  root.updateMatrixWorld(true);
+  if (_hb.isEmpty()) s = { r: r0, l: 0, y0: 0, h: h0 };
+  else {
+    const halfX = Math.max(-_hb.min.x, _hb.max.x), halfZ = Math.max(-_hb.min.z, _hb.max.z); // (models face +z)
+    // (an upright body is mostly held weapons fore and aft: keep its capsule close)
+    const tall = h0 > r0 * 3;
+    const r = Math.min(r0 * (tall ? 1.4 : 2), Math.max(r0, halfX * 0.85));
+    const l = Math.max(0, Math.min(r0 * (tall ? 0.6 : 2.5), halfZ * 0.85 - r));
+    s = { r, l, y0: Math.min(0, _hb.min.y), h: Math.max(h0, Math.min(h0 * 1.5, _hb.max.y * 0.95)) };
+  }
+  HIT_SHAPES.set(type, s);
+  return s;
+}
+// the point of a's hit segment nearest (x, z): out.x/out.z
+export function hitPoint(a, x, z, out) {
+  if (!a.hitL) { out.x = a.pos.x; out.z = a.pos.z; return out; }
+  const fx = Math.sin(a.yaw), fz = Math.cos(a.yaw);
+  const t = Math.max(-a.hitL, Math.min(a.hitL, (x - a.pos.x) * fx + (z - a.pos.z) * fz));
+  out.x = a.pos.x + fx * t; out.z = a.pos.z + fz * t;
+  return out;
+}
+
 // a champion's affix, whichever of its (up to two) slots holds it
 export const hasAffix = (a, k) => a.affix === k || a.affix2 === k;
 
@@ -51,6 +95,7 @@ export class Actor {
     this.elite = !!opts.elite || !!this.def.elite;
     this.affix = opts.affix ?? null;
     this.affix2 = opts.affix2 ?? null; // (the Exalted pact: a second affix)
+    this.hitR = 0.5; this.hitL = 0; this.hitY0 = 0; this.hitH = 1.8; // (the hit shape: see hitShapeOf)
     this._combo = null; this._tap = false; // (Nightmare: a chained melee blow, a follow-up shot in flight)
     this._lbl = ''; this._lblFor = null; this._lblA = null; this._lblB = null; // (the HUD's cached champion label)
     this.pos = new THREE.Vector3(opts.x, opts.y ?? 0, opts.z);
@@ -175,6 +220,8 @@ export class ActorManager {
     a.model = getEnemyModel(modelType, g);
     a.radius = (a.model.radius ?? 0.5) * a.scale;
     a.height = (a.model.height ?? 1.8) * a.scale;
+    const hs = hitShapeOf(modelType, a.model, a.radius / a.scale, a.height / a.scale);
+    a.hitR = hs.r * a.scale; a.hitL = hs.l * a.scale; a.hitY0 = hs.y0 * a.scale; a.hitH = hs.h * a.scale;
     a.flying = a.def.flying ?? a.model.flying ?? false;
     a.model.root.scale.setScalar(a.scale);
     a.model.root.position.copy(a.pos);

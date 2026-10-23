@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { hitPoint } from './actors.js';
 import { FX, fxOf, nearFade, clampHDR, orbMaterial } from '../render/vfx.js';
 import { SPR } from '../render/particles.js';
 import { rand } from '../core/rng.js';
@@ -72,6 +73,7 @@ function magmaTexture() {
   return t;
 }
 
+const _hp = { x: 0, z: 0 };
 export class SpellRuntime {
   constructor(game) {
     this.g = game;
@@ -287,10 +289,11 @@ export class SpellRuntime {
     this.g.smashAt?.(pos, radius * 0.8);
     for (const a of this.g.actors.hostiles()) {
       if (exclude && exclude.has(a.id)) continue;
-      const dx = a.pos.x - pos.x, dz = a.pos.z - pos.z;
+      const c = hitPoint(a, pos.x, pos.z, _hp); // (a blast reaches a long body's nearest part)
+      const dx = c.x - pos.x, dz = c.z - pos.z;
       const dy = (a.pos.y + a.height * 0.5) - pos.y;
-      const r = radius + a.radius;
-      if (dx * dx + dz * dz > r * r || Math.abs(dy) > radius + a.height * 0.6) continue;
+      const r = radius + a.hitR;
+      if (dx * dx + dz * dz > r * r || Math.abs(dy) > radius + a.hitH * 0.6) continue;
       const d = Math.sqrt(dx * dx + dz * dz);
       const fall = H.falloff ? Math.max(0.4, 1 - d / r) : 1;
       this.g.hitActor(a, { ...H, dmg: H.dmg * fall, kbDir: d > 0.01 ? [dx / d, dz / d] : [0, 1] }, new THREE.Vector3(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z));
@@ -384,15 +387,17 @@ export class SpellRuntime {
         }
         for (const a of g.actors.hostiles()) {
           if (p.hitIds.has(a.id)) continue;
-          const r = p.radius + a.radius;
-          const ay0 = a.pos.y, ay1 = a.pos.y + a.height;
-          // closest distance between projectile path and actor axis (approx by sampling the axis)
+          const r = p.radius + a.hitR;
+          const ay0 = a.pos.y + a.hitY0, ay1 = a.pos.y + a.hitH;
+          // closest distance between the projectile's path and the actor's hit capsule
+          // (its axis point nearest the projectile, at the projectile's height)
           const midY = Math.max(ay0, Math.min(ay1, p.pos.y));
-          const d2 = segPointDist2(p.prev.x, p.prev.y, p.prev.z, p.pos.x, p.pos.y, p.pos.z, a.pos.x, midY, a.pos.z);
+          const c = hitPoint(a, p.pos.x, p.pos.z, _hp);
+          const d2 = segPointDist2(p.prev.x, p.prev.y, p.prev.z, p.pos.x, p.pos.y, p.pos.z, c.x, midY, c.z);
           if (d2 > r * r) continue;
           if (p.pos.y < ay0 - p.radius - 0.2 || p.pos.y > ay1 + p.radius + 0.2) continue;
           p.hitIds.add(a.id);
-          const hp = new THREE.Vector3(a.pos.x, Math.max(ay0 + 0.3, Math.min(ay1 - 0.2, p.pos.y)), a.pos.z);
+          const hp = new THREE.Vector3(c.x, Math.max(ay0 + 0.3, Math.min(ay1 - 0.2, p.pos.y)), c.z);
           if (p.hit && p.local) {
             const vlen = p.vel.length() || 1;
             g.hitActor(a, { ...p.hit, src: p.owner, kbDir: [p.vel.x / vlen, p.vel.z / vlen] }, hp);
@@ -560,17 +565,23 @@ export class SpellRuntime {
     const out = [];
     for (const a of g.actors.hostiles()) {
       // closest approach of ray to actor axis
-      const ox = a.pos.x - origin.x, oz = a.pos.z - origin.z;
-      const t = ox * dir.x + oz * dir.z;
+      // the ray against the hit capsule: test its axis at the centre and (for long
+      // bodies) both ends and halfway, keep the nearest hit along the ray
       const hl = Math.hypot(dir.x, dir.z) || 1e-6;
-      const tt = t / (hl * hl);
-      if (tt < 0 || tt > wall) continue;
-      const px = origin.x + dir.x * tt, py = origin.y + dir.y * tt, pz = origin.z + dir.z * tt;
-      const dx = a.pos.x - px, dz = a.pos.z - pz;
-      const r = a.radius + radius;
-      if (dx * dx + dz * dz > r * r) continue;
-      if (py < a.pos.y - radius || py > a.pos.y + a.height + radius) continue;
-      out.push({ actor: a, t: tt, point: new THREE.Vector3(px, py, pz) });
+      const fx = Math.sin(a.yaw), fz = Math.cos(a.yaw);
+      const r = a.hitR + radius;
+      let best = Infinity, bp = null;
+      for (let k = a.hitL ? -2 : 0; k <= (a.hitL ? 2 : 0); k++) {
+        const cx = a.pos.x + fx * a.hitL * k / 2, cz = a.pos.z + fz * a.hitL * k / 2;
+        const tt = ((cx - origin.x) * dir.x + (cz - origin.z) * dir.z) / (hl * hl);
+        if (tt < 0 || tt > wall || tt >= best) continue;
+        const px = origin.x + dir.x * tt, py = origin.y + dir.y * tt, pz = origin.z + dir.z * tt;
+        const dx = cx - px, dz = cz - pz;
+        if (dx * dx + dz * dz > r * r) continue;
+        if (py < a.pos.y + a.hitY0 - radius || py > a.pos.y + a.hitH + radius) continue;
+        best = tt; bp = [px, py, pz];
+      }
+      if (bp) out.push({ actor: a, t: best, point: new THREE.Vector3(bp[0], bp[1], bp[2]) });
     }
     out.sort((a, b) => a.t - b.t);
     return { hits: out, wall };
@@ -591,8 +602,9 @@ export class SpellRuntime {
   inRadius(pos, r) {
     const out = [];
     for (const a of this.g.actors.hostiles()) {
-      const dx = a.pos.x - pos.x, dz = a.pos.z - pos.z;
-      const rr = r + a.radius;
+      const c = hitPoint(a, pos.x, pos.z, _hp);
+      const dx = c.x - pos.x, dz = c.z - pos.z;
+      const rr = r + a.hitR;
       if (dx * dx + dz * dz <= rr * rr) out.push(a);
     }
     return out;
@@ -604,10 +616,11 @@ export class SpellRuntime {
     const hl = Math.hypot(dir.x, dir.z) || 1;
     const fx = dir.x / hl, fz = dir.z / hl;
     for (const a of this.g.actors.hostiles()) {
-      const dx = a.pos.x - origin.x, dz = a.pos.z - origin.z;
+      const c = hitPoint(a, origin.x, origin.z, _hp);
+      const dx = c.x - origin.x, dz = c.z - origin.z;
       const d = Math.hypot(dx, dz);
-      if (d - a.radius > range) continue;
-      if (d < a.radius + 0.5) { out.push(a); continue; }
+      if (d - a.hitR > range) continue;
+      if (d < a.hitR + 0.5) { out.push(a); continue; }
       if ((dx * fx + dz * fz) / d < cosA) continue;
       if (!this.g.collision.los(origin.x, origin.y, origin.z, a.pos.x, a.pos.y + a.height * 0.5, a.pos.z)) continue;
       out.push(a);
