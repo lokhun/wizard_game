@@ -6,7 +6,10 @@ import { rand } from '../core/rng.js';
 import { segPointDist2 } from '../core/math.js';
 import { RELICS } from './upgrades.js';
 import { soundEl } from './spells.js';
-import { SETS, setCounts } from './relicDefs.js';
+import { SETS, setCounts, ascendK } from './relicDefs.js';
+
+// the relic behind each proc (its ascension raises the proc's damage)
+const PROC_OF = { smite: 'stormcrown', glyph: 'ashglyph', trail: 'emberstride', kindle: 'kindling', meteor: 'meteorbrand', clap: 'thunderclap', wisp: 'soullantern', bell: 'gravebell', mine: 'rimewake', mineb: 'rimewake', thorns: 'thornheart', volley: 'metronome', fam: 'familiar', sent: 'stillwater', echo: 'afterimage' };
 
 // ---------------------------------------------------------------------------
 // Relic procs. Everything a relic does in a fight is decided here, on the
@@ -34,6 +37,7 @@ const EL_ST = { fire: { burn: [3, 4] }, frost: { chill: 1 }, lightning: { shock:
 
 export class RelicRuntime {
   constructor(game) {
+    this._cur = null;
     this.g = game;
     this.own = new Set();     // the local player's relic ids
     this.sets = {};
@@ -56,7 +60,13 @@ export class RelicRuntime {
   set(k) { return this.sets[k] ?? 0; }
   // proc damage grows a little with the realm (enemies grow ×4.8 by the last);
   // stats.dmgMult, crits and the rest still apply in hitActor
-  pd(x) { return x * (1 + 0.3 * (this.g.floorIndex ?? 0)); }
+  // proc damage: grows with the realm (and keeps growing in the Abyss, where the realms
+  // count again from the first), times the source relic's ascension
+  pd(x, id = this._cur) {
+    const f = (this.g.floorIndex ?? 0) + 5 * (this.g.abyss ?? 0);
+    return x * (1 + 0.3 * f) * this.k(id);
+  }
+  k(id) { if (!id) return 1; const r = this.p.relics.find((x) => x.def.id === id); return ascendK(r?.stars); }
   ready(k, cd) { const t = this.g.time; if ((this.t[k] ?? -1e9) > t) return false; this.t[k] = t + cd; return true; }
   cdLeft(k) { return Math.max(0, (this.t[k] ?? 0) - this.g.time); }
 
@@ -130,7 +140,7 @@ export class RelicRuntime {
       this._emit('imp', { a: pk(pos), e: 'blood', s: 1.4 });
     }
     if (stp?.burn && s.burnAmp) stp = { ...stp, burn: [stp.burn[0], stp.burn[1] * s.burnAmp] };
-    if (proc && this.kindleT > 0 && !stp?.burn) stp = { ...(stp ?? {}), burn: [3, this.pd(5) * (s.burnAmp ?? 1)] };
+    if (proc && this.kindleT > 0 && !stp?.burn) stp = { ...(stp ?? {}), burn: [3, this.pd(5, 'kindling') * (s.burnAmp ?? 1)] };
     if (proc && res.crit && this.set('fang') >= 3) { stp = { ...(stp ?? {}), bleed: [3, this.pd(5)] }; p.heal(1, true); }
     // lightning from a clear sky (Storm Crown, Storm set)
     if (proc && s.smite && Math.random() < s.smite) this._smite(a, pos);
@@ -143,7 +153,7 @@ export class RelicRuntime {
         const np = cen(n);
         this._emit('arcs', { s: [[...pk(pos), ...pk(np)]], e: 'lightning' });
         const arc = (H.arc ?? 0) + 1;
-        g.spells.after(0.04, () => this._hit(n, Math.min(over * 0.8, this.pd(120)), 'lightning', { shock: 2 }, { arc }));
+        g.spells.after(0.04, () => this._hit(n, Math.min(over * 0.8, this.pd(120, 'conductor')), 'lightning', { shock: 2 }, { arc }));
       }
     }
     return stp;
@@ -204,11 +214,11 @@ export class RelicRuntime {
   // Plague Censer: the dead foe's afflictions leap to its neighbours
   _spread(a, at, mask) {
     const st = {}, els = [];
-    if (mask & ST.burn) { st.burn = [3, this.pd(5)]; els.push('fire'); }
-    if (mask & ST.poison) { st.poison = [2, this.pd(3)]; els.push('poison'); }
+    if (mask & ST.burn) { st.burn = [3, this.pd(5, 'plaguecenser')]; els.push('fire'); }
+    if (mask & ST.poison) { st.poison = [2, this.pd(3, 'plaguecenser')]; els.push('poison'); }
     if (mask & (ST.chill | ST.frozen)) { st.chill = mask & ST.frozen ? 3 : 2; els.push('frost'); }
     if (mask & ST.shock) { st.shock = 3; els.push('lightning'); }
-    if (mask & ST.bleed) { st.bleed = [3, this.pd(4)]; els.push('blood'); }
+    if (mask & ST.bleed) { st.bleed = [3, this.pd(4, 'plaguecenser')]; els.push('blood'); }
     if (mask & ST.hex) { st.hex = 3; els.push('shadow'); }
     if (!els.length) return;
     const tg = this.g.spells.inRadius(at, 5).filter((x) => x.id !== a.id).slice(0, 6);
@@ -371,7 +381,12 @@ export class RelicRuntime {
     if (pl) this._play(msg.k, msg, pl, false);
   }
 
+  // (procs read their relic's ascension through pd() while they play)
   _play(k, o, pl, local) {
+    this._cur = PROC_OF[k] ?? null;
+    try { this._play0(k, o, pl, local); } finally { this._cur = null; }
+  }
+  _play0(k, o, pl, local) {
     const g = this.g, vfx = g.vfx, P = vfx.P, au = g.audio;
     const at = o.a?.length === 3 ? uv(o.a) : null;
     switch (k) {
@@ -721,7 +736,7 @@ export class RelicRuntime {
         const c = cen(e);
         g.vfx.lightning(m.position, c, { life: 0.12, branches: 0, width: 0.05 });
         g.vfx.impact(c, 'lightning', 0.5);
-        if (local) this._hit(e, this.pd(12), 'lightning', { shock: 1 });
+        if (local) this._hit(e, this.pd(12, 'stormwheel'), 'lightning', { shock: 1 });
       }
     }
     if (r.zap.size > 40) for (const [id, until] of r.zap) if (until < t) r.zap.delete(id);

@@ -212,6 +212,11 @@ Anything that can hurt you must be seen in time, without looking garish.
 - **Standing in a zone** about to land tints the edges of the view in its colour, pulsing faster as it nears (`uDanger` in the grade pass).
 - **Hostile shots** carry a dark-cored, barbed ring in their colour, so an enemy bolt never looks like a wizard's own magic. A teammate's shots are drawn smaller and dimmer than your own. An enemy shot about to hit you from outside the view marks the screen edge it comes from.
 
+## Relics past the last one
+- **Ascension.** An owned relic can be raised to ★ and ★★: chests (and the merchant) offer it now and then, and fill every empty slot with it once few relics are left to find. Each star multiplies the relic's gift by 1.5 / 2, never its curse: only the stat changes that help are raised (Crown of Thorns' damage, not the damage it makes you take), and its procs hit harder (`RelicRuntime.pd(x, id)`). Relics whose gift is a rule (Phoenix Ash, Sands of the Last Breath, the Gambler's Die...) can't ascend.
+- **Abyssal relics** turn up only past the Hollow King: six great gifts bought dearly (+60% damage and area for taking 25% more; +4% damage per tome held but no healing from kills or lifesteal; +2 projectiles for −25% damage...).
+- Relic procs grow with the realm and keep growing in the Abyss (they used to fall back to the first realm's strength when the realms started again).
+
 ## Performance rules
 - **No shader compiles after load.** A compile is a visible freeze (worst on Windows/ANGLE). Each floor load prewarms everything that can appear: the realm's enemies, bosses and summons, projectile visuals, effect pools, drops, reward pedestal, portal and ground eruptions. It compiles against the scene's HDR target (compiling against the canvas gives different program keys), in parallel on the driver (`KHR_parallel_shader_compile`) behind a loading veil. `scripts/hitch.js` traces frames and reports any program compiled after load.
   - The warm set is kept alive until the next floor: three.js destroys a program when its last material is disposed, so cleaning up the last enemy of a type would otherwise make the next wave recompile.

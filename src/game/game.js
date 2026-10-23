@@ -1839,6 +1839,20 @@ export class Game {
   }
   grantRelic(r, quiet = false) {
     const p = this.player;
+    if (r.ascend) {
+      // raise an owned relic a star
+      const own = p.relics.find((x) => x.def.id === r.ascend);
+      if (!own) return;
+      own.stars = (own.stars ?? 0) + 1;
+      p.recomputeStats();
+      this.relics?.refresh(true);
+      this.events.emit('relic', own);
+      if (quiet) return;
+      this.audio?.play('level_up', { volume: 0.8 });
+      this.vfx.ring(p.pos, 2.6, [2.4, 1.8, 0.6], 0.9, 0.16);
+      this.ui?.toast(`Relic ascended: ${own.def.name} ${'★'.repeat(own.stars)}`, relicColor(own.def));
+      return;
+    }
     p.relics.push(r);
     r.def.onGain?.(p);
     p.recomputeStats();

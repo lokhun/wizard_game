@@ -1,5 +1,5 @@
 import { CLASSES } from './classes.js';
-import { NEW_RELICS, setCounts } from './relicDefs.js';
+import { NEW_RELICS, setCounts, ASCEND_MAX, ascendK, NO_ASCEND } from './relicDefs.js';
 
 // ---------------------------------------------------------------------------
 // Arcane Tomes (per-player upgrades picked 1-of-3 after rooms) and Relics.
@@ -203,7 +203,8 @@ export function rollRarity(rng = Math.random, min = 0, luck = 1) {
 export function rollRelics(player, n = 3, rng = Math.random) {
   const owned = new Set(player.relics.map((r) => r.def.id));
   const sets = setCounts(player.relics);
-  const pool = RELICS.filter((r) => !owned.has(r.id));
+  const abyss = (player.game?.abyss ?? 0) > 0;
+  const pool = RELICS.filter((r) => !owned.has(r.id) && (!r.abyssal || abyss));
   const w = (r) => (r.cursed ? 0.6 : 1) * (sets[r.set] ? 2 : 1);
   const out = [];
   while (out.length < n && pool.length) {
@@ -212,6 +213,16 @@ export function rollRelics(player, n = 3, rng = Math.random) {
     let x = rng() * tot, i = 0;
     for (; i < pool.length - 1; i++) { x -= w(pool[i]); if (x <= 0) break; }
     out.push({ def: pool.splice(i, 1)[0] });
+  }
+  // ascension: one offer now and then, and every empty slot once the pool runs dry
+  const can = player.relics.filter((r) => !r.def.once && !NO_ASCEND.has(r.def.id) && (r.stars ?? 0) < ASCEND_MAX);
+  const want = out.length < n ? n - out.length : rng() < 0.18 ? 1 : 0;
+  for (let k = 0; k < want && can.length; k++) {
+    const r = can.splice(Math.floor(rng() * can.length), 1)[0], st = (r.stars ?? 0) + 1;
+    const d = r.def;
+    const shown = { ...d, name: `${d.name} ${'★'.repeat(st)}`, desc: `Ascend this relic: its gift ×${ascendK(st)}${d.cursed ? ' (its curse unchanged)' : ''}. ${d.desc}` };
+    const pick = { def: shown, ascend: d.id };
+    if (out.length >= n) out[out.length - 1] = pick; else out.push(pick);
   }
   return out;
 }

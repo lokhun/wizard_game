@@ -7,7 +7,7 @@ import { SPR } from '../render/particles.js';
 import { fxOf } from '../render/vfx.js';
 import { rand } from '../core/rng.js';
 import { K_WATER, WATER_Y } from '../world/levelgen.js';
-import { applyRelicSets } from './relicDefs.js';
+import { applyRelicSets, ascendK } from './relicDefs.js';
 
 const WADE_C = [0.16, 0.22, 0.22]; // ripple rings on channel water
 
@@ -37,6 +37,23 @@ const ULT_FLOOR = 20;
 // all lifesteal and on-kill healing together: at most this share of max health a second
 const SUSTAIN_CAP = 0.03;
 const ultRateEff = (r) => 1 + Math.max(0, r - 1) / (1 + 0.6 * Math.max(0, r - 1)) - Math.max(0, 1 - r);
+
+// an ascended relic: apply it, then raise only what it gave (its helpful deltas) by k.
+// Whole-number gifts (dash charges, projectiles, flat health) stay whole.
+const HURTS = new Set(['armor', 'maxHp', 'rateMult', 'dmgMult', 'moveSpeed', 'cdRate', 'ultRate', 'critChance', 'critMult', 'aoeMult']);
+function applyAscended(apply, s, p, k) {
+  const before = {}, vs = { ...s.vs };
+  for (const key in s) if (typeof s[key] === 'number') before[key] = s[key];
+  apply?.(s, p);
+  for (const key in s) {
+    if (typeof s[key] !== 'number') continue;
+    const d = s[key] - (before[key] ?? 0);
+    if (d <= 0 && HURTS.has(key)) continue; // (a curse: lower armor, health, damage...)
+    if (!d) continue;
+    s[key] += Number.isInteger(d) && Number.isInteger(before[key] ?? 0) ? Math.round(d * k) - d : d * (k - 1);
+  }
+  for (const key in s.vs) { const d = s.vs[key] - (vs[key] ?? 0); if (d > 0) s.vs[key] += d * (k - 1); }
+}
 
 export class LocalPlayer {
   constructor(game, { id, name, classId }) {
@@ -119,7 +136,11 @@ export class LocalPlayer {
   recomputeStats() {
     const s = baseStats(this.classId);
     for (const u of this.upgrades) u.def.apply(s, u.mult, this);
-    for (const r of this.relics) r.def.apply?.(s, this);
+    for (const r of this.relics) {
+      if (r.stars) applyAscended(r.def.apply, s, this, ascendK(r.stars));
+      else r.def.apply?.(s, this);
+    }
+    for (const r of this.relics) r.def.after?.(s, this);
     applyRelicSets(s, this);
     for (const b of this.buffs) {
       for (const k in b.mods) {
