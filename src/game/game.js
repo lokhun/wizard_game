@@ -248,7 +248,7 @@ export class Game {
     this.director.setLevel(level);
     const b0 = level.biome;
     // the menu backdrop has no enemies: a run's own floor builds them
-    if (!this.menuMode) preloadEnemies([...new Set([...b0.enemies, ...b0.elites, b0.boss, 'skeleton', 'hound', 'slime', 'slimeling', ...this.encounters.warmTypes(level)].map((t) => ENEMY_DEFS[t]?.model ?? BOSS_DEFS[t]?.model ?? t))], this);
+    if (!this.menuMode) preloadEnemies([...new Set([...b0.enemies, ...this.director.invaders(level), ...b0.elites, b0.boss, 'skeleton', 'hound', 'slime', 'slimeling', ...this.encounters.warmTypes(level)].map((t) => ENEMY_DEFS[t]?.model ?? BOSS_DEFS[t]?.model ?? t))], this);
     // atmosphere
     const b = this.biome;
     // Nightmare wears its own colours: a blood-dark fog, a dimmer sky, a grade
@@ -351,7 +351,7 @@ export class Game {
       const b = level.biome;
       // the menu backdrop only shows the level: models, spells and rewards are a run's
       const menu = this.menuMode;
-      const types = new Set(menu ? [] : [...b.enemies, ...(b.elites ?? []), b.boss, 'skeletonMinion', 'spiritWolf', ...this.encounters.warmTypes(level)]);
+      const types = new Set(menu ? [] : [...b.enemies, ...this.director.invaders(level), ...(b.elites ?? []), b.boss, 'skeletonMinion', 'spiritWolf', ...this.encounters.warmTypes(level)]);
       const models = [...new Set([...types].map((t) => ENEMY_DEFS[t]?.model ?? BOSS_DEFS[t]?.model ?? t))];
       const cam = this.renderer.camera;
       const front = cam.position.clone().add(new THREE.Vector3(0, 0, -3).applyQuaternion(cam.quaternion));

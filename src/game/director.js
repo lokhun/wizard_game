@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { ROOM, T, FLOOR, K_WATER } from '../world/levelgen.js';
 import { ENEMY_DEFS, BOSS_DEFS, FLOOR_HP, FLOOR_DMG, ABYSS_HP, ABYSS_DMG } from './enemyDefs.js';
 import { RNG } from '../core/rng.js';
+import { BIOMES } from '../world/biomes.js';
 
 // ---------------------------------------------------------------------------
 // The encounter director (host). Tracks room progress, locks doors, spawns
@@ -108,6 +109,19 @@ export class Director {
   // commoner and, from depth 2, every one bears two affixes; each depth adds an
   // Abyssal law (pacts.js abyssLaws).
   get depth() { return this.g.abyss ?? 0; }
+  // The Abyss's invaders: from depth 1 a realm's waves also draw on a later realm's
+  // roster (the next at depth 1, two on at depth 2...), half as often at first, so
+  // each loop meets new mixes of foes, not just tougher ones
+  invaders(level = this.level) {
+    const d = this.depth;
+    if (!d || !level) return [];
+    return BIOMES[(level.floorIndex + d) % BIOMES.length].enemies.filter((t) => ENEMY_DEFS[t]);
+  }
+  roster(level = this.level) {
+    const inv = this.invaders(level);
+    if (!inv.length) return level.biome.enemies;
+    return [...level.biome.enemies, ...(this.depth >= 2 ? inv : inv.filter((_, i) => i % 2 === 0))];
+  }
   floorHp(f = this.floor) {
     const d = this.depth;
     return d ? FLOOR_HP[4] * ABYSS_HP ** (5 * d + f - 4) : FLOOR_HP[f];
@@ -214,8 +228,9 @@ export class Director {
     const trial = room.type === ROOM.TRIAL;
     const nWaves = room.type === ROOM.ELITE || trial ? 2 : rng.int(2, 3);
     // the realm's roster grouped by role (duplicates in the roster act as weights)
+    const roster = this.roster();
     const byRole = {};
-    for (const t of b.enemies) if (ENEMY_DEFS[t]) (byRole[roleOf(t)] ??= []).push(t);
+    for (const t of roster) if (ENEMY_DEFS[t]) (byRole[roleOf(t)] ??= []).push(t);
     const usable = Object.keys(SQUADS).filter((k) => SQUADS[k].slots.every(([r]) => byRole[r]?.length));
     const waves = [];
     let last = null;
@@ -255,10 +270,10 @@ export class Director {
         }
         let guard = 0;
         const fillRole = byRole[sq.fill]?.length ? sq.fill : 'line';
-        while (budget > 0 && guard++ < 40) add(rng.pick(byRole[fillRole] ?? b.enemies));
+        while (budget > 0 && guard++ < 40) add(rng.pick(byRole[fillRole] ?? roster));
       } else {
         let guard = 0;
-        while (budget > 0 && guard++ < 50) add(rng.pick(b.enemies));
+        while (budget > 0 && guard++ < 50) add(rng.pick(roster));
       }
       list.squad = squadName;
       waves.push(list);

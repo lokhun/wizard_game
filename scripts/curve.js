@@ -31,6 +31,10 @@
     return { d: bd };
   };
   const rows = [];
+  // damage by source (element, tag, or a summon's), per depth: what a build leans on
+  const src = {};
+  const dm = g.actors.damage.bind(g.actors);
+  g.actors.damage = (a, H) => { const b = a.hp; const r = dm(a, H); const k = 'D' + (g.abyss ?? 0) + ' ' + (g.actors.byId.get(H.src)?.faction === 'ally' ? 'summon' : (H.tag ? H.tag + '/' : '') + (H.el ?? '?')); src[k] = (src[k] ?? 0) + Math.max(0, b - a.hp); return r; };
   const fight = (room, cap) => {
     hurt = 0; const d0 = dmg0();
     p.pos.set(room.cx, g.groundY(room.cx, room.cz), room.cz + (room.type === 'boss' ? 8 : 0));
@@ -78,6 +82,9 @@
   }
   return report();
   function report() {
-    return rows.map((r) => (r.stop ? r.stop : `R${r.r + 1} D${r.d} ${r.type.padEnd(6)} ttk ${String(r.ttk).padStart(5)}s  hurt ${String(r.hurt).padStart(5)} (${String(r.hurtMin).padStart(5)}/min)  dps ${String(r.dps).padStart(6)}  tomes ${r.tomes} relics ${r.relics}${r.capped ? '  CAPPED' : ''}`));
+    const top = {};
+    for (const [k, v] of Object.entries(src)) { const d = k.split(' ')[0]; (top[d] ??= []).push([k.slice(d.length + 1), v]); }
+    const lines = Object.entries(top).map(([d, l]) => { const t = l.reduce((a, x) => a + x[1], 0); return d + ' sources: ' + l.sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => k + ' ' + Math.round(v / t * 100) + '%').join(', '); });
+    return [...lines, 'relics: ' + p.relics.map((r) => r.def.id + (r.stars ? '*' + r.stars : '')).join(' '), 'stats: dmg ' + p.stats.dmgMult.toFixed(2) + ' rate ' + (p.stats.rateMult ?? 0).toFixed(2) + ' crit ' + (p.stats.critChance ?? 0).toFixed(2) + '/' + (p.stats.critMult ?? 0).toFixed(2) + ' proj ' + p.stats.extraProj, ...rows.map((r) => (r.stop ? r.stop : `R${r.r + 1} D${r.d} ${r.type.padEnd(6)} ttk ${String(r.ttk).padStart(5)}s  hurt ${String(r.hurt).padStart(5)} (${String(r.hurtMin).padStart(5)}/min)  dps ${String(r.dps).padStart(6)}  tomes ${r.tomes} relics ${r.relics}${r.capped ? '  CAPPED' : ''}`))];
   }
 })();
