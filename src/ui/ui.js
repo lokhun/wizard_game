@@ -647,6 +647,26 @@ export class UI {
   }
 
   // ---------------------------------------------------------------- 2D overlay
+  // an arrow on the screen's edge toward a teammate out of view; a downed one pulses red
+  _edgeMark(g, r) {
+    const cam = this.renderer.camera;
+    const v = (this._ev ??= new THREE.Vector3()).set(r.pos.x, r.pos.y + 1.2, r.pos.z).applyMatrix4(cam.matrixWorldInverse);
+    let dx = v.x, dy = -v.y;
+    if (Math.abs(dx) + Math.abs(dy) < 1e-3) dy = 1; // right behind: point down
+    const ang = Math.atan2(dy, dx), c = Math.cos(ang), sn = Math.sin(ang);
+    // (the bottom edge keeps clear of the spell bar and the health plate)
+    const W = innerWidth, H = innerHeight, mx = W / 2 - 46, my = sn > 0 ? H / 2 - 140 : H / 2 - 50;
+    const t = Math.min(mx / Math.max(1e-3, Math.abs(c)), my / Math.max(1e-3, Math.abs(sn)));
+    const x = W / 2 + c * t, y = H / 2 + sn * t;
+    const down = r.downed, col = down ? '#ff5050' : hex(r.meta.color2 ?? r.meta.color);
+    g.globalAlpha = down ? 0.8 + 0.2 * Math.sin(performance.now() / 120) : 0.85;
+    g.save(); g.translate(x, y); g.rotate(ang); if (down) g.scale(1.35, 1.35);
+    g.fillStyle = 'rgba(0,0,0,0.6)'; g.beginPath(); g.moveTo(16, 0); g.lineTo(-8, -11); g.lineTo(-3, 0); g.lineTo(-8, 11); g.closePath(); g.fill();
+    g.fillStyle = col; g.beginPath(); g.moveTo(13, 0); g.lineTo(-6, -8); g.lineTo(-2, 0); g.lineTo(-6, 8); g.closePath(); g.fill();
+    g.restore();
+    this._blitText(g, this._textBitmap(down ? r.name + ' — DOWNED' : r.name, '600 12px Cinzel, serif', col, { stroke: 'rgba(0,0,0,0.75)', lw: 3 }), x - c * 34, y - sn * 22);
+    g.globalAlpha = 1;
+  }
   _project(pos) {
     const v = (this._pv ??= new THREE.Vector3()).set(pos.x, pos.y, pos.z).project(this.renderer.camera);
     if (v.z > 1 || v.z < -1) return null;
@@ -764,10 +784,10 @@ export class UI {
       }
       g.globalAlpha = 1;
     }
-    // teammate name tags
+    // teammate name tags (and, for one out of view, a marker at the screen edge pointing to them)
     for (const r of game.remotes.values()) {
       const s = this._project({ x: r.pos.x, y: r.pos.y + 2.25, z: r.pos.z });
-      if (!s) continue;
+      if (!s || s.x < 0 || s.y < 0 || s.x > innerWidth || s.y > innerHeight) { if (!r.dead) this._edgeMark(g, r); continue; }
       this._blitText(g, this._textBitmap(r.name + (r.downed ? ' — DOWNED' : ''), '600 13px Cinzel, serif', r.downed ? '#ff5050' : hex(r.meta.color2 ?? r.meta.color), { stroke: 'rgba(0,0,0,0.7)', lw: 3 }), s.x, s.y - 4);
       g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(s.x - 24, s.y + 5, 48, 4);
       g.fillStyle = '#d03030'; g.fillRect(s.x - 24, s.y + 5, 48 * Math.max(0, r.hp / r.maxHp), 4);
