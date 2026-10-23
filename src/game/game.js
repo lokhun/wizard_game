@@ -49,6 +49,12 @@ const ABYSS_TINT = [
   { fog: 0x2a2618, gain: [1.05, 1.0, 0.86], sat: 0.85, rim: 0xffe0a0 },
 ];
 const PLACE_MUSIC = { shop: 'shop', gambler: 'shop', shrine: 'shrine', altar: 'shrine', treasure: 'vault', secret: 'vault' };
+const STREAKS = [
+  { n: 3, name: 'TRIPLE KILL', gold: 4, ult: 3, color: '#e8d080' },
+  { n: 5, name: 'CARNAGE', gold: 8, ult: 5, color: '#ffb040' },
+  { n: 8, name: 'MASSACRE', gold: 14, ult: 8, color: '#ff6a30' },
+  { n: 12, name: 'ANNIHILATION', gold: 22, ult: 12, color: '#ff3048' },
+];
 const _nmFog = new THREE.Color(0x2a0606);
 const DREAD_MAX = 12;
 export class Game {
@@ -905,6 +911,7 @@ export class Game {
   onLocalKill(a, hexed, burning, mask = a?.deathMask ?? 0) {
     const p = this.player;
     p.onDealtDamage(0, true);
+    this._streakKill(p);
     this.events.emit('kill', a);
     this.relics?.onKill(a, mask);
     if (p.stats.hexKill && (hexed ?? (mask & ST.hex))) {
@@ -919,6 +926,21 @@ export class Game {
       this.spells.damageArea(c, 3, { dmg: 18, el: 'fire', st: { burn: [3, 4] }, src: p.id, noReact: true, tag: 'reaction' });
     }
     if (p.stats.raiseChance && a && Math.random() < p.stats.raiseChance && !a.boss) this.requestSummon('skeletonMinion', a.pos.clone(), 10, p.id);
+  }
+
+  // Carnage: kills landed within 1.6 s of each other chain into a streak, and its
+  // tiers are called out under the crosshair, each paying a little gold and ultimate
+  _streakKill(p) {
+    const t = this.time;
+    this._streakN = t - (this._streakT ?? -9) < 1.6 ? (this._streakN ?? 0) + 1 : 1;
+    this._streakT = t;
+    const tier = STREAKS.find((s) => s.n === this._streakN) ?? (this._streakN > 12 && this._streakN % 4 === 0 ? STREAKS[STREAKS.length - 1] : null);
+    if (!tier) return;
+    const gold = Math.round(tier.gold * (1 + 0.5 * this.floorIndex) * (this.difficulty.goldMult ?? 1));
+    p.gold += gold; this.stats.gold += gold;
+    p.ult = Math.min(100, p.ult + tier.ult);
+    this.ui?.streak(this._streakN > 12 ? `${tier.name} ×${this._streakN}` : tier.name, `+${gold} gold`, tier.color);
+    this.audio?.play(this._streakN >= 8 ? 'level_up' : 'ui_click', { volume: this._streakN >= 8 ? 0.45 : 0.6 });
   }
 
   onDotTick(a, dot) {

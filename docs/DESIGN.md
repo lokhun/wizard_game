@@ -212,6 +212,9 @@ Every realm has its own pair of themes, one for exploring and one for its fights
 - **Boss phases drive the music.** Each phase raises its intensity (`audio.setMusicIntensity`), and parts marked `min: 1` / `min: 2` join in. In the Abyss a boss's theme starts a step harder.
 - `tools/music.html` plays every theme at any intensity. `node scripts/music.mjs` checks each melody's downbeats against its chords and flags augmented or diminished triads; `--render` renders every theme offline and prints its loudness. Explore themes sit near -19 dB RMS, fights near -14, bosses near -11.5.
 
+## Carnage streaks
+Kills landed within 1.6 s of each other chain into a streak (`Game._streakKill`). At 3, 5, 8 and 12 (and every 4th past that) a call pops under the crosshair (Triple Kill, Carnage, Massacre, Annihilation) and pays a little gold (more in later realms) and a sliver of ultimate charge. It rewards pulling a pack together and finishing it fast.
+
 ## Reading danger
 Anything that can hurt you must be seen in time, without looking garish.
 - **Danger zones** (circle, lane, cone) share one look (`TELE_FRAG` in `vfx.js`): a crisp edge of constant width (a hot core line, the zone's colour glowing just inside, a dark halo just outside, so it reads on a bright floor as on a dark one), the floor under it a little darker, and a fill sweeping out from the origin that reaches the edge as the blow lands and flashes in its last quarter.

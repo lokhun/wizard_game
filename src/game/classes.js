@@ -572,7 +572,7 @@ export const CLASSES = {
   stormcaller: {
     hp: 95, speed: 1.06, role: 'Chain AoE', difficulty: 2,
     blurb: 'Lightning arcs between enemies. Wet foes conduct even more devastating chains.',
-    passive: { name: 'Conductor', desc: 'Lightning chains to +1 extra target. Moving builds static: every 6m travelled empowers your next bolt (+50%).' },
+    passive: { name: 'Conductor', desc: 'Lightning chains to +1 extra target. Moving builds static: every 6m travelled empowers your next bolt (+50%). Extra projectiles become extra links in the chain, and piercing makes it lose less with each jump.' },
     stats: { chainBonus: 1 },
     spells: {
       primary: {
@@ -589,14 +589,17 @@ export const CLASSES = {
           ctx.muzzle('lightning');
           const empowered = ctx.consumeStatic?.() ? 1.5 : 1;
           if (hits.length) {
-            const chainN = 2 + (ctx.stats.chainBonus ?? 0);
+            // (extra projectiles, which a ray can't use, become extra links in the chain)
+            const chainN = 2 + (ctx.stats.chainBonus ?? 0) + (ctx.stats.extraProj ?? 0);
+            // (and piercing ones lose less with every jump)
+            const fall = Math.min(0.9, 0.7 + 0.06 * (ctx.stats.pierce ?? 0));
             if (aug(ctx, 'storm_fork')) {
               // augment: the bolt forks at its first target into two separate chains
-              const H = { dmg: 13 * empowered * 0.8, el: 'lightning', st: { shock: 3 } };
-              const seen = ctx.chain(hits[0].actor, end, H, chainN, 7, 0.7);
+              const H = { dmg: 15 * empowered * 0.8, el: 'lightning', st: { shock: 3 } };
+              const seen = ctx.chain(hits[0].actor, end, H, chainN, 7, fall);
               ctx.vfx.burst(end, { element: 'lightning', count: 10, speed: 7, life: 0.25, size: 0.05, stretch: 0.04 });
-              ctx.chain(hits[0].actor, end, H, chainN, 7, 0.7, seen, true);
-            } else ctx.chain(hits[0].actor, end, { dmg: 13 * empowered, el: 'lightning', st: { shock: 3 } }, chainN, 7, 0.7);
+              ctx.chain(hits[0].actor, end, H, chainN, 7, fall, seen, true);
+            } else ctx.chain(hits[0].actor, end, { dmg: 15 * empowered, el: 'lightning', st: { shock: 3 } }, chainN, 7, fall);
           }
         },
       },

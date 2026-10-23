@@ -911,6 +911,16 @@ export class UI {
     el.classList.add('show');
     this.bannerT = dur;
   }
+  // a kill streak's call, just under the crosshair: pops in and fades on its own (one reused element)
+  streak(text, sub, color) {
+    if (!this.h) return;
+    let el = this._streakEl;
+    if (!el) { el = this._streakEl = document.createElement('div'); el.className = 'streak'; el.innerHTML = '<div class="s1"></div><div class="s2"></div>'; this.h.banner.parentElement.appendChild(el); }
+    el.querySelector('.s1').textContent = text;
+    el.querySelector('.s2').textContent = sub;
+    el.style.color = color;
+    el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+  }
   toast(text, color) {
     const host = this.h?.toasts;
     if (!host) { console.log(text); return; }
