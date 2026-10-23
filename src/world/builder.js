@@ -139,8 +139,12 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
       else if (d.dy === 1) { ax = cx0 + T; az = cz0 + T; bx = cx0; bz = cz0 + T; u = -ax; }
       else { ax = cx0; az = cz0; bx = cx0 + T; bz = cz0; u = ax; }
       const n = [-d.n[0], 0, -d.n[2]];
-      trimB.quad([ax, hn, az], [bx, hn, bz], [bx, h0, bz], [ax, h0, az], n,
-        [[u * 0.5, hn * 0.5], [(u + T) * 0.5, hn * 0.5], [(u + T) * 0.5, h0 * 0.5], [u * 0.5, h0 * 0.5]], [0.5, 0.5, 0.9, 0.9]);
+      // a tall face (a plateau's flank, a pit's wall) is built of the realm's masonry,
+      // shaded darker at its foot; a step is a plain stone riser
+      if (h0 - hn > 0.9) wallStrip(B('wall'), ax, az, bx, bz, n, hn, h0, u, 1, 1);
+      // (wound b -> a to face the lower neighbour: the other way round was culled, and steps showed as black gaps)
+      else trimB.quad([bx, hn, bz], [ax, hn, az], [ax, h0, az], [bx, h0, bz], n,
+        [[(u + T) * 0.5, hn * 0.5], [u * 0.5, hn * 0.5], [u * 0.5, h0 * 0.5], [(u + T) * 0.5, h0 * 0.5]], [0.5, 0.5, 0.9, 0.9]);
       // edge lip
       const lipG = worldBox(d.dx !== 0 ? 0.25 : T, 0.12, d.dx !== 0 ? T : 0.25);
       trimB.addGeometry(lipG, new THREE.Matrix4().makeTranslation((ax + bx) / 2 - n[0] * 0.08, h0 - 0.02, (az + bz) / 2 - n[2] * 0.08), 0.9);
