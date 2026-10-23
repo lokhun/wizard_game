@@ -100,6 +100,7 @@ export class Actor {
     this.hitR = 0.5; this.hitL = 0; this.hitY0 = 0; this.hitH = 1.8; // (the hit shape: see hitShapeOf)
     this._combo = null; this._tap = false; // (Nightmare: a chained melee blow, a follow-up shot in flight)
     this._lbl = ''; this._lblFor = null; this._lblA = null; this._lblB = null; // (the HUD's cached champion label)
+    this._tele = null; this._teleE = null; // (the danger arc of a melee wind-up aimed near you: see _windupTell)
     this.pos = new THREE.Vector3(opts.x, opts.y ?? 0, opts.z);
     this.vel = new THREE.Vector3();
     this.kb = new THREE.Vector3();
@@ -299,8 +300,9 @@ export class ActorManager {
     }
   }
 
-  // Melee wind-ups have no ground telegraph, so they get a tell: a glint at the head,
-  // the creature's own voice, and an edge-of-screen marker when it's behind you.
+  // Melee blows are only made at the strike, so the wind-up is the warning: a glint at the head,
+  // the creature's own voice, an edge-of-screen marker when it's behind you, and for real blows
+  // that could reach you, the arc they'll sweep.
   _windupTell(a) {
     if (a.faction !== 'enemy' || a.boss || a.def.range) return;
     const g = this.g;
@@ -313,6 +315,29 @@ export class ActorManager {
     if ((a._tellT ?? 0) < g.time) { a._tellT = g.time + 1.2; g.audio?.play(a.def.sound ?? 'swing', { pos: a.pos, volume: 0.55 }); }
     const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
     if (d < 7 && (fx * dx + fz * dz) / Math.max(d, 0.01) < 0.35) g.ui?.damageDirection(a.pos);
+    // a real blow (not a rat's nip) that could reach you: its arc on the ground, turning with
+    // the swing and filling as it lands, so a hit never comes from nowhere
+    const at = a.attackDef ?? a.attack;
+    if (!at || (at.kind !== 'melee' && at.kind !== 'lunge') || (a.def.cost ?? 1) < 2 || (at.windup ?? 0.5) < 0.3) return;
+    // (a lunge's blow lands where the leap ends: the same reach as the hazard made at the strike)
+    const reach = at.kind === 'lunge' ? (at.leap ?? 6) * 0.132 + 0.5 + at.range * 0.6 + a.radius : at.range + a.radius;
+    if (d > reach + 2.5) return;
+    const gy = g.groundY(a.pos.x, a.pos.z);
+    g.vfx.telegraph({ x: a.pos.x, y: gy, z: a.pos.z }, { shape: 'cone', radius: reach, angle: Math.min(1.5, (at.arc ?? 1.4) * 0.5 + 0.1), rot: a.yaw, dur: at.windup ?? 0.5, color: [1.0, 0.17, 0.05] });
+    a._teleE = g.vfx.active[g.vfx.active.length - 1];
+    a._tele = a._teleE.mesh;
+  }
+  // the wind-up's arc follows the attacker; it fades as soon as the wind-up ends (struck, interrupted, killed)
+  _teleFollow(a) {
+    const e = a._teleE;
+    if (a.anim !== 'windup' || a.dead || !this.g.vfx.active.includes(e) || e.mesh !== a._tele) {
+      // struck: let it flash out as the blow lands; interrupted or killed: gone at once
+      if (this.g.vfx.active.includes(e) && e.mesh === a._tele) e.t = a.anim === 'attack' && !a.dead ? Math.max(e.t, e.life - 0.12) : e.life;
+      a._tele = null; a._teleE = null;
+      return;
+    }
+    a._tele.position.x = a.pos.x; a._tele.position.z = a.pos.z;
+    a._tele.rotation.y = a.yaw + Math.PI;
   }
 
   remove(a) {
@@ -598,6 +623,7 @@ export class ActorManager {
         }
         if (a._laserBeam && (g.time > a._laserEnd || a.anim !== 'windup')) { a._laserBeam.release(0.05); a._laserBeam = null; }
         if (a.anim === 'windup' && a._prevAnim !== 'windup') this._windupTell(a);
+        if (a._tele) this._teleFollow(a);
         a._prevAnim = a.anim;
         const frozen = (a.mask & ST.frozen) !== 0;
         const animDt = frozen ? 0 : dt * (a.mask & ST.slow ? 0.5 : 1);
