@@ -290,6 +290,7 @@ export class UI {
         <div class="row">Mouse sensitivity <input type="range" min="0.2" max="3" step="0.05" id="sSens" value="${settings.sensitivity}"></div>
         <div class="row">Field of view <input type="range" min="65" max="105" step="1" id="sFov" value="${settings.fov}"></div>
         <div class="row">Screen shake <input type="range" min="0" max="1.5" step="0.05" id="sShake" value="${settings.shake}"></div>
+        <div class="row">HUD scale <input type="range" min="0.75" max="1.3" step="0.05" id="sHud" value="${settings.hudScale ?? 1}"></div>
         <div class="row">Reduce flashing <input type="checkbox" id="sCalm" ${settings.calm ? 'checked' : ''}></div>
         <div class="row">High-contrast danger zones <input type="checkbox" id="sTele" ${settings.contrastTele ? 'checked' : ''}></div>
         <div class="row">Graphics quality <select id="sQual"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="ultra">Ultra (AO)</option></select></div>
@@ -301,7 +302,7 @@ export class UI {
       </div>`);
     m.querySelector('#sQual').value = settings.quality;
     const bind = (id, key, num = true) => m.querySelector(id).addEventListener('input', (e) => { settings[key] = e.target.type === 'checkbox' ? e.target.checked : num ? +e.target.value : e.target.value; onChange(settings); });
-    bind('#sMaster', 'master'); bind('#sMusic', 'music'); bind('#sSfx', 'sfx'); bind('#sSens', 'sensitivity'); bind('#sFov', 'fov'); bind('#sShake', 'shake'); bind('#sCalm', 'calm');
+    bind('#sMaster', 'master'); bind('#sMusic', 'music'); bind('#sSfx', 'sfx'); bind('#sSens', 'sensitivity'); bind('#sFov', 'fov'); bind('#sShake', 'shake'); bind('#sCalm', 'calm'); bind('#sHud', 'hudScale');
     bind('#sQual', 'quality', false); bind('#sInv', 'invertY', false); bind('#sTele', 'contrastTele', false); bind('#sFps', 'showFps', false); bind('#sDyn', 'dynamicRes', false);
     m.querySelector('#sQual').addEventListener('change', (e) => { settings.quality = e.target.value; onChange(settings); });
     m.querySelector('#bClose').onclick = () => { this._closeModal(m); onBack?.(); };

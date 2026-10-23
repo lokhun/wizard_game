@@ -226,10 +226,12 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .minimap.big { right: 50%; top: 50%; width: min(80vh, 80vw); height: min(80vh, 80vw); transform: translate(50%, -50%); border-radius: 4px; background: rgba(8,7,6,0.9); box-shadow: 0 0 0 1px var(--bronze-lo), 0 0 40px rgba(0,0,0,0.8); }
 .minimap.big + .mm-frame { display: none; }
 
-.boss-bar { position: absolute; left: 50%; top: 34px; transform: translateX(-50%); width: min(820px, 70vw); text-align: center; }
+/* (as wide as fits between the realm name and the minimap at any HUD scale: the zoom multiplies the width back) */
+.boss-bar { position: absolute; left: 50%; top: 34px; transform: translateX(-50%); width: calc(min(820px * var(--hud-scale, 1), 100vw - 580px * var(--hud-scale, 1)) / var(--hud-scale, 1)); text-align: center; }
 .boss-bar .bname { font-family: 'Cinzel', var(--serif); font-weight: 600; font-size: 26px; color: #f0dcc0; letter-spacing: 0.1em; text-shadow: 0 0 16px rgba(255,80,40,0.5), 0 2px 3px #000; }
 .boss-bar .btitle { font-family: var(--serif); font-size: 11px; color: var(--text-dim); letter-spacing: 0.35em; text-transform: uppercase; margin-bottom: 6px; }
-.boss-bar .bname::before, .boss-bar .bname::after { content: ''; display: inline-block; vertical-align: middle; width: 90px; height: 1px; margin: 0 16px; background: linear-gradient(90deg, transparent, rgba(255,140,90,0.75)); }
+.boss-bar .bname { display: flex; align-items: center; justify-content: center; white-space: nowrap; }
+.boss-bar .bname::before, .boss-bar .bname::after { content: ''; flex: 0 1 90px; min-width: 12px; height: 1px; margin: 0 16px; background: linear-gradient(90deg, transparent, rgba(255,140,90,0.75)); }
 .boss-bar .bname::after { background: linear-gradient(270deg, transparent, rgba(255,140,90,0.75)); }
 .boss-bar .bframe { display: flex; align-items: center; }
 .boss-bar .cap { flex: 0 0 auto; width: 16px; height: 16px; transform: rotate(45deg); background: linear-gradient(135deg, #f0d8a8, #8a6030); box-shadow: 0 0 0 1px #0a0807, 0 0 10px rgba(255,120,60,0.6); position: relative; z-index: 1; }
@@ -246,7 +248,7 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .prompt .progress { width: 220px; height: 5px; background: #222; margin: 8px auto 0; border: 1px solid #000; }
 .prompt .progress i { display: block; height: 100%; background: var(--gold); }
 
-.banner { position: absolute; left: 0; right: 0; top: max(15.5%, 116px); /* clear of the boss bar on short windows */ text-align: center; pointer-events: none; }
+.banner { position: absolute; left: 0; right: 0; top: max(15.5%, calc(116px * var(--hud-scale, 1) + 8px)); /* clear of the boss bar on short windows, at any HUD scale */ text-align: center; pointer-events: none; }
 .banner .b1 { font-family: 'Cinzel', var(--serif); font-weight: 600; font-size: clamp(26px, 3.6vw, 50px); letter-spacing: 0.12em; text-shadow: 0 0 30px currentColor, 0 3px 4px #000; }
 .banner .b2 { font-family: var(--serif); font-size: 14px; color: var(--text); letter-spacing: 0.3em; text-transform: uppercase; margin-top: 6px; text-shadow: 0 2px 3px #000; }
 .banner .line { width: 0; height: 1px; margin: 10px auto; background: linear-gradient(90deg, transparent, currentColor, transparent); transition: width 0.8s ease; }
@@ -409,3 +411,7 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .boss-bar.exposed .bar { box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px #ffd070, 0 0 0 3px #0a0807, 0 0 18px rgba(255,200,90,0.75), inset 0 0 8px #000; }
 .boss-bar.exposed .bar .fill { background: linear-gradient(180deg, #fff0b0 0%, #ffb040 30%, #d06010 70%, #6a2a04 100%); }
 .boss-bar.exposed .bname { color: #ffe0a0; }
+
+/* Settings: HUD scale. Each corner group is zoomed in place (the full-screen layers are not, so
+   centring and the 2D overlay are unaffected) */
+.hp-wrap, .abilities, .gold-box, .minimap, .mm-frame, .boss-bar, .floor-info, .team, .toasts { zoom: var(--hud-scale, 1); }
