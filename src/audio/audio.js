@@ -29,6 +29,7 @@ import { SFX } from './sfx.js';
 import { LOOPS } from './loops.js';
 import { AMBIENCE } from './ambience.js';
 import { MusicPlayer } from './music.js';
+import { THEMES } from './themes.js';
 import { CALIB } from './calib.js';
 
 const LOOKAHEAD = 0.25;   // seconds scheduled ahead by the pump
@@ -328,13 +329,16 @@ export class GameAudio {
     if (s && this._music) { this._musicState = null; this.setMusic(s); }
   }
   setMusic(state) {
-    if (state !== null && state !== undefined && !GameAudio.MUSIC_STATES.includes(state)) { this._warn('music:' + state); return; }
+    // a realm's or boss's own theme ('combat:sewers', 'boss:executioner'), or a shared piece
+    if (state !== null && state !== undefined && !GameAudio.MUSIC_STATES.includes(state) && !THEMES[state]) { this._warn('music:' + state); return; }
     state = state || null;
     if (state === this._musicState) return;
     this._musicState = state;
+    if (state && !state.startsWith('boss')) this._musicIntensity = 0;
     if (!this.ctx) return;
-    const fadeOut = state === 'boss' || state === 'combat' || state === 'victory' || state === 'defeat' ? 1.2 : 2;
-    const fadeIn = state === 'combat' || state === 'boss' ? 1.0 : state === 'victory' || state === 'defeat' ? 0.05 : 2;
+    const base = state ? state.split(':')[0] : null;
+    const fadeOut = base === 'boss' || base === 'combat' || base === 'victory' || base === 'defeat' ? 1.2 : 2;
+    const fadeIn = base === 'combat' || base === 'boss' ? 1.0 : base === 'victory' || base === 'defeat' ? 0.05 : 2;
     if (this._music) {
       const old = this._music, end = old.stop(fadeOut);
       this._dispose.push({ t: end + 8, fn: () => old.dispose() });
@@ -344,6 +348,12 @@ export class GameAudio {
     const m = new MusicPlayer(this, state, this._musicBus);
     try { m.start(fadeIn); m.tick(LOOKAHEAD); } catch (e) { console.warn('[audio] music start', e); }
     this._music = m;
+  }
+
+  // how hard the music drives (a boss's phases: 0, 1, 2): later sections add layers
+  setMusicIntensity(n) {
+    this._musicIntensity = n;
+    if (this._music) this._music.intensity = n;
   }
 
   // -------------------------------------------------------------- mixing ---

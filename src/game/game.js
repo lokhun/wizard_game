@@ -9,6 +9,7 @@ import { PACTS, PACT_BY_ID, difficultyFor } from '../meta/pacts.js';
 import { buildLevel } from '../world/builder.js';
 import { Collision } from '../world/collision.js';
 import { BIOMES } from '../world/biomes.js';
+import { themeFor } from '../audio/themes.js';
 import { SpellRuntime, soundEl } from './spells.js';
 import { ActorManager, typeIndex, hasAffix } from './actors.js';
 import { Director } from './director.js';
@@ -294,7 +295,7 @@ export class Game {
     this._buildDoorSigns();
     setEnemyRim(b.rim ?? 0x806a60, b.rimK ?? 0.45);
     this.audio?.setAmbience(b.id);
-    this.audio?.setMusic(index === 0 ? 'explore' : 'explore');
+    this.audio?.setMusic(this._mus('explore'));
     this.audio?.play('floor_enter');
     this.ui?.onFloor(this, b, index);
     if (index === 0 && !this.menuMode) this._tutorialTips();
@@ -1329,7 +1330,7 @@ export class Game {
     if (locked) this.critters?.startle(new THREE.Vector3(room.cx, 1, room.cz), Math.max(room.w, room.h) * T);
     this.relics?.onRoomLock(room, locked);
     if (locked) {
-      this.audio?.setMusic(room.type === ROOM.BOSS ? 'boss' : 'combat');
+      this.audio?.setMusic(this._mus(room.type === ROOM.BOSS ? 'boss' : 'combat'));
       if (room.type !== ROOM.BOSS && this.encounters.lockBanner(room)) { /* mimic, champion or modifier */ }
       else if (room.type === ROOM.TRIAL) { this.ui?.banner('TRIAL OF SPEED', `Slay them all within ${room.trialLimit ?? 45} seconds`, '#ffcf60'); this.audio?.play('boss_roar', { volume: 0.4 }); }
       else if (room.type === ROOM.ELITE) this.ui?.banner('ELITE CHAMBER', 'A champion bars the way', '#ff9040');
@@ -1345,7 +1346,7 @@ export class Game {
     this._dreadCheck(room);
     this.events.emit('roomClear', room);
     this.relics?.onRoomClear(room);
-    this.audio?.setMusic('explore');
+    this.audio?.setMusic(this._mus('explore'));
     this.audio?.play('room_clear');
     // the last kill lands heavy: a breath of slow motion and a warm wash of light
     if (room.type !== ROOM.BOSS) {
@@ -1472,7 +1473,7 @@ export class Game {
     this.ui?.letterbox(true);
     this.ui?.bossIntro(a);
     this.audio?.play('boss_intro');
-    this.audio?.setMusic('boss');
+    this.audio?.setMusic(this._mus('boss'));
   }
 
   // a cast everyone should notice: an ultimate flares the caster's rune circle on the ground
@@ -1501,7 +1502,7 @@ export class Game {
     const room = this.level.bossRoom;
     this.events.emit('bossDown');
     this.audio?.play('victory_sting');
-    this.audio?.setMusic('explore');
+    this.audio?.setMusic(this._mus('explore'));
     this.vfx.addShake(1);
     // slow-mo moment
     this.vfx.hitstop = 0.6;
@@ -1830,8 +1831,14 @@ export class Game {
   // ======================================================================
   // visual effects requested by the boss scripts (all peers)
   // ======================================================================
+  // the piece for a moment of play: the realm's own explore / combat theme
+  // (the Abyss has its own), the floor boss's own theme
+  _mus(state) { return themeFor(state, this.abyss ? 'abyss' : this.biome?.id, this.biome?.boss); }
+
   bossFx(kind, a, extra) {
     if (!a) return;
+    // each phase drives the boss's theme harder
+    if (kind === 'phase') this.audio?.setMusicIntensity?.(Math.min(2, extra?.n ?? 1));
     // the boss model reacts to its own moments (phase change, submerge, enrage...): visual only
     a.model?.bossFx?.(kind, extra ?? {});
     switch (kind) {
