@@ -63,6 +63,9 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 /* ---------- main menu */
 #menu .menu-col { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 8vh; }
 #menu h1.title { font-size: clamp(42px, 7vw, 96px); margin: 0; line-height: 1; }
+#menu .menu-col > .btn { width: 300px; }
+/* an ornament under the tagline: a diamond on a fading rule */
+#menu .tagline::after { content: ''; display: block; width: 360px; height: 9px; margin: 18px auto 0; background: linear-gradient(45deg, transparent 40%, var(--bronze) 40% 60%, transparent 60%) 50% 50% / 9px 9px no-repeat, linear-gradient(90deg, transparent, rgba(168,132,76,0.7), transparent) 50% 50% / 100% 1px no-repeat; }
 #menu .tagline { font-family: var(--serif); color: var(--text-dim); letter-spacing: 0.4em; font-size: 14px; margin: 10px 0 34px; text-transform: uppercase; }
 #menu .stats-line { margin-top: 26px; color: var(--text-dim); font-size: 14px; letter-spacing: 0.1em; }
 #menu .credit { position: absolute; bottom: 14px; right: 18px; color: #5a5048; font-size: 12px; letter-spacing: 0.1em; }
