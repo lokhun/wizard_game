@@ -358,6 +358,7 @@ export class Director {
       g.onTrialResult?.(R, false);
     }
     A.waveT += dt;
+    if (R.vents) this._vents(A, dt);
     // a wizard who ends up outside the fight (a rewind, a blink, a shove through a
     // closing door...) is drawn back in after a moment: the doors only open on a clear
     for (const p of g.allPlayers()) {
@@ -400,6 +401,24 @@ export class Director {
     if (alive === 0 && A.t > 2) {
       A.clearT += dt;
       if (A.clearT > 0.6) this.clearRoom();
+    }
+  }
+
+  // a fight room's trap vents erupt by turns (half at a time, every 4.5 s, after a
+  // moment's grace): a telegraphed burst that hurts wizards and foes alike
+  _vents(A, dt) {
+    if (A.t < 4) return;
+    A.ventT = (A.ventT ?? 0) - dt;
+    if (A.ventT > 0) return;
+    A.ventT = 4.5;
+    const g = this.g, V = A.room.vents, b = this.level.biome.id;
+    const el = b === 'sewers' ? 'enemyGreen' : b === 'keep' ? 'enemyPurple' : 'enemyFire';
+    A.ventK = (A.ventK ?? 0) + 1;
+    for (let i = 0; i < V.length; i++) {
+      if (V.length > 1 && (i + A.ventK) % 2) continue;
+      const v = V[i];
+      g.broadcastHazard({ shape: 'circle', x: v.x, y: g.groundY(v.x, v.z), z: v.z, r: 1.8, delay: 1.3, el, fx: el, vis: 1,
+        dmg: 12 * this.dmgScale(), trap: Math.round(30 * this.hpScale()), cause: 'a trap vent' });
     }
   }
 

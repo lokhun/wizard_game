@@ -697,6 +697,19 @@ function decorateRoom(level, room, rng) {
   // ---------------- battlefields: terraces, sunken pits and plateaus (see elevate)
   if ((room.type === ROOM.COMBAT || room.type === ROOM.ELITE || room.type === ROOM.TRIAL) && ['plain', 'cells', 'colonnade', 'hall', 'deadTree', 'statue'].includes(room.layout) && room.dais === undefined && w >= 10 && h >= 10 && rng.chance(0.55)) elevate(level, room, rng);
 
+  // ---------------- trap vents: grates that erupt on a rhythm while the doors are shut,
+  // burning foes as readily as wizards (Director._vents fires them)
+  if ((room.type === ROOM.COMBAT || room.type === ROOM.TRIAL) && w >= 10 && h >= 10 && rng.chance(0.3)) {
+    room.vents = [];
+    for (let k = 0, n = rng.int(2, 4); k < 30 && room.vents.length < n; k++) {
+      const s = randFloorSpot(2);
+      if (!s || room.vents.some((v) => Math.hypot(v.x - s[0], v.z - s[1]) < 5)) continue;
+      room.vents.push({ x: s[0], z: s[1] });
+      P('grate', s[0], s[1], { rot: rng.int(0, 3) * Math.PI / 2 });
+    }
+    if (!room.vents.length) room.vents = null;
+  }
+
   // ---------------- mid-room cover for realms whose rooms are otherwise open floor,
   // so ranged foes can be broken line of sight with and melee can be kited around
   if ((room.type === ROOM.COMBAT || room.type === ROOM.ELITE || room.type === ROOM.TRIAL) && w >= 10 && h >= 10 && (b.id === 'sewers' || b.id === 'throne')) {

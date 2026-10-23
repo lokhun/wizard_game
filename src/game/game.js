@@ -1136,6 +1136,14 @@ export class Game {
       this.vfx.addShake(0.8);
       this.audio?.play('explosion_big');
     }
+    // a trap's burst burns the foes standing in it too (host)
+    if (this.isHost && h.trap && h.shape === 'circle') {
+      for (const a of [...this.actors.hostiles()]) {
+        const dx = a.pos.x - h.x, dz = a.pos.z - h.z, d = Math.hypot(dx, dz) || 1;
+        if (a.dormant || d > h.r + a.radius || a.pos.y > gy + 2) continue;
+        this.actors.damage(a, { dmg: h.trap, el: h.el === 'enemyGreen' ? 'poison' : h.el === 'enemyPurple' ? 'arcane' : 'fire', kb: 6, kbDir: [dx / d, dz / d] });
+      }
+    }
     // host: enemy attacks also hit allied summons
     if (this.isHost && h.shape !== 'los' && h.shape !== 'wave') {
       for (const al of this.actors.allies()) {
