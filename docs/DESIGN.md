@@ -225,6 +225,15 @@ Anything that can hurt you must be seen in time, without looking garish.
 - **Standing in a zone** about to land tints the edges of the view in its colour, pulsing faster as it nears (`uDanger` in the grade pass).
 - **Hostile shots** carry a dark-cored, barbed ring in their colour, so an enemy bolt never looks like a wizard's own magic. A teammate's shots are drawn smaller and dimmer than your own. An enemy shot about to hit you from outside the view marks the screen edge it comes from.
 
+## HUD
+One visual language for everything on screen: smoky slabs, bronze rings and rules, diamonds as ornaments, a rarity or class colour as the accent (`--rc` / `--pc`). All of it is CSS and inline SVG; the per-frame HUD code writes only what changed (`setStyle` / `setText`, classes toggled on state changes), and the only running animations are transform-only (the boss bar's sheen) or on modal cards.
+- **The wizard's plate:** a class medallion in a bronze ring (it pulses red below 30% health), a glassy health bar ticked every 10% with the shield as a gold band inside it, dash charges as diamonds lit in the class colour.
+- **Spells:** a carved plate behind riveted bevelled frames; the cooldown sweep has a bright leading edge and a slot flashes once as its spell comes back (`.slot.ready`).
+- **Boss bar:** end caps, a ruled name, phase diamonds at the thresholds, a slow sheen; it burns gold while the boss is EXPOSED.
+- **Minimap:** round, rotating with the view, in a ticked bronze ring; the big map stays square.
+- **Teammates:** framed rows with a class medallion; a teammate out of view gets an arrow at the screen edge in their colour (`UI._edgeMark`), larger, pulsing red and reading DOWNED when they need a revive.
+- **Cards** (tomes, relics, blessings, the merchant's wares): a bronze double frame in the rarity colour, a crown gem, engraved corners, the sigil in a ringed medallion; epic and legendary gems pulse and a legendary's frame breathes gold.
+
 ## Boss fights
 Each boss has three phases of four to six moves (`SCRIPTS` in `bosses.js`), and every phase adds something that moves the fight around the arena rather than only adding projectiles:
 - **The Mother of Filth:** *Belch* (a cone of bile that leaves a pool), *Flop* (she heaves into the air and lands on you, a ring of bile rolling out), *Ripple* (three rings of bile burst outward, each with a wandering gap).
