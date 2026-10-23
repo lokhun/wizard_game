@@ -1640,6 +1640,18 @@ export class Game {
     this.vfx.addShake(1);
     // slow-mo moment
     this.vfx.hitstop = 0.6;
+    // the boss comes apart in its own element: blasts across the body, then a closing ring
+    const B = this.actors.list.find((x) => x.boss && x.dead);
+    if (B) {
+      const el = { motherOfFilth: 'poison', executioner: 'enemyFire', stoneWyvern: 'earth', courtArchmage: 'arcane', hollowKing: 'enemyPurple' }[B.type] ?? 'enemyFire';
+      const bx = B.pos.x, by = B.pos.y, bz = B.pos.z, h = B.height ?? 4;
+      for (let i = 0; i < 6; i++) this.spells.after(0.12 + i * 0.2, () => this.vfx.explosion(new THREE.Vector3(bx + rand(-1.2, 1.2), by + h * (0.25 + Math.random() * 0.6), bz + rand(-1.2, 1.2)), el, 1.6 + i * 0.35, { shakeScale: 0.3 }));
+      this.spells.after(1.45, () => {
+        this.vfx.explosion(new THREE.Vector3(bx, by + h * 0.45, bz), el, 6);
+        this.vfx.ring({ x: bx, y: by + 0.15, z: bz }, 16, fxOf(el).core, 1.1, 0.25);
+        this.vfx.addShake(0.8);
+      });
+    }
     if (this.floorIndex >= BIOMES.length - 1) {
       if (this.abyss) this.ui?.banner('THE HOLLOW KING FALLS AGAIN', `Abyss ${this.abyss} is conquered`, '#ff7090', 5);
       else this.ui?.banner('THE HOLLOW KING HAS FALLEN', 'Dawn returns to the Ashen Keep', '#ffd860', 5);
