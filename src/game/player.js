@@ -143,6 +143,7 @@ export class LocalPlayer {
   takeDamage(amount, el = 'physical', fromPos = null, opts = {}) {
     if (!this.alive || this.downed || this.dead) return 0;
     const g = this.game;
+    if (this.invuln > 0 && amount > 0 && fromPos && this._dashIv > g.time && !g.godMode) this._perfectDodge(); // (blows only: a pool has no fromPos)
     if (this.invuln > 0 || g.godMode) return 0;
     if (this.parryT > 0) { this._parrySuccess(fromPos); return 0; }
     if (this.stats.dodge && Math.random() < this.stats.dodge) {
@@ -236,6 +237,23 @@ export class LocalPlayer {
     this.game.ui?.banner('REVIVED', '', '#ffd860');
   }
 
+  // Dashing through a blow at the last moment: a beat of slow motion (solo: in co-op
+  // the world's clock is shared), a quarter more damage for three seconds and a
+  // little of the ultimate. At most once a second.
+  _perfectDodge() {
+    const g = this.game;
+    if (g.time < (this._pdT ?? 0)) return;
+    this._pdT = g.time + 1;
+    this.addBuff('perfectDodge', 3, { dmgMult: 0.25 });
+    this.ult = Math.min(100, this.ult + 6);
+    if (g.isSolo) g.slowMo(0.4, 0.35);
+    g.vfx.addFovKick(-6);
+    g.screenTint?.([1.15, 1.08, 0.8], 0.35);
+    g.audio?.play('crit', { volume: 0.8 });
+    g.ui?.floatText(this.eye.clone().add(this.forward().multiplyScalar(2)).add(new THREE.Vector3(0, 0.4, 0)), 'PERFECT DODGE', '#ffd860', true);
+    g.events?.emit('perfectDodge');
+  }
+
   _parrySuccess(fromPos) {
     const g = this.game;
     g.audio?.play('impact_blade');
@@ -271,6 +289,7 @@ export class LocalPlayer {
     this.dashT = dur;
     this.dashVel.copy(dir).setY(0).normalize().multiplyScalar(dist / dur);
     this.invuln = Math.max(this.invuln, opts.invuln ?? 0.2);
+    this._dashIv = this.game.time + (opts.invuln ?? 0.2); // (a blow that lands in here is a perfect dodge)
     this.game.vfx.addFovKick(6);
     if (this.game.player === this) this.game.dashFx = 1;
   }

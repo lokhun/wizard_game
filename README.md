@@ -25,6 +25,7 @@ A first-person, co-op wizard roguelike for the browser. Fight your way up from t
 - **Tactical fights:**
   - Enemy waves are built as squads: a shield wall with archers behind it, casters with bodyguards, or flanking packs.
   - Kill an enemy mid-windup to interrupt its attack.
+  - **Perfect dodge**: dash through a blow at the last moment for a beat of slow motion, +25% damage for 3 seconds and a little ultimate charge.
   - Shield-bearers must be flanked.
   - War-banner bearers empower everything around them.
   - Powder kegs chain-explode.
@@ -45,7 +46,7 @@ A first-person, co-op wizard roguelike for the browser. Fight your way up from t
 - **Reasons to come back:**
   - A **death recap**: when you go down, the blows of the last few seconds, by foe and by move ("a Hellhound · Bite ×2 · 52"), so every death is a lesson. The run summary keeps it.
   - A **run summary** on every victory and defeat: time, realm, kills, damage, your biggest hit, the build you bound, what killed you and a chronicle of every fight. In co-op, every wizard gets a column.
-  - A persistent **Codex**: 44 feats with in-run toasts, per-wizard records (wins, best realm, fastest victory, highest heat, deepest Abyss), a bestiary and lifetime totals.
+  - A persistent **Codex**: 45 feats with in-run toasts, per-wizard records (wins, best realm, fastest victory, highest heat, deepest Abyss), a bestiary and lifetime totals.
   - **Nightmare**, open from the start for those who came for a fight: foes attack sooner, chain melee blows, loose follow-up shots and press you in greater numbers, and bosses weave dread rings between their moves and each gains a signature move (Bile Lattice, Headsman's Frenzy, Avalanche, Rune Prison, Crown of Swords). Every telegraph stays the same length, so it is hard but fair. Flawless chambers earn Dread Marks (+5% damage each, up to 12), no tome comes Common, and every boss leaves a relic.
   - **Boss Rush**: the five bosses back to back, with a row of tomes (and a relic) to arm yourself before each. Best time recorded; combine it with Nightmare for the real test.
   - **Pacts of Ascension**, unlocked by your first victory: 17 pacts (tougher, faster or more numerous foes, enraged bosses, scant healing, no rerolls, omens on every fight, fewer tome choices, a slower dash, relentless waves, foes that burst when slain, champions with two affixes...) up to heat 35, recorded per wizard. The deeper pacts are sealed until you win at higher heat, and heat pays back: finer tomes and more gold.

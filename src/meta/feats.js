@@ -33,6 +33,7 @@ export const FEATS = [
   { id: 'ground', group: 1, name: 'Stand Your Ground', icon: 'rock', desc: 'Defeat a boss without dashing.', on: { bossDown: (r, p, x) => x.room && x.room.dashes === 0 } },
   { id: 'thread', group: 1, name: 'By a Thread', icon: 'drop', desc: 'Defeat a boss with less than 10% health left.', on: { bossDown: (r, p, x) => x.hpFrac > 0 && x.hpFrac < 0.1 } },
   { id: 'cataclysm', group: 1, name: 'Cataclysm', icon: 'nova', desc: 'Slay 5 foes with a single spell.', on: { multikill: (r, p, n) => n >= 5 } },
+  { id: 'matador', group: 1, name: 'Matador', icon: 'dash', desc: 'Perfect-dodge 25 blows in one run (dash through them at the last moment).', on: { perfectDodge: (r, p, n) => n >= 25 } },
   { id: 'thunder', group: 1, name: 'Thunderclap', icon: 'bolt', desc: 'Land a single hit of 1,000 damage or more.', on: { bigHit: (r, p, d) => d >= 1000 } },
   { id: 'alchemist', group: 1, name: 'Alchemist', icon: 'hex', desc: 'Trigger 150 elemental reactions in one run.', on: { reaction: (r) => r.reactions >= 150 } },
   { id: 'reaper', group: 1, name: 'Reaper', icon: 'skull', desc: 'Slay 250 foes yourself in a single run.', on: { kill: (r) => r.kills >= 250 } },
