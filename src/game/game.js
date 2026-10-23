@@ -43,11 +43,12 @@ const _v = new THREE.Vector3();
 const PING_NAMES = { pedestal: (it) => (it.relic ? 'Relic' : 'Tome'), chest: 'Chest', mimic: 'Chest', shop: 'Merchant', shrine: 'Shrine', altar: 'Blood Altar', gambler: 'Gambler', portal: 'Portal', victoryPortal: 'Victory', abyssPortal: 'The Abyss' };
 // the Abyss's depths: violet, drowned teal, crimson, ashen gold (then round again)
 const ABYSS_TINT = [
-  { fog: 0x2a1040, gain: [1.0, 0.92, 1.08], sat: 1.0, rim: 0xa070ff },
-  { fog: 0x0a3030, gain: [0.9, 1.04, 1.02], sat: 0.95, rim: 0x40e0c0 },
-  { fog: 0x3a0808, gain: [1.08, 0.88, 0.88], sat: 0.9, rim: 0xff4040 },
-  { fog: 0x2a2618, gain: [1.05, 1.0, 0.86], sat: 0.85, rim: 0xffe0a0 },
+  { fog: 0x2a1040, gain: [1.0, 0.85, 1.15], sat: 1.0, rim: 0xa070ff },
+  { fog: 0x0a3030, gain: [0.8, 1.06, 1.05], sat: 0.95, rim: 0x40e0c0 },
+  { fog: 0x3a0808, gain: [1.15, 0.8, 0.8], sat: 0.9, rim: 0xff4040 },
+  { fog: 0x2a2618, gain: [1.08, 1.0, 0.74], sat: 0.8, rim: 0xffe0a0 },
 ];
+for (const t of ABYSS_TINT) { const c = new THREE.Color(t.rim); t.rc = [c.r, c.g, c.b]; }
 const PLACE_MUSIC = { shop: 'shop', gambler: 'shop', shrine: 'shrine', altar: 'shrine', treasure: 'vault', secret: 'vault' };
 const STREAKS = [
   { n: 3, name: 'TRIPLE KILL', gold: 4, ult: 3, color: '#e8d080' },
@@ -257,12 +258,13 @@ export class Game {
     const fogCol = nm ? new THREE.Color(b.fog.color).lerp(_nmFog, 0.45) : new THREE.Color(b.fog.color);
     // each depth of the Abyss wears its own colours over the realm's
     const ab = this.abyss && !this.menuMode ? ABYSS_TINT[(this.abyss - 1) % ABYSS_TINT.length] : null;
-    if (ab) fogCol.lerp(new THREE.Color(ab.fog), 0.4);
+    if (ab) fogCol.lerp(new THREE.Color(ab.fog), 0.55);
     const fogDen = b.fog.density * (nm ? 1.12 : 1);
     this.scene.fog = new THREE.FogExp2(fogCol, fogDen);
     this.scene.background = fogCol.clone();
     this.particles.setFog(fogDen, fogCol.getHex());
     this.hemi.color.set(b.ambient.sky);
+    if (ab) this.hemi.color.lerp(new THREE.Color(ab.rim), 0.35);
     this.hemi.groundColor.set(b.ambient.ground);
     this.hemi.intensity = b.ambient.intensity * 3 * (nm ? 0.82 : 1);
     this.baseHemi = this.hemi.intensity;
@@ -575,6 +577,16 @@ export class Game {
     }
     if (id === 'throne' && Math.random() < dt * 10) {
       P.glow({ x: cam.x + rnd(20), y: cam.y + 4 + rnd(2), z: cam.z + rnd(20), vx: rnd(0.3), vy: -0.4, vz: rnd(0.3), r: 1.2, g: 0.5, b: 1.6, r2: 0.2, g2: 0.05, b2: 0.3, life: 8, size: 0.04, sprite: SPR.EMBER, drag: 0.2 });
+    }
+    // the Abyss: motes in the depth's own colour, drifting up as if the place were sinking
+    if (this.abyss && Math.random() < dt * 8) {
+      const c = ABYSS_TINT[(this.abyss - 1) % ABYSS_TINT.length].rc;
+      P.glow({ x: cam.x + rnd(18), y: cam.y - 1.5 + rnd(2), z: cam.z + rnd(18), vx: rnd(0.2), vy: 0.35 + Math.random() * 0.3, vz: rnd(0.2), r: c[0] * 1.4, g: c[1] * 1.4, b: c[2] * 1.4, r2: c[0] * 0.2, g2: c[1] * 0.2, b2: c[2] * 0.2, life: 6, size: 0.05, sprite: SPR.EMBER, drag: 0.15 });
+    }
+    // the dungeon: grit sifting down from the vaults now and then
+    if (id === 'dungeon' && Math.random() < dt * 1.5) {
+      const x = cam.x + rnd(12), z = cam.z + rnd(12), c = this.level.ceilAt(x, z);
+      if (c < 50) for (let k = 0; k < 4; k++) P.solid({ x: x + rnd(0.4), y: c - 0.1, z: z + rnd(0.4), vy: -0.5, r: 0.3, g: 0.26, b: 0.22, a: 0.6, life: 1.6, size: 0.025, sprite: SPR.CHUNK, gravity: 6 });
     }
     if (id === 'keep' && Math.random() < dt * 2) {
       P.glow({ x: cam.x + rnd(14), y: cam.y + rnd(2), z: cam.z + rnd(14), vy: 0.1, r: 0.6, g: 0.5, b: 1.2, life: 5, size: 0.08, sprite: SPR.RUNE, spin: 0.5, drag: 0.2 });
