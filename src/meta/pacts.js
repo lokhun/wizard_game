@@ -33,7 +33,10 @@ export const PACTS = [
 // foes fight rather than only their numbers (see difficultyFor), and pays the
 // skilled back with Dread Marks, finer tomes and a relic from every boss.
 export const NIGHTMARE = { id: 'nightmare', name: 'Nightmare', icon: 'skull', heat: 10, max: 1, desc: () => 'Foes fight smarter and never let up; bosses unleash dread rings. Flawless chambers earn Dread Marks.' };
-export const PACT_BY_ID = Object.fromEntries([...PACTS, NIGHTMARE].map((p) => [p.id, p]));
+// Boss Rush is a mode, kept with the pacts the same way (and so sent to the party
+// the same way): worth no heat. Each realm skips straight to its boss's antechamber.
+export const BOSS_RUSH = { id: 'rush', name: 'Boss Rush', icon: 'boss', heat: 0, max: 1, desc: () => 'The five bosses back to back, with tomes and relics between them.' };
+export const PACT_BY_ID = Object.fromEntries([...PACTS, NIGHTMARE, BOSS_RUSH].map((p) => [p.id, p]));
 export const MAX_HEAT = PACTS.reduce((s, p) => s + p.heat * p.max, 0) + NIGHTMARE.heat;
 
 // Pacts open as you clear heat: `unlock` is the heat you must have cleared
@@ -102,6 +105,7 @@ export function difficultyFor(sel, extra = {}) {
     dreadPulse: nm,
     minRarity: nm ? 1 : 0,
     bossRelic: nm,
+    rush: !!r('rush'),
     heat: heatOf(s),
     ...prefix(heatBoons(heatOf(s))),
     pacts: s,

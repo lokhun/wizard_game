@@ -19,7 +19,7 @@ import { sigilTexture } from './game/models/wizard/sigil.js';
 import { TextureFactory, surfaceBakes } from './render/textures.js';
 import { warmBakes } from './render/bake.js';
 import { installShaderFixes } from './render/shaderFixes.js';
-import { attachMeta, loadProfile, resetProfile, difficultyFor, cleanPacts, heatOf, PACT_BY_ID, pactsUnlocked, toggleNightmare, pactStrip, showPactBoard, showCodex, showDailyRite, riteLine, demoSummary, FEATS } from './meta/index.js';
+import { attachMeta, loadProfile, resetProfile, difficultyFor, cleanPacts, heatOf, PACT_BY_ID, pactsUnlocked, toggleNightmare, toggleRush, pactStrip, showPactBoard, showCodex, showDailyRite, riteLine, demoSummary, FEATS } from './meta/index.js';
 
 // Optional modules (resolved at build time; missing files are simply skipped)
 const optional = import.meta.glob(['./audio/audio.js', './game/enemyModels.js', './game/wizardModels.js']);
@@ -301,6 +301,7 @@ function showSelect(lobbyInfo) {
       const changed = () => { rerender(); if (lobbyInfo?.isHost) pushRoster(); };
       const b = box.querySelector('#bPacts'); if (b) b.onclick = () => showPactBoard(ui, { classId: id, onClose: changed });
       const n = box.querySelector('#bNight'); if (n) n.onclick = () => { ui.audio?.play(toggleNightmare() ? 'boss_roar' : 'ui_click', { volume: 0.5 }); changed(); };
+      const r = box.querySelector('#bRush'); if (r) r.onclick = () => { ui.audio?.play(toggleRush() ? 'victory_sting' : 'ui_click', { volume: 0.5 }); changed(); };
     } } : null,
     onSelect: (id) => {
       selectedClass = id;
@@ -329,9 +330,9 @@ function showSelect(lobbyInfo) {
 function swornLine(pk) {
   pk = cleanPacts(pk);
   const h = heatOf(pk);
-  if (!h) return '';
-  const names = Object.keys(pk).filter((id) => id !== 'nightmare').map((id) => PACT_BY_ID[id].name + (PACT_BY_ID[id].max > 1 ? ' ' + 'I'.repeat(pk[id]) : ''));
-  return [pk.nightmare ? 'Nightmare' : '', `heat ${h}`, names.join(', ')].filter(Boolean).join(' · ');
+  if (!h && !pk.rush) return '';
+  const names = Object.keys(pk).filter((id) => id !== 'nightmare' && id !== 'rush').map((id) => PACT_BY_ID[id].name + (PACT_BY_ID[id].max > 1 ? ' ' + 'I'.repeat(pk[id]) : ''));
+  return [pk.rush ? 'Boss Rush' : '', pk.nightmare ? 'Nightmare' : '', h ? `heat ${h}` : '', names.join(', ')].filter(Boolean).join(' · ');
 }
 function refreshLobby() {
   if (!lobby?.api || !net) return;
@@ -353,8 +354,12 @@ function refreshLobby() {
 // (Nightmare is open from the first run; the pacts after the first victory)
 function currentPacts() {
   const sel = cleanPacts(loadProfile().pacts);
-  if (q.get('test') && q.has('nightmare')) return { ...sel, nightmare: 1 }; // test hook
-  return pactsUnlocked() ? sel : sel.nightmare ? { nightmare: 1 } : {};
+  if (q.get('test') && (q.has('nightmare') || q.has('rush'))) return { ...sel, ...(q.has('nightmare') ? { nightmare: 1 } : {}), ...(q.has('rush') ? { rush: 1 } : {}) }; // test hooks
+  if (pactsUnlocked()) return sel;
+  const open = {}; // (Nightmare and Boss Rush are open from the first run)
+  if (sel.nightmare) open.nightmare = 1;
+  if (sel.rush) open.rush = 1;
+  return open;
 }
 
 function startSolo() {

@@ -21,7 +21,9 @@ export const FEATS = [
   { id: 'filth', group: 0, name: 'Filth Purged', icon: 'boss', desc: 'Defeat the Mother of Filth.', on: { bossDown: (r, p, x) => x.type === 'motherOfFilth' } },
   { id: 'moonrise', group: 0, name: 'Moonrise', icon: 'crescent', desc: 'Reach the Moonlit Bailey.', on: { floor: (r, p, x) => x >= 2 } },
   { id: 'dawn', group: 0, name: 'Dawn Returns', icon: 'sun', desc: 'Defeat the Hollow King.', on: { end: (r) => r.won } },
-  { id: 'swift', group: 0, name: 'Swift Ascent', icon: 'clock', desc: 'Win a run in under 30 minutes.', on: { end: (r) => r.won && r.winTime < 30 * 60 } },
+  { id: 'swift', group: 0, name: 'Swift Ascent', icon: 'clock', desc: 'Win a run in under 30 minutes.', on: { end: (r) => r.won && !r.rush && r.winTime < 30 * 60 } },
+  { id: 'gauntlet', group: 0, name: 'The Gauntlet', icon: 'boss', desc: 'Finish a Boss Rush.', on: { end: (r) => r.won && r.rush } },
+  { id: 'gauntletFast', group: 0, name: 'Breakneck', icon: 'hourglass', desc: 'Finish a Boss Rush in under 12 minutes.', on: { end: (r) => r.won && r.rush && r.winTime < 12 * 60 } },
   { id: 'fellowship', group: 0, name: 'Fellowship', icon: 'army', desc: 'Win a run in co-op.', on: { end: (r) => r.won && r.coop } },
   { id: 'lifeline', group: 0, name: 'Lifeline', icon: 'heart', desc: 'Revive a fallen ally.', on: { revive: () => true } },
   // ---------------- mastery (single feats of skill)
@@ -63,6 +65,7 @@ export const FEATS = [
   { id: 'nmDread', group: 5, name: 'Dread Lord', icon: 'crown', desc: 'Bear all twelve Dread Marks at once.', on: { dread: (r, p, n) => n >= 12 } },
   { id: 'nmAwake', group: 5, name: 'Wide Awake', icon: 'eye', desc: 'Win on Nightmare without ever being downed.', on: { end: (r) => r.won && r.nightmare && r.downs === 0 } },
   { id: 'nmLucid', group: 5, name: 'Lucid Dreamer', icon: 'flame', desc: 'Win on Nightmare at 25 heat or more.', on: { end: (r) => r.won && r.nightmare && r.heat >= 25 } },
+  { id: 'nmRush', group: 5, name: 'Night of Five Kings', icon: 'crown', desc: 'Finish a Boss Rush on Nightmare.', on: { end: (r) => r.won && r.rush && r.nightmare } },
   { id: 'nmAbyss', group: 5, name: 'The Dream Beneath', icon: 'tentacle', desc: 'Descend into the Abyss on Nightmare.', on: { abyss: (r) => r.nightmare } },
 ];
 export const FEAT_BY_ID = Object.fromEntries(FEATS.map((f) => [f.id, f]));

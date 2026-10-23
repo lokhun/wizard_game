@@ -138,6 +138,7 @@ export function showSummary(ui, S, { party = [], remotes = new Map(), onMenu, on
           <div class="rl">Realm ${S.floor + 1} of ${BIOMES.length}</div>
           <div class="rs-badges">
             ${S.heat ? `<span class="rs-badge heat" title="${esc(pacts.join(' · '))}">${iconSVG('flame', '#ff8a40', 13, { glow: false })}Heat ${S.heat}${rec.heat ? ' · best' : ''}</span>` : ''}
+            ${S.rush ? `<span class="rs-badge rush">${iconSVG('boss', '#ffc060', 13, { glow: false })}Boss Rush${rec.rush ? ' · best' : ''}</span>` : ''}
             ${S.nightmare ? `<span class="rs-badge nm" title="Dread Marks earned: ${S.dread ?? 0}">${iconSVG('skull', '#ff6050', 13, { glow: false })}Nightmare${S.dread ? ` · ${S.dread} dread` : ''}</span>` : ''}
             ${S.abyss ? `<span class="rs-badge abyss">${iconSVG('tentacle', '#c080ff', 13, { glow: false })}Abyss ${S.abyss}${rec.abyss ? ' · best' : ''}</span>` : ''}
             ${S.daily ? `<span class="rs-badge daily">${iconSVG('sun', '#f0c050', 13, { glow: false })}Daily Rite ${esc(S.daily)}${rec.daily ? ' · best' : ''}</span>` : ''}

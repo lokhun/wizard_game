@@ -40,6 +40,7 @@
 .rs-badges { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .rs-badge { font-family: var(--serif); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; padding: 3px 9px; border: 1px solid var(--bronze-lo); color: var(--bronze-hi); background: rgba(0,0,0,0.35); display: inline-flex; align-items: center; gap: 5px; }
 .rs-badge.heat { border-color: #a0441c; color: #ffb070; }
+.rs-badge.rush { border-color: #8a6a20; color: #ffd890; }
 .rs-badge.nm { border-color: #7a1c1c; color: #ff9080; }
 .rs-badge.abyss { border-color: #5a2a8a; color: #d0a0ff; }
 .rs-badge.daily { border-color: #6a5a20; color: var(--gold); }
@@ -199,16 +200,18 @@
 .pb-foot .hint { color: var(--text-dim); font-size: 12px; font-family: var(--serif); letter-spacing: 0.08em; flex: 1; }
 
 /* class select: the pact strip */
-.cs-pacts { padding: 9px 14px; display: flex; align-items: center; gap: 12px; }
+.cs-pacts { padding: 9px 14px; display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
 .cs-pacts .hv { font-family: 'Cinzel', var(--serif); font-weight: 600; font-size: 22px; color: #ffb070; text-shadow: 0 0 14px rgba(255,120,40,0.4); min-width: 26px; text-align: center; }
-.cs-pacts .lab { flex: 1; min-width: 0; }
+.cs-pacts .lab { flex: 1; min-width: 190px; }
 .cs-pacts .lab .subtitle { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cs-pacts .lab .s2 { color: var(--text-dim); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cs-pacts.locked { opacity: 0.6; }
 .cs-pacts.nm { border-color: #6a1c1c; box-shadow: inset 0 0 30px rgba(200,30,30,0.12); }
+.cs-btns { display: flex; gap: 8px; margin-left: auto; }
 .cs-nm { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .cs-nm.on { border-color: #a02a2a; color: #ffb0a0; background: linear-gradient(180deg, #3a1210, #1a0806); box-shadow: 0 0 14px rgba(255,40,30,0.25); }
 .cs-nm .w { color: #ff8070; font-size: 11px; }
+.cs-nm.on.rush { border-color: #a07020; color: #ffd890; background: linear-gradient(180deg, #3a2a10, #1a1206); box-shadow: 0 0 14px rgba(255,180,40,0.25); }
 
 /* ---------- main menu additions */
 #menu .menu-row { display: flex; gap: 12px; }

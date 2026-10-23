@@ -26,7 +26,7 @@ export function blankProfile() {
     runs: 0, wins: 0, deaths: 0, coopWins: 0,
     kills: 0, damage: 0, time: 0, gold: 0, tomes: 0, rooms: 0, flawless: 0,
     bestFloor: 0, // realms reached, 1..5
-    records: { biggestHit: 0, mostDamage: 0, mostKills: 0, fastestWin: 0, highestHeat: -1, deepestAbyss: 0, nightmareWins: 0 },
+    records: { biggestHit: 0, mostDamage: 0, mostKills: 0, fastestWin: 0, highestHeat: -1, deepestAbyss: 0, nightmareWins: 0, rushBest: 0 },
     classes: {}, // id -> blankClass()
     bestiary: {}, // enemy type -> kills by you
     bosses: {}, // boss type -> times defeated (any party member's kill counts)

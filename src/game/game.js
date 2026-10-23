@@ -282,6 +282,7 @@ export class Game {
     if (this.player.dead) { this.player.dead = false; this.player.hp = Math.round(this.player.maxHp * 0.5); }
     for (const r of this.remotes.values()) { r.pos.set(s.x, 0, s.z); r.net.x = s.x; r.net.z = s.z; }
     level.startRoom.visited = true;
+    if (this.difficulty.rush && !this.menuMode) this._rushFloor(level, index);
     this._buildDoorSigns();
     setEnemyRim(b.rim ?? 0x806a60, b.rimK ?? 0.45);
     this.audio?.setAmbience(b.id);
@@ -1347,12 +1348,46 @@ export class Game {
     }
   }
 
-  spawnPedestal(room, minRarity, relic = false, dx = 0) {
+  spawnPedestal(room, minRarity, relic = false, dx = 0, dz = 0) {
     minRarity = Math.max(minRarity, this.difficulty.minRarity ?? 0); // (Nightmare: never a Common tome)
-    const x = room.cx + dx;
-    const it = makePedestal(this, new THREE.Vector3(x, this.groundY(x, room.cz), room.cz), minRarity);
+    const x = room.cx + dx, z = room.cz + dz;
+    const it = makePedestal(this, new THREE.Vector3(x, this.groundY(x, z), z), minRarity);
     if (relic) { it.relic = true; it.label = 'Claim a Relic'; it.minRarity = 1; } // (built gold-ringed, rolls like an elite tome if ever read as one)
     this.interactables.push(it);
+  }
+
+  // Boss Rush: every chamber but the boss's is already won and its side rewards
+  // are gone; the party starts in the antechamber before the boss, before a row
+  // of lecterns (more of them before the first boss, a relic from the second on),
+  // whole again. Runs on every peer alike, since every peer builds the same floor.
+  _rushFloor(level, index) {
+    const boss = level.bossRoom;
+    const main = level.rooms.filter((r) => r.main && r !== boss).sort((a, b) => b.order - a.order);
+    const ante = main[0] ?? level.startRoom;
+    for (const r of level.rooms) if (r !== boss) { r.cleared = true; r.visited = true; }
+    this.interactables = this.interactables.filter((it) => {
+      const side = it.kind === 'chest' || it.kind === 'shrine' || it.kind === 'shop' || it.kind === 'altar' || it.kind === 'gambler';
+      if (side) it.dispose?.();
+      return !side;
+    });
+    // (a pillar or statue may stand where a lectern would: nudge each to open floor in the room)
+    const free = (dx, dz) => {
+      for (let k = 0; k < 24; k++) {
+        const a = k * 2.4, r = k === 0 ? 0 : 0.8 + k * 0.25;
+        const x = ante.cx + dx + Math.cos(a) * r, z = ante.cz + dz + Math.sin(a) * r;
+        if (level.roomAt(x, z) === ante && !this.collision.pushOut(x, z, 0.9)) return [x - ante.cx, z - ante.cz];
+      }
+      return [0, 0];
+    };
+    const n = index === 0 ? 4 : 3;
+    for (let i = 0; i < n; i++) this.spawnPedestal(ante, index === 0 ? [0, 1, 1, 2][i] : [1, 1, 2][i], false, ...free((i - (n - 1) / 2) * 2.8, -1.5));
+    if (index > 0) this.spawnPedestal(ante, 3, true, ...free(0, 2.2));
+    const p = this.player;
+    const [sx, sz] = free(0, 4.5);
+    p.spawnAt(ante.cx + sx, ante.cz + sz, Math.PI);
+    for (const r of this.remotes.values()) { r.pos.set(ante.cx + sx, 0, ante.cz + sz); r.net.x = ante.cx + sx; r.net.z = ante.cz + sz; }
+    p.heal(p.maxHp);
+    setTimeout(() => !this.ended && this.ui?.toast(`Boss Rush · ${index + 1} of ${BIOMES.length} — arm yourself, then face ${BOSS_DEFS[level.biome.boss]?.name ?? 'the guardian'}`, '#ffc060'), 4800);
   }
 
   onWave(n, of) {

@@ -4,7 +4,7 @@ import { ENEMY_DEFS, BOSS_DEFS } from '../game/enemyDefs.js';
 import { BIOMES } from '../world/biomes.js';
 import { loadProfile, saveProfile, storageOk } from './profile.js';
 import { FEATS, FEAT_GROUPS, bestiaryTypes } from './feats.js';
-import { PACTS, PACT_BY_ID, NIGHTMARE, MAX_HEAT, heatOf, cleanPacts, dailyRite, utcDay, pactOpen, nextUnlock, heatBoons } from './pacts.js';
+import { PACTS, PACT_BY_ID, NIGHTMARE, BOSS_RUSH, MAX_HEAT, heatOf, cleanPacts, dailyRite, utcDay, pactOpen, nextUnlock, heatBoons } from './pacts.js';
 import { fmtTime, fmtNum } from './summary.js';
 
 // ---------------------------------------------------------------------------
@@ -122,6 +122,7 @@ function recordsPage(p) {
     ${t('Most foes in a run', p.records.mostKills ? fmtNum(p.records.mostKills) : '—')}
     ${t('Fastest victory', p.records.fastestWin ? fmtTime(p.records.fastestWin) : '—')}
     ${t('Highest heat cleared', p.records.highestHeat >= 0 ? p.records.highestHeat : '—')}
+    ${t('Fastest Boss Rush', p.records.rushBest ? fmtTime(p.records.rushBest) : '—')}
     ${t('Nightmare victories', p.records.nightmareWins ? fmtNum(p.records.nightmareWins) : '—')}
     ${t('Deepest Abyss', p.records.deepestAbyss ? `depth ${p.records.deepestAbyss}` : '—')}
     ${t('Co-op victories', fmtNum(p.coopWins))}
@@ -142,15 +143,23 @@ export function toggleNightmare() {
   p.pacts = sel; saveProfile();
   return !!sel.nightmare;
 }
+export function rushOn(p = loadProfile()) { return !!cleanPacts(p.pacts).rush; }
+export function toggleRush() {
+  const p = loadProfile(), sel = cleanPacts(p.pacts);
+  if (sel.rush) delete sel.rush; else sel.rush = 1;
+  p.pacts = sel; saveProfile();
+  return !!sel.rush;
+}
 export function pactStrip(classId) {
   const p = loadProfile();
-  const nm = nightmareOn(p), nmWins = p.classes[classId]?.nightmare ?? 0;
+  const nm = nightmareOn(p), nmWins = p.classes[classId]?.nightmare ?? 0, ru = rushOn(p);
+  const rush = `<button class="btn small cs-nm${ru ? ' on rush' : ''}" id="bRush" title="${esc(BOSS_RUSH.desc())}${p.records.rushBest ? ` Best: ${fmtTime(p.records.rushBest)}` : ''}">${iconSVG('boss', ru ? '#ffb050' : '#9a8f7c', 16, { glow: ru })}Boss Rush</button>`;
   const night = `<button class="btn small cs-nm${nm ? ' on' : ''}" id="bNight" title="${esc(NIGHTMARE.desc())}">${iconSVG('skull', nm ? '#ff5050' : '#9a8f7c', 16, { glow: nm })}Nightmare${nmWins ? ` <span class="w">${nmWins}✦</span>` : ''}</button>`;
-  if (!pactsUnlocked(p)) return `<div class="panel cs-pacts${nm ? ' nm' : ''}">${iconSVG(nm ? 'skull' : 'pact', nm ? '#ff5050' : '#806050', 26, { glow: nm })}<div class="lab"><div class="subtitle">${nm ? 'Nightmare · heat 10' : 'Pacts of Ascension'}</div><div class="s2">${nm ? 'Smarter, relentless foes · flawless chambers earn Dread Marks' : 'Pacts unlock with your first victory. Seasoned? Try Nightmare.'}</div></div>${night}</div>`;
+  if (!pactsUnlocked(p)) return `<div class="panel cs-pacts${nm ? ' nm' : ''}">${iconSVG(nm ? 'skull' : 'pact', nm ? '#ff5050' : '#806050', 26, { glow: nm })}<div class="lab"><div class="subtitle">${nm ? 'Nightmare · heat 10' : 'Pacts of Ascension'}</div><div class="s2">${nm ? 'Smarter, relentless foes · flawless chambers earn Dread Marks' : 'Pacts unlock with your first victory. Seasoned? Try Nightmare.'}</div></div><div class="cs-btns">${night}${rush}</div></div>`;
   const sel = cleanPacts(p.pacts), h = heatOf(sel);
   const best = p.classes[classId]?.wins ? p.classes[classId].bestHeat : -1;
-  const names = Object.keys(sel).filter((id) => id !== 'nightmare').map((id) => PACT_BY_ID[id].name).join(' · ');
-  return `<div class="panel cs-pacts${nm ? ' nm' : ''}">${iconSVG('flame', h ? '#ff8a40' : '#806050', 26, { glow: !!h })}<div class="hv">${h}</div><div class="lab"><div class="subtitle">${nm ? 'Pacts · heat' : 'Pacts of Ascension · heat'}</div><div class="s2">${names ? esc(names) : 'No pacts sworn.'}${best >= 0 ? ` · best cleared with this wizard: ${best}` : ''}</div></div>${night}<button class="btn small" id="bPacts">Pacts</button></div>`;
+  const names = Object.keys(sel).filter((id) => id !== 'nightmare' && id !== 'rush').map((id) => PACT_BY_ID[id].name).join(' · ');
+  return `<div class="panel cs-pacts${nm ? ' nm' : ''}">${iconSVG('flame', h ? '#ff8a40' : '#806050', 26, { glow: !!h })}<div class="hv">${h}</div><div class="lab"><div class="subtitle">${nm ? 'Pacts · heat' : 'Pacts of Ascension · heat'}</div><div class="s2">${names ? esc(names) : 'No pacts sworn.'}${best >= 0 ? ` · best cleared with this wizard: ${best}` : ''}</div></div><div class="cs-btns">${night}${rush}<button class="btn small" id="bPacts">Pacts</button></div></div>`;
 }
 
 export function showPactBoard(ui, { classId, onClose } = {}) {
@@ -191,7 +200,7 @@ export function showPactBoard(ui, { classId, onClose } = {}) {
   const done = () => { p.pacts = cleanPacts(sel); saveProfile(); };
   const close = keyed(ui, m, () => { done(); onClose?.(heatOf(sel)); }, (e) => { if (e.code === 'Enter') close(); });
   m.querySelector('#pbDone').onclick = close;
-  m.querySelector('#pbClear').onclick = () => { for (const k of Object.keys(sel)) if (k !== 'nightmare') delete sel[k]; render(); }; // (Nightmare has its own toggle)
+  m.querySelector('#pbClear').onclick = () => { for (const k of Object.keys(sel)) if (k !== 'nightmare' && k !== 'rush') delete sel[k]; render(); }; // (Nightmare and Boss Rush have their own toggles)
   return m;
 }
 
