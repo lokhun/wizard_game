@@ -152,6 +152,12 @@ export const RELICS = [
   ...NEW_RELICS,
 ];
 
+// Diminishing returns on stacking one tome: each copy you already hold makes the
+// next a little weaker (the 4th is worth 85%, the 11th 63%). Barely felt while a
+// build comes together; it keeps a long Abyss run's power from climbing as fast
+// as the depths do, so every build meets its end down there.
+export const tomeDR = (held) => 1 / (1 + 0.06 * held);
+
 // Roll n distinct tome choices for a player
 export function rollTomes(player, n = 3, minRarity = 0, rng = Math.random) {
   const counts = {};
@@ -183,7 +189,8 @@ export function rollTomes(player, n = 3, minRarity = 0, rng = Math.random) {
     for (const t of cands) { r -= w(t); if (r <= 0) { pick = t; break; } }
     used.add(pick.id);
     rar = Math.max(rar, pick.minRarity ?? 0);
-    out.push({ def: pick, rarity: rar, mult: RARITY[rar].mult });
+    const dr = tomeDR(counts[pick.id] ?? 0);
+    out.push({ def: pick, rarity: rar, mult: RARITY[rar].mult * dr, dr });
   }
   return out;
 }

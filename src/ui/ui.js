@@ -992,7 +992,7 @@ export class UI {
         ${ac ? `<div class="augtag">Augment · ${esc(c.def.spellName)}</div>` : ''}
         <div class="ticon" style="box-shadow:0 0 30px ${ac ?? r.color}55">${iconSVG(c.def.icon, ac ?? (c.def.el ? hex(ELEMENT_COLORS[c.def.el] ?? 0xffffff) : r.color === '#c8c0b0' ? col : r.color), 54)}</div>
         <div class="tname">${c.def.name}</div>
-        <div class="tdesc">${c.def.desc(c.mult)}</div>
+        <div class="tdesc">${c.def.desc(c.mult)}</div>${c.dr && c.dr < 0.999 ? `<div class="tdesc" style="opacity:0.6;font-size:0.85em">Already held: ${Math.round(c.dr * 100)}% strength</div>` : ''}
         <div class="tkey">[${i + 1}]</div>
       </div>`;
     }, cb, true, reroll);

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { ROOM, T, FLOOR, K_WATER } from '../world/levelgen.js';
-import { ENEMY_DEFS, BOSS_DEFS, FLOOR_HP, FLOOR_DMG } from './enemyDefs.js';
+import { ENEMY_DEFS, BOSS_DEFS, FLOOR_HP, FLOOR_DMG, ABYSS_HP, ABYSS_DMG } from './enemyDefs.js';
 import { RNG } from '../core/rng.js';
 
 // ---------------------------------------------------------------------------
@@ -101,19 +101,20 @@ export class Director {
   hpScale() { return this.floorHp() * (1 + 0.28 * (this.partySize() - 1)) * (this.g.difficulty?.enemyHp ?? 1); }
   dmgScale() { return this.floorDmg() * (1 + 0.12 * (this.partySize() - 1)) * (this.g.difficulty?.enemyDamage ?? 1); }
   countScale() { return (1 + 0.75 * (this.partySize() - 1)) * (this.g.difficulty?.enemyCount ?? 1) * (1 + 0.15 * this.depth); }
-  // The Abyss: each descent past the Hollow King. The realms start again from
-  // the first, but a depth-1 Sewers already hits like the Throne and the last
-  // realm of depth 1 far beyond it; champions are commoner and, from depth 2,
-  // every one bears two affixes.
+  // The Abyss: each descent past the Hollow King. The realms start again from the
+  // first, but they count on (realm 5·depth + floor): every one past the fifth makes
+  // foes ABYSS_HP / ABYSS_DMG times tougher and deadlier than the last (bosses alike:
+  // their health is their own realm's tune times floorHp / FLOOR_HP). Champions are
+  // commoner and, from depth 2, every one bears two affixes; each depth adds an
+  // Abyssal law (pacts.js abyssLaws).
   get depth() { return this.g.abyss ?? 0; }
-  // the realm curve, flattened and lifted so depth 1 starts where the Throne left off
   floorHp(f = this.floor) {
     const d = this.depth;
-    return d ? FLOOR_HP.at(-1) * (1 + 0.5 * (d - 1)) * FLOOR_HP[f] ** 0.6 : FLOOR_HP[f];
+    return d ? FLOOR_HP[4] * ABYSS_HP ** (5 * d + f - 4) : FLOOR_HP[f];
   }
   floorDmg(f = this.floor) {
     const d = this.depth;
-    return d ? FLOOR_DMG.at(-1) * (1 + 0.2 * (d - 1)) * (FLOOR_DMG[f] / FLOOR_DMG[0]) ** 0.5 : FLOOR_DMG[f];
+    return d ? FLOOR_DMG[4] * ABYSS_DMG ** (5 * d + f - 4) : FLOOR_DMG[f];
   }
 
   spawnEnemy(type, x, z, opts = {}) {

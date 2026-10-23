@@ -1909,7 +1909,7 @@ export class Game {
     const pick = [];
     while (can.length && pick.length < 3) pick.push(can.splice(Math.floor(Math.random() * can.length), 1)[0]);
     if (!pick.length) { refund(); return; }
-    const offers = pick.map((u) => ({ def: u.def, rarity: (u.rarity ?? 0) + 1, mult: RARITY[(u.rarity ?? 0) + 1].mult, from: u.rarity ?? 0, src: u }));
+    const offers = pick.map((u) => ({ def: u.def, rarity: (u.rarity ?? 0) + 1, mult: RARITY[(u.rarity ?? 0) + 1].mult * (u.dr ?? 1), dr: u.dr, from: u.rarity ?? 0, src: u }));
     this.ui?.closeAllModals();
     this.ui?.chooseTome(offers, (c) => {
       if (!c) { refund(); return; }
