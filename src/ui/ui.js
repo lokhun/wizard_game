@@ -981,14 +981,14 @@ export class UI {
     return m;
   }
 
-  chooseTome(choices, cb, reroll) {
+  chooseTome(choices, cb, reroll, opts = {}) {
     const col = this.game ? hex(this.game.player.meta.color) : '#fff';
-    this._choiceModal('Arcane Tomes', 'Choose one tome to bind to your soul', choices, (c, i) => {
+    this._choiceModal(opts.title ?? 'Arcane Tomes', opts.sub ?? 'Choose one tome to bind to your soul', choices, (c, i) => {
       const r = RARITY[c.rarity];
       // spell augments: tagged with the spell they change, in the class colour
       const ac = c.def.aug ? hex(CLASS_META[c.def.cls]?.color ?? 0xffffff) : null;
       return `<div class="tome card${ac ? ' augment' : ''}" data-i="${i}" style="--rc:${r.color}${ac ? `;--ac:${ac};--ac-dim:${ac}99;--ac-glow:${ac}26` : ''}">
-        <div class="rar" style="color:${r.color}">${r.name}</div>
+        <div class="rar" style="color:${r.color}">${c.from !== undefined ? `${RARITY[c.from].name} → ` : ''}${r.name}</div>
         ${ac ? `<div class="augtag">Augment · ${esc(c.def.spellName)}</div>` : ''}
         <div class="ticon" style="box-shadow:0 0 30px ${ac ?? r.color}55">${iconSVG(c.def.icon, ac ?? (c.def.el ? hex(ELEMENT_COLORS[c.def.el] ?? 0xffffff) : r.color === '#c8c0b0' ? col : r.color), 54)}</div>
         <div class="tname">${c.def.name}</div>
@@ -1014,6 +1014,7 @@ export class UI {
   openShop(items, player, buy) {
     const render = () => items.map((it, i) => {
       const r = it.rarity !== undefined ? RARITY[it.rarity] : null;
+      if (it.available && !it.available(player)) return '';
       return `<div class="shop-item ${it.sold ? 'sold' : ''} ${player.gold < it.price ? 'cant' : ''}" data-i="${i}">
         <div>${iconSVG(it.icon, r ? r.color : it.relic ? it.color ?? '#ffb030' : '#e8d8b0', 40)}</div>
         <div><div class="sname" style="color:${r ? r.color : it.relic ? it.color ?? '#ffb030' : 'var(--text)'}">${it.name}</div><div class="sdesc">${it.desc}</div><div class="price">${it.sold ? 'SOLD' : it.price + ' gold'}</div></div>
@@ -1021,12 +1022,14 @@ export class UI {
     }).join('');
     const m = this._modal(`
       <h2>The Wandering Merchant</h2><div class="msub">"Coin for power, wizard. A fair trade." · You have <span id="shopGold" style="color:var(--gold)">${Math.floor(player.gold)}</span> gold</div>
+      <div class="msub" style="font-size:12px;opacity:0.8">Each purchase raises the price of the rest by a quarter: choose.</div>
       <div class="shop-grid">${render()}</div>
       <button class="btn small" id="bLeave" style="margin-top:26px">Leave</button>`);
     const bind = () => {
       m.querySelectorAll('.shop-item').forEach((el) => {
         el.onclick = () => {
           if (buy(items[+el.dataset.i])) {
+            if (!m.isConnected) return; // (a refine closes the shop for its own choice)
             m.querySelector('.shop-grid').innerHTML = render();
             m.querySelector('#shopGold').textContent = Math.floor(player.gold);
             bind();

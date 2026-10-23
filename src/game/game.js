@@ -865,7 +865,7 @@ export class Game {
     if (a.faction !== 'enemy') return;
     this.stats.kills++;
     // drops
-    const gold = Math.round((a.def.gold ?? 1) * (a.elite ? 4 : 1) * (1 + this.floorIndex * 0.25) * this.encounters.goldMult(a));
+    const gold = Math.round((a.def.gold ?? 1) * (a.elite ? 4 : 1) * (1 + this.floorIndex * 0.2) * 0.85 * this.encounters.goldMult(a));
     if (gold > 0) this.spawnDrop('gold', a.pos, gold);
     if (Math.random() < (a.elite ? 1 : a.boss ? 0 : 0.1 * (this.difficulty.orbChance ?? 1))) this.spawnDrop('health', a.pos, 18 + this.floorIndex * 4);
     // kill credit
@@ -1707,7 +1707,7 @@ export class Game {
       }
       case 'shop': {
         if (!it.stock) it.stock = makeShopStock(this, p);
-        this.ui?.openShop(it.stock, p, (item) => this.buy(item));
+        this.ui?.openShop(it.stock, p, (item) => this.buy(item, it.stock));
         break;
       }
       case 'portal':
@@ -1782,14 +1782,34 @@ export class Game {
   }
   onLocalCast(slot) { this.relics?.onCast(slot); }
   onLocalDash() { this.relics?.onDash(); }
-  buy(item) {
+  buy(item, stock) {
     const p = this.player;
-    if (item.sold || p.gold < item.price) { this.audio?.play('ui_error'); return false; }
-    p.gold -= item.price;
-    item.sold = true;
+    if (item.sold || p.gold < item.price || (item.available && !item.available(p))) { this.audio?.play('ui_error'); return false; }
+    const paid = item.price;
+    p.gold -= paid;
+    if (item.refine) item.uses++; else item.sold = true;
+    if (stock) { stock.bought++; priceShop(this, stock); }
     this.audio?.play('buy');
-    item.apply(p);
+    // (a refine the player walks away from is refunded, and doesn't count toward the markup)
+    item.apply(p, () => { p.gold += paid; if (item.refine) item.uses--; if (stock) { stock.bought--; priceShop(this, stock); } });
     return true;
+  }
+
+  // Offer three of the player's tomes, each shown a rarity finer; the one chosen is raised.
+  refineTome(p, refund) {
+    const can = p.upgrades.filter((u) => u.def && !u.def.hidden && (u.rarity ?? 0) < 3 && u.def.id !== 'vitality');
+    const pick = [];
+    while (can.length && pick.length < 3) pick.push(can.splice(Math.floor(Math.random() * can.length), 1)[0]);
+    if (!pick.length) { refund(); return; }
+    const offers = pick.map((u) => ({ def: u.def, rarity: (u.rarity ?? 0) + 1, mult: RARITY[(u.rarity ?? 0) + 1].mult, from: u.rarity ?? 0, src: u }));
+    this.ui?.closeAllModals();
+    this.ui?.chooseTome(offers, (c) => {
+      if (!c) { refund(); return; }
+      c.src.rarity = c.rarity; c.src.mult = c.mult;
+      p.recomputeStats();
+      this.audio?.play('tome_pick');
+      this.ui?.toast(`${c.def.name} refined to ${RARITY[c.rarity].name}`, RARITY[c.rarity].color);
+    }, null, { title: 'Refine a Tome', sub: 'Choose one to raise a rarity' });
   }
 
   // ======================================================================
@@ -1915,17 +1935,31 @@ const HALO_MAT = new THREE.SpriteMaterial({ color: new THREE.Color(1.2, 0.1, 0.1
   return new THREE.CanvasTexture(c);
 })() });
 
+// The merchant's stock. Gold should be a choice, not a shopping list: every
+// purchase marks the rest of this merchant's wares up by a quarter (compounding),
+// and refining a tome you already hold is always on offer, dearer each time, so
+// spare gold still has a use but never buys everything.
+const SHOP_MARKUP = 1.25;
 function makeShopStock(game, p) {
   const f = game.floorIndex;
   const items = [];
-  items.push({ name: 'Healing Draught', desc: 'Restore 50% health.', icon: 'heart', price: 30 + f * 10, apply: (pl) => { pl.heal(pl.maxHp * 0.5); game.healPulse = 1; } });
-  items.push({ name: 'Elixir of Vigor', desc: '+25 max health.', icon: 'heart', price: 60 + f * 15, apply: (pl) => { pl.upgrades.push({ def: TOMES.find((t) => t.id === 'vitality'), rarity: 0, mult: 1.25 }); pl.recomputeStats(); } });
+  items.bought = 0;
+  items.push({ name: 'Healing Draught', desc: 'Restore 50% health.', icon: 'heart', base: 30 + f * 12, apply: (pl) => { pl.heal(pl.maxHp * 0.5); game.healPulse = 1; } });
+  items.push({ name: 'Elixir of Vigor', desc: '+25 max health.', icon: 'heart', base: 70 + f * 22, apply: (pl) => { pl.upgrades.push({ def: TOMES.find((t) => t.id === 'vitality'), rarity: 0, mult: 1.25 }); pl.recomputeStats(); } });
   const tomes = rollTomes(p, 3, 1);
-  for (const t of tomes) items.push({ name: t.def.name, desc: (t.def.aug ? `Augment · ${t.def.spellName}. ` : '') + t.def.desc(t.mult), icon: t.def.icon, rarity: t.rarity, price: [50, 90, 150, 240][t.rarity] + f * 15, apply: () => game.grantTome(t) });
+  for (const t of tomes) items.push({ name: t.def.name, desc: (t.def.aug ? `Augment · ${t.def.spellName}. ` : '') + t.def.desc(t.mult), icon: t.def.icon, rarity: t.rarity, base: [60, 110, 180, 290][t.rarity] + f * 28, apply: () => game.grantTome(t) });
   const rel = rollRelics(p, 1);
-  for (const r of rel) items.push({ name: r.def.name, desc: relicDesc(r.def), icon: r.def.icon, price: 180 + f * 25, relic: true, color: relicColor(r.def), apply: () => game.grantRelic(r) });
-  for (const it of items) it.price = Math.round(it.price * (game.difficulty.shopCost ?? 1)); // the Avarice pact
+  for (const r of rel) items.push({ name: r.def.name, desc: relicDesc(r.def), icon: r.def.icon, base: 200 + f * 45, relic: true, color: relicColor(r.def), apply: () => game.grantRelic(r) });
+  // refining: three of your tomes, each a rarity finer; may be bought again (dearer)
+  items.push({ name: 'Refine a Tome', desc: 'Raise one of three of your tomes a rarity (Common to Rare, Rare to Epic...).', icon: 'glyph', base: 120 + f * 35, refine: true, uses: 0,
+    available: (pl) => pl.upgrades.some((u) => u.def && !u.def.hidden && (u.rarity ?? 0) < 3 && u.def.id !== 'vitality'),
+    apply: (pl, refund) => game.refineTome(pl, refund) });
+  priceShop(game, items);
   return items;
+}
+function priceShop(game, items) {
+  const k = (game.difficulty.shopCost ?? 1) * SHOP_MARKUP ** items.bought; // (the Avarice pact, then the markup)
+  for (const it of items) it.price = Math.round(it.base * k * (it.refine ? 1.6 ** it.uses : 1));
 }
 
 export { typeIndex, soundEl, K_WATER, ROOM };
