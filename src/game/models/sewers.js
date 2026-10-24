@@ -681,7 +681,8 @@ export const ratOgre = {
   },
   pose: humanoidPose,
   anim: {
-    death: 'fall', spawn: 'rise', gait: 'plod', armSwing: 0.3, armOut: 0.22, stride: 0.5, knee: 0.7,
+    // (deathLift: a belly this deep, face down, sank into the floor)
+    death: 'fall', deathLift: 0.12, spawn: 'rise', gait: 'plod', armSwing: 0.3, armOut: 0.22, stride: 0.5, knee: 0.7,
     rest: { armR: [-0.3, 0, -0.1], foreR: [-0.6, 0, 0], handR: [0.4, 0, 0] },
     stance: (P) => P.apply({ spine: [0.25, 0, 0], chest: [0.3, 0, 0], neck: [-0.35, 0, 0], head: [-0.25, 0, 0], thighL: [-0.25, 0, 0.1], thighR: [-0.25, 0, -0.1], shinL: [0.4, 0, 0], shinR: [0.4, 0, 0], footL: [-0.15, 0, 0], footR: [-0.15, 0, 0], hips: [0, 0, 0, 0, -0.08, 0] }),
     actions: {

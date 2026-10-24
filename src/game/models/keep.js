@@ -498,7 +498,8 @@ export const royalGuard = {
   },
   pose: humanoidPose,
   anim: {
-    death: 'collapse', spawn: 'rise', gait: 'plod', armSwing: 0.15, stride: 0.5, knee: 0.7,
+    // (an armoured guard topples; the bone-pile collapse sank it into the floor)
+    death: 'fall', spawn: 'rise', gait: 'plod', armSwing: 0.15, stride: 0.5, knee: 0.7,
     rest: { armR: [-0.3, 0, 0.0], foreR: [-1.15, 0, 0], handR: [-0.2, 0, 0], armL: [-0.12, -0.9, 0.25], foreL: [-1.3, 0, 0] },
     extra: (P, m, s, dt, k) => {
       glowLevel(m, s.anim === 'windup' ? 1 + smooth(0, 1, s.progress) : s.anim === 'death' ? 1 - 0.9 * s.progress : 1);

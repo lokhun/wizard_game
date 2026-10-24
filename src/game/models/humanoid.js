@@ -291,14 +291,15 @@ function deathPose(m, s, P, D, A, sc) {
   }
   if (style === 'apart') {
     // armor pieces lose their binding and clatter apart
-    const fall = { hips: [0.2, 0, 0.3 * sd, 0, -(D.hipH - 0.2 * sc), 0], thighL: [-1.0, 0, 0.6], thighR: [-0.3, 0, -0.5], shinL: [1.6, 0, 0], shinR: [0.5, 0, 0] };
+    // (the pieces come to rest on the floor, not in it: a plate's thickness kept above the flagstones)
+    const fall = { hips: [0.2, 0, 0.3 * sd, 0, -(D.hipH - 0.3 * sc), 0], thighL: [-1.0, 0, 0.6], thighR: [-0.3, 0, -0.5], shinL: [1.6, 0, 0], shinR: [0.5, 0, 0] };
     P.apply(fall, b);
     P.apply({ hips: [0, 0, 0, 0, -0.15 * sc, 0], spine: [0.3, 0, 0], head: [0.3, 0, 0] }, a * (1 - b));
     const sep = smooth(0.15, 0.6, p);
-    P.p('head', 0.3 * sd * sc * b, (0.15 * sep - 0.55 * b) * sc, 0.35 * b * sc); P.r('head', 1.4 * b, 0.8 * b, 1.6 * b * sd);
-    P.p('chest', 0, 0.06 * sep * sc - 0.15 * b * sc, -0.1 * b * sc); P.r('chest', -0.6 * b, 0.3 * b * sd, 0.5 * b);
-    P.p('armL', 0.15 * sep * sc, -0.35 * b * sc, 0.1 * b * sc); P.r('armL', -0.8 * b, 0, 1.4 * b);
-    P.p('armR', -0.15 * sep * sc, -0.3 * b * sc, -0.15 * b * sc); P.r('armR', 0.4 * b, 0, -1.5 * b);
+    P.p('head', 0.3 * sd * sc * b, (0.15 * sep - 0.42 * b) * sc, 0.35 * b * sc); P.r('head', 1.4 * b, 0.8 * b, 1.6 * b * sd);
+    P.p('chest', 0, 0.06 * sep * sc - 0.08 * b * sc, -0.1 * b * sc); P.r('chest', -0.6 * b, 0.3 * b * sd, 0.5 * b);
+    P.p('armL', 0.15 * sep * sc, -0.25 * b * sc, 0.1 * b * sc); P.r('armL', -0.8 * b, 0, 1.4 * b);
+    P.p('armR', -0.15 * sep * sc, -0.21 * b * sc, -0.15 * b * sc); P.r('armR', 0.4 * b, 0, -1.5 * b);
     P.p('foreL', 0, -0.06 * sep * sc, 0); P.p('foreR', 0, -0.06 * sep * sc, 0);
     P.r('foreL', -0.4 * b); P.r('foreR', -1.2 * b, 0.5 * b);
     P.p('shinL', 0, -0.05 * sep * sc, 0.06 * b * sc); P.p('shinR', 0, -0.05 * sep * sc, 0);
@@ -317,7 +318,7 @@ function deathPose(m, s, P, D, A, sc) {
   const K = { hips: [0, 0, 0, 0, -(D.thigh * 0.95), -0.05 * sc], thighL: [-0.25, 0, 0.1], thighR: [-0.1, 0, -0.1], shinL: [1.6, 0, 0], shinR: [1.5, 0, 0], footL: [0.5, 0, 0], footR: [0.5, 0, 0], spine: [0.35, 0, 0], chest: [0.2, 0, 0], head: [0.5, 0, 0.2], armL: [0.1, 0, 0.15], armR: [0.1, 0, -0.15], foreL: [-0.3, 0, 0], foreR: [-0.3, 0, 0] };
   const F = back
     ? { hips: [-1.5, 0, 0, 0, -(D.hipH - 0.16 * sc), -0.35 * sc], thighL: [-0.5, 0, 0.15], thighR: [-0.3, 0, -0.1], shinL: [0.7, 0, 0], shinR: [0.3, 0, 0], spine: [-0.05, 0, 0], head: [-0.2, 0.9 * sd, 0], armL: [0.3, 0, 1.3], armR: [-0.3, 0, -1.1], foreL: [-0.6, 0, 0], foreR: [-0.2, 0, 0] }
-    : { hips: [1.48, 0.2 * sd, 0, 0, -(D.hipH - 0.17 * sc), 0.2 * sc], thighL: [-0.15, 0, 0.15], thighR: [-0.3, 0, -0.1], shinL: [0.4, 0, 0], shinR: [0.9, 0, 0], spine: [0.05, 0, 0], chest: [0, 0, 0], neck: [-0.2, 0, 0], head: [-0.3, 1.1 * sd, 0], armL: [-0.4, 0, 1.2], armR: [0.3, 0, -0.9], foreL: [-0.5, 0, 0], foreR: [-0.3, 0, 0] };
+    : { hips: [1.48, 0.2 * sd, 0, 0, -(D.hipH - (0.22 + (A.deathLift ?? 0)) * sc), 0.2 * sc], thighL: [-0.15, 0, 0.15], thighR: [-0.3, 0, -0.1], shinL: [0.4, 0, 0], shinR: [0.9, 0, 0], spine: [0.05, 0, 0], chest: [0, 0, 0], neck: [-0.2, 0, 0], head: [-0.3, 1.1 * sd, 0], armL: [-0.4, 0, 1.2], armR: [0.3, 0, -0.9], foreL: [-0.5, 0, 0], foreR: [-0.3, 0, 0] };
   P.apply(K, a * (1 - b));
   P.apply(F, b);
   if (A.deathExtra) A.deathExtra(P, p, m, s);
