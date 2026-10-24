@@ -761,6 +761,7 @@ export class PoseBuf {
     this.cur = new Float32Array(this.n * K);
     this.rest = bones.map((b) => b.position.clone());
     this.rate = bones.map((b) => b.userData.rate ?? 1);
+    this._pre = null; // (scratch for a pose blended in by weight: humanoidPose's dying stance)
     for (let i = 0; i < this.n; i++) this.cur[i * K + 6] = this.cur[i * K + 7] = this.cur[i * K + 8] = 1;
     this.reset();
   }

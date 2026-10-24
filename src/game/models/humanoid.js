@@ -169,7 +169,16 @@ export function humanoidPose(m, s, P, dt) {
   m.U.uFlutter.value = (m.spec.flutter ?? 0.03) * (1 + w * 1.5);
 
   // ---- base stance (hunch etc.)
-  if (A.stance) A.stance(P, m, s);
+  if (A.stance) {
+    if (dead) {
+      // a hunched body's stance would ride on through the fall and pitch it into the floor (a ghoul
+      // lay with its chest under the flagstones): the stance fades out as the body goes down
+      const k = 1 - smooth(0.25, 0.8, s.progress), pre = (P._pre ??= new Float32Array(P.tgt.length));
+      pre.set(P.tgt);
+      A.stance(P, m, s);
+      if (k < 1) for (let i = 0; i < pre.length; i++) P.tgt[i] = pre[i] + (P.tgt[i] - pre[i]) * k;
+    } else A.stance(P, m, s);
+  }
 
   const floating = A.gait === 'float';
   if (floating) {
