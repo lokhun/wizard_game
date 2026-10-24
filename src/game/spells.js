@@ -14,7 +14,7 @@ import { segPointDist2 } from '../core/math.js';
 // a direct hit on a weak point (Spells.update) deals this much more: aim pays
 export const WEAK_MULT = 1.35;
 // is (x, y, z) on a's weak point? the front of a long body; on an upright one its head: from the base of
-// its head bone up, where the head is now (it follows a lunge or a stoop); a body with no head bone (a
+// its head bone to the top of the head, where the head is now (it follows a lunge or a stoop); a body with no head bone (a
 // slime, a grimoire), or a bone not yet placed, uses the top quarter of its hit capsule
 export function isWeak(a, x, y, z) {
   if (a.hitL > a.hitR * 0.9) return (x - a.pos.x) * Math.sin(a.yaw) + (z - a.pos.z) * Math.cos(a.yaw) > a.hitL * 0.45;
@@ -22,7 +22,8 @@ export function isWeak(a, x, y, z) {
   const hb = a.model?.bones?.head;
   if (hb) {
     const hy = hb.matrixWorld.elements[13];
-    if (hy > y0 + (y1 - y0) * 0.4 && hy < y1) return y >= hy - 0.06;
+    // (up to the top of the head, about a quarter of the bone's height above it: not a raised axe or a banner)
+    if (hy > y0 + (y1 - y0) * 0.4 && hy < y1) return y >= hy - 0.06 && y <= hy + Math.max(0.3, (hy - y0) * 0.25);
   }
   return y >= y1 - (y1 - y0) * 0.25;
 }
