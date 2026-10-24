@@ -445,7 +445,11 @@ export class ActorManager {
     if (H.tag !== 'dot') {
       a.poiseDmg += dmg;
       a.poiseT = 2;
-      if (a.poiseDmg > (def.poise ?? 20) && !a.boss && a.state !== 'spawn') {
+      // footing scales with the foe's health (realm, Abyss, party, pacts): a stagger takes the same
+      // share of it in every realm, so late realms' bigger hits don't stunlock everything (an elite's
+      // triple health counts half: sturdier, not unbreakable)
+      const poise = (def.poise ?? 20) * (a.maxHp / (def.hp || a.maxHp)) * (a.elite ? 0.5 : 1);
+      if (a.poiseDmg > poise && !a.boss && a.state !== 'spawn') {
         a.poiseDmg = 0;
         // breaking a foe's footing mid-wind-up interrupts the blow it was winding up (its mark is
         // wiped on every peer as the stagger arrives: see update) and pays whoever did it
