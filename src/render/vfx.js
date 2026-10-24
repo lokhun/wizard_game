@@ -67,7 +67,7 @@ export function clampHDR(c, max = 1.5, out = [0, 0, 0]) {
   return out;
 }
 
-const _sc = [0, 0, 0], _sc2 = [0, 0, 0], _rc = [0, 0, 0];
+const _sc = [0, 0, 0], _sc2 = [0, 0, 0], _rc = [0, 0, 0], _gp = new THREE.Vector3();
 const _flameC = new THREE.Color();
 const scaleC = (c, k, out) => { out[0] = c[0] * k; out[1] = c[1] * k; out[2] = c[2] * k; return out; };
 
@@ -180,7 +180,11 @@ void main(){
   float front = smoothstep(uProg - 0.06, uProg, f) * sweep;
   float imminent = smoothstep(0.72, 1.0, uProg);
   float pulse = 0.82 + 0.18 * sin(uTime * (9.0 + 16.0 * imminent));
-  vec3 col = uColor * (line * 1.05 * pulse + glowIn * 0.28 + sweep * (0.08 + 0.22 * imminent) + front * 0.5) + vec3(0.24 * line * pulse);
+  // the fill is hatched with slow-drifting diagonal bands (metres, so every zone shares one pitch): a flat
+  // fill seen from inside the zone read as a solid slab standing on the floor, not a mark painted on it
+  vec2 m = p * uSize;
+  float hatch = 0.45 + 0.55 * smoothstep(0.3, 0.7, abs(fract((m.x + m.y) * 2.2 - uTime * 0.35) - 0.5) * 2.0);
+  vec3 col = uColor * (line * 1.05 * pulse + glowIn * 0.28 + sweep * (0.08 + 0.22 * imminent) * hatch + front * 0.5) + vec3(0.24 * line * pulse);
   float dark = halo * 0.5 + inside * (0.14 + 0.1 * imminent);
   col *= uFade; dark *= uFade;
   if (max(max(col.r, col.g), max(col.b, dark)) < 0.003) discard;
@@ -548,6 +552,7 @@ export class VFX {
     this.fovKick = 0;
     this.hitstop = 0;
     this.active = [];     // timed mesh effects
+    this.floorAt = null;  // (x, z) -> floor height, set by the game: blasts put their ring and scorch on it
 
     const plane = new THREE.PlaneGeometry(2, 2);
     plane.rotateX(-Math.PI / 2);
@@ -1131,6 +1136,7 @@ export class VFX {
   }
 
   decal(pos, type, size = 2, life = 8, color) {
+    if (!pos) return; // (no floor in reach)
     const m = this.decalPool.get();
     const look = DECAL_LOOK[type] ?? DECAL_LOOK.scorch;
     const mat = look.additive ? m.userData.glow : m.userData.lit;
@@ -1287,12 +1293,15 @@ export class VFX {
     const matter = element === 'fire' || element === 'enemyFire' || element === 'earth' || element === 'blood' || element === 'poison' || element === 'enemyGreen' || element === 'physical';
     if (!matter) this.P.glow({ x: pos.x, y: pos.y, z: pos.z, r: fx.core[0] * rk, g: fx.core[1] * rk, b: fx.core[2] * rk, r2: fx.mid[0] * rk * 0.5, g2: fx.mid[1] * rk * 0.5, b2: fx.mid[2] * rk * 0.5, life: 0.3, size: radius * 0.4, size2: radius * 2.4, sprite: SPR.RING });
     this.flash(pos, fx.light, Math.min(50 * s, 60) * dim, Math.min(radius * 4, 16), 0.35);
-    this.ring({ x: pos.x, y: (o.groundY ?? pos.y - 0.5), z: pos.z }, radius * 1.1, scaleC(fx.mid, 0.4 * Math.max(0.5, dim), _sc2), 0.45, 0.16);
+    // the ground ring and the scorch go on the real floor, and only when the blast reaches it: a guess of half
+    // a metre under a blast in the air laid a bright disc through the tables beside it, or a scorch hanging in mid-air
+    const gy = o.groundY ?? (this.floorAt ? this.floorAt(pos.x, pos.z) : pos.y - 0.5);
+    const ground = pos.y - gy < radius + 0.6 ? _gp.set(pos.x, gy, pos.z) : null;
+    if (ground) this.ring(ground, radius * 1.1, scaleC(fx.mid, 0.4 * Math.max(0.5, dim), _sc2), 0.45, 0.16);
     // shock shell only for the "energy" elements (fire/earth/blood/poison are matter)
     const shelled = element === 'arcane' || element === 'lightning' || element === 'frost' || element === 'time' || element === 'holy' || element === 'shadow' || element === 'enemyPurple' || element === 'blade';
     if (shelled) this.shell(pos, { element, radius: radius * 1.05, from: radius * 0.2, life: 0.3, alpha: 0.28 * dim });
     this.burst(pos, { element, count: Math.round(18 * s), speed: 10 * s, life: 0.55, size: 0.05, sprite: SPR.SPARK, gravity: 6, stretch: 0.02, drag: 2.5, color: scaleC(fx.mid, dim, _sc), color2: fx.end });
-    const ground = { x: pos.x, y: o.groundY ?? pos.y - 0.5, z: pos.z };
     switch (element) {
       case 'fire': case 'enemyFire': {
         // a churning ball of flame inside dark smoke, not a white sun
@@ -1367,7 +1376,7 @@ export class VFX {
         this.decal(ground, 'crack', radius * 1.8, 12);
         break;
       case 'time':
-        this.ring({ x: pos.x, y: ground.y, z: pos.z }, radius * 0.7, scaleC(fx.mid, 0.8, _sc), 0.7, 0.1);
+        if (ground) this.ring(ground, radius * 0.7, scaleC(fx.mid, 0.8, _sc), 0.7, 0.1);
         this.burst(pos, { element, count: 12, speed: 4, life: 1.0, size: 0.35, sprite: SPR.RING, drag: 3, color: scaleC(fx.mid, 0.8 * dim, _sc) });
         this.decal(ground, 'glyph', radius * 1.6, 2, 0x30a890);
         break;

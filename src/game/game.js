@@ -74,6 +74,7 @@ export class Game {
     this.lights.settings = settings; // "Reduce flashing" softens flashes
     this.particles = new Particles(this.scene);
     this.vfx = new VFX(this.scene, renderer.camera, this.particles, this.lights);
+    this.vfx.floorAt = (x, z) => this.groundY(x, z);
     this.spells = new SpellRuntime(this);
     this.actors = new ActorManager(this);
     this.director = new Director(this);
