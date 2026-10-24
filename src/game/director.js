@@ -46,6 +46,11 @@ const TRIAL_TIME = 45;
 // roles that hang back: they spawn far from the party and away from the action
 const BACKLINE = new Set(['ranged', 'caster']);
 
+// A boss's health per wizard past the first. Each wizard deals about a solo wizard's damage, so a fight
+// lasts (1 + BOSS_PARTY_HP * (n - 1)) / n of the solo one: 1.13x for two, 1.17x for three, 1.19x for four.
+// (0.65 had a party of four down a boss in 74% of the solo time: a co-op boss should be the bigger fight.)
+const BOSS_PARTY_HP = 1.25;
+
 export class Director {
   constructor(game) {
     this.g = game;
@@ -148,7 +153,7 @@ export class Director {
     const def = ENEMY_DEFS[type] ?? BOSS_DEFS[type];
     // boss HP in BOSS_DEFS is already tuned per realm, so bosses skip the floor multiplier
     const hp = BOSS_DEFS[type]
-      ? def.hp * (1 + 0.65 * (this.partySize() - 1)) * (this.g.difficulty?.enemyHp ?? 1) * (this.floorHp() / FLOOR_HP[this.floor])
+      ? def.hp * (1 + BOSS_PARTY_HP * (this.partySize() - 1)) * (this.g.difficulty?.enemyHp ?? 1) * (this.floorHp() / FLOOR_HP[this.floor])
       : def.hp * this.hpScale() * (opts.elite ? 3 : 1);
     const dmg = def.dmg * this.dmgScale() * (opts.elite ? 1.3 : 1);
     const a = this.g.actors.spawn(type, x, z, { hp, dmg, elite: opts.elite, affix: opts.affix, affix2: opts.affix2, yaw: opts.yaw ?? Math.random() * 6.28, dormant: opts.dormant, homeRoom: opts.homeRoom, spawnFx: opts.spawnFx });

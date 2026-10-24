@@ -269,6 +269,7 @@ One visual language for everything on screen: smoky slabs, bronze rings and rule
 - **Cards** (tomes, relics, blessings, the merchant's wares): a bronze double frame in the rarity colour, a crown gem, engraved corners, the sigil in a ringed medallion; epic and legendary gems pulse and a legendary's frame breathes gold.
 
 ## Boss fights
+- **In co-op a boss is the bigger fight.** It has +125% health for every wizard past the first (`BOSS_PARTY_HP`); with each wizard dealing about a solo wizard's damage, the fight runs 1.13x the solo one for two, 1.17x for three, 1.19x for four (at +65% a party of four had it down in 74% of the solo time). Its phases, last stands and Exposed windows come at health thresholds, so they stretch with it; most of its moves already hunt every wizard (a volley or a circle each) and its adds grow with the party.
 Each boss has three phases of four to six moves (`SCRIPTS` in `bosses.js`), and every phase adds something that moves the fight around the arena rather than only adding projectiles:
 - **The Mother of Filth:** *Belch* (a cone of bile that leaves a pool), *Flop* (she heaves into the air and lands on you, a ring of bile rolling out), *Ripple* (three rings of bile burst outward, each with a wandering gap).
 - **The Executioner:** *Combo* (a chop, then the backswing a beat later), *Leap* (from across the yard, axe overhead), *Whirlwind* (he spins down a marked lane of burning steel).
