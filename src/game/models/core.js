@@ -1023,7 +1023,8 @@ export class EnemyInstance {
     const r = this.spec.pose(this, S, this.P, dt);
     if (typeof r === 'number') rate = r;
     this.P.damp(dt, rate);
-    if (this._soles) this._ground(dt, S.anim !== 'death' && S.anim !== 'spawn' && !this._flying);
+    // (off in death and flight; a body rising out of the floor takes it up over the end of the rise, not in a pop)
+    if (this._soles) this._ground(dt, S.anim === 'death' || this._flying ? 0 : S.anim === 'spawn' ? smooth(0.7, 1, S.progress) : 1);
     if (Math.abs(this._opTarget - this._opacity) > 1e-3) { this._opacity = this._opTarget; this._dirty = true; }
     this._updateOrb(dt);
     if (this._flash > 0) { this._flash = Math.max(0, this._flash - dt * 8); this._dirty = true; }
@@ -1031,9 +1032,9 @@ export class EnemyInstance {
   }
   // lift the body so no sole sits below the floor (y = 0 in the top bone's parent space): the leg's
   // local matrices multiplied up by hand, a handful per foot, no world update
-  _ground(dt, on) {
+  _ground(dt, w) {
     let lo = Infinity, top = null;
-    if (on) {
+    if (w > 0) {
       for (const s of this._soles) {
         const c = s.chain;
         _m.identity();
@@ -1043,7 +1044,7 @@ export class EnemyInstance {
         top = c[c.length - 1];
       }
     } else top = this._soles[0].chain[this._soles[0].chain.length - 1];
-    const tgt = on ? clamp(-lo, 0, this.height * 0.2) : 0;
+    const tgt = w > 0 ? clamp(-lo, 0, this.height * 0.2) * w : 0;
     // quick to rise (a sinking foot shows), slower to settle back (no pop when an action ends or the body falls)
     this._lift += (tgt - this._lift) * (1 - Math.exp(-(tgt > this._lift ? 30 : 8) * dt));
     if (this._lift > 1e-4) top.position.y += this._lift;
