@@ -333,7 +333,10 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 
 .pause-box, .settings-box, .end-box, .help-box { padding: 30px 40px; min-width: 420px; display: flex; flex-direction: column; gap: 12px; align-items: center; }
 .settings-box .row { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 18px; font-family: var(--serif); font-size: 14px; letter-spacing: 0.06em; }
-.settings-box input[type=range] { width: 200px; accent-color: #c8a060; }
+.settings-box input[type=range] { width: 200px; accent-color: #c8a060; margin-left: auto; }
+.settings-box output { width: 3.6em; text-align: right; color: var(--bronze-hi); font-variant-numeric: tabular-nums; font-size: 13px; }
+/* menu modals sit over the menu: near-opaque, so its buttons don't read through */
+.settings-box, .help-box { background: linear-gradient(180deg, rgba(26,21,17,0.985), rgba(13,11,10,0.985)); }
 .settings-box select { background: #0c0a08; color: var(--text); border: 1px solid var(--bronze-lo); font-family: var(--serif); padding: 4px 8px; }
 .end-box .big { font-family: 'Cinzel Decorative', var(--serif); font-size: 56px; letter-spacing: 0.1em; }
 .end-box table { border-collapse: collapse; margin: 10px 0 18px; font-family: var(--serif); }

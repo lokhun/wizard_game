@@ -303,6 +303,13 @@ export class UI {
         <div style="display:flex;gap:10px;justify-content:center"><button class="btn" id="bKeys">Controls</button><button class="btn" id="bClose">Done</button></div>
       </div>`);
     m.querySelector('#sQual').value = settings.quality;
+    // each slider shows its value beside it (a player tuning FOV or sensitivity wants the number)
+    const FMT = { sMaster: 'pct', sMusic: 'pct', sSfx: 'pct', sShake: 'pct', sHud: 'pct', sSens: 'x', sFov: 'deg' };
+    for (const [id, f] of Object.entries(FMT)) {
+      const inp = m.querySelector('#' + id), out = document.createElement('output');
+      const show = () => { const v = +inp.value; out.textContent = f === 'pct' ? `${Math.round(v * 100)}%` : f === 'deg' ? `${v}°` : `${v.toFixed(2)}×`; };
+      inp.after(out); show(); inp.addEventListener('input', show);
+    }
     const bind = (id, key, num = true) => m.querySelector(id).addEventListener('input', (e) => { settings[key] = e.target.type === 'checkbox' ? e.target.checked : num ? +e.target.value : e.target.value; onChange(settings); });
     bind('#sMaster', 'master'); bind('#sMusic', 'music'); bind('#sSfx', 'sfx'); bind('#sSens', 'sensitivity'); bind('#sFov', 'fov'); bind('#sShake', 'shake'); bind('#sCalm', 'calm'); bind('#sHud', 'hudScale');
     bind('#sQual', 'quality', false); bind('#sInv', 'invertY', false); bind('#sTele', 'contrastTele', false); bind('#sFps', 'showFps', false); bind('#sDyn', 'dynamicRes', false);
