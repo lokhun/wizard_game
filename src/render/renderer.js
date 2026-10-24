@@ -46,9 +46,10 @@ const GRADE_MAIN = /* glsl */ `
       // vignette
       float vig = smoothstep(0.85, 0.15, length(dc * vec2(uRes.x / uRes.y, 1.0)) * 0.95);
       col *= mix(1.0 - uVignette, 1.0, vig);
-      // damage and heal edges
-      float edge = smoothstep(0.25, 0.75, length(dc) * 1.4);
-      col = mix(col, vec3(0.55, 0.0, 0.0) + col * 0.4, uDamage * edge * 0.85);
+      // damage and heal edges: a frame around the view, never a wash over it (taking a beating is
+      // exactly when the next telegraph must stay readable: the middle of the screen keeps clear)
+      float edge = smoothstep(0.44, 0.96, length(dc) * 1.4);
+      col = mix(col, vec3(0.55, 0.0, 0.0) + col * 0.4, uDamage * edge * 0.8);
       // healing warms the screen edge green; a tint, not a wash over the view
       col = mix(col, col * vec3(0.9, 1.3, 0.95) + vec3(0.012, 0.055, 0.022), min(uHeal, 1.0) * edge * 0.85);
       // standing in a danger zone about to land: a thin rim of its colour at the edges of the view
