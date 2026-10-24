@@ -2293,7 +2293,7 @@ export const CLASSES = {
         cast(ctx) {
           ctx.sound('cast_wind', 0.7);
           ctx.fan(1, 2, (dir) => ctx.proj({ el: 'wind', vel: dir.multiplyScalar(38), radius: 0.4, life: 1.2, core: 0.3, mesh: 'crescent', meshScale: 1.25, light: 3, trail: 1.6, pierce: 2,
-            hit: { dmg: 13, el: 'wind', kb: 3 } }));
+            hit: { dmg: 16, el: 'wind', kb: 3 } })); // (13 left the Tempest last of every class, single foe and pack alike)
           ctx.muzzle('wind');
         },
       },
@@ -2346,7 +2346,7 @@ export const CLASSES = {
               }
             }
           }
-          for (const a of struck) ctx.hit(a, { dmg: 16, el: 'wind', kb: 20, st }, v3(a.pos.x, a.pos.y + 1, a.pos.z));
+          for (const a of struck) ctx.hit(a, { dmg: 22, el: 'wind', kb: 20, st }, v3(a.pos.x, a.pos.y + 1, a.pos.z));
           ctx.kick(0.1, 2);
         },
       },
