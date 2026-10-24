@@ -97,8 +97,10 @@ function recapHTML(rc, titled = false) {
 
 // a wizard's biggest damage source and its share, as a party-column row
 function topSource(S) {
-  const r = S.dmgBy?.[0], total = (S.dmgBy ?? []).reduce((t, x) => t + x[2], 0);
-  return r && total > 0 ? `<tr><td>Top source</td><td title="${fmtNum(r[2])} damage">${esc(r[0])} · ${Math.round((100 * r[2]) / total)}%</td></tr>` : '';
+  // (a teammate's summary comes off the wire: take nothing on trust)
+  const rows = Array.isArray(S.dmgBy) ? S.dmgBy.filter((x) => Array.isArray(x) && Number.isFinite(+x[2])) : [];
+  const r = rows[0], total = rows.reduce((t, x) => t + +x[2], 0);
+  return r && total > 0 ? `<tr><td>Top source</td><td title="${fmtNum(+r[2])} damage">${esc(r[0])} · ${Math.round((100 * +r[2]) / total)}%</td></tr>` : '';
 }
 
 function partyCol(S, me, best) {
@@ -109,7 +111,7 @@ function partyCol(S, me, best) {
     <div class="ph">${classEmblem(S.classId, col, 38)}<div style="min-width:0"><div class="pn">${esc(S.name)}</div><div class="pcl">${c.name}${me ? ' · you' : ''}</div></div></div>
     <table>${row('kills', 'Foes slain', S.kills, fmtNum(S.kills))}${row('damage', 'Damage dealt', S.damage, fmtNum(S.damage))}${row('biggest', 'Biggest hit', S.biggest, fmtNum(S.biggest))}${row('reactions', 'Reactions', S.reactions, fmtNum(S.reactions))}
     <tr><td>Taken · downed</td><td>${fmtNum(S.taken)} · ${S.downs}×</td></tr>
-    ${S.dodges !== undefined ? `<tr><td>Dodges · interrupts</td><td>${S.dodges} · ${S.interrupts}</td></tr>` : ''}${topSource(S)}</table>
+    ${S.dodges !== undefined ? `<tr><td>Dodges · interrupts</td><td>${+S.dodges | 0} · ${+S.interrupts | 0}</td></tr>` : ''}${topSource(S)}</table>
     <div class="rs-build">${buildIcons(S, 18)}</div>
     ${S.killer ? `<div class="kb">Felled by ${esc(S.killer)}</div>` : ''}${recapHTML(S.recap)}
     ${S.feats?.length ? `<div class="rs-feats inline">${S.feats.map((id) => FEAT_BY_ID[id]).filter(Boolean).map((f) => `<div class="rs-feat" title="${esc(f.desc)}">${iconSVG(f.icon, '#f0c050', 18)}<div class="n">${esc(f.name)}</div></div>`).join('')}</div>` : ''}

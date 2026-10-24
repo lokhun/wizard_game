@@ -19,6 +19,7 @@ const EYE = 1.62;
 const RADIUS = 0.38;
 const GRAVITY = 24;
 const DASH_CARRY = 0.55; // the share of a dash's speed a dash-jump keeps
+const DASH_SPEED = 6.5 / 0.18; // a plain dash's (the dash key's: 6.5 m in 0.18 s)
 
 export function baseStats(classId) {
   const C = CLASSES[classId];
@@ -133,6 +134,7 @@ export class LocalPlayer {
     this.history.length = 0;
     this.pos.set(x, this.game.groundY(x, z), z);
     this.vel.set(0, 0, 0);
+    this.dashT = 0; this.dashJump = false; this.dashEndT = -9; // (no leftover dash, or its carry, at the new spot)
     this.yaw = yaw;
     this.pitch = 0;
   }
@@ -232,6 +234,7 @@ export class LocalPlayer {
 
   _goDown() {
     const g = this.game;
+    this.dashT = 0; this.dashJump = false; // (a dash cut short by the fall: no carry after the revive)
     if ((this.stats.extraLives ?? 0) > (this.livesUsed ?? 0) || this.relicLives > 0) {
       if (this.relicLives > 0) this.relicLives--; else this.livesUsed = (this.livesUsed ?? 0) + 1;
       this.hp = Math.round(this.maxHp * 0.5);
@@ -322,6 +325,13 @@ export class LocalPlayer {
     return new THREE.Vector3(-Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp);
   }
   flatForward() { return new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)); }
+
+  // a dash-jump's carry: a share of the dash's speed, never more than a plain dash's (a spell's
+  // 55 m/s lunge would fling you 30 m/s)
+  _carry() {
+    const k = DASH_CARRY * Math.min(1, DASH_SPEED / (this.dashVel.length() || 1));
+    this.vel.x = this.dashVel.x * k; this.vel.z = this.dashVel.z * k;
+  }
 
   dash(dir, dist, dur, opts = {}) {
     this.dashT = dur; this.dashJump = false;
@@ -436,15 +446,15 @@ export class LocalPlayer {
     if (sp.mode === 'channel') {
       const S = {};
       this.channel = { slot, S, ctx, t: 0, max: sp.channel.max ?? 3 };
-      this.game.spells.slot = slot;
+      const sl = this.game.spells.slot; this.game.spells.slot = slot;
       sp.channel.start(ctx, S);
-      this.game.spells.slot = null;
+      this.game.spells.slot = sl;
       this.game.net?.sendCast({ pid: this.id, slot, o: origin, d: dir, ap: aim.point, chan: 1, au: this.stats.augSlot?.[slot] });
     } else {
       const edgeBefore = this.edge;
-      this.game.spells.slot = slot;
+      const sl = this.game.spells.slot; this.game.spells.slot = slot;
       sp.cast(ctx);
-      this.game.spells.slot = null;
+      this.game.spells.slot = sl;
       this.game.net?.sendCast({ pid: this.id, slot, o: origin, d: dir, ap: aim.point, ch: edgeBefore, au: this.stats.augSlot?.[slot] });
     }
     this.game.onLocalCast?.(slot);
@@ -459,9 +469,9 @@ export class LocalPlayer {
   endChannel() {
     if (!this.channel) return;
     const sp = this.cls.spells[this.channel.slot];
-    this.game.spells.slot = this.channel.slot;
+    const sl = this.game.spells.slot; this.game.spells.slot = this.channel.slot; // (restored after: this can run nested, e.g. downed mid-callback)
     sp.channel.end(this.channel.ctx, this.channel.S);
-    this.game.spells.slot = null;
+    this.game.spells.slot = sl;
     // cooldown scales with how long the channel was held
     const used = Math.min(1, this.channel.t / this.channel.max);
     this.cds[this.channel.slot] = Math.max(0.5, this._cdOf(this.channel.slot) * (0.35 + 0.65 * used));
@@ -628,7 +638,7 @@ export class LocalPlayer {
       this.vel.y = Math.max(this.vel.y, 0);
       if (this.dashT <= 0) {
         this.dashEndT = g.time;
-        if (this.dashJump) { this.dashJump = false; this.vel.x = this.dashVel.x * DASH_CARRY; this.vel.z = this.dashVel.z * DASH_CARRY; }
+        if (this.dashJump) { this.dashJump = false; this.dashEndT = -9; this._carry(); } // (-9: one dash-jump a dash, not a second on a double jump)
       }
     }
 
@@ -646,7 +656,7 @@ export class LocalPlayer {
       // the leap, a long bound that slides a little on landing (air control then bleeds it off)
       if (this.dashT > 0 || g.time - this.dashEndT < 0.12) {
         if (this.dashT > 0) this.dashJump = true; // (mid-dash: carried when it ends)
-        else { this.vel.x = this.dashVel.x * DASH_CARRY; this.vel.z = this.dashVel.z * DASH_CARRY; }
+        else this._carry();
         this.dashEndT = -9;
         g.vfx.addFovKick(4);
         g.audio?.play('dash', { volume: 0.3 });
@@ -737,9 +747,9 @@ export class LocalPlayer {
         ch.ctx.dir.copy(aim.point).sub(ch.ctx.origin).normalize();
         ch.ctx.aimPoint.copy(aim.point);
         ch.ctx.stats = this.stats;
-        this.game.spells.slot = ch.slot;
+        const sl = this.game.spells.slot; this.game.spells.slot = ch.slot;
         sp.channel.update(ch.ctx, ch.S, dt);
-        this.game.spells.slot = null;
+        this.game.spells.slot = sl;
         if (this.castAnim) this.castAnim.t = Math.min(this.castAnim.t, 0.2);
       }
       return;

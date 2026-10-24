@@ -683,8 +683,8 @@ export class ActorManager {
           g.lights.request(a.pos, 0xffc040, 2.2, 5);
         }
         if (a._tele) this._teleFollow(a);
-        // staggered out of a wind-up: the blow it was winding up never lands
-        if (a.anim === 'stagger' && a._prevAnim === 'windup') g.cancelHazardsFrom?.(a.id, _v.set(a.pos.x, a.pos.y + a.height + 0.4, a.pos.z));
+        // staggered out of a wind-up (or a cast-type one: its circles are placed as it starts): the blow never lands
+        if (a.anim === 'stagger' && (a._prevAnim === 'windup' || a._prevAnim === 'cast')) g.cancelHazardsFrom?.(a.id, _v.set(a.pos.x, a.pos.y + a.height + 0.4, a.pos.z));
         a._prevAnim = a.anim;
         const frozen = (a.mask & ST.frozen) !== 0;
         const animDt = frozen ? 0 : dt * (a.mask & ST.slow ? 0.5 : 1);

@@ -867,7 +867,7 @@ export class Game {
           hitSet.add(n.id);
           const np = new THREE.Vector3(n.pos.x, n.pos.y + n.height * 0.5, n.pos.z);
           this.vfx.lightning(cur, np, { life: 0.15, branches: 1 });
-          this.hitActor(n, { dmg: H.dmg * 0.6, el: 'lightning', st: { shock: 3 }, noReact: true, src: p.id }, np);
+          this.hitActor(n, { dmg: H.dmg * 0.6, el: 'lightning', st: { shock: 3 }, noReact: true, src: p.id, tag: 'reaction' }, np);
           cur = np;
         }
       }
@@ -878,7 +878,11 @@ export class Game {
     let stPayload = H.st;
     if (stPayload && stPayload.poison && st.poisonBonus && H.tag !== 'dot') stPayload = { ...stPayload, poison: [stPayload.poison[0], stPayload.poison[1]] };
     // relic procs (lightning strikes, glyphs, overkill arcs...) and the statuses they add
-    if (this.relics) stPayload = this.relics.onHit(a, H, res, dmg, pos, stPayload);
+    if (this.relics) {
+      const sl = this.spells.slot; this.spells.slot = 'other'; // (a relic's proc, and its timers, are the relic's damage)
+      stPayload = this.relics.onHit(a, H, res, dmg, pos, stPayload);
+      this.spells.slot = sl;
+    }
     // local feedback
     if (dmg > 0) {
       if (H.tag !== 'dot') a.hitFlash = res.crit ? 0.6 : 0.4;
@@ -909,7 +913,8 @@ export class Game {
     }
     // predicted health for responsiveness
     const willKill = a.hp - dmg <= 0;
-    p.onDealtDamage(dmg, false, a, H.tag === 'dot' ? 'dot' : H.tag === 'reaction' ? 'reaction' : this.spells.slot ?? 'other');
+    // (a spell zone's ticks are tagged 'dot' but belong to their spell: status ticks credit 'dot' in onDotTick)
+    p.onDealtDamage(dmg, false, a, H.tag === 'reaction' ? 'reaction' : H.relic ? 'other' : this.spells.slot ?? (H.tag === 'dot' ? 'dot' : 'other'));
     this.stats.damage += dmg;
     this.events.emit('hit', dmg, a, res, H);
     const kbMult = st.kbMult ?? 1;

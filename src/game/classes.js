@@ -597,7 +597,7 @@ export const CLASSES = {
             // (the bolt's first target takes it on its weak point when you aim for the head)
             const h0 = hits[0], weak = isWeak(h0.actor, h0.point.x, h0.point.y, h0.point.z);
             const H = { dmg: 15 * empowered * (aug(ctx, 'storm_fork') ? 0.8 : 1), el: 'lightning', st: { shock: 3 } };
-            ctx.hit(h0.actor, weak ? { ...H, weak, dmg: H.dmg * WEAK_MULT } : H, end);
+            ctx.hit(h0.actor, { ...H, weak, dmg: weak ? H.dmg * WEAK_MULT : H.dmg }, end); // (weak is always set: an aimed hit, for the summary's weak-point share)
             const seen = ctx.chain(h0.actor, end, H, chainN, 7, fall, null, true);
             if (aug(ctx, 'storm_fork')) {
               // augment: the bolt forks at its first target into two separate chains

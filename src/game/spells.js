@@ -412,7 +412,7 @@ export class SpellRuntime {
         if (d > 5) {
           const sp = p.vel.length();
           _v2.divideScalar(d);
-          if (_v2.dot(_v.copy(p.vel).divideScalar(sp || 1)) > 0.64) {
+          if (_v2.dot(_v.copy(p.vel).divideScalar(sp || 1)) > 0.5) { // (within 60 deg: a boss's fanned orbs still curve in)
             p.vel.lerp(_v2.multiplyScalar(sp), Math.min(1, p.homing * dt));
             p.vel.setLength(sp);
           }

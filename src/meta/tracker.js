@@ -57,6 +57,7 @@ export class RunTracker {
   start() {
     const g = this.g;
     this.remote.clear();
+    this._best = null;
     if (g.menuMode) { this.run = null; return; }
     const d = g.difficulty ?? {};
     this.run = {
