@@ -706,10 +706,13 @@ export class UI {
     this._blitText(g, this._textBitmap(down ? r.name + ' — DOWNED' : r.name, '600 12px Cinzel, serif', col, { stroke: 'rgba(0,0,0,0.75)', lw: 3 }), x - c * 34, y - sn * 22);
     g.globalAlpha = 1;
   }
-  _project(pos) {
-    const v = (this._pv ??= new THREE.Vector3()).set(pos.x, pos.y, pos.z).project(this.renderer.camera);
+  // (one shared result, overwritten by the next call: every caller reads it at once)
+  _project(x, y, z) {
+    const v = (this._pv ??= new THREE.Vector3()).set(x, y, z).project(this.renderer.camera);
     if (v.z > 1 || v.z < -1) return null;
-    return { x: (v.x * 0.5 + 0.5) * innerWidth, y: (-v.y * 0.5 + 0.5) * innerHeight, z: v.z };
+    const s = (this._ps ??= { x: 0, y: 0, z: 0 });
+    s.x = (v.x * 0.5 + 0.5) * innerWidth; s.y = (-v.y * 0.5 + 0.5) * innerHeight; s.z = v.z;
+    return s;
   }
 
   // Text drawn into a small canvas once (font, outline and glow included) and
@@ -799,7 +802,7 @@ export class UI {
       // no health bars through walls (line of sight re-checked a few times a second)
       if (!(a._losT > game.time)) { a._losT = game.time + 0.2 + Math.random() * 0.1; a._los = game.collision.los(cam.position.x, cam.position.y, cam.position.z, a.pos.x, a.pos.y + a.height * 0.8, a.pos.z); }
       if (!a._los) continue;
-      const s = this._project({ x: a.pos.x, y: a.pos.y + a.height + 0.35, z: a.pos.z });
+      const s = this._project(a.pos.x, a.pos.y + a.height + 0.35, a.pos.z);
       if (!s) continue;
       // keep labels off the minimap corner
       if (s.x > innerWidth - 250 && s.y < 250) continue;
@@ -836,7 +839,7 @@ export class UI {
     }
     // teammate name tags (and, for one out of view, a marker at the screen edge pointing to them)
     for (const r of game.remotes.values()) {
-      const s = this._project({ x: r.pos.x, y: r.pos.y + 2.25, z: r.pos.z });
+      const s = this._project(r.pos.x, r.pos.y + 2.25, r.pos.z);
       if (!s || s.x < 0 || s.y < 0 || s.x > innerWidth || s.y > innerHeight) { if (!r.dead) this._edgeMark(g, r); continue; }
       this._blitText(g, this._textBitmap(r.name + (r.downed ? ' — DOWNED' : ''), '600 13px Cinzel, serif', r.downed ? '#ff5050' : hex(r.meta.color2 ?? r.meta.color), { stroke: 'rgba(0,0,0,0.7)', lw: 3 }), s.x, s.y - 4);
       // a teammate's bar: wide, outlined and in ally colours (never an enemy's red)
@@ -854,7 +857,7 @@ export class UI {
       const n = this.numbers[i];
       n.t += dt;
       n.pos.y += dt * (n.crit ? 1.4 : 1.0);
-      const s = this._project(n.pos);
+      const s = this._project(n.pos.x, n.pos.y, n.pos.z);
       if (n.t > n.life || !s) { if (n.t > n.life) this.numbers.splice(i, 1); continue; }
       const k = n.t / n.life;
       const pop = n.t < 0.12 ? 1 + (1 - n.t / 0.12) * (n.crit ? 0.9 : 0.4) : 1;
@@ -877,7 +880,7 @@ export class UI {
       f.pos.y += dt * 0.8;
       if (f.t > 1.4) continue;
       this.floats[keep++] = f;
-      const s = this._project(f.pos);
+      const s = this._project(f.pos.x, f.pos.y, f.pos.z);
       if (!s) continue;
       const b = this._textBitmap(f.text, `700 ${f.big ? 22 : 15}px Cinzel, serif`, f.color, { stroke: 'rgba(0,0,0,0.9)', lw: 4, glow: 12 });
       const hw = b.w * 0.36, hh = b.h * 0.3; // (the lettering, not the glow around it)
@@ -903,7 +906,7 @@ export class UI {
     for (const pg of game.pings ?? []) {
       const age = game.time - pg.born;
       const fade = Math.min(1, (pg.life - age) / 0.8);
-      let s = this._project(pg.pos);
+      let s = this._project(pg.pos.x, pg.pos.y, pg.pos.z);
       let edge = false;
       if (!s || s.x < 30 || s.x > innerWidth - 30 || s.y < 30 || s.y > innerHeight - 30) {
         // direction in view space, pushed to the border
