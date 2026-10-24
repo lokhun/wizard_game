@@ -282,7 +282,7 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .banner.combat.show .line { width: 340px; }
 .banner.combat.edge { top: calc(14px * var(--hud-scale, 1)); }
 
-.toasts { position: absolute; right: 28px; bottom: 90px; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+.toasts { position: absolute; right: 28px; bottom: 132px; max-width: min(420px, 30vw); /* (above the ability bar's key labels, whatever the width) */ display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
 .toast { font-family: var(--serif); font-size: 14px; padding: 6px 12px; background: rgba(10,8,7,0.85); border-left: 2px solid var(--bronze); color: var(--text); animation: toastIn 0.3s ease; letter-spacing: 0.04em; }
 @keyframes toastIn { from { opacity: 0; transform: translateX(20px);} }
 
