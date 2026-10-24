@@ -16,6 +16,10 @@ const loadPeer = () => (peerjs ??= import('peerjs').catch((e) => { peerjs = null
 // ---------------------------------------------------------------------------
 
 const PREFIX = 'arcane-ascent-v1-';
+// The game's protocol: a party plays one set of rules, so a joiner on another build (a stale cache
+// after a release) is turned away with a message rather than let in to play out of step. Bump it
+// whenever a message or a rule both sides must agree on changes.
+export const PROTOCOL = 2;
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 // The site's own co-op service (deploy/signal/server.mjs): a PeerJS signalling
@@ -116,7 +120,9 @@ export class Net {
           console.warn('peer error', err);
         });
         peer.on('connection', (conn) => this._accept(conn));
-        peer.on('disconnected', () => { if (!this.closed) peer.reconnect(); });
+        // (only the live host peer reconnects: a peer an id clash destroyed still fires this, and
+        // reconnecting a destroyed peer throws)
+        peer.on('disconnected', () => { if (!this.closed && peer === this.peer && !peer.destroyed) { try { peer.reconnect(); } catch (e) { console.warn('peer reconnect', e); } } });
       };
       attempt(3);
     }));

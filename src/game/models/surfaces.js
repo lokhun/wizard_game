@@ -1,4 +1,4 @@
-import { bake, bakeMain } from '../../render/bake.js';
+import { bake, bakeMain, bakeLayer } from '../../render/bake.js';
 
 // ---------------------------------------------------------------------------
 // Extra procedural surfaces for creatures (flesh, fur, clean steel, chainmail,
@@ -195,6 +195,11 @@ export function creatureSurface(renderer, name, size = 512, seed = 1) {
   const set = { map, normalMap, ormMap };
   m.set(key, set);
   return set;
+}
+
+// Bakes a creature surface into a layer of three array targets (bake.js arrayTargets)
+export function creatureLayer(renderer, name, size, seed, targets, layer) {
+  bakeLayer(renderer, VERT, frag(name), { size, seed }, targets, layer);
 }
 
 // The bake shaders of every creature surface, for warmBakes.

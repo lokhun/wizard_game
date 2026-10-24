@@ -694,6 +694,27 @@ function decorateRoom(level, room, rng) {
     room.dais = side;
   }
 
+  // ---------------- battlefields: terraces, sunken pits and plateaus (see elevate)
+  if ((room.type === ROOM.COMBAT || room.type === ROOM.ELITE || room.type === ROOM.TRIAL) && ['plain', 'cells', 'colonnade', 'hall', 'deadTree', 'statue'].includes(room.layout) && room.dais === undefined && w >= 10 && h >= 10 && rng.chance(0.55)) elevate(level, room, rng);
+
+  // ---------------- trap vents: grates that erupt on a rhythm while the doors are shut,
+  // burning foes as readily as wizards (Director._vents fires them)
+  if ((room.type === ROOM.COMBAT || room.type === ROOM.TRIAL) && w >= 10 && h >= 10 && rng.chance(0.3)) {
+    room.vents = [];
+    for (let k = 0, n = rng.int(2, 4); k < 30 && room.vents.length < n; k++) {
+      const s = randFloorSpot(2);
+      if (!s || room.vents.some((v) => Math.hypot(v.x - s[0], v.z - s[1]) < 5)) continue;
+      // level ground all round (a burst's circle lies flat: on a step it would be half hidden)
+      const vx = Math.floor(s[0] / T), vy = Math.floor(s[1] / T), h0 = level.hgt[level.idx(vx, vy)];
+      let flat = true;
+      for (let dy = -1; dy <= 1 && flat; dy++) for (let dx = -1; dx <= 1; dx++) { const j = level.idx(vx + dx, vy + dy); if (level.hgt[j] !== h0 || level.kind[j] === K_WATER || level.cells[j] !== FLOOR) { flat = false; break; } }
+      if (!flat) continue;
+      room.vents.push({ x: s[0], z: s[1] });
+      P('grate', s[0], s[1], { rot: rng.int(0, 3) * Math.PI / 2 });
+    }
+    if (!room.vents.length) room.vents = null;
+  }
+
   // ---------------- mid-room cover for realms whose rooms are otherwise open floor,
   // so ranged foes can be broken line of sight with and melee can be kited around
   if ((room.type === ROOM.COMBAT || room.type === ROOM.ELITE || room.type === ROOM.TRIAL) && w >= 10 && h >= 10 && (b.id === 'sewers' || b.id === 'throne')) {
@@ -786,6 +807,48 @@ function decorateRoom(level, room, rng) {
     // exit stairs at the far (north) side appear once the boss dies
     room.exit = { x: mid[0], z: (y + 1.5) * T };
   }
+}
+
+// Elevation that keeps a fight flowing. The room's outer two rows stay at floor
+// level (doors, wall clutter, torches), and the ground rises or falls from there:
+//   tiers   - the room climbs in two 0.6 m steps along its long axis
+//   pit     - a sunken bowl, two 0.6 m steps down to its floor
+//   plateau - a 1.2 m table in the middle, sheer but for a ramp on two opposite sides
+// Every rise a wizard or a foe must climb is a step (under STEP = 0.75); only a
+// plateau's flanks are sheer, and those can always be dropped from and walked round.
+function elevate(level, room, rng) {
+  const { x, y, w, h } = room;
+  const kinds = { sewers: ['pit', 'tiers'], dungeon: ['tiers', 'pit', 'plateau'], courtyard: ['plateau', 'tiers', 'plateau'], keep: ['tiers', 'plateau', 'tiers'], throne: ['tiers', 'pit', 'plateau'] }[level.biome.id] ?? ['tiers'];
+  const kind = rng.pick(kinds);
+  const cells = [];
+  for (let cy = y; cy < y + h; cy++) for (let cx = x; cx < x + w; cx++) {
+    const i = level.idx(cx, cy);
+    if (level.cells[i] === FLOOR && level.kind[i] !== K_WATER && level.roomId[i] === room.id && level.hgt[i] === 0) cells.push([cx, cy, i]);
+  }
+  const ring = (cx, cy) => Math.min(cx - x, x + w - 1 - cx, cy - y, y + h - 1 - cy); // 0 on the wall row
+  const horiz = w >= h, flip = rng.chance(0.5);
+  const midA = horiz ? x + (w - 1) / 2 : y + (h - 1) / 2;
+  for (const [cx, cy, i] of cells) {
+    const d = ring(cx, cy);
+    let hh = 0;
+    if (kind === 'tiers') {
+      let t = horiz ? (cx - x) / (w - 1) : (cy - y) / (h - 1);
+      if (flip) t = 1 - t;
+      hh = Math.min(t < 0.34 ? 0 : t < 0.67 ? 0.6 : 1.2, 0.6 * Math.max(0, d - 1));
+    } else if (kind === 'pit') {
+      hh = -Math.min(1.2, 0.6 * Math.max(0, d - 1));
+    } else {
+      // plateau: d >= 3 is the table; ramps on the two sides across the long axis
+      const along = horiz ? cy : cx, mid = horiz ? y + (h - 1) / 2 : x + (w - 1) / 2;
+      const across = horiz ? cx : cy;
+      if (d >= 3) hh = 1.2;
+      else if (d === 2 && Math.abs(along - mid) <= 1.1 && Math.abs(across - midA) > 1) hh = 0.6;
+    }
+    if (hh === 0) continue;
+    level.hgt[i] = hh;
+    level.kind[i] = hh > 0 ? K_DAIS : K_ALT;
+  }
+  room.layout = kind;
 }
 
 function decorateCorridor(level, corr, rng) {

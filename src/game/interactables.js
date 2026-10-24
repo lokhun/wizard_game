@@ -48,7 +48,9 @@ export function makeChest(game, p) {
       if (open > 0.01) game.lights.request(glowAt, 0xffb040, open * (4 + Math.sin(t * 8) * 0.5), 4);
       if (!opening && Math.random() < dt * 3) game.vfx.P.glow({ x: p.x + rand(-0.5, 0.5), y: y + 0.7, z: p.z + rand(-0.3, 0.3), vy: 0.4, r: 2.5, g: 1.8, b: 0.5, life: 1, size: 0.05, sprite: SPR.STAR });
     },
-    dispose() { game.scene.remove(root); },
+    // (its body and lid are built fresh for each chest: free them, or every floor left its chests
+    // on the GPU; the materials are the shared ones)
+    dispose() { game.scene.remove(root); root.traverse((o) => { if (o.isMesh) o.geometry.dispose(); }); },
   };
   return it;
 }

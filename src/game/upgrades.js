@@ -1,5 +1,5 @@
 import { CLASSES } from './classes.js';
-import { NEW_RELICS, setCounts } from './relicDefs.js';
+import { NEW_RELICS, setCounts, ASCEND_MAX, ascendK, NO_ASCEND } from './relicDefs.js';
 
 // ---------------------------------------------------------------------------
 // Arcane Tomes (per-player upgrades picked 1-of-3 after rooms) and Relics.
@@ -47,12 +47,14 @@ export const TOMES = [
   // ---------------- defence / utility
   { id: 'vitality', name: 'Tome of Vitality', icon: 'heart', max: 99, desc: (m) => `+${Math.round(20 * m)} max health.`, apply: (s, m) => { s.maxHp += 20 * m; } },
   { id: 'ward', name: 'Warding Script', icon: 'shield', max: 4, desc: (m) => `Take ${pct(0.07 * m)} less damage.`, apply: (s, m) => { s.armor += 0.07 * m; } },
-  { id: 'regen', name: 'Troll Blood', icon: 'heart', max: 4, desc: (m) => `Regenerate ${(1 * m).toFixed(1)} health per second.`, apply: (s, m) => { s.regen += 1 * m; } },
-  { id: 'vampire', name: 'Vampiric Codex', icon: 'drop', max: 4, desc: (m) => `${pct(0.03 * m)} of damage dealt heals you.`, apply: (s, m) => { s.lifesteal += 0.03 * m; } },
-  { id: 'feast', name: 'Soul Feast', icon: 'skull', max: 4, desc: (m) => `Kills heal ${Math.round(3 * m)} health.`, apply: (s, m) => { s.killHeal += 3 * m; } },
+  // (the sustain tomes: rarer than the rest, and all on-hit and on-kill healing shares a cap of 3% max health a second)
+  { id: 'regen', name: 'Troll Blood', icon: 'heart', max: 3, rare: 0.5, desc: (m) => `Regenerate ${(0.6 * m).toFixed(1)} health per second (a third as much for 4s after being hit).`, apply: (s, m) => { s.regen += 0.6 * m; } },
+  { id: 'vampire', name: 'Vampiric Codex', icon: 'drop', max: 2, rare: 0.5, desc: (m) => `${pct(0.02 * m)} of damage dealt heals you (all lifesteal: at most 3% max health a second).`, apply: (s, m) => { s.lifesteal += 0.02 * m; } },
+  { id: 'feast', name: 'Soul Feast', icon: 'skull', max: 2, rare: 0.5, desc: (m) => `Kills heal ${Math.round(2 * m)} health (with lifesteal, at most 3% max health a second).`, apply: (s, m) => { s.killHeal += 2 * m; } },
   { id: 'swift', name: 'Wind Walker', icon: 'speed', max: 4, desc: (m) => `+${pct(0.08 * m)} move speed.`, apply: (s, m) => { s.moveSpeed *= 1 + 0.08 * m; } },
   { id: 'dash', name: 'Phase Step', icon: 'dash', max: 2, desc: () => `+1 dash charge and dashes recharge 20% faster.`, apply: (s) => { s.dashCharges += 1; s.dashCd *= 0.8; } },
-  { id: 'evasion', name: 'Blur', icon: 'dash', max: 3, desc: (m) => `${pct(0.06 * m)} chance to dodge attacks.`, apply: (s, m) => { s.dodge = 1 - (1 - (s.dodge ?? 0)) * (1 - 0.06 * m); } },
+  // (a skill tome, not a dice roll: it widens the window a dash beats a blow in, and pays perfect dodges longer)
+  { id: 'evasion', name: 'Blur', icon: 'dash', max: 3, desc: (m) => `Dashes stay untouchable ${Math.round(70 * m)} ms longer, and a perfect dodge's +25% damage lasts ${(1.5 * m).toFixed(1)} s longer.`, apply: (s, m) => { s.dashIv += 0.07 * m; s.pdDur += 1.5 * m; } },
   { id: 'thorns', name: 'Briar Ward', icon: 'thorn', max: 3, desc: (m) => `Attackers take ${Math.round(15 * m)} damage.`, apply: (s, m) => { s.thorns += 15 * m; } },
   { id: 'greed', name: "Miser's Ledger", icon: 'gold', max: 3, desc: (m) => `+${pct(0.25 * m)} gold found.`, apply: (s, m) => { s.goldMult += 0.25 * m; } },
   { id: 'phoenix', name: 'Phoenix Feather', icon: 'phoenix', max: 1, minRarity: 3, desc: () => `When you would fall, rise again at 50% health (once).`, apply: (s) => { s.extraLives = (s.extraLives ?? 0) + 1; }, once: true },
@@ -151,6 +153,12 @@ export const RELICS = [
   ...NEW_RELICS,
 ];
 
+// Diminishing returns on stacking one tome: each copy you already hold makes the
+// next a little weaker (the 4th is worth 85%, the 11th 63%). Barely felt while a
+// build comes together; it keeps a long Abyss run's power from climbing as fast
+// as the depths do, so every build meets its end down there.
+export const tomeDR = (held) => 1 / (1 + 0.06 * held);
+
 // Roll n distinct tome choices for a player
 export function rollTomes(player, n = 3, minRarity = 0, rng = Math.random) {
   const counts = {};
@@ -175,14 +183,15 @@ export function rollTomes(player, n = 3, minRarity = 0, rng = Math.random) {
     const cands = pool.filter((t) => !used.has(t.id) && (t.minRarity ?? 0) <= rar && (!t.el || t.el === el || rng() < 0.25) && !(t.el && player.stats.infuse && t.el !== el && rng() < 0.5));
     if (!cands.length) continue;
     let tot = 0;
-    const w = (t) => (t.el === el ? 2.5 : 1) * (t.id === 'empower' || t.id === 'vitality' ? 1.3 : 1);
+    const w = (t) => (t.el === el ? 2.5 : 1) * (t.id === 'empower' || t.id === 'vitality' ? 1.3 : 1) * (t.rare ?? 1);
     for (const t of cands) tot += w(t);
     let r = rng() * tot;
     let pick = cands[0];
     for (const t of cands) { r -= w(t); if (r <= 0) { pick = t; break; } }
     used.add(pick.id);
     rar = Math.max(rar, pick.minRarity ?? 0);
-    out.push({ def: pick, rarity: rar, mult: RARITY[rar].mult });
+    const dr = tomeDR(counts[pick.id] ?? 0);
+    out.push({ def: pick, rarity: rar, mult: RARITY[rar].mult * dr, dr });
   }
   return out;
 }
@@ -202,7 +211,8 @@ export function rollRarity(rng = Math.random, min = 0, luck = 1) {
 export function rollRelics(player, n = 3, rng = Math.random) {
   const owned = new Set(player.relics.map((r) => r.def.id));
   const sets = setCounts(player.relics);
-  const pool = RELICS.filter((r) => !owned.has(r.id));
+  const abyss = (player.game?.abyss ?? 0) > 0;
+  const pool = RELICS.filter((r) => !owned.has(r.id) && (!r.abyssal || abyss));
   const w = (r) => (r.cursed ? 0.6 : 1) * (sets[r.set] ? 2 : 1);
   const out = [];
   while (out.length < n && pool.length) {
@@ -211,6 +221,16 @@ export function rollRelics(player, n = 3, rng = Math.random) {
     let x = rng() * tot, i = 0;
     for (; i < pool.length - 1; i++) { x -= w(pool[i]); if (x <= 0) break; }
     out.push({ def: pool.splice(i, 1)[0] });
+  }
+  // ascension: one offer now and then, and every empty slot once the pool runs dry
+  const can = player.relics.filter((r) => !r.def.once && !NO_ASCEND.has(r.def.id) && (r.stars ?? 0) < ASCEND_MAX);
+  const want = out.length < n ? n - out.length : rng() < 0.18 ? 1 : 0;
+  for (let k = 0; k < want && can.length; k++) {
+    const r = can.splice(Math.floor(rng() * can.length), 1)[0], st = (r.stars ?? 0) + 1;
+    const d = r.def;
+    const shown = { ...d, name: `${d.name} ${'★'.repeat(st)}`, desc: `Ascend this relic: its gift ×${ascendK(st)}${d.cursed ? ' (its curse unchanged)' : ''}. ${d.desc}` };
+    const pick = { def: shown, ascend: d.id };
+    if (out.length >= n) out[out.length - 1] = pick; else out.push(pick);
   }
   return out;
 }

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { hitPoint } from './actors.js';
 import { FX, fxOf, nearFade, clampHDR, orbMaterial } from '../render/vfx.js';
 import { SPR } from '../render/particles.js';
 import { rand } from '../core/rng.js';
@@ -10,6 +11,22 @@ import { segPointDist2 } from '../core/math.js';
 // and on co-op peers (local=false: visuals only), so everyone sees every spell.
 // ---------------------------------------------------------------------------
 
+// a direct hit on a weak point (Spells.update) deals this much more: aim pays
+export const WEAK_MULT = 1.35;
+// is (x, y, z) on a's weak point? the front of a long body; on an upright one its head: from the base of
+// its head bone to the top of the head, where the head is now (it follows a lunge or a stoop); a body with no head bone (a
+// slime, a grimoire), or a bone not yet placed, uses the top quarter of its hit capsule
+export function isWeak(a, x, y, z) {
+  if (a.hitL > a.hitR * 0.9) return (x - a.pos.x) * Math.sin(a.yaw) + (z - a.pos.z) * Math.cos(a.yaw) > a.hitL * 0.45;
+  const y0 = a.pos.y + a.hitY0, y1 = a.pos.y + a.hitH;
+  const hb = a.model?.bones?.head;
+  if (hb) {
+    const hy = hb.matrixWorld.elements[13];
+    // (up to the top of the head, about a quarter of the bone's height above it: not a raised axe or a banner)
+    if (hy > y0 + (y1 - y0) * 0.4 && hy < y1) return y >= hy - 0.06 && y <= hy + Math.max(0.3, (hy - y0) * 0.25);
+  }
+  return y >= y1 - (y1 - y0) * 0.25;
+}
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _ta = new THREE.Vector3(), _ts = new THREE.Vector3(), _tn = new THREE.Vector3();
@@ -53,6 +70,35 @@ function glowTexture() {
   return new THREE.CanvasTexture(c);
 }
 
+// the mark of a hostile shot: a dark core inside a bright ring with four barbs.
+// Tinted by the element, drawn normally blended, so an enemy bolt reads as
+// something to dodge even in the colours of a wizard's own magic
+function hostileTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(0,0,0,0.55)');
+  gr.addColorStop(0.36, 'rgba(0,0,0,0.65)');
+  gr.addColorStop(0.44, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.52, 'rgba(255,255,255,0.9)');
+  gr.addColorStop(0.62, 'rgba(255,255,255,0.25)');
+  gr.addColorStop(0.75, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 128, 128);
+  g.fillStyle = 'rgba(255,255,255,0.95)';
+  for (let k = 0; k < 4; k++) {
+    const a = k * Math.PI / 2 + Math.PI / 4;
+    g.beginPath();
+    g.moveTo(64 + Math.cos(a) * 34, 64 + Math.sin(a) * 34);
+    g.lineTo(64 + Math.cos(a + 0.22) * 46, 64 + Math.sin(a + 0.22) * 46);
+    g.lineTo(64 + Math.cos(a) * 60, 64 + Math.sin(a) * 60);
+    g.lineTo(64 + Math.cos(a - 0.22) * 46, 64 + Math.sin(a - 0.22) * 46);
+    g.closePath(); g.fill();
+  }
+  return new THREE.CanvasTexture(c);
+}
+
 // emissive map for meteors: black crust with glowing fissures
 function magmaTexture() {
   const c = document.createElement('canvas');
@@ -72,14 +118,21 @@ function magmaTexture() {
   return t;
 }
 
+const _hp = { x: 0, z: 0 };
 export class SpellRuntime {
   constructor(game) {
     this.g = game;
     this.projectiles = [];
     this.zones = [];
     this.timers = [];
+    // the spell slot whose code is running (set by the caster around a cast): every projectile, zone and
+    // timer made meanwhile keeps it and restores it around its own callbacks, so damage dealt
+    // seconds later still knows its spell (Player.dmgBy, the run summary's breakdown)
+    this.slot = null;
     this.nextId = 1;
     this.glowTex = glowTexture();
+    this.hostileTex = hostileTexture();
+    this.hostileMats = new Map();
     this.spriteMats = new Map();
     this.meshCache = {};
     this._buildMeshes();
@@ -96,7 +149,7 @@ export class SpellRuntime {
   // shader prewarming: materials differ per element only by colour, so one each
   // compiles them all
   warmObjects() {
-    const out = [new THREE.Sprite(this._spriteMat('arcane')), new THREE.Mesh(this.tracerGeo, this._tracerMat('arcane'))];
+    const out = [new THREE.Sprite(this._spriteMat('arcane')), new THREE.Sprite(this._hostileMat('enemy')), new THREE.Mesh(this.tracerGeo, this._tracerMat('arcane'))];
     for (const def of Object.values(this.meshCache)) out.push(new THREE.Mesh(def.geo, def.mat ?? this._orbMat('arcane')));
     return out;
   }
@@ -177,6 +230,15 @@ export class SpellRuntime {
     this.spriteMats.set(el, m);
     return m;
   }
+  _hostileMat(el) {
+    if (this.hostileMats.has(el)) return this.hostileMats.get(el);
+    const fx = fxOf(el);
+    const c = clampHDR([fx.mid[0] * 1.2, fx.mid[1] * 1.2, fx.mid[2] * 1.2], 1.6);
+    // (same program as the core sprites: only the blending differs)
+    const m = nearFade(new THREE.SpriteMaterial({ map: this.hostileTex, color: new THREE.Color(c[0], c[1], c[2]), depthWrite: false, transparent: true, fog: false }));
+    this.hostileMats.set(el, m);
+    return m;
+  }
   _orbMat(el) {
     if (this.orbMats.has(el)) return this.orbMats.get(el);
     // churning element-coloured ball (shared program, see orbMaterial)
@@ -191,6 +253,7 @@ export class SpellRuntime {
   spawn(p) {
     const proj = {
       id: this.nextId++,
+      slot: this.slot,
       local: p.local ?? true,
       faction: p.faction ?? 'player',
       owner: p.owner ?? 0,
@@ -207,6 +270,7 @@ export class SpellRuntime {
       bounce: p.bounce ?? 0,
       homing: p.homing ?? 0,
       homingRange: p.homingRange ?? 18,
+      homeOn: p.homeOn, // (an enemy shot homes only on the wizard it was loosed at)
       hit: p.hit ?? null,
       aoe: p.aoe ?? null,
       onHit: p.onHit,
@@ -217,6 +281,8 @@ export class SpellRuntime {
       trail: p.trail ?? 1,
       lightI: p.light ?? 6,
       sticky: p.sticky ?? false,
+      hostile: null,
+      warned: false,
       stuck: false,
       dead: false,
       data: p.data ?? {},
@@ -230,12 +296,22 @@ export class SpellRuntime {
     group.position.copy(proj.pos);
     // big cores right at the muzzle blew the screen out: cap them (the light,
     // trail and mesh carry the size of heavier spells)
-    const coreSize = Math.min(p.core ?? 0.6, 0.85);
+    // a teammate's shots are drawn quieter than your own and the enemy's: the fight stays readable
+    const ally = proj.faction === 'player' && !proj.local;
+    if (ally) { proj.trail *= 0.6; proj.lightI *= 0.5; }
+    const coreSize = Math.min(p.core ?? 0.6, 0.85) * (ally ? 0.7 : 1);
     if (coreSize > 0) {
       const s = new THREE.Sprite(this._spriteMat(proj.el));
       s.scale.setScalar(coreSize);
       group.add(s);
       proj.sprite = s;
+    }
+    if (proj.faction === 'enemy' || proj.el.startsWith('enemy')) {
+      const s = new THREE.Sprite(this._hostileMat(proj.el.startsWith('enemy') ? proj.el : 'enemy'));
+      s.scale.setScalar(p.mesh === 'arrow' ? 0.42 : Math.max(0.55, coreSize * 1.5));
+      s.renderOrder = -1; // (under the shot's own glow: the dark core rims it, never dims it)
+      group.add(s);
+      proj.hostile = s;
     }
     if (p.mesh) {
       const def = this.meshCache[p.mesh];
@@ -287,10 +363,11 @@ export class SpellRuntime {
     this.g.smashAt?.(pos, radius * 0.8);
     for (const a of this.g.actors.hostiles()) {
       if (exclude && exclude.has(a.id)) continue;
-      const dx = a.pos.x - pos.x, dz = a.pos.z - pos.z;
+      const c = hitPoint(a, pos.x, pos.z, _hp); // (a blast reaches a long body's nearest part)
+      const dx = c.x - pos.x, dz = c.z - pos.z;
       const dy = (a.pos.y + a.height * 0.5) - pos.y;
-      const r = radius + a.radius;
-      if (dx * dx + dz * dz > r * r || Math.abs(dy) > radius + a.height * 0.6) continue;
+      const r = radius + a.hitR;
+      if (dx * dx + dz * dz > r * r || Math.abs(dy) > radius + a.hitH * 0.6) continue;
       const d = Math.sqrt(dx * dx + dz * dz);
       const fall = H.falloff ? Math.max(0.4, 1 - d / r) : 1;
       this.g.hitActor(a, { ...H, dmg: H.dmg * fall, kbDir: d > 0.01 ? [dx / d, dz / d] : [0, 1] }, new THREE.Vector3(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z));
@@ -306,6 +383,7 @@ export class SpellRuntime {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
       if (p.dead) { this._remove(i); continue; }
+      this.slot = p.slot;
       p.age += dt;
       if (p.age >= p.life) { this.kill(p, p.pos); this._remove(i); continue; }
       p.onTick?.(p, dt);
@@ -333,11 +411,20 @@ export class SpellRuntime {
           p.vel.lerp(_v2, Math.min(1, p.homing * dt));
           p.vel.setLength(sp);
         }
-      } else if (p.homing > 0 && p.faction === 'enemy' && g.player && !g.player.dead) {
-        const sp = p.vel.length();
-        _v2.set(g.player.pos.x - p.pos.x, g.player.pos.y + 1.2 - p.pos.y, g.player.pos.z - p.pos.z).normalize().multiplyScalar(sp);
-        p.vel.lerp(_v2, Math.min(1, p.homing * dt));
-        p.vel.setLength(sp);
+      } else if (p.homing > 0 && p.faction === 'enemy' && g.player && !g.player.dead && p.age < 1.6 && (p.homeOn === undefined || p.homeOn === g.player.id)) {
+        // Fair homing: it bends only toward the wizard it was loosed at (a shot at a teammate
+        // never swerves onto you), only while they are ahead of it, never in its last 5 m (a late sidestep or
+        // dash beats it), and only for its first 1.6 s
+        _v2.set(g.player.pos.x - p.pos.x, g.player.pos.y + 1.2 - p.pos.y, g.player.pos.z - p.pos.z);
+        const d = _v2.length();
+        if (d > 5) {
+          const sp = p.vel.length();
+          _v2.divideScalar(d);
+          if (_v2.dot(_v.copy(p.vel).divideScalar(sp || 1)) > 0.5) { // (within 60 deg: a boss's fanned orbs still curve in)
+            p.vel.lerp(_v2.multiplyScalar(sp), Math.min(1, p.homing * dt));
+            p.vel.setLength(sp);
+          }
+        }
       }
       if (p.gravity) p.vel.y -= p.gravity * dt;
       if (p.drag) p.vel.multiplyScalar(Math.exp(-p.drag * dt));
@@ -384,18 +471,21 @@ export class SpellRuntime {
         }
         for (const a of g.actors.hostiles()) {
           if (p.hitIds.has(a.id)) continue;
-          const r = p.radius + a.radius;
-          const ay0 = a.pos.y, ay1 = a.pos.y + a.height;
-          // closest distance between projectile path and actor axis (approx by sampling the axis)
+          const r = p.radius + a.hitR;
+          const ay0 = a.pos.y + a.hitY0, ay1 = a.pos.y + a.hitH;
+          // closest distance between the projectile's path and the actor's hit capsule
+          // (its axis point nearest the projectile, at the projectile's height)
           const midY = Math.max(ay0, Math.min(ay1, p.pos.y));
-          const d2 = segPointDist2(p.prev.x, p.prev.y, p.prev.z, p.pos.x, p.pos.y, p.pos.z, a.pos.x, midY, a.pos.z);
+          const c = hitPoint(a, p.pos.x, p.pos.z, _hp);
+          const d2 = segPointDist2(p.prev.x, p.prev.y, p.prev.z, p.pos.x, p.pos.y, p.pos.z, c.x, midY, c.z);
           if (d2 > r * r) continue;
           if (p.pos.y < ay0 - p.radius - 0.2 || p.pos.y > ay1 + p.radius + 0.2) continue;
           p.hitIds.add(a.id);
-          const hp = new THREE.Vector3(a.pos.x, Math.max(ay0 + 0.3, Math.min(ay1 - 0.2, p.pos.y)), a.pos.z);
+          const hp = new THREE.Vector3(c.x, Math.max(ay0 + 0.3, Math.min(ay1 - 0.2, p.pos.y)), c.z);
           if (p.hit && p.local) {
             const vlen = p.vel.length() || 1;
-            g.hitActor(a, { ...p.hit, src: p.owner, kbDir: [p.vel.x / vlen, p.vel.z / vlen] }, hp);
+            const weak = isWeak(a, c.x, p.pos.y, c.z);
+            g.hitActor(a, { ...p.hit, src: p.owner, kbDir: [p.vel.x / vlen, p.vel.z / vlen], weak, dmg: p.hit.dmg * (weak ? WEAK_MULT : 1) }, hp);
           }
           p.onHit?.(p, a, hp);
           if (!p.aoe || p.pierce > 0) g.vfx.impact(hp, p.el, 0.7);
@@ -464,6 +554,7 @@ export class SpellRuntime {
     // zones
     for (let i = this.zones.length - 1; i >= 0; i--) {
       const z = this.zones[i];
+      this.slot = z.slot;
       z.age += dt;
       z.acc += dt;
       z.visual?.(z, dt);
@@ -482,9 +573,11 @@ export class SpellRuntime {
       t.t -= dt;
       if (t.t <= 0) {
         this.timers.splice(i, 1);
+        this.slot = t.slot;
         t.fn();
       }
     }
+    this.slot = null;
   }
 
   _visual(p, dt) {
@@ -499,6 +592,7 @@ export class SpellRuntime {
       else if (p.vel.lengthSq() > 0.01) p.mesh.lookAt(_v.copy(p.pos).add(p.vel));
     }
     if (p.sprite) p.sprite.material.rotation += dt;
+    if (p.hostile) p.hostile.material.rotation -= dt * 1.5;
     if (p.tracer) this._tracer(p);
     if (p.lightI > 0) g.lights.request(p.pos, p.lightColor, p.lightI, 7);
   }
@@ -534,11 +628,11 @@ export class SpellRuntime {
 
   // -------------------------------------------------------------- zones & timers
   zone(z) {
-    const zone = { age: 0, acc: 0, interval: 0.25, life: 3, ...z };
+    const zone = { age: 0, acc: 0, interval: 0.25, life: 3, slot: this.slot, ...z };
     this.zones.push(zone);
     return zone;
   }
-  after(t, fn) { this.timers.push({ t, fn }); }
+  after(t, fn) { this.timers.push({ t, fn, slot: this.slot }); }
 
   clear() {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
@@ -554,23 +648,52 @@ export class SpellRuntime {
 
   // -------------------------------------------------------------- queries
   // hostile actors hit by a ray, sorted by distance (stops at walls)
+  // The first foe along a ray (the crosshair's probe, every few frames: allocation-free, same capsule
+  // test as rayActors): returns it and writes where the ray meets it into out, or null.
+  firstActor(ox, oy, oz, dx, dy, dz, maxDist, radius, out) {
+    const g = this.g;
+    const wall = g.collision.raycast(ox, oy, oz, dx, dy, dz, maxDist, 0.2);
+    const hl = Math.hypot(dx, dz) || 1e-6;
+    let best = wall, hit = null;
+    for (const a of g.actors.hostiles()) {
+      if (a.model?.disguised) continue; // (a mimic still posing as a chest gives nothing away)
+      const fx = Math.sin(a.yaw), fz = Math.cos(a.yaw), r = a.hitR + radius;
+      for (let k = a.hitL ? -2 : 0; k <= (a.hitL ? 2 : 0); k++) {
+        const cx = a.pos.x + fx * a.hitL * k / 2, cz = a.pos.z + fz * a.hitL * k / 2;
+        const tt = ((cx - ox) * dx + (cz - oz) * dz) / (hl * hl);
+        if (tt < 0 || tt >= best) continue;
+        const px = ox + dx * tt, py = oy + dy * tt, pz = oz + dz * tt;
+        if ((cx - px) ** 2 + (cz - pz) ** 2 > r * r) continue;
+        if (py < a.pos.y + a.hitY0 - radius || py > a.pos.y + a.hitH + radius) continue;
+        best = tt; hit = a; out.set(px, py, pz);
+      }
+    }
+    return hit;
+  }
+
   rayActors(origin, dir, maxDist, radius = 0.2) {
     const g = this.g;
     const wall = g.collision.raycast(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, maxDist, 0.2);
     const out = [];
     for (const a of g.actors.hostiles()) {
       // closest approach of ray to actor axis
-      const ox = a.pos.x - origin.x, oz = a.pos.z - origin.z;
-      const t = ox * dir.x + oz * dir.z;
+      // the ray against the hit capsule: test its axis at the centre and (for long
+      // bodies) both ends and halfway, keep the nearest hit along the ray
       const hl = Math.hypot(dir.x, dir.z) || 1e-6;
-      const tt = t / (hl * hl);
-      if (tt < 0 || tt > wall) continue;
-      const px = origin.x + dir.x * tt, py = origin.y + dir.y * tt, pz = origin.z + dir.z * tt;
-      const dx = a.pos.x - px, dz = a.pos.z - pz;
-      const r = a.radius + radius;
-      if (dx * dx + dz * dz > r * r) continue;
-      if (py < a.pos.y - radius || py > a.pos.y + a.height + radius) continue;
-      out.push({ actor: a, t: tt, point: new THREE.Vector3(px, py, pz) });
+      const fx = Math.sin(a.yaw), fz = Math.cos(a.yaw);
+      const r = a.hitR + radius;
+      let best = Infinity, bp = null;
+      for (let k = a.hitL ? -2 : 0; k <= (a.hitL ? 2 : 0); k++) {
+        const cx = a.pos.x + fx * a.hitL * k / 2, cz = a.pos.z + fz * a.hitL * k / 2;
+        const tt = ((cx - origin.x) * dir.x + (cz - origin.z) * dir.z) / (hl * hl);
+        if (tt < 0 || tt > wall || tt >= best) continue;
+        const px = origin.x + dir.x * tt, py = origin.y + dir.y * tt, pz = origin.z + dir.z * tt;
+        const dx = cx - px, dz = cz - pz;
+        if (dx * dx + dz * dz > r * r) continue;
+        if (py < a.pos.y + a.hitY0 - radius || py > a.pos.y + a.hitH + radius) continue;
+        best = tt; bp = [px, py, pz];
+      }
+      if (bp) out.push({ actor: a, t: best, point: new THREE.Vector3(bp[0], bp[1], bp[2]) });
     }
     out.sort((a, b) => a.t - b.t);
     return { hits: out, wall };
@@ -591,8 +714,9 @@ export class SpellRuntime {
   inRadius(pos, r) {
     const out = [];
     for (const a of this.g.actors.hostiles()) {
-      const dx = a.pos.x - pos.x, dz = a.pos.z - pos.z;
-      const rr = r + a.radius;
+      const c = hitPoint(a, pos.x, pos.z, _hp);
+      const dx = c.x - pos.x, dz = c.z - pos.z;
+      const rr = r + a.hitR;
       if (dx * dx + dz * dz <= rr * rr) out.push(a);
     }
     return out;
@@ -604,10 +728,11 @@ export class SpellRuntime {
     const hl = Math.hypot(dir.x, dir.z) || 1;
     const fx = dir.x / hl, fz = dir.z / hl;
     for (const a of this.g.actors.hostiles()) {
-      const dx = a.pos.x - origin.x, dz = a.pos.z - origin.z;
+      const c = hitPoint(a, origin.x, origin.z, _hp);
+      const dx = c.x - origin.x, dz = c.z - origin.z;
       const d = Math.hypot(dx, dz);
-      if (d - a.radius > range) continue;
-      if (d < a.radius + 0.5) { out.push(a); continue; }
+      if (d - a.hitR > range) continue;
+      if (d < a.hitR + 0.5) { out.push(a); continue; }
       if ((dx * fx + dz * fz) / d < cosA) continue;
       if (!this.g.collision.los(origin.x, origin.y, origin.z, a.pos.x, a.pos.y + a.height * 0.5, a.pos.z)) continue;
       out.push(a);

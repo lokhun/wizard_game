@@ -13,7 +13,7 @@ import { UI } from './ui/ui.js';
 import { Chat } from './ui/chat.js';
 import { BUILD, newerBuild } from './core/version.js';
 import { Game } from './game/game.js';
-import { Net } from './net/net.js';
+import { Net, PROTOCOL } from './net/net.js';
 import { handleGameMessage } from './net/netgame.js';
 import { setModelModules, getAvatar } from './game/models.js';
 import { CLASS_IDS, CLASS_META } from './game/classMeta.js';
@@ -30,7 +30,7 @@ const optional = import.meta.glob(['./audio/audio.js', './game/enemyModels.js', 
 // settings
 // ---------------------------------------------------------------------------
 const SETTINGS_KEY = 'arcane-ascent-settings';
-const defaults = { master: 0.8, music: 0.55, sfx: 0.85, sensitivity: 1, fov: 80, shake: 1, quality: 'high', invertY: false, name: '', lastClass: 'pyromancer', showFps: false, dynamicRes: true, calm: false, keys: {}, contrastTele: false };
+const defaults = { master: 0.8, music: 0.55, sfx: 0.85, sensitivity: 1, fov: 80, shake: 1, quality: 'high', invertY: false, name: '', lastClass: 'pyromancer', showFps: false, dynamicRes: true, calm: false, keys: {}, contrastTele: false, hudScale: 1 };
 let settings = { ...defaults };
 let saved = null;
 try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null'); settings = { ...defaults, ...(saved ?? {}) }; } catch { /* ignore */ }
@@ -139,6 +139,7 @@ function applyVolumes() {
   renderer.baseFov = settings.fov;
   renderer.setCalm(settings.calm);
   if (game) game.contrastTele = !!settings.contrastTele;
+  document.documentElement.style.setProperty('--hud-scale', String(settings.hudScale ?? 1));
 }
 
 // first user gesture starts audio
@@ -269,7 +270,7 @@ function updateBackdrop(dt) {
 // ---------------------------------------------------------------------------
 // screens
 // ---------------------------------------------------------------------------
-function menuStats() { const p = loadProfile(); return { runs: p.runs, wins: p.wins, bestFloor: p.bestFloor, kills: p.kills, feats: `${Object.keys(p.feats).length}/${FEATS.length}` }; }
+function menuStats() { const p = loadProfile(); return { runs: p.runs, wins: p.wins, bestFloor: p.bestFloor, kills: p.kills, feats: `${FEATS.filter((f) => p.feats[f.id]).length}/${FEATS.length}` /* (only feats that still exist) */ }; }
 
 function showMenu() {
   // a new version came out during the run: back at the menu is the moment to load it
@@ -477,7 +478,7 @@ async function doJoin(code, api) {
       if (mode === 'run') ui.banner('CONNECTION LOST', 'The host has left the party', '#c04030', 6);
       setTimeout(() => { if (net !== myNet) return; leaveNet(); game.ended = true; startBackdrop(); showMenu(); }, mode === 'run' ? 4000 : 0);
     };
-    net.send({ t: 'hello', name: settings.name || 'Wizard', cls: selectedClass, v: BUILD });
+    net.send({ t: 'hello', name: settings.name || 'Wizard', cls: selectedClass, v: BUILD, p: PROTOCOL });
     showSelect({ isHost: false, code: net.code });
   } catch (e) {
     console.warn(e);
@@ -499,12 +500,12 @@ function onLobbyMessage(msg, from) {
   if (net.isHost) {
     if (msg.t === 'hello') {
       // different builds don't agree on messages: everyone plays the same version
-      if (BUILD !== 'dev' && msg.v !== 'dev' && msg.v !== BUILD) { net.sendTo(from, { t: 'version', v: BUILD }); return; }
+      if (!sameBuild(msg)) { net.sendTo(from, { t: 'version', v: BUILD, p: PROTOCOL }); return; }
       if (lobby.players.length >= 4) { net.sendTo(from, { t: 'full' }); return; }
       const p = { id: from, name: String(msg.name ?? 'Wizard').slice(0, 16), classId: CLASS_IDS.includes(msg.cls) ? msg.cls : 'pyromancer', ready: false };
       lobby.players = lobby.players.filter((x) => x.id !== from);
       lobby.players.push(p);
-      net.sendTo(from, { t: 'welcome', id: from });
+      net.sendTo(from, { t: 'welcome', id: from, v: BUILD, p: PROTOCOL });
       pushRoster();
       audio?.play('ui_click');
       if (mode === 'run' && game && !game.menuMode && !game.ended) {
@@ -544,11 +545,12 @@ function onLobbyMessage(msg, from) {
     } else if (msg.t === 'full') {
       alert('That party is full (4 wizards max).');
       leaveNet(); showMenu();
-    } else if (msg.t === 'version') {
+    } else if (msg.t === 'version' || (msg.t === 'welcome' && !sameBuild(msg))) {
+      // (an older host sends no version with its welcome: it is turned away here, on this side)
       leaveNet();
       newerBuild().then((v) => {
         if (v) { alert('A new version of the game is out. Updating now - then join the party again.'); reloadForUpdate(); }
-        else { alert('The host is playing an older version of the game. Ask them to reload the page, then join again.'); showMenu(); }
+        else { alert('The host is playing a different version of the game. Ask them to refresh the page (Ctrl+F5), then try again.'); showMenu(); }
       });
     }
   }
@@ -585,6 +587,9 @@ function leaveNet() {
 // (never mid-run, never out of a party lobby)
 // ---------------------------------------------------------------------------
 let pendingBuild = null, updateNoted = false;
+// the same game as ours? Deployed builds must match exactly; the dev server
+// (build 'dev') only needs the same message protocol (net.js PROTOCOL)
+const sameBuild = (msg) => (BUILD === 'dev' || msg.v === 'dev' ? msg.p === PROTOCOL : msg.v === BUILD);
 function reloadForUpdate() {
   ui.loading(1, 'Updating to the new version…');
   location.reload();

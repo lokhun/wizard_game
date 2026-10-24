@@ -55,6 +55,11 @@ const B_CHARGE_W = { chest: [0.42, -0.35, 0], spine: [0.32, -0.1, 0], head: [-0.
 const B_CHARGE_S = { chest: [0.5, -0.25, 0], spine: [0.36, 0, 0], head: [-0.55, 0.25, 0], hips: [0, 0, 0, 0, -0.1, 0.12] };
 const B_ROAR_W = { chest: [0.35, 0, 0], spine: [0.25, 0, 0], neck: [0.3, 0, 0], head: [0.2, 0, 0], armL: [-0.2, 0, -0.3], foreL: [-1.3, 0, 0], hips: [0, 0, 0, 0, -0.14, 0], thighL: [-0.3, 0, 0.15], thighR: [-0.3, 0, -0.15], shinL: [0.5, 0, 0], shinR: [0.5, 0, 0] };
 const B_ROAR_S = { chest: [-0.38, 0, 0], spine: [-0.16, 0, 0], neck: [-0.35, 0, 0], head: [-0.4, 0, 0], jaw: [0.9, 0, 0], armL: [-0.6, 0, 1.3], foreL: [-0.7, 0, 0], handL: [0, 0, 0.4], hips: [0, 0, 0, 0, -0.06, 0], thighL: [0, 0, 0.22], thighR: [0, 0, -0.22] };
+// the leap: a deep crouch, then airborne with the legs tucked and the back arched under the raised axe
+const B_LEAP_W = { chest: [0.5, 0, 0], spine: [0.32, 0, 0], head: [-0.35, 0, 0], hips: [0, 0, 0, 0, -0.48, -0.05], thighL: [-1.3, 0, 0.1], shinL: [1.75, 0, 0], footL: [-0.4, 0, 0], thighR: [-1.15, 0, -0.1], shinR: [1.65, 0, 0], footR: [-0.45, 0, 0] };
+const B_LEAP_S = { chest: [-0.32, 0, 0], spine: [-0.16, 0, 0], head: [0.25, 0, 0], hips: [0, 0, 0, 0, 0.12, 0], thighL: [-1.05, 0, 0.12], shinL: [1.55, 0, 0], thighR: [-0.55, 0, -0.12], shinR: [1.2, 0, 0], footL: [0.3, 0, 0], footR: [0.3, 0, 0] };
+// the whirl: low, wide, the axe held out at arm's length while the body turns under it
+const B_WHIRL = { chest: [0.12, 0.25, 0], spine: [0.1, 0.1, 0], head: [0.05, -0.3, 0], hips: [0, 0, 0, 0, -0.22, 0], thighL: [-0.45, 0, 0.3], shinL: [0.55, 0, 0], thighR: [-0.4, 0, -0.3], shinR: [0.5, 0, 0] };
 
 // weapon poses: haft yaw th (0 = forward), pitch ph (+ up, past PI/2 = back over the head),
 // roll ps (0: edge toward the haft's 'up', PI: away), grip R position in chest space, left hand weight
@@ -73,7 +78,7 @@ function mixAx(out, a, b, u) { for (const k of AXK) out[k] = lerp(a[k], b[k], u)
 function setAx(out, a) { for (const k of AXK) out[k] = a[k]; return out; }
 
 export const executioner = {
-  id: 'executioner', height: 4.6, radius: 1.2, boss: true, eyeColor: EYE, magicColor: 0xff5020, defaultAttack: 'slam', attackTypes: ['slam', 'sweep', 'charge', 'roar'], orbSize: 0.16,
+  id: 'executioner', height: 4.6, radius: 1.2, boss: true, eyeColor: EYE, magicColor: 0xff5020, defaultAttack: 'slam', attackTypes: ['slam', 'sweep', 'charge', 'roar', 'leap', 'whirl'], orbSize: 0.16,
   build(rig) {
     rig.scale = 1.8;
     const D = buildHeadsman(rig, { boss: true, noAxe: true });
@@ -183,7 +188,9 @@ export const executioner = {
       else if (at === 'charge') {
         if (wu) { setAx(tgt, AX.chargeW); om = 8; }
         else { setAx(tgt, AX.chargeW); if (p > 0.7) { setAx(tgt, AX.slamS); om = 22; ze = 0.6; } }
-      } else if (at === 'roar' || an === 'cast') { setAx(tgt, AX.roar); om = 8; ze = 0.8; }
+      } else if (at === 'leap') { setAx(tgt, wu ? AX.chargeW : AX.slamW); om = 8; ze = 0.85; }
+      else if (at === 'whirl') { setAx(tgt, wu ? AX.sweepW : AX.sweepS); om = wu ? 7 : 16; ze = 0.8; }
+      else if (at === 'roar' || an === 'cast') { setAx(tgt, AX.roar); om = 8; ze = 0.8; }
       else { // slam / chop / quake
         if (wu) { setAx(tgt, AX.slamW); om = 6.5 + p * 2; }
         else { setAx(tgt, AX.slamS); om = 24; ze = 0.55; if (p > 0.72) { mixAx(tgt, AX.slamS, AX.rest, smooth(0.72, 1, p) * 0.7); om = 5; ze = 1; } }
@@ -215,6 +222,8 @@ export const executioner = {
       slam: act2(B_SLAM_W, B_SLAM_S, { hit: 0.24, recover: 0.72, recoverAmt: 0.6, tremble: 0.02, windupExtra: (P, p, m) => { const k = smooth(0.6, 1, p); P.r('chest', Math.sin(m.time * 31) * 0.015 * k); } }),
       sweep: act2(B_SWEEP_W, B_SWEEP_S, { hit: 0.3, recover: 0.7, recoverAmt: 0.6 }),
       charge: act2(B_CHARGE_W, B_CHARGE_S, { hit: 0.15, recover: 0.85, recoverAmt: 0.25 }),
+      leap: act2(B_LEAP_W, B_LEAP_S, { hit: 0.35, recover: 2, recoverAmt: 0, windupRate: 11 }),
+      whirl: act2(B_SWEEP_W, B_WHIRL, { hit: 0.15, recover: 2, recoverAmt: 0 }),
       roar: act2(B_ROAR_W, B_ROAR_S, { hit: 0.18, recover: 0.78, tremble: 0.05, strikeExtra: (P, p, m) => { const k = bump(0.1, 0.8, p) * 0.05; P.r('chest', Math.sin(m.time * 45) * k, Math.sin(m.time * 38) * k); P.r('head', Math.sin(m.time * 51) * k * 2, Math.sin(m.time * 33) * k * 2); } }),
     },
     death: (P, p, m, s) => deathPose(P, p, m, s),

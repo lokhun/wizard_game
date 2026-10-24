@@ -9,6 +9,7 @@ export const KEYS = {
   ability1: ['KeyQ'],
   ability2: ['KeyE'],
   ultimate: ['KeyR'],
+  item: ['KeyX'],
   interact: ['KeyF'],
   ping: ['KeyG'],
   map: ['Tab', 'KeyM'],
@@ -20,7 +21,7 @@ const DEFAULT_KEYS = Object.fromEntries(Object.entries(KEYS).map(([a, ks]) => [a
 // The actions a player may rebind (pause stays on Escape / P, the spells on the mouse buttons).
 export const REBINDABLE = [
   ['forward', 'Move forward'], ['back', 'Move back'], ['left', 'Strafe left'], ['right', 'Strafe right'],
-  ['jump', 'Jump'], ['dash', 'Dash'], ['ability1', 'Ability 1'], ['ability2', 'Ability 2'], ['ultimate', 'Ultimate'],
+  ['jump', 'Jump'], ['dash', 'Dash'], ['ability1', 'Ability 1'], ['ability2', 'Ability 2'], ['ultimate', 'Ultimate'], ['item', 'Use item'],
   ['interact', 'Interact / revive'], ['ping', 'Ping'], ['map', 'Map'], ['scores', 'Party scores'],
 ];
 // overrides: { action: code } replaces the action's main key; its alternates (the

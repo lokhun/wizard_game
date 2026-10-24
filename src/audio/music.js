@@ -1,84 +1,10 @@
 // Generative dark-fantasy music for GameAudio.setMusic(). A MusicPlayer runs a
 // lookahead step sequencer (16th-note steps) driven by GameAudio's pump
 // (setInterval + AudioContext time). D minor / D phrygian throughout.
-import { rnd, pick, mtof } from './core.js';
+import { pick } from './core.js';
 
-// ------------------------------------------------------------ instruments ---
-const I = {
-  pad(m, t, notes, dur, peak, vowel = 'a') {
-    const v = m.voice(t, 0.55); v.choir({ freqs: notes.map(mtof), dur, a: Math.min(1.5, dur * 0.3), rel: dur * 0.4, peak, vowel }); v.finish();
-  },
-  strings(m, t, note, dur, peak, a = 0.08) {
-    const v = m.voice(t, 0.35), f = mtof(note);
-    for (const d of [-7, 7]) v.osc({ type: 'sawtooth', f, detune: d, dur, a, hold: dur * 0.5, peak, filt: { type: 'lp', f: Math.min(2400, f * 6) }, vib: { rate: 5.3, depth: 0.003 } });
-    v.finish();
-  },
-  stac(m, t, note, peak) {
-    const v = m.voice(t, 0.25), f = mtof(note);
-    v.osc({ type: 'sawtooth', f, dur: 0.22, a: 0.006, peak, filt: { type: 'lp', f: f * 8, f2: f * 2, ft: 0.15, q: 3 } });
-    v.osc({ type: 'sawtooth', f: f * 1.003, dur: 0.2, a: 0.006, peak: peak * 0.6, filt: { type: 'lp', f: f * 5 } });
-    v.finish();
-  },
-  brass(m, t, notes, dur, peak, bright = 2400) {
-    const v = m.voice(t, 0.4);
-    for (const n of notes) {
-      const f = mtof(n);
-      for (const d of [-8, 8]) v.osc({ type: 'sawtooth', f, detune: d, dur, a: 0.02, hold: dur * 0.3, peak, filt: { type: 'lp', f: 300, f2: bright, ft: 0.07, f3: 700, q: 2 }, drive: 2 });
-    }
-    v.finish();
-  },
-  taiko(m, t, peak = 0.6, f = 68) {
-    const v = m.voice(t, 0.3);
-    v.osc({ f: f * 1.8, f2: f, ft: 0.035, f3: f * 0.8, dur: 0.7, a: 0.001, peak });
-    v.noise({ buf: 'brown', dur: 0.14, a: 0.001, peak: peak * 0.8, filt: { type: 'lp', f: 700 } });
-    v.noise({ buf: 'pink', dur: 0.04, a: 0.001, peak: peak * 0.35, filt: { type: 'bp', f: 1800, q: 1 } });
-    v.finish();
-  },
-  frame(m, t, peak = 0.25) {
-    const v = m.voice(t, 0.25);
-    v.osc({ f: 230, f2: 150, dur: 0.15, a: 0.001, peak });
-    v.noise({ buf: 'pink', dur: 0.09, a: 0.001, peak: peak * 0.8, filt: { type: 'bp', f: rnd(1000, 1400), q: 1.5 } });
-    v.finish();
-  },
-  rim(m, t, peak = 0.2) {
-    const v = m.voice(t, 0.3); v.noise({ buf: 'white', dur: 0.05, a: 0.001, peak, filt: { type: 'bp', f: 2400, q: 3 } }); v.finish();
-  },
-  shaker(m, t, peak = 0.06) {
-    const v = m.voice(t, 0.1); v.noise({ buf: 'white', dur: 0.05, a: 0.012, peak, filt: { type: 'hp', f: 6500 } }); v.finish();
-  },
-  tom(m, t, f, peak = 0.4) {
-    const v = m.voice(t, 0.3);
-    v.osc({ f: f * 1.5, f2: f, ft: 0.05, dur: 0.4, a: 0.001, peak });
-    v.noise({ buf: 'brown', dur: 0.08, peak: peak * 0.5, filt: { type: 'lp', f: 900 } });
-    v.finish();
-  },
-  swell(m, t, dur, peak = 0.12) {
-    const v = m.voice(t, 0.4); v.noise({ buf: 'white', dur, rev: true, peak, filt: { type: 'hp', f: 4500 } }); v.finish();
-  },
-  gong(m, t, f, peak = 0.12, dur = 5) {
-    const v = m.voice(t, 0.6);
-    v.bell({ f, dur, peak, partials: [[1, 1, 1], [1.52, 0.7, 0.8], [2.35, 0.55, 0.65], [2.81, 0.4, 0.55], [3.65, 0.3, 0.4]] });
-    v.finish();
-  },
-  pluck(m, t, note, peak = 0.12) {
-    const v = m.voice(t, 0.6), f = mtof(note);
-    v.osc({ type: 'triangle', f, dur: 1.4, a: 0.002, peak });
-    v.osc({ type: 'sawtooth', f, dur: 0.25, a: 0.002, peak: peak * 0.3, filt: { type: 'lp', f: f * 6, f2: f * 1.5, ft: 0.2 } });
-    v.finish();
-  },
-  bell(m, t, note, peak = 0.06, dur = 3) {
-    const v = m.voice(t, 0.7); v.bell({ f: mtof(note), dur, peak }); v.finish();
-  },
-  sub(m, t, f, dur, peak = 0.3) {
-    const v = m.voice(t, 0); v.osc({ f: f * 1.5, f2: f, ft: 0.1, dur, a: 0.005, peak }); v.finish();
-  },
-  drone(m, notes, peak, cut = 260) {
-    const v = m.voice(m.ctx.currentTime + 0.05, 0.3, true);
-    notes.forEach((n, i) => v.osc({ type: 'sawtooth', f: mtof(n), detune: i % 2 ? 6 : -6, a: 2.5, peak, filt: { type: 'lp', f: cut, q: 3, lfo: { rate: 0.04 + i * 0.013, depth: cut * 0.4 } } }));
-    v.osc({ f: mtof(notes[0]), a: 2.5, peak: peak * 1.2 });
-    m.held.push(v);
-  },
-};
+import { I } from './instruments.js';
+import { THEMES } from './themes.js';
 
 // Chords (midi)
 const Dm = [50, 53, 57], Bb = [46, 50, 53], Gm = [43, 46, 50], A = [45, 49, 52], C = [48, 52, 55], Eb = [51, 55, 58];
@@ -165,10 +91,12 @@ export const MUSIC = {
 
 export class MusicPlayer {
   constructor(audio, state, dest) {
-    this.a = audio; this.ctx = audio.ctx; this.state = state; this.def = MUSIC[state];
+    this.a = audio; this.ctx = audio.ctx; this.state = state; this.def = THEMES[state] ?? MUSIC[state.split(':')[0]];
+    this.intensity = audio._musicIntensity ?? 0;
     this.out = this.ctx.createGain(); this.out.gain.value = 0;
     // dread (Nightmare): the same music, darker and a breath slower, over a low tritone
     this.dread = !!audio.dread && state !== 'menu' && state !== 'victory';
+    this.song = null;
     if (this.dread) {
       this.dark = this.ctx.createBiquadFilter(); this.dark.type = 'lowpass'; this.dark.frequency.value = 1900; this.dark.Q.value = 0.5;
       this.out.connect(this.dark); this.dark.connect(dest);

@@ -5,11 +5,12 @@ import { Particles, SPR } from '../render/particles.js';
 import { VFX, fxOf } from '../render/vfx.js';
 import { generateLevel, ROOM, T, K_ALT, K_WATER, WATER_Y } from '../world/levelgen.js';
 import { keyOf } from '../core/input.js';
-import { PACTS, PACT_BY_ID, difficultyFor } from '../meta/pacts.js';
+import { PACTS, PACT_BY_ID, difficultyFor, abyssLaws, lawAt } from '../meta/pacts.js';
 import { buildLevel } from '../world/builder.js';
 import { Collision } from '../world/collision.js';
 import { BIOMES } from '../world/biomes.js';
-import { SpellRuntime, soundEl } from './spells.js';
+import { themeFor } from '../audio/themes.js';
+import { SpellRuntime, soundEl, isWeak } from './spells.js';
 import { ActorManager, typeIndex, hasAffix } from './actors.js';
 import { Director } from './director.js';
 import { Encounters } from './encounters.js';
@@ -19,6 +20,7 @@ import { resolveHit, ST, REACTIONS } from '../game/combat.js';
 import { getViewModel, preloadEnemies, getEnemyModel, getAvatar, setEnemyRim } from './models.js';
 import { Critters } from '../world/critters.js';
 import { rollTomes, rollRelics, RARITY, TOMES } from './upgrades.js';
+import { ITEMS, randomItem, itemK } from './items.js';
 import { RelicRuntime } from './relics.js';
 import { relicColor, relicDesc } from './relicDefs.js';
 import { makeChest, makePedestal, makePortal } from './interactables.js';
@@ -37,9 +39,25 @@ const WADE_C = [0.16, 0.22, 0.22]; // ripple rings on channel water
 // ---------------------------------------------------------------------------
 
 const _v = new THREE.Vector3();
+const _aim = new THREE.Vector3(); // (the crosshair probe's hit point)
 
 // what a ping names when it lands on a thing
 const PING_NAMES = { pedestal: (it) => (it.relic ? 'Relic' : 'Tome'), chest: 'Chest', mimic: 'Chest', shop: 'Merchant', shrine: 'Shrine', altar: 'Blood Altar', gambler: 'Gambler', portal: 'Portal', victoryPortal: 'Victory', abyssPortal: 'The Abyss' };
+// the Abyss's depths: violet, drowned teal, crimson, ashen gold (then round again)
+const ABYSS_TINT = [
+  { fog: 0x2a1040, gain: [1.0, 0.85, 1.15], sat: 1.0, rim: 0xa070ff },
+  { fog: 0x0a3030, gain: [0.8, 1.06, 1.05], sat: 0.95, rim: 0x40e0c0 },
+  { fog: 0x3a0808, gain: [1.15, 0.8, 0.8], sat: 0.9, rim: 0xff4040 },
+  { fog: 0x2a2618, gain: [1.08, 1.0, 0.74], sat: 0.8, rim: 0xffe0a0 },
+];
+for (const t of ABYSS_TINT) { const c = new THREE.Color(t.rim); t.rc = [c.r, c.g, c.b]; }
+const PLACE_MUSIC = { shop: 'shop', gambler: 'shop', shrine: 'shrine', altar: 'shrine', treasure: 'vault', secret: 'vault' };
+const STREAKS = [
+  { n: 3, name: 'TRIPLE KILL', gold: 4, ult: 3, color: '#e8d080' },
+  { n: 5, name: 'CARNAGE', gold: 8, ult: 5, color: '#ffb040' },
+  { n: 8, name: 'MASSACRE', gold: 14, ult: 8, color: '#ff6a30' },
+  { n: 12, name: 'ANNIHILATION', gold: 22, ult: 12, color: '#ff3048' },
+];
 const _nmFog = new THREE.Color(0x2a0606);
 const DREAD_MAX = 12;
 export class Game {
@@ -96,6 +114,9 @@ export class Game {
     this.hitSoundT = 0;
     // what happened, for whoever listens (run tracking, feats, the run summary: src/meta)
     this.events = new Emitter();
+    this._aimT = 0; // (the crosshair's weak-point probe: next run)
+    this._learned = null; this._dashN = 0; // (once-ever tips: learn())
+    this.events.on('dashJump', () => this.learn('dashjump'));
     // (Nightmare) a chamber you leave untouched earns a Dread Mark: watch what the local player takes per fight
     this.events.on('roomLock', (room, on) => { if (on) { this._fightRoom = room; this._fightHurt = 0; } });
     this.events.on('hurt', (dmg) => { if (this._fightRoom) this._fightHurt += dmg; });
@@ -122,6 +143,7 @@ export class Game {
   startRun({ seed, localId, name, classId, isHost, net, players = [], floor = 0, abyss = 0 }) {
     this.player?.endChannel();
     this.abyss = abyss; // the Abyss: how many times the party has descended past the Hollow King
+    if (abyss) this.difficulty = abyssLaws(this.difficulty, abyss);
     this.cinematic = null;
     this.ui?.letterbox?.(false);
     for (const r of this.remotes.values()) r.dispose();
@@ -164,6 +186,7 @@ export class Game {
     }
     this.remotes.set(p.id, r);
     this._partyGen = (this._partyGen ?? 0) + 1;
+    if (this.isHost) this.director?.rescaleBosses();
     this.isSolo = false;
     this.relics?.onPeerJoin();
     this.ui?.toast(`${p.name} joined as ${CLASS_META[p.classId].name}`);
@@ -174,6 +197,7 @@ export class Game {
     r.dispose();
     this.remotes.delete(id);
     this._partyGen = (this._partyGen ?? 0) + 1;
+    if (this.isHost) this.director?.rescaleBosses();
     this.ui?.toast(`${r.name} left the party`);
   }
 
@@ -200,6 +224,7 @@ export class Game {
     this.actors.clear();
     for (const d of this.drops) this.scene.remove(d.mesh);
     this.drops = [];
+    for (const h of this.hazards) h.wall?.end();
     this.hazards = [];
     this.pools = [];
 
@@ -230,7 +255,7 @@ export class Game {
     this.director.setLevel(level);
     const b0 = level.biome;
     // the menu backdrop has no enemies: a run's own floor builds them
-    if (!this.menuMode) preloadEnemies([...new Set([...b0.enemies, ...b0.elites, b0.boss, 'skeleton', 'hound', 'slime', 'slimeling', ...this.encounters.warmTypes(level)].map((t) => ENEMY_DEFS[t]?.model ?? BOSS_DEFS[t]?.model ?? t))], this);
+    if (!this.menuMode) preloadEnemies([...new Set([...b0.enemies, ...this.director.invaders(level), ...b0.elites, b0.boss, 'skeleton', 'hound', 'slime', 'slimeling', ...this.encounters.warmTypes(level)].map((t) => ENEMY_DEFS[t]?.model ?? BOSS_DEFS[t]?.model ?? t))], this);
     // atmosphere
     const b = this.biome;
     // Nightmare wears its own colours: a blood-dark fog, a dimmer sky, a grade
@@ -238,11 +263,15 @@ export class Game {
     const nm = !!this.difficulty.nightmare && !this.menuMode;
     this.audio?.setDread?.(nm);
     const fogCol = nm ? new THREE.Color(b.fog.color).lerp(_nmFog, 0.45) : new THREE.Color(b.fog.color);
+    // each depth of the Abyss wears its own colours over the realm's
+    const ab = this.abyss && !this.menuMode ? ABYSS_TINT[(this.abyss - 1) % ABYSS_TINT.length] : null;
+    if (ab) fogCol.lerp(new THREE.Color(ab.fog), 0.55);
     const fogDen = b.fog.density * (nm ? 1.12 : 1);
     this.scene.fog = new THREE.FogExp2(fogCol, fogDen);
     this.scene.background = fogCol.clone();
     this.particles.setFog(fogDen, fogCol.getHex());
     this.hemi.color.set(b.ambient.sky);
+    if (ab) this.hemi.color.lerp(new THREE.Color(ab.rim), 0.35);
     this.hemi.groundColor.set(b.ambient.ground);
     this.hemi.intensity = b.ambient.intensity * 3 * (nm ? 0.82 : 1);
     this.baseHemi = this.hemi.intensity;
@@ -253,7 +282,9 @@ export class Game {
     this.built.group.traverse((o) => { if (o.isMesh && !o.material.transparent && o.name?.startsWith('lvl_')) { o.castShadow = shadows; o.receiveShadow = shadows; } });
     this.shadowsOn = shadows;
     if (b.moon) this.moon.color.set(b.moon.color);
-    this.renderer.setGrade(nm ? { ...b.grade, gain: (b.grade.gain ?? [1, 1, 1]).map((c, i) => c * [1.08, 0.87, 0.87][i]), lift: (b.grade.lift ?? [0, 0, 0]).map((c, i) => c + [0.006, 0, 0][i]), saturation: (b.grade.saturation ?? 0.85) * 0.92, vignette: (b.grade.vignette ?? 0.62) * 1.15 } : b.grade);
+    let grade = b.grade;
+    if (ab) grade = { ...grade, gain: (grade.gain ?? [1, 1, 1]).map((c, i) => c * ab.gain[i]), saturation: (grade.saturation ?? 0.85) * ab.sat };
+    this.renderer.setGrade(nm ? { ...b.grade, gain: (b.grade.gain ?? [1, 1, 1]).map((c, i) => c * [1.08, 0.87, 0.87][i]), lift: (b.grade.lift ?? [0, 0, 0]).map((c, i) => c + [0.006, 0, 0][i]), saturation: (b.grade.saturation ?? 0.85) * 0.92, vignette: (b.grade.vignette ?? 0.62) * 1.15 } : grade);
     this.viewHemi.color.set(b.ambient.sky);
     this.viewHemi.intensity = 0.6 + b.ambient.intensity;
     // interactables from the level
@@ -292,9 +323,10 @@ export class Game {
     level.startRoom.visited = true;
     if (this.difficulty.rush && !this.menuMode) this._rushFloor(level, index);
     this._buildDoorSigns();
-    setEnemyRim(b.rim ?? 0x806a60, b.rimK ?? 0.45);
+    const abr = this.abyss && !this.menuMode ? ABYSS_TINT[(this.abyss - 1) % ABYSS_TINT.length] : null;
+    setEnemyRim(abr ? abr.rim : b.rim ?? 0x806a60, abr ? 0.7 : b.rimK ?? 0.45);
     this.audio?.setAmbience(b.id);
-    this.audio?.setMusic(index === 0 ? 'explore' : 'explore');
+    this.audio?.setMusic(this._mus('explore'));
     this.audio?.play('floor_enter');
     this.ui?.onFloor(this, b, index);
     if (index === 0 && !this.menuMode) this._tutorialTips();
@@ -326,7 +358,7 @@ export class Game {
       const b = level.biome;
       // the menu backdrop only shows the level: models, spells and rewards are a run's
       const menu = this.menuMode;
-      const types = new Set(menu ? [] : [...b.enemies, ...(b.elites ?? []), b.boss, 'skeletonMinion', 'spiritWolf', ...this.encounters.warmTypes(level)]);
+      const types = new Set(menu ? [] : [...b.enemies, ...this.director.invaders(level), ...(b.elites ?? []), b.boss, 'skeletonMinion', 'spiritWolf', ...this.encounters.warmTypes(level)]);
       const models = [...new Set([...types].map((t) => ENEMY_DEFS[t]?.model ?? BOSS_DEFS[t]?.model ?? t))];
       const cam = this.renderer.camera;
       const front = cam.position.clone().add(new THREE.Vector3(0, 0, -3).applyQuaternion(cam.quaternion));
@@ -407,13 +439,26 @@ export class Game {
       `Right Click — ${sp.secondary.name}`,
       `${keyOf('ability1')} — ${sp.ability1.name} · ${keyOf('ability2')} — ${sp.ability2.name}`,
       `${keyOf('dash')} to dash — you are briefly invulnerable`,
-      'Kill an enemy mid-windup to interrupt its attack',
+      'Stagger or kill a foe as it winds up to interrupt its attack',
       'Dash through a blow at the last moment: a perfect dodge',
       `${keyOf('interact')} to interact · ${keyOf('map')} for the map · ${keyOf('ping')} to ping`,
     ];
     this._tipT = 2.5;
     // contextual tips fire when they become relevant
-    this._ctxTips = { sigil: 'Sigils above doorways reveal what lies beyond', ult: `R — ${sp.ultimate.name} is ready`, keg: 'Red powder kegs explode — lure foes close, then strike' };
+    this._ctxTips = { sigil: 'Sigils above doorways reveal what lies beyond', ult: `${keyOf('ultimate')} — ${sp.ultimate.name} is ready`, keg: 'Red powder kegs explode — lure foes close, then strike' };
+  }
+
+  // A once-ever tip for a mechanic a player might not find alone (kept across runs, so a veteran
+  // still hears of one added later): shown the first time it matters; with no text, only marked
+  // as known (the player found it themselves).
+  learn(id, text) {
+    if (this.menuMode) return;
+    let L = this._learned;
+    if (!L) { try { L = new Set(JSON.parse(localStorage.getItem('arcane-ascent-learned') ?? '[]')); } catch { L = new Set(); } this._learned = L; }
+    if (L.has(id)) return;
+    L.add(id);
+    try { localStorage.setItem('arcane-ascent-learned', JSON.stringify([...L])); } catch { /* ignore */ }
+    if (text) this.ui?.toast(text, '#e2c48a');
   }
 
   _updateTips(dt) {
@@ -553,6 +598,16 @@ export class Game {
     if (id === 'throne' && Math.random() < dt * 10) {
       P.glow({ x: cam.x + rnd(20), y: cam.y + 4 + rnd(2), z: cam.z + rnd(20), vx: rnd(0.3), vy: -0.4, vz: rnd(0.3), r: 1.2, g: 0.5, b: 1.6, r2: 0.2, g2: 0.05, b2: 0.3, life: 8, size: 0.04, sprite: SPR.EMBER, drag: 0.2 });
     }
+    // the Abyss: motes in the depth's own colour, drifting up as if the place were sinking
+    if (this.abyss && Math.random() < dt * 8) {
+      const c = ABYSS_TINT[(this.abyss - 1) % ABYSS_TINT.length].rc;
+      P.glow({ x: cam.x + rnd(18), y: cam.y - 1.5 + rnd(2), z: cam.z + rnd(18), vx: rnd(0.2), vy: 0.35 + Math.random() * 0.3, vz: rnd(0.2), r: c[0] * 1.4, g: c[1] * 1.4, b: c[2] * 1.4, r2: c[0] * 0.2, g2: c[1] * 0.2, b2: c[2] * 0.2, life: 6, size: 0.05, sprite: SPR.EMBER, drag: 0.15 });
+    }
+    // the dungeon: grit sifting down from the vaults now and then
+    if (id === 'dungeon' && Math.random() < dt * 1.5) {
+      const x = cam.x + rnd(12), z = cam.z + rnd(12), c = this.level.ceilAt(x, z);
+      if (c < 50) for (let k = 0; k < 4; k++) P.solid({ x: x + rnd(0.4), y: c - 0.1, z: z + rnd(0.4), vy: -0.5, r: 0.3, g: 0.26, b: 0.22, a: 0.6, life: 1.6, size: 0.025, sprite: SPR.CHUNK, gravity: 6 });
+    }
     if (id === 'keep' && Math.random() < dt * 2) {
       P.glow({ x: cam.x + rnd(14), y: cam.y + rnd(2), z: cam.z + rnd(14), vy: 0.1, r: 0.6, g: 0.5, b: 1.2, life: 5, size: 0.08, sprite: SPR.RUNE, spin: 0.5, drag: 0.2 });
     }
@@ -598,6 +653,8 @@ export class Game {
     this._updateTips(realDt);
     this.events.emit('tick', realDt);
     this._updateDoorSigns(realDt);
+    this._roomMusic(realDt);
+    this._ventTells(realDt);
     this._ambient(realDt);
     this.critters?.update(dt, this.time, this.renderer.camera.position, this.allPlayers());
     // big boss arenas outgrow the light pool: lift the ambient a little while you stand in one
@@ -638,6 +695,8 @@ export class Game {
     this.audio?.setIntensity?.(p.alive && !p.downed ? clamp(1 - p.hp / p.maxHp - 0.4, 0, 1) * 1.6 : 1);
     // net
     if (this.net) this.net.tick(realDt, this);
+    // the crosshair turns gold over a weak point, so aim is something you can see and practise (20 Hz)
+    if ((this._aimT -= realDt) <= 0) { this._aimT = 0.05; this.ui?.aimWeak?.(this._aimOnWeak(cam.position, p)); }
     this.ui?.update(realDt, this);
     this._checkRunEnd(realDt);
   }
@@ -710,6 +769,13 @@ export class Game {
       g.uDamage.value = clamp(0.16 + beat * 0.22 + p.hurtPulse * 0.3, 0, 1);
     } else g.uDamage.value = clamp(p.hurtPulse * 0.8 + Math.max(0, lowHp - 0.6) * 1.2 * (0.7 + 0.3 * Math.sin(this.time * 6)), 0, 1);
     g.uHeal.value = Math.max(0, (this.healPulse ?? 0));
+    // inside a danger zone that hasn't landed yet: the view's edges warn in its colour, faster as it nears
+    const dz = this._inDanger(p);
+    if (dz) {
+      const k = dz.k, beat = 0.6 + 0.4 * Math.sin(this.time * (8 + 14 * k));
+      g.uDanger.value = (0.12 + 0.3 * k) * beat;
+      g.uDangerCol.value.set(dz.c[0], dz.c[1], dz.c[2]);
+    } else g.uDanger.value = 0;
     // dash / blink speed smear: held while dashing, then eases off
     this.dashFx = p.dashT > 0 ? Math.max(this.dashFx ?? 0, 1) : Math.max(0, (this.dashFx ?? 0) - dt * 4.5);
     g.uDash.value = this.dashFx * 0.85;
@@ -807,7 +873,7 @@ export class Game {
           hitSet.add(n.id);
           const np = new THREE.Vector3(n.pos.x, n.pos.y + n.height * 0.5, n.pos.z);
           this.vfx.lightning(cur, np, { life: 0.15, branches: 1 });
-          this.hitActor(n, { dmg: H.dmg * 0.6, el: 'lightning', st: { shock: 3 }, noReact: true, src: p.id }, np);
+          this.hitActor(n, { dmg: H.dmg * 0.6, el: 'lightning', st: { shock: 3 }, noReact: true, src: p.id, tag: 'reaction' }, np);
           cur = np;
         }
       }
@@ -818,7 +884,11 @@ export class Game {
     let stPayload = H.st;
     if (stPayload && stPayload.poison && st.poisonBonus && H.tag !== 'dot') stPayload = { ...stPayload, poison: [stPayload.poison[0], stPayload.poison[1]] };
     // relic procs (lightning strikes, glyphs, overkill arcs...) and the statuses they add
-    if (this.relics) stPayload = this.relics.onHit(a, H, res, dmg, pos, stPayload);
+    if (this.relics) {
+      const sl = this.spells.slot; this.spells.slot = 'other'; // (a relic's proc, and its timers, are the relic's damage)
+      stPayload = this.relics.onHit(a, H, res, dmg, pos, stPayload);
+      this.spells.slot = sl;
+    }
     // local feedback
     if (dmg > 0) {
       if (H.tag !== 'dot') a.hitFlash = res.crit ? 0.6 : 0.4;
@@ -835,9 +905,10 @@ export class Game {
         const pp = this.player.pos, dx = a.pos.x - pp.x, dz = a.pos.z - pp.z, dl = Math.hypot(dx, dz) || 1;
         this.actors.jolt(a, dx / dl, dz / dl, (res.crit ? 1 : 0.55) * Math.min(1, 0.35 + (dmg / a.maxHp) * 5));
       }
-      if (!H.noNumber) this.ui?.damageNumber(pos, dmg, elShow, res.crit, H.tag === 'dot', a.id);
+      if (!H.noNumber) this.ui?.damageNumber(pos, dmg, elShow, res.crit || H.weak, H.tag === 'dot', a.id);
       if (H.tag !== 'dot') {
-        this.ui?.hitmarker(res.crit, a.hp - dmg <= 0);
+        this.ui?.hitmarker(res.crit, a.hp - dmg <= 0, H.weak);
+        if (H.weak) { this.events.emit('weakHit'); this.learn('weak', 'Weak point! Aimed hits to the head (the front of a beast) deal +35%'); if (this.time - (this._weakSndT ?? 0) > 0.08) { this._weakSndT = this.time; this.audio?.play('hitmarker', { volume: 0.7 }); } }
         if (this.time - this.hitSoundT > 0.05) {
           this.hitSoundT = this.time;
           this.audio?.play(a.def.hitSound ?? 'enemy_hit', { pos, volume: 0.6 });
@@ -848,7 +919,8 @@ export class Game {
     }
     // predicted health for responsiveness
     const willKill = a.hp - dmg <= 0;
-    p.onDealtDamage(dmg, false);
+    // (a spell zone's ticks are tagged 'dot' but belong to their spell: status ticks credit 'dot' in onDotTick)
+    p.onDealtDamage(dmg, false, a, H.tag === 'reaction' ? 'reaction' : H.relic ? 'other' : this.spells.slot ?? (H.tag === 'dot' ? 'dot' : 'other'));
     this.stats.damage += dmg;
     this.events.emit('hit', dmg, a, res, H);
     const kbMult = st.kbMult ?? 1;
@@ -866,9 +938,19 @@ export class Game {
     if (a.faction !== 'enemy') return;
     this.stats.kills++;
     // drops
-    const gold = Math.round((a.def.gold ?? 1) * (a.elite ? 4 : 1) * (1 + this.floorIndex * 0.2) * 0.85 * this.encounters.goldMult(a));
+    const share = this.director.partyShare(); // (a party meets more foes; everyone collects every coin)
+    const gold = Math.floor((a.def.gold ?? 1) * (a.elite ? 4 : 1) * (1 + this.floorIndex * 0.2) * 0.85 * this.encounters.goldMult(a) * share + Math.random()); // (rounded at random: cheap foes still pay on average)
     if (gold > 0) this.spawnDrop('gold', a.pos, gold);
     if (Math.random() < (a.elite ? 1 : a.boss ? 0 : 0.1 * (this.difficulty.orbChance ?? 1))) this.spawnDrop('health', a.pos, 18 + this.floorIndex * 4);
+    if (!a.boss && !a.def.hoarder && Math.random() < (a.elite ? 0.35 : (a.def.cost ?? 1) >= 8 ? 0.06 : 0.012) * share) this.spawnDrop('item', a.pos, randomItem());
+    // a caught Hoarder bursts: a fountain of gold and an item for everyone
+    if (a.def.hoarder) {
+      this.spawnDrop('gold', a.pos, 60 + this.floorIndex * 30);
+      this.spawnDrop('gold', a.pos, 30 + this.floorIndex * 15);
+      this.spawnDrop('item', a.pos, randomItem());
+      this.net?.broadcast({ t: 'hoard', k: 'caught', id: a.id });
+      this.hoarderNews('caught', a);
+    }
     // kill credit
     if (killer === this.player.id) this.onLocalKill(a);
     else if (killer) this.net?.sendTo(killer, { t: 'kc', id: a.id, el, x: a.pos.x, z: a.pos.z, hx: a.deathMask & ST.hex ? 1 : 0, b: a.deathMask & ST.burn ? 1 : 0, m: a.deathMask });
@@ -880,6 +962,7 @@ export class Game {
   onLocalKill(a, hexed, burning, mask = a?.deathMask ?? 0) {
     const p = this.player;
     p.onDealtDamage(0, true);
+    this._streakKill(p);
     this.events.emit('kill', a);
     this.relics?.onKill(a, mask);
     if (p.stats.hexKill && (hexed ?? (mask & ST.hex))) {
@@ -896,12 +979,29 @@ export class Game {
     if (p.stats.raiseChance && a && Math.random() < p.stats.raiseChance && !a.boss) this.requestSummon('skeletonMinion', a.pos.clone(), 10, p.id);
   }
 
+  // Carnage: kills landed within 1.6 s of each other chain into a streak, and its
+  // tiers are called out under the crosshair, each paying a little gold and ultimate
+  _streakKill(p) {
+    const t = this.time;
+    this._streakN = t - (this._streakT ?? -9) < 1.6 ? (this._streakN ?? 0) + 1 : 1;
+    this._streakT = t;
+    const tier = STREAKS.find((s) => s.n === this._streakN) ?? (this._streakN > 12 && this._streakN % 4 === 0 ? STREAKS[STREAKS.length - 1] : null);
+    if (!tier) return;
+    // each tier pays its gold once a streak; past 12 the callouts go on for ultimate only, so a
+    // packed room (a full party's worth of foes) can't print gold
+    const gold = this._streakN > 12 ? 0 : Math.round(tier.gold * (1 + 0.5 * this.floorIndex) * (this.difficulty.goldMult ?? 1));
+    p.gold += gold; this.stats.gold += gold;
+    p.ult = Math.min(100, p.ult + tier.ult);
+    this.ui?.streak(this._streakN > 12 ? `${tier.name} ×${this._streakN}` : tier.name, gold ? `+${gold} gold` : `+${tier.ult}% ultimate`, tier.color);
+    this.audio?.play(this._streakN >= 8 ? 'level_up' : 'ui_click', { volume: this._streakN >= 8 ? 0.45 : 0.6 });
+  }
+
   onDotTick(a, dot) {
     const src = a.lastHitBy;
     const pos = new THREE.Vector3(a.pos.x, a.pos.y + a.height * 0.8, a.pos.z);
     if (src === this.player.id) this.ui?.damageNumber(pos, Math.round(dot), a.st.burn?.t > 0 ? 'fire' : a.st.poison?.t > 0 ? 'poison' : 'blood', false, true, a.id);
     else if (src) this.net?.sendTo(src, { t: 'dn', id: a.id, d: Math.round(dot) });
-    if (src === this.player.id) { this.player.onDealtDamage(dot, false); this.stats.damage += dot; }
+    if (src === this.player.id) { this.player.onDealtDamage(dot, false, a, 'dot'); this.stats.damage += dot; }
   }
 
   // ======================================================================
@@ -912,11 +1012,17 @@ export class Game {
     this.addHazard(h);
   }
 
+  // a danger zone's colour by element (k dims it for lesser warnings);
+  // the high-contrast setting draws every danger zone in one bright yellow, whatever its element
+  teleColor(el, k = 1) {
+    if (this.contrastTele) return [1.7, 1.45, 0.15];
+    const c = el === 'enemyGreen' || el === 'poison' ? [1.0, 2.2, 0.2] : el === 'enemyPurple' || el === 'arcane' || el === 'necrotic' ? [1.6, 0.3, 2.6] : el === 'holy' ? [2.4, 1.9, 0.6] : el === 'frost' ? [0.6, 1.6, 2.6] : [2.6, 0.35, 0.1];
+    return [c[0] * 0.55 * k, c[1] * 0.55 * k, c[2] * 0.55 * k];
+  }
+
   addHazard(h) {
     const hz = { ...h, t: 0, done: false, hitLocal: false };
-    const color = h.el === 'enemyGreen' || h.el === 'poison' ? [1.0, 2.2, 0.2] : h.el === 'enemyPurple' || h.el === 'arcane' || h.el === 'necrotic' ? [1.6, 0.3, 2.6] : h.el === 'holy' ? [2.4, 1.9, 0.6] : h.el === 'frost' ? [0.6, 1.6, 2.6] : [2.6, 0.35, 0.1];
-    // (the high-contrast setting draws every danger zone in one bright yellow, whatever its element)
-    hz.color = this.contrastTele ? [1.7, 1.45, 0.15] : color.map((c) => c * 0.55);
+    hz.color = this.teleColor(h.el);
     if (h.vis && h.shape !== 'arc' && h.shape !== 'wave' && h.shape !== 'los') {
       const dur = h.teleDur ?? h.delay;
       const color = hz.color;
@@ -957,34 +1063,79 @@ export class Game {
     return n;
   }
 
+  // the pending zone the player stands in that lands soonest: { k: 0..1 of its wind-up, c: colour }, or null
+  _inDanger(p) {
+    if (!p.alive || p.downed || p.dead) return null;
+    let best = null;
+    for (const h of this.hazards) {
+      if (!h.vis || h.t >= (h.delay ?? 0) || !h.delay) continue;
+      const dx = p.pos.x - h.x, dz = p.pos.z - h.z, d = Math.hypot(dx, dz), R = 0.4;
+      let inside = false;
+      if (h.shape === 'circle') inside = d <= h.r + R;
+      else if (h.shape === 'cone' || h.shape === 'arc') {
+        if (d <= h.r + R) { let diff = Math.abs(Math.atan2(dx, dz) - h.rot) % (Math.PI * 2); if (diff > Math.PI) diff = Math.PI * 2 - diff; inside = diff <= h.angle + 0.15 || d < 1; }
+      } else if (h.shape === 'rect') {
+        const fx = Math.sin(h.rot), fz = Math.cos(h.rot);
+        const along = dx * fx + dz * fz, side = Math.abs(dx * fz - dz * fx);
+        inside = along >= -0.5 && along <= h.len + 0.5 && side <= h.w / 2 + R;
+      }
+      if (!inside) continue;
+      const k = h.t / h.delay;
+      if (!best || k > best.k) best = { k, c: h.color };
+    }
+    return best;
+  }
+
+  // an enemy shot about to hit you from outside the view marks the screen edge it's coming from
+  _warnIncoming() {
+    const p = this.player;
+    if (!p.alive || p.downed || p.dead) return;
+    const cam = this.renderer.camera, fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
+    for (const pr of this.spells.projectiles) {
+      if (pr.warned || pr.dead || !(pr.faction === 'enemy' || pr.el.startsWith('enemy'))) continue;
+      const rx = p.pos.x - pr.pos.x, ry = p.pos.y + 1 - pr.pos.y, rz = p.pos.z - pr.pos.z;
+      const v2 = pr.vel.x * pr.vel.x + pr.vel.y * pr.vel.y + pr.vel.z * pr.vel.z;
+      if (v2 < 1) continue;
+      const tc = (rx * pr.vel.x + ry * pr.vel.y + rz * pr.vel.z) / v2; // time of closest approach
+      if (tc < 0 || tc > 0.9) continue;
+      const mx = rx - pr.vel.x * tc, my = ry - pr.vel.y * tc, mz = rz - pr.vel.z * tc;
+      if (mx * mx + my * my + mz * mz > 1.3 * 1.3) continue;
+      // in view? (roughly the horizontal half-angle of the camera)
+      const dx = pr.pos.x - p.pos.x, dz = pr.pos.z - p.pos.z, d = Math.hypot(dx, dz) || 1;
+      pr.warned = true;
+      if ((fx * dx + fz * dz) / d > Math.cos(THREE.MathUtils.degToRad(cam.fov * cam.aspect * 0.45))) continue;
+      this.ui?.damageDirection(pr.pos);
+    }
+  }
+
   _updateHazards(dt) {
     const p = this.player;
+    this._warnIncoming();
     for (let i = this.hazards.length - 1; i >= 0; i--) {
       const h = this.hazards[i];
       h.t += dt;
       if (h.shape === 'wave') {
         if (h.t < (h.delay ?? 0)) continue;
         const r = h.r + h.speed * (h.t - (h.delay ?? 0));
-        // visual ring
-        if (!h.ringMesh) {
-          h.ringMesh = true;
-          this.vfx.ring({ x: h.x, y: h.y ?? 0, z: h.z }, h.maxR, h.color, (h.maxR - h.r) / h.speed, 0.04);
-        }
-        if (Math.random() < 0.8) {
+        // the wave as it is: a glowing wall standing exactly on the hit radius, bright all
+        // the way out (it used to be a faint ring that eased ahead of the real one and faded)
+        if (!h.wall) h.wall = this.vfx.waveWall({ x: h.x, y: h.y ?? 0, z: h.z }, h.color.map((c) => c * 1.7), 0.7);
+        h.wall.r = r;
+        h.wall.a = Math.min(1, (h.t - (h.delay ?? 0)) * 8) * Math.min(1, (h.maxR - r) / 1.5);
+        if (Math.random() < 0.6) {
           const a = Math.random() * Math.PI * 2;
-          this.vfx.P.glow({ x: h.x + Math.cos(a) * r, y: (h.y ?? 0) + 0.2, z: h.z + Math.sin(a) * r, vy: 2, r: h.color[0], g: h.color[1], b: h.color[2], life: 0.4, size: 0.4, sprite: SPR.GLOW });
-          this.vfx.smoke({ x: h.x + Math.cos(a) * r, y: (h.y ?? 0) + 0.2, z: h.z + Math.sin(a) * r }, { count: 1, size: 0.5, alpha: 0.3, color: [0.25, 0.2, 0.15] });
+          this.vfx.P.glow({ x: h.x + Math.cos(a) * r, y: (h.y ?? 0) + 0.3, z: h.z + Math.sin(a) * r, vy: 2.5, r: h.color[0], g: h.color[1], b: h.color[2], life: 0.4, size: 0.35, sprite: SPR.GLOW });
         }
         if (!h.hitLocal && p.alive && !p.downed && !p.dead) {
           const d = Math.hypot(p.pos.x - h.x, p.pos.z - h.z);
           const airborne = p.pos.y - this.groundY(p.pos.x, p.pos.z) > 0.45;
-          if (Math.abs(d - r) < 0.7 && !airborne) {
+          if (Math.abs(d - r) < 0.7 && !airborne && this.collision.los(h.x, (h.y ?? 0) + 1.0, h.z, p.pos.x, p.pos.y + 1.0, p.pos.z)) {
             h.hitLocal = true;
             p.takeDamage(h.dmg, h.el, new THREE.Vector3(h.x, 0, h.z), { by: h.src ? this.actors.byId.get(h.src) : null, move: h.mv, cause: h.cause });
             this._knock(p, h.x, h.z, h.kb ?? 6);
           }
         }
-        if (r >= h.maxR) this.hazards.splice(i, 1);
+        if (r >= h.maxR) { h.wall?.end(); this.hazards.splice(i, 1); }
         continue;
       }
       if (h.shape === 'los') {
@@ -998,6 +1149,17 @@ export class Game {
       this._resolveHazard(h);
       this.hazards.splice(i, 1);
     }
+  }
+
+  _hazardReaches(h, to, gy) {
+    let ox = h.x, oz = h.z;
+    if (h.shape === 'rect') {
+      const fx = Math.sin(h.rot), fz = Math.cos(h.rot);
+      const t = Math.max(0, Math.min(h.len, (to.x - h.x) * fx + (to.z - h.z) * fz));
+      ox = h.x + fx * t; oz = h.z + fz * t;
+      if (!this.collision.los(h.x, gy + 1.0, h.z, ox, gy + 1.0, oz)) return false; // (the lane itself runs into the wall)
+    }
+    return this.collision.los(ox, gy + 1.0, oz, to.x, to.y + 1.0, to.z);
   }
 
   _resolveHazard(h) {
@@ -1033,6 +1195,14 @@ export class Game {
       this.vfx.addShake(0.8);
       this.audio?.play('explosion_big');
     }
+    // a trap's burst burns the foes standing in it too (host)
+    if (this.isHost && h.trap && h.shape === 'circle') {
+      for (const a of [...this.actors.hostiles()]) {
+        const dx = a.pos.x - h.x, dz = a.pos.z - h.z, d = Math.hypot(dx, dz) || 1;
+        if (a.dormant || d > h.r + a.radius || a.pos.y > gy + 2) continue;
+        this.actors.damage(a, { dmg: h.trap, el: h.el === 'enemyGreen' ? 'poison' : h.el === 'enemyPurple' ? 'arcane' : 'fire', kb: 6, kbDir: [dx / d, dz / d] });
+      }
+    }
     // host: enemy attacks also hit allied summons
     if (this.isHost && h.shape !== 'los' && h.shape !== 'wave') {
       for (const al of this.actors.allies()) {
@@ -1047,7 +1217,7 @@ export class Game {
           const along = dx * fx + dz * fz, side = Math.abs(dx * fz - dz * fx);
           inside = along >= -0.5 && along <= h.len + 0.5 && side <= h.w / 2 + al.radius;
         }
-        if (inside) this.actors.damage(al, { dmg: h.dmg, el: h.el });
+        if (inside && this._hazardReaches(h, al.pos, gy)) this.actors.damage(al, { dmg: h.dmg, el: h.el });
       }
     }
     // does it hit me?
@@ -1080,6 +1250,9 @@ export class Game {
       }
       default: break;
     }
+    // walls stop blows: a swing, a breath, a blast or a charge lane reaches you only
+    // with a clear line from where it comes (a lane: from its nearest point to you)
+    if (hit && h.shape !== 'los' && !this._hazardReaches(h, p.pos, gy)) hit = false;
     // vertical tolerance (jumping over low swings doesn't count for circles)
     if (hit && h.shape !== 'los' && p.pos.y - (h.y ?? gy) > 2.5) hit = false;
     if (hit) {
@@ -1107,6 +1280,9 @@ export class Game {
 
   // enemy projectiles (spawned identically on all peers)
   broadcastEnemyProjectile(e) {
+    // (the Abyss's laws quicken straight shots; a lob keeps the arc it was aimed with)
+    const k = this.difficulty.projSpeed ?? 1;
+    if (k !== 1 && !e.gravity) { e.vx *= k; e.vy *= k; e.vz *= k; }
     this.net?.broadcast({ t: 'ep', e });
     this.spawnEnemyProjectile(e);
   }
@@ -1116,10 +1292,21 @@ export class Game {
     this.spells.spawn({
       local: true, faction: 'enemy', el, pos, vel: new THREE.Vector3(e.vx, e.vy, e.vz), radius: e.mesh === 'arrow' ? 0.15 : 0.3,
       life: e.gravity ? 4 : 3.5, gravity: e.gravity ?? 0, core: e.mesh === 'arrow' ? 0 : 0.7, mesh: e.mesh, light: e.mesh === 'arrow' ? 0 : 5, trail: e.mesh === 'arrow' ? 0.2 : 1,
-      homing: e.homing ?? 0, hit: { dmg: e.dmg, st: e.st, by: e.src != null ? this.actors.byId.get(e.src) : null, move: e.mv }, // (by, not attacker: thorns answers only blows in reach)
+      homing: e.homing ?? 0, homeOn: e.tg, hit: { dmg: e.dmg, st: e.st, by: e.src != null ? this.actors.byId.get(e.src) : null, move: e.mv }, // (by, not attacker: thorns answers only blows in reach)
       aoe: e.aoe ? { radius: e.aoe, dmg: e.dmg * 0.6, el } : null,
       onExpire: e.pool ? (pr, p) => this.spawnPoolLocal(p, e.pool[0], e.pool[1], e.pool[2], el) : null,
     });
+    // a lob falls from above, often from out of view: mark where it will come down
+    if (e.gravity) {
+      const g = e.gravity;
+      let x = e.x, z = e.z, t = 0;
+      for (let i = 0; i < 3; i++) {
+        const gy = this.groundY(x, z);
+        t = (e.vy + Math.sqrt(Math.max(0, e.vy * e.vy + 2 * g * (e.y - gy)))) / g;
+        x = e.x + e.vx * t; z = e.z + e.vz * t;
+      }
+      if (t > 0.25 && t < 4) this.vfx.telegraph({ x, y: this.groundY(x, z), z }, { shape: 'circle', radius: Math.max(0.9, e.pool?.[0] ?? 0, e.aoe ?? 0), dur: t, color: this.teleColor(el, 0.8) });
+    }
   }
   enemyAreaHit(pos, radius, dmg, el, st) {
     const p = this.player;
@@ -1169,7 +1356,7 @@ export class Game {
     if (this.isHost && id === undefined) this.net?.broadcast({ t: 'drop', id: did, ty: type, x: pos.x, y: pos.y, z: pos.z, v: value });
     const count = type === 'gold' ? Math.min(8, Math.ceil(value / 3)) : 1;
     for (let i = 0; i < count; i++) {
-      const mesh = makeDropMesh(type);
+      const mesh = makeDropMesh(type, value);
       const d = {
         id: did, sub: i, type, value: type === 'gold' ? value / count : value,
         pos: new THREE.Vector3(pos.x, pos.y + 1, pos.z),
@@ -1189,7 +1376,7 @@ export class Game {
       d.t += dt;
       const gy = this.groundY(d.pos.x, d.pos.z) + 0.25;
       const dist = d.pos.distanceTo(eye);
-      const magnet = d.t > 0.6 && p.alive && !p.downed && (d.type === 'gold' ? dist < 6 : dist < 5 && p.hp < p.maxHp);
+      const magnet = d.t > 0.6 && p.alive && !p.downed && (d.type === 'gold' ? dist < 6 : d.type === 'item' ? dist < 1.9 && !p.item : dist < 5 && p.hp < p.maxHp);
       if (magnet) {
         const dir = eye.clone().sub(d.pos).normalize();
         d.vel.lerp(dir.multiplyScalar(14), Math.min(1, dt * 6));
@@ -1200,13 +1387,14 @@ export class Game {
       d.pos.addScaledVector(d.vel, dt);
       if (!magnet && d.pos.y < gy) { d.pos.y = gy; d.vel.y = Math.abs(d.vel.y) * 0.35; }
       d.mesh.position.copy(d.pos);
-      d.mesh.rotation.y += dt * 4;
+      d.mesh.rotation.y += dt * (d.type === 'item' ? 1.5 : 4);
       if (d.type === 'health') this.lights.request(d.pos, 0xff3040, 2, 3);
+      else if (d.type === 'item') { d.mesh.position.y += 0.25 + Math.sin(d.t * 2.4) * 0.08; this.lights.request(d.pos, ITEMS[d.value]?.light ?? 0xffd080, 1.2, 3); }
       if (dist < 0.9 && magnet) {
         this._collect(d);
         this.scene.remove(d.mesh);
         this.drops.splice(i, 1);
-      } else if (d.t > 60) { this.scene.remove(d.mesh); this.drops.splice(i, 1); }
+      } else if (d.t > 60 && d.type !== 'item') { this.scene.remove(d.mesh); this.drops.splice(i, 1); }
     }
   }
   _collect(d) {
@@ -1219,12 +1407,66 @@ export class Game {
       this.audio?.play('pickup_gold', { volume: 0.5 });
       this.ui?.goldPulse();
       this.relics?.onGold();
+    } else if (d.type === 'item') {
+      this.giveItem(d.value);
     } else if (d.type === 'health') {
       p.heal(d.value);
       this.healPulse = 0.6;
       this.audio?.play('pickup_health');
       if (d.id > 0) this.net?.broadcastOrSend({ t: 'pick', id: d.id });
     }
+  }
+  _aimOnWeak(o, p) {
+    if (!p.alive || p.downed || p.dead || this.cinematic || this.menuMode) return false; // (dead: the camera is a spectator's)
+    const cp = Math.cos(p.pitch);
+    const a = this.spells.firstActor(o.x, o.y, o.z, -Math.sin(p.yaw) * cp, Math.sin(p.pitch), -Math.cos(p.yaw) * cp, 60, 0.05, _aim);
+    return !!a && isWeak(a, _aim.x, _aim.y, _aim.z); // (bosses too: their heads count as anyone's)
+  }
+  // An interrupt (a foe killed or staggered mid-wind-up) pays the wizard who did it: ult charge
+  // and a call (host decides; a client's credit goes to it as 'intr')
+  creditInterrupt(a, src) {
+    if (src === this.player.id) this.onInterrupt(a.pos.x, a.pos.y + a.height + 0.6, a.pos.z);
+    else if (src && this.remotes.has(src)) this.net?.sendTo(src, { t: 'intr', x: a.pos.x, y: a.pos.y + a.height + 0.6, z: a.pos.z });
+  }
+  onInterrupt(x, y, z) {
+    const p = this.player;
+    p.ult = Math.min(100, p.ult + 5);
+    this.ui?.floatText(new THREE.Vector3(x, y + 0.35, z), 'INTERRUPT +5% ULT', '#ffd870');
+    if (this.time - (this._intrSndT ?? 0) > 0.15) { this._intrSndT = this.time; this.audio?.play('crit', { volume: 0.5 }); }
+    this.events.emit('interrupt');
+  }
+  // the Hoarder's comings and goings, called out on every peer
+  hoarderNews(kind, a) {
+    if (kind === 'spawn') { this.ui?.toast('A Hoarder! Catch it before it escapes', '#ffc040'); this.audio?.play('pickup_gold', { volume: 0.9 }); }
+    else if (kind === 'caught') { this.events.emit('hoarder'); this.ui?.banner('HOARD BROKEN', 'Gold for everyone', '#ffc040', 2.5); this.audio?.play('chest_open'); if (a) this.vfx.burst(new THREE.Vector3(a.pos.x, a.pos.y + 0.6, a.pos.z), { count: 50, speed: 7, upward: 2, life: 1.4, size: 0.09, sprite: SPR.SPARK, color: [2.8, 2, 0.6], gravity: 10 }); }
+    else if (kind === 'escape') this.ui?.toast('The Hoarder got away...', '#a08850');
+  }
+  // ---- consumable items (items.js): one slot, the item key
+  // take an item into the slot; one already held is left on the ground at your feet
+  giveItem(id, quiet = false) {
+    const p = this.player, def = ITEMS[id];
+    if (!def) return;
+    if (p.item && p.item !== id) this.spawnDrop('item', p.pos, p.item, -1);
+    p.item = id;
+    if (!quiet) { this.ui?.toast(`${def.name} — [${keyOf('item')}] to use`, def.color); this.audio?.play('pickup_essence'); }
+    this.events.emit('itemGot', id);
+  }
+  useItem() {
+    const p = this.player, id = p.item, def = ITEMS[id];
+    if (!def || !p.alive || p.downed || p.dead || this.ui?.modalOpen) { if (!def) this.audio?.play('ui_error', { volume: 0.4 }); return; }
+    // (the Bottomless Satchel: a chance it isn't used up, more with each ascension star)
+    const sat = p.relics.find((r) => r.def.id === 'satchel');
+    if (sat && Math.random() < 0.35 * (1 + 0.5 * (sat.stars ?? 0))) { const t = p.eye.add(p.forward().multiplyScalar(2)); this.ui?.floatText(t, 'KEPT', def.color); }
+    else p.item = null;
+    const e = p.eye, f = p.forward();
+    const at = { x: e.x + f.x * 0.6, y: e.y - 0.25, z: e.z + f.z * 0.6, dx: f.x, dy: f.y + 0.15, dz: f.z };
+    this.spells.slot = 'item';
+    def.use(this, p, itemK(this), at);
+    this.spells.slot = null;
+    def.show(this, id === 'flask' ? at : { x: p.pos.x, y: p.pos.y, z: p.pos.z });
+    this.net?.broadcast({ t: 'itemfx', i: id, ...(id === 'flask' ? at : { x: p.pos.x, y: p.pos.y, z: p.pos.z }) });
+    this.vfx.addFovKick?.(2);
+    this.events.emit('itemUsed', id);
   }
   removeDrop(id) {
     for (let i = this.drops.length - 1; i >= 0; i--) {
@@ -1315,7 +1557,7 @@ export class Game {
     if (locked) this.critters?.startle(new THREE.Vector3(room.cx, 1, room.cz), Math.max(room.w, room.h) * T);
     this.relics?.onRoomLock(room, locked);
     if (locked) {
-      this.audio?.setMusic(room.type === ROOM.BOSS ? 'boss' : 'combat');
+      this.audio?.setMusic(this._mus(room.type === ROOM.BOSS ? 'boss' : 'combat'));
       if (room.type !== ROOM.BOSS && this.encounters.lockBanner(room)) { /* mimic, champion or modifier */ }
       else if (room.type === ROOM.TRIAL) { this.ui?.banner('TRIAL OF SPEED', `Slay them all within ${room.trialLimit ?? 45} seconds`, '#ffcf60'); this.audio?.play('boss_roar', { volume: 0.4 }); }
       else if (room.type === ROOM.ELITE) this.ui?.banner('ELITE CHAMBER', 'A champion bars the way', '#ff9040');
@@ -1331,7 +1573,7 @@ export class Game {
     this._dreadCheck(room);
     this.events.emit('roomClear', room);
     this.relics?.onRoomClear(room);
-    this.audio?.setMusic('explore');
+    this.audio?.setMusic(this._mus('explore'));
     this.audio?.play('room_clear');
     // the last kill lands heavy: a breath of slow motion and a warm wash of light
     if (room.type !== ROOM.BOSS) {
@@ -1458,7 +1700,9 @@ export class Game {
     this.ui?.letterbox(true);
     this.ui?.bossIntro(a);
     this.audio?.play('boss_intro');
-    this.audio?.setMusic('boss');
+    this.audio?.setMusic(this._mus('boss'));
+    // in the Abyss a boss's theme starts a step harder
+    if (this.abyss) this.audio?.setMusicIntensity?.(1);
   }
 
   // a cast everyone should notice: an ultimate flares the caster's rune circle on the ground
@@ -1487,10 +1731,22 @@ export class Game {
     const room = this.level.bossRoom;
     this.events.emit('bossDown');
     this.audio?.play('victory_sting');
-    this.audio?.setMusic('explore');
+    this.audio?.setMusic(this._mus('explore'));
     this.vfx.addShake(1);
     // slow-mo moment
     this.vfx.hitstop = 0.6;
+    // the boss comes apart in its own element: blasts across the body, then a closing ring
+    const B = this.actors.list.find((x) => x.boss && x.dead);
+    if (B) {
+      const el = { motherOfFilth: 'poison', executioner: 'enemyFire', stoneWyvern: 'earth', courtArchmage: 'arcane', hollowKing: 'enemyPurple' }[B.type] ?? 'enemyFire';
+      const bx = B.pos.x, by = B.pos.y, bz = B.pos.z, h = B.height ?? 4;
+      for (let i = 0; i < 6; i++) this.spells.after(0.12 + i * 0.2, () => this.vfx.explosion(new THREE.Vector3(bx + rand(-1.2, 1.2), by + h * (0.25 + Math.random() * 0.6), bz + rand(-1.2, 1.2)), el, 1.6 + i * 0.35, { shakeScale: 0.3 }));
+      this.spells.after(1.45, () => {
+        this.vfx.explosion(new THREE.Vector3(bx, by + h * 0.45, bz), el, 6);
+        this.vfx.ring({ x: bx, y: by + 0.15, z: bz }, 16, fxOf(el).core, 1.1, 0.25);
+        this.vfx.addShake(0.8);
+      });
+    }
     if (this.floorIndex >= BIOMES.length - 1) {
       if (this.abyss) this.ui?.banner('THE HOLLOW KING FALLS AGAIN', `Abyss ${this.abyss} is conquered`, '#ff7090', 5);
       else this.ui?.banner('THE HOLLOW KING HAS FALLEN', 'Dawn returns to the Ashen Keep', '#ffd860', 5);
@@ -1520,6 +1776,7 @@ export class Game {
     if (this.difficulty.bossRelic) { this.spawnPedestal(room, 2, false, -2.2); this.spawnPedestal(room, 3, true, 2.2); } // (Nightmare: a relic from every boss)
     else this.spawnPedestal(room, 2);
     if (this.isHost) this.spawnDrop('gold', new THREE.Vector3(room.cx, 0, room.cz + 3), 60 + this.floorIndex * 30);
+    if (this.isHost) this.spawnDrop('item', new THREE.Vector3(room.cx - 2, this.groundY(room.cx - 2, room.cz + 3), room.cz + 3), randomItem());
     const ex = room.exit;
     const portal = makePortal(this, new THREE.Vector3(ex.x, this.groundY(ex.x, ex.z), ex.z));
     this.interactables.push(portal);
@@ -1559,12 +1816,15 @@ export class Game {
   enterAbyss(d, curse = null) {
     this.abyss = d;
     const pc = PACT_BY_ID[curse];
+    let pk = this.difficulty.pacts ?? {};
     if (pc && pc.id !== 'nightmare') {
-      const pk = { ...(this.difficulty.pacts ?? {}) };
+      pk = { ...pk };
       pk[pc.id] = Math.min(pc.max, (pk[pc.id] ?? 0) + 1);
-      this.difficulty = difficultyFor(pk, { daily: this.difficulty.daily ?? null });
       this._curseNote = `Abyssal curse — ${pc.name}${pc.max > 1 ? ' ' + 'I'.repeat(pk[pc.id]) : ''}: ${pc.desc(pk[pc.id])}`;
     }
+    // the pacts as they now stand, then every Abyssal law down to this depth
+    this.difficulty = abyssLaws(difficultyFor(pk, { daily: this.difficulty.daily ?? null }), d);
+    const law = lawAt(d);
     this.events.emit('abyss', d);
     this.audio?.play('boss_roar', { volume: 0.6 });
     this.ui?.fadeOut(1.4, () => {
@@ -1574,6 +1834,7 @@ export class Game {
       if (p.dead || p.downed) p.revive(1);
       p.heal(p.maxHp);
       this.ui?.fadeIn(1.6);
+      setTimeout(() => { if (!this.ended) { this.ui?.banner(`ABYSS ${d} · ${law.name.toUpperCase()}`, law.desc, law.color, 5); this.ui?.toast(`Abyssal law — ${law.name}: ${law.desc}`, law.color); } }, 2600);
       if (this._curseNote) { const n = this._curseNote; this._curseNote = null; setTimeout(() => !this.ended && this.ui?.toast(n, '#ff5878'), 5200); }
     });
   }
@@ -1636,6 +1897,14 @@ export class Game {
       const score = d - facing * 2;
       if (facing > 0.2 && score < bd) { bd = score; best = it; }
     }
+    // an item on the ground while the slot is full: interact swaps
+    if (p.item) {
+      for (const d of this.drops) {
+        if (d.type !== 'item' || d.t < 0.6) continue;
+        const dd = d.pos.distanceTo(eye);
+        if (dd < 2.4 && dd - 1 < bd) { bd = dd - 1; best = (this._itemSwap ??= { kind: 'itemDrop', r: 3, pos: null, label: '', drop: null }); best.drop = d; best.pos = d.pos; best.label = `Take ${ITEMS[d.value]?.name ?? 'item'} (leave ${ITEMS[p.item]?.name ?? 'yours'})`; }
+      }
+    }
     // reviving downed teammates
     let reviveTarget = null;
     if (!p.downed) {
@@ -1688,6 +1957,13 @@ export class Game {
         offer();
         break;
       }
+      case 'itemDrop': {
+        const d = it.drop, k = this.drops.indexOf(d);
+        if (k < 0) break;
+        this.scene.remove(d.mesh); this.drops.splice(k, 1);
+        this.giveItem(d.value);
+        break;
+      }
       case 'chest': {
         it.open();
         this.net?.broadcastOrSend({ t: 'chest', id: it.id });
@@ -1696,6 +1972,7 @@ export class Game {
         const gold = 25 + this.floorIndex * 15;
         p.gold += gold; this.stats.gold += gold;
         this.ui?.toast(`+${gold} gold`);
+        if (Math.random() < 0.45) this.spawnDrop('item', it.pos, randomItem(), -1); // (only the opener sees it, as chests are per wizard)
         const relics = rollRelics(p, 3);
         if (relics.length) this.ui?.chooseRelic(relics, (r) => { if (r) this.grantRelic(r); });
         break;
@@ -1771,6 +2048,20 @@ export class Game {
   }
   grantRelic(r, quiet = false) {
     const p = this.player;
+    if (r.ascend) {
+      // raise an owned relic a star
+      const own = p.relics.find((x) => x.def.id === r.ascend);
+      if (!own) return;
+      own.stars = (own.stars ?? 0) + 1;
+      p.recomputeStats();
+      this.relics?.refresh(true);
+      this.events.emit('relic', own);
+      if (quiet) return;
+      this.audio?.play('level_up', { volume: 0.8 });
+      this.vfx.ring(p.pos, 2.6, [2.4, 1.8, 0.6], 0.9, 0.16);
+      this.ui?.toast(`Relic ascended: ${own.def.name} ${'★'.repeat(own.stars)}`, relicColor(own.def));
+      return;
+    }
     p.relics.push(r);
     r.def.onGain?.(p);
     p.recomputeStats();
@@ -1782,7 +2073,10 @@ export class Game {
     this.ui?.toast(`${r.def.cursed ? 'Cursed relic' : 'Relic'}: ${r.def.name}`, relicColor(r.def));
   }
   onLocalCast(slot) { this.relics?.onCast(slot); }
-  onLocalDash() { this.relics?.onDash(); }
+  onLocalDash() {
+    this.relics?.onDash();
+    if (++this._dashN === 6) this.learn('dashjump', `${keyOf('jump')} during a dash to dash-jump: a long, fast bound`);
+  }
   buy(item, stock) {
     const p = this.player;
     if (item.sold || p.gold < item.price || (item.available && !item.available(p))) { this.audio?.play('ui_error'); return false; }
@@ -1802,7 +2096,7 @@ export class Game {
     const pick = [];
     while (can.length && pick.length < 3) pick.push(can.splice(Math.floor(Math.random() * can.length), 1)[0]);
     if (!pick.length) { refund(); return; }
-    const offers = pick.map((u) => ({ def: u.def, rarity: (u.rarity ?? 0) + 1, mult: RARITY[(u.rarity ?? 0) + 1].mult, from: u.rarity ?? 0, src: u }));
+    const offers = pick.map((u) => ({ def: u.def, rarity: (u.rarity ?? 0) + 1, mult: RARITY[(u.rarity ?? 0) + 1].mult * (u.dr ?? 1), dr: u.dr, from: u.rarity ?? 0, src: u }));
     this.ui?.closeAllModals();
     this.ui?.chooseTome(offers, (c) => {
       if (!c) { refund(); return; }
@@ -1816,8 +2110,39 @@ export class Game {
   // ======================================================================
   // visual effects requested by the boss scripts (all peers)
   // ======================================================================
+  // a sealed room's trap vents smoulder between bursts, so a grate reads as a trap before it fires
+  _ventTells(dt) {
+    const r = this.level?.roomAt(this.player.pos.x, this.player.pos.z);
+    if (!r?.vents || !r._locked || r.cleared) return;
+    const b = this.biome.id, c = b === 'sewers' ? [0.5, 1.2, 0.15] : b === 'keep' ? [0.9, 0.25, 1.4] : [1.4, 0.5, 0.12];
+    for (const v of r.vents) {
+      if (Math.random() > dt * 6) continue;
+      this.vfx.P.glow({ x: v.x + rand(-0.45, 0.45), y: this.groundY(v.x, v.z) + 0.1, z: v.z + rand(-0.45, 0.45), vy: rand(0.6, 1.4), r: c[0], g: c[1], b: c[2], life: 0.9, size: 0.12, sprite: SPR.GLOW });
+    }
+  }
+
+  // places of rest have their own pieces: the merchant's waltz, a shrine's hush, a vault's
+  // glitter. Checked twice a second, switched once you've stood in the room a second
+  _roomMusic(dt) {
+    if ((this._musT = (this._musT ?? 0) - dt) > 0) return;
+    this._musT = 0.5;
+    const cur = this.audio?._musicState;
+    if (!cur || this.ended || this.menuMode || /^(combat|boss|victory|defeat)/.test(cur)) { this._musWant = null; return; }
+    const r = this.level.roomAt(this.player.pos.x, this.player.pos.z);
+    const want = PLACE_MUSIC[r?.type] ?? this._mus('explore');
+    if (want === cur) { this._musWant = null; return; }
+    if (this._musWant === want) this.audio.setMusic(want);
+    this._musWant = want;
+  }
+
+  // the piece for a moment of play: the realm's own explore / combat theme
+  // (the Abyss has its own), the floor boss's own theme
+  _mus(state) { return themeFor(state, this.abyss ? 'abyss' : this.biome?.id, this.biome?.boss); }
+
   bossFx(kind, a, extra) {
     if (!a) return;
+    // each phase drives the boss's theme harder
+    if (kind === 'phase') this.audio?.setMusicIntensity?.(Math.min(2, (extra?.n ?? 1) + (this.abyss ? 1 : 0)));
     // the boss model reacts to its own moments (phase change, submerge, enrage...): visual only
     a.model?.bossFx?.(kind, extra ?? {});
     switch (kind) {
@@ -1865,6 +2190,25 @@ export class Game {
       case 'fly':
         a.model?.setFlying?.(!!extra.on);
         break;
+      case 'laststand': // the theme at full cry, a red flash
+        this.audio?.setMusicIntensity?.(2);
+        this.screenTint([1.35, 0.85, 0.8], 0.8);
+        break;
+      case 'leap': // the boss springs: dust where it left, the arc is drawn by the actor (airT)
+        a.airT = 0; a.airDur = extra.dur; a.airH = extra.h;
+        this.vfx.smoke(new THREE.Vector3(a.pos.x, a.pos.y + 0.3, a.pos.z), { count: 10, size: 1.6, color: [0.3, 0.26, 0.22], alpha: 0.5, speed: 4 });
+        this.audio?.play('dash', { pos: a.pos, volume: 0.8 });
+        break;
+      case 'exposed': // the punish window opens: a gold flare and a call over the boss (and its bar glows: ui)
+        a.exposedUntil = this.time + (extra.t ?? 1.4);
+        this.ui?.floatText(new THREE.Vector3(a.pos.x, a.pos.y + (a.height ?? 4) + 0.6, a.pos.z), 'EXPOSED', '#ffd070', true);
+        this.vfx.ring({ x: a.pos.x, y: a.pos.y + 0.15, z: a.pos.z }, 2.5 + a.radius, [2.4, 1.8, 0.6], 0.5, 0.12);
+        a.hitFlash = Math.max(a.hitFlash, 0.6);
+        this.audio?.play('reaction', { pos: a.pos, volume: 0.8 });
+        break;
+      case 'land':
+        this.vfx.explosion(new THREE.Vector3(a.pos.x, a.pos.y + 0.4, a.pos.z), extra.el ?? 'earth', extra.r ?? 4, { groundY: a.pos.y });
+        break;
       case 'enrage':
         this.vfx.explosion(new THREE.Vector3(a.pos.x, a.pos.y + 2, a.pos.z), 'enemyFire', 5);
         a.model?.setTint?.(0xff3010, 0.25);
@@ -1911,7 +2255,27 @@ function signTexture(ch, color) {
   return t;
 }
 
-function makeDropMesh(type) {
+const ITEM_DROP = new Map();
+function itemDropMats(id) {
+  let m = ITEM_DROP.get(id);
+  if (m) return m;
+  const c = new THREE.Color(ITEMS[id]?.color ?? '#ffd080');
+  m = {
+    orb: new THREE.MeshBasicMaterial({ color: c.clone().multiplyScalar(0.95) }),
+    halo: new THREE.SpriteMaterial({ color: c.clone().multiplyScalar(0.45), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, map: HALO_MAT.map }),
+    glyph: new THREE.SpriteMaterial({ map: signTexture(ITEMS[id]?.glyph ?? '?', ITEMS[id]?.color ?? '#ffd080'), depthWrite: false, transparent: true }),
+  };
+  ITEM_DROP.set(id, m);
+  return m;
+}
+function makeDropMesh(type, value) {
+  if (type === 'item') {
+    const m = itemDropMats(value), g = new THREE.Group();
+    const orb = new THREE.Mesh(ORB_GEO, m.orb); orb.scale.setScalar(1.1); g.add(orb);
+    const halo = new THREE.Sprite(m.halo); halo.scale.setScalar(1.1); g.add(halo);
+    const glyph = new THREE.Sprite(m.glyph); glyph.scale.setScalar(0.55); glyph.position.y = 0.62; g.add(glyph);
+    return g;
+  }
   if (type === 'gold') {
     const m = new THREE.Mesh(COIN_GEO, COIN_MAT);
     m.rotation.x = Math.PI / 2;
@@ -1950,6 +2314,7 @@ function makeShopStock(game, p) {
     preview: (pl) => [['Health', `${Math.ceil(pl.hp)}`, `${Math.min(pl.maxHp, Math.ceil(pl.hp + pl.maxHp * 0.5))}`]] });
   const vigor = { def: TOMES.find((t) => t.id === 'vitality'), rarity: 0, mult: 1.25 };
   items.push({ name: 'Elixir of Vigor', desc: '+25 max health.', icon: 'heart', base: 70 + f * 22, tome: vigor, apply: (pl) => { pl.upgrades.push({ ...vigor }); pl.recomputeStats(); } });
+  { const id = randomItem(), d = ITEMS[id]; items.push({ name: d.name, desc: d.desc + ' (Item: one use.)', icon: d.icon, color: d.color, relic: true, base: 45 + f * 14, apply: () => game.giveItem(id) }); }
   const tomes = rollTomes(p, 3, 1);
   for (const t of tomes) items.push({ name: t.def.name, desc: (t.def.aug ? `Augment · ${t.def.spellName}. ` : '') + t.def.desc(t.mult), icon: t.def.icon, rarity: t.rarity, base: [60, 110, 180, 290][t.rarity] + f * 28, tome: t, apply: () => game.grantTome(t) });
   const rel = rollRelics(p, 1);

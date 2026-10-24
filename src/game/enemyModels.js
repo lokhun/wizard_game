@@ -6,8 +6,9 @@
 //   m.update(dt, { anim: 'move', t, speed, progress, attackType });
 //
 // Every model is a rigidly-skinned bone hierarchy built from primitives; all
-// parts sharing a material are merged into a single SkinnedMesh, so each enemy
-// costs ~4-8 draw calls. Templates (geometry + base materials) are cached per
+// opaque parts are merged into one SkinnedMesh sampling the surface atlas (and
+// glow / translucent parts into one mesh per material), so each enemy costs
+// ~2-4 draw calls. Templates (geometry + base materials) are cached per
 // TextureFactory; each instance clones only its materials (hit flash / tint).
 // See src/game/models/*.js for the individual type definitions.
 // ---------------------------------------------------------------------------

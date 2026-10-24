@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { ROOM, T, FLOOR, K_WATER } from '../world/levelgen.js';
-import { ENEMY_DEFS, BOSS_DEFS, FLOOR_HP, FLOOR_DMG } from './enemyDefs.js';
+import { ENEMY_DEFS, BOSS_DEFS, FLOOR_HP, FLOOR_DMG, ABYSS_HP, ABYSS_DMG } from './enemyDefs.js';
 import { RNG } from '../core/rng.js';
+import { BIOMES } from '../world/biomes.js';
 
 // ---------------------------------------------------------------------------
 // The encounter director (host). Tracks room progress, locks doors, spawns
@@ -36,7 +37,7 @@ const SQUADS = {
 };
 // Does this actor take part in the fight in `room`? (shared by the encounter and the HUD)
 export function fightsHere(a, room) {
-  if (a.faction !== 'enemy' || (a.dead && !a.collapsed) || a.dormant) return false;
+  if (a.faction !== 'enemy' || (a.dead && !a.collapsed) || a.dormant || a.def.hoarder) return false; // (a Hoarder never holds a room shut)
   return !a.homeRoom || !room || a.homeRoom === room;
 }
 
@@ -44,6 +45,11 @@ const TRIAL_TIME = 45;
 
 // roles that hang back: they spawn far from the party and away from the action
 const BACKLINE = new Set(['ranged', 'caster']);
+
+// A boss's health per wizard past the first. Each wizard deals about a solo wizard's damage, so a fight
+// lasts (1 + BOSS_PARTY_HP * (n - 1)) / n of the solo one: 1.13x for two, 1.17x for three, 1.19x for four.
+// (0.65 had a party of four down a boss in 74% of the solo time: a co-op boss should be the bigger fight.)
+const BOSS_PARTY_HP = 1.25;
 
 export class Director {
   constructor(game) {
@@ -100,31 +106,72 @@ export class Director {
   // on top of revives) - and the fight gets bigger, not just longer.
   hpScale() { return this.floorHp() * (1 + 0.28 * (this.partySize() - 1)) * (this.g.difficulty?.enemyHp ?? 1); }
   dmgScale() { return this.floorDmg() * (1 + 0.12 * (this.partySize() - 1)) * (this.g.difficulty?.enemyDamage ?? 1); }
+  // A party meets more foes, but the wave cap and squad shapes keep it under countScale: measured
+  // over the planned waves of every realm, a party of two meets ~1.5x a solo player's bodies and
+  // 1.41x their gold, a party of four ~2.5x and 2.30x.
+  // Every wizard picks up every coin, so each kill's gold (and its chance of an item) is shared out
+  // over that: a wizard's income stays what it is alone (Game.onActorKilled).
+  partyShare() { return 1 / (1 + 0.43 * (this.partySize() - 1)); }
+  // What a wizard's damage on a is worth (ultimate charge, lifesteal) is counted against the realm's
+  // toughness and, in a party, against each wizard's share of the fight's extra bodies and health
+  // (~1.15x the damage each in a party of four). A boss is split by the party already: no discount.
+  earnScale(a) {
+    const k = this.partySize() - 1;
+    return this.floorHp() * (a?.boss || !k ? 1 : Math.max(1, (1 + 0.5 * k) * (1 + 0.28 * k) / (1 + k)));
+  }
   countScale() { return (1 + 0.75 * (this.partySize() - 1)) * (this.g.difficulty?.enemyCount ?? 1) * (1 + 0.15 * this.depth); }
-  // The Abyss: each descent past the Hollow King. The realms start again from
-  // the first, but a depth-1 Sewers already hits like the Throne and the last
-  // realm of depth 1 far beyond it; champions are commoner and, from depth 2,
-  // every one bears two affixes.
+  // The Abyss: each descent past the Hollow King. The realms start again from the
+  // first, but they count on (realm 5·depth + floor): every one past the fifth makes
+  // foes ABYSS_HP / ABYSS_DMG times tougher and deadlier than the last (bosses alike:
+  // their health is their own realm's tune times floorHp / FLOOR_HP). Champions are
+  // commoner and, from depth 2, every one bears two affixes; each depth adds an
+  // Abyssal law (pacts.js abyssLaws).
   get depth() { return this.g.abyss ?? 0; }
-  // the realm curve, flattened and lifted so depth 1 starts where the Throne left off
+  // The Abyss's invaders: from depth 1 a realm's waves also draw on a later realm's
+  // roster (the next at depth 1, two on at depth 2...), half as often at first, so
+  // each loop meets new mixes of foes, not just tougher ones
+  invaders(level = this.level) {
+    const d = this.depth;
+    if (!d || !level) return [];
+    return BIOMES[(level.floorIndex + d) % BIOMES.length].enemies.filter((t) => ENEMY_DEFS[t]);
+  }
+  roster(level = this.level) {
+    const inv = this.invaders(level);
+    if (!inv.length) return level.biome.enemies;
+    return [...level.biome.enemies, ...(this.depth >= 2 ? inv : inv.filter((_, i) => i % 2 === 0))];
+  }
   floorHp(f = this.floor) {
     const d = this.depth;
-    return d ? FLOOR_HP.at(-1) * (1 + 0.5 * (d - 1)) * FLOOR_HP[f] ** 0.6 : FLOOR_HP[f];
+    return d ? FLOOR_HP[4] * ABYSS_HP ** (5 * d + f - 4) : FLOOR_HP[f];
   }
   floorDmg(f = this.floor) {
     const d = this.depth;
-    return d ? FLOOR_DMG.at(-1) * (1 + 0.2 * (d - 1)) * (FLOOR_DMG[f] / FLOOR_DMG[0]) ** 0.5 : FLOOR_DMG[f];
+    return d ? FLOOR_DMG[4] * ABYSS_DMG ** (5 * d + f - 4) : FLOOR_DMG[f];
+  }
+
+  // A wizard joins or leaves mid-fight (host): a living boss keeps its share of health, its total now
+  // the new party's, so the last wizard standing isn't left facing a four-wizard boss (its phase
+  // thresholds are fractions and hold)
+  rescaleBosses() {
+    const k = 1 + BOSS_PARTY_HP * (this.partySize() - 1);
+    for (const a of this.g.actors.list) {
+      if (!a.boss || !a.alive || !a.partyK || a.partyK === k) continue;
+      const f = a.hp / a.maxHp;
+      a.maxHp *= k / a.partyK; a.hp = a.maxHp * f; a.partyK = k;
+    }
   }
 
   spawnEnemy(type, x, z, opts = {}) {
     const def = ENEMY_DEFS[type] ?? BOSS_DEFS[type];
     // boss HP in BOSS_DEFS is already tuned per realm, so bosses skip the floor multiplier
+    const partyK = 1 + BOSS_PARTY_HP * (this.partySize() - 1);
     const hp = BOSS_DEFS[type]
-      ? def.hp * (1 + 0.65 * (this.partySize() - 1)) * (this.g.difficulty?.enemyHp ?? 1) * (this.floorHp() / FLOOR_HP[this.floor])
+      ? def.hp * partyK * (this.g.difficulty?.enemyHp ?? 1) * (this.floorHp() / FLOOR_HP[this.floor])
       : def.hp * this.hpScale() * (opts.elite ? 3 : 1);
     const dmg = def.dmg * this.dmgScale() * (opts.elite ? 1.3 : 1);
     const a = this.g.actors.spawn(type, x, z, { hp, dmg, elite: opts.elite, affix: opts.affix, affix2: opts.affix2, yaw: opts.yaw ?? Math.random() * 6.28, dormant: opts.dormant, homeRoom: opts.homeRoom, spawnFx: opts.spawnFx });
     if (!BOSS_DEFS[type]) a.speedMult *= this.g.difficulty?.enemySpeed ?? 1; // the Hunt pact
+    else a.partyK = partyK;
     if (this.active && !opts.noCredit) this.active.spawned.add(a.id);
     this.g.encounters?.onSpawned(a);
     return a;
@@ -135,6 +182,14 @@ export class Director {
     const g = this.g;
     const L = this.level;
     if (!L) return;
+    // every 2 s the party hears which room is shut and which are cleared: a peer that
+    // missed a door opening is never left locked in an empty room
+    if (g.net && (this._lockSyncT = (this._lockSyncT ?? 0) + dt) > 2) {
+      this._lockSyncT = 0;
+      const cl = [];
+      for (const r of L.rooms) if (r.cleared) cl.push(r.id);
+      g.net.broadcast({ t: 'locks', f: g.floorIndex, ab: g.abyss ?? 0, on: this.active ? this.active.room.id : -1, cl });
+    }
     // sentry squads appear (idle) as the party approaches their room (never mid-fight)
     if (!this.active) for (const room of L.rooms) {
       if (!room.sentries || room.sentriesPlaced || room.cleared) continue;
@@ -185,7 +240,13 @@ export class Director {
     // pull stragglers into the room
     for (const p of g.allPlayers()) {
       if (g.level.roomAt(p.pos.x, p.pos.z) === room) continue;
-      g.requestTeleport(p.id, room.cx + (Math.random() - 0.5) * 3, room.cz + (Math.random() - 0.5) * 3);
+      const e = this._entryPoint(room, p.pos);
+      g.requestTeleport(p.id, e.x, e.z);
+    }
+    // now and then a Hoarder bolts through the fight (at most one a realm)
+    if (room.type === ROOM.COMBAT && this._hoardFloor !== this.floor && Math.random() < 0.2) { // (Math.random: the seeded rng plans the waves)
+      this._hoardFloor = this.floor;
+      g.spells.after(3 + Math.random() * 3, () => { if (this.active?.room === room) this._spawnHoarder(room); });
     }
     if (room.type === ROOM.BOSS) this._startBoss(room);
     else if (room.sentriesPlaced) {
@@ -193,6 +254,23 @@ export class Director {
       this.active.waveIdx = 0;
       for (const id of room.sentryIds) if (g.actors.byId.get(id)?.alive) this.active.spawned.add(id);
     } else this._nextWave();
+  }
+
+  _spawnHoarder(room) {
+    const g = this.g, ps = g.allPlayers().filter((p) => p.alive && !p.dead);
+    // the open cell of the room furthest from the party
+    let best = null, bd = -1;
+    for (let i = 0; i < 24; i++) {
+      const x = (room.x + 1.5 + Math.random() * (room.w - 3)) * 2, z = (room.y + 1.5 + Math.random() * (room.h - 3)) * 2;
+      if (g.collision.cellBlocked(Math.floor(x / 2), Math.floor(z / 2), g.groundY(x, z) + 0.5)) continue;
+      const d = Math.min(...ps.map((p) => Math.hypot(p.pos.x - x, p.pos.z - z)), 99);
+      if (d > bd) { bd = d; best = { x, z }; }
+    }
+    if (!best) return;
+    const a = this.spawnEnemy('hoarder', best.x, best.z, { noCredit: true });
+    a.homeRoom = null;
+    g.hoarderNews('spawn', a);
+    g.net?.broadcast({ t: 'hoard', k: 'spawn', id: a.id });
   }
 
   _planWaves(room) {
@@ -204,8 +282,9 @@ export class Director {
     const trial = room.type === ROOM.TRIAL;
     const nWaves = room.type === ROOM.ELITE || trial ? 2 : rng.int(2, 3);
     // the realm's roster grouped by role (duplicates in the roster act as weights)
+    const roster = this.roster();
     const byRole = {};
-    for (const t of b.enemies) if (ENEMY_DEFS[t]) (byRole[roleOf(t)] ??= []).push(t);
+    for (const t of roster) if (ENEMY_DEFS[t]) (byRole[roleOf(t)] ??= []).push(t);
     const usable = Object.keys(SQUADS).filter((k) => SQUADS[k].slots.every(([r]) => byRole[r]?.length));
     const waves = [];
     let last = null;
@@ -245,10 +324,10 @@ export class Director {
         }
         let guard = 0;
         const fillRole = byRole[sq.fill]?.length ? sq.fill : 'line';
-        while (budget > 0 && guard++ < 40) add(rng.pick(byRole[fillRole] ?? b.enemies));
+        while (budget > 0 && guard++ < 40) add(rng.pick(byRole[fillRole] ?? roster));
       } else {
         let guard = 0;
-        while (budget > 0 && guard++ < 50) add(rng.pick(b.enemies));
+        while (budget > 0 && guard++ < 50) add(rng.pick(roster));
       }
       list.squad = squadName;
       waves.push(list);
@@ -348,6 +427,7 @@ export class Director {
       g.onTrialResult?.(R, false);
     }
     A.waveT += dt;
+    if (R.vents) this._vents(A, dt);
     // a wizard who ends up outside the fight (a rewind, a blink, a shove through a
     // closing door...) is drawn back in after a moment: the doors only open on a clear
     for (const p of g.allPlayers()) {
@@ -355,16 +435,16 @@ export class Director {
       const out = g.level.roomAt(p.pos.x, p.pos.z) !== R;
       const k = 'out_' + p.id;
       A[k] = out ? (A[k] ?? 0) + dt : 0;
-      if (A[k] > 1.5) { A[k] = 0; g.requestTeleport(p.id, R.cx + (Math.random() - 0.5) * 3, R.cz + (Math.random() - 0.5) * 3); }
+      if (A[k] > 1.5) { A[k] = 0; const e = this._entryPoint(R, p.pos); g.requestTeleport(p.id, e.x, e.z); }
     }
-    let alive = 0;
+    let alive = 0, hp = 0;
     for (const id of A.spawned) {
       const a = g.actors.byId.get(id);
-      if (a && (!a.dead || a.collapsed)) alive++;
+      if (a && (!a.dead || a.collapsed)) { alive++; hp += a.hp; }
     }
     // also count other hostiles that belong to this fight (summons etc.), but never the
     // sleeping or leashed sentries of other rooms: they would hold these doors shut forever
-    for (const a of g.actors.list) if (fightsHere(a, A.room) && !A.spawned.has(a.id)) alive++;
+    for (const a of g.actors.list) if (fightsHere(a, A.room) && !A.spawned.has(a.id)) { alive++; hp += a.hp; }
     const wave = A.waves[A.waveIdx];
     if (!A.boss && wave && A.waveIdx < A.waves.length - 1) {
       // next wave when the current one is mostly dead, or after a long time
@@ -373,24 +453,87 @@ export class Director {
       if ((alive <= Math.max(1, Math.floor(wave.length * frac)) && A.waveT > 2.5) || A.waveT > 40) this._nextWave();
       return;
     }
-    if (A.boss && !A.bossId) return;
-    // a fight that stalls (no foe has fallen for 35 s and only a few remain) pulls its
-    // stragglers in: a foe wedged behind cover or out of reach must never hold the doors shut
-    if (alive !== A.lastAlive) { A.lastAlive = alive; A.progT = A.t; }
-    if (!A.boss && alive > 0 && alive <= 3 && A.t - (A.progT ?? 0) > 35) { A.progT = A.t; this._pullStragglers(A); }
+    if (A.boss && !A.bossId) {
+      // (a boss that never appeared - its spawn failed - is called again once)
+      if (A.t > 10 && !A.bossRetry) { A.bossRetry = true; this._startBoss(R); }
+      return;
+    }
+    // The softlock watchdog: progress is any foe falling or losing health. A fight with
+    // none for 20 s pulls every foe it still counts to the party, wherever it is (wedged
+    // in a wall, fallen out of the level, wandered off, invisible); with none for 45 s
+    // more, what remains is banished and the doors open. Nothing may hold them shut.
+    if (alive !== A.lastAlive || hp < (A.lastHp ?? Infinity) - 0.5) A.progT = A.t;
+    A.lastAlive = alive; A.lastHp = hp;
+    const stall = A.t - (A.progT ?? 0);
+    if (alive > 0 && stall > 20 && A.t - (A.pullT ?? -99) > 20) { A.pullT = A.t; this._pullStragglers(A); }
+    if (alive > 0 && !A.boss && stall > 65) { A.progT = A.t; this._banish(A); }
     if (alive === 0 && A.t > 2) {
       A.clearT += dt;
       if (A.clearT > 0.6) this.clearRoom();
     }
   }
 
+  // a fight room's trap vents erupt by turns (half at a time, every 4.5 s, after a
+  // moment's grace): a telegraphed burst that hurts wizards and foes alike
+  _vents(A, dt) {
+    if (A.t < 4) return;
+    A.ventT = (A.ventT ?? 0) - dt;
+    if (A.ventT > 0) return;
+    A.ventT = 4.5;
+    const g = this.g, V = A.room.vents, b = this.level.biome.id;
+    const el = b === 'sewers' ? 'enemyGreen' : b === 'keep' ? 'enemyPurple' : 'enemyFire';
+    A.ventK = (A.ventK ?? 0) + 1;
+    for (let i = 0; i < V.length; i++) {
+      if (V.length > 1 && (i + A.ventK) % 2) continue;
+      const v = V[i];
+      g.broadcastHazard({ shape: 'circle', x: v.x, y: g.groundY(v.x, v.z), z: v.z, r: 1.8, delay: 1.3, el, fx: el, vis: 1,
+        dmg: 12 * this.dmgScale(), trap: Math.round(30 * this.hpScale()), cause: 'a trap vent' });
+    }
+  }
+
+  // every foe the fight counts, its own and the strays that join it
+  _counted(A) {
+    const g = this.g, out = [];
+    for (const id of A.spawned) { const a = g.actors.byId.get(id); if (a && (!a.dead || a.collapsed)) out.push(a); }
+    for (const a of g.actors.list) if (fightsHere(a, A.room) && !A.spawned.has(a.id)) out.push(a);
+    return out;
+  }
+
+  // what's left of a fight that can't be finished: gone in a puff of smoke, loot and all
+  _banish(A) {
+    const g = this.g;
+    for (const a of this._counted(A)) {
+      if (a.boss) continue;
+      g.actors.blinkFx(a.pos);
+      g.net?.broadcast({ t: 'blinkfx', x: a.pos.x, y: a.pos.y, z: a.pos.z });
+      a.reassembled = true; a.collapsed = false;
+      a.hp = 0;
+      g.actors.kill(a, 0, 'holy');
+    }
+  }
+
+  // where a wizard drawn into a fight appears: just inside the door nearest them
+  _entryPoint(room, from) {
+    const L = this.level, col = this.g.collision;
+    const doors = room.doors.map((d) => L.doors[d]).sort((a, b) => Math.hypot(a.x - from.x, a.z - from.z) - Math.hypot(b.x - from.x, b.z - from.z));
+    for (const d of doors) {
+      for (const k of [1.6, 2.2, 2.8, 3.4]) {
+        for (const side of [0, 0.6, -0.6]) {
+          const x = d.x - d.nx * k * T + d.ny * side * T, z = d.z - d.ny * k * T - d.nx * side * T;
+          if (L.roomAt(x, z) === room && !col.pushOut(x, z, 0.5) && !col.cellBlocked(Math.floor(x / T), Math.floor(z / T), this.g.groundY(x, z) + 0.5)) return { x, z };
+        }
+      }
+    }
+    return { x: room.cx + (Math.random() - 0.5) * 3, z: room.cz + (Math.random() - 0.5) * 3 };
+  }
+
   _pullStragglers(A) {
     const g = this.g, room = A.room;
     const ps = g.allPlayers().filter((p) => p.alive && !p.dead && g.level.roomAt(p.pos.x, p.pos.z) === room);
     const c = ps[0]?.pos ?? { x: room.cx, z: room.cz };
-    for (const id of A.spawned) {
-      const a = g.actors.byId.get(id);
-      if (!a || a.dead || a.dormant || a.boss) continue;
+    for (const a of this._counted(A)) {
+      // (a boss keeps its arena: it's only brought back when it has left the room)
+      if (a.dead || a.dormant || (a.boss && g.level.roomAt(a.pos.x, a.pos.z) === room)) continue;
       for (let k = 0; k < 16; k++) {
         const ang = Math.random() * Math.PI * 2, r = 5 + Math.random() * 3;
         const x = c.x + Math.cos(ang) * r, z = c.z + Math.sin(ang) * r;

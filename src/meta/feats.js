@@ -25,6 +25,8 @@ export const FEATS = [
   { id: 'gauntlet', group: 0, name: 'The Gauntlet', icon: 'boss', desc: 'Finish a Boss Rush.', on: { end: (r) => r.won && r.rush } },
   { id: 'gauntletFast', group: 0, name: 'Breakneck', icon: 'hourglass', desc: 'Finish a Boss Rush in under 12 minutes.', on: { end: (r) => r.won && r.rush && r.winTime < 12 * 60 } },
   { id: 'fellowship', group: 0, name: 'Fellowship', icon: 'army', desc: 'Win a run in co-op.', on: { end: (r) => r.won && r.coop } },
+  { id: 'hoardbreaker', group: 0, name: 'Hoard Breaker', icon: 'gold', desc: 'Catch a Hoarder before it escapes.', on: { hoarder: () => true } },
+  { id: 'quartermaster', group: 2, name: 'Quartermaster', icon: 'bomb', desc: 'Use 8 items in one run.', on: { itemUsed: (r, p, n) => n >= 8 } },
   { id: 'lifeline', group: 0, name: 'Lifeline', icon: 'heart', desc: 'Revive a fallen ally.', on: { revive: () => true } },
   // ---------------- mastery (single feats of skill)
   { id: 'untouched', group: 1, name: 'Untouched', icon: 'shield', desc: 'Clear a chamber without taking damage.', on: { roomClear: (r, p, x) => x.type !== 'boss' && x.dmg === 0 } },
@@ -34,6 +36,8 @@ export const FEATS = [
   { id: 'thread', group: 1, name: 'By a Thread', icon: 'drop', desc: 'Defeat a boss with less than 10% health left.', on: { bossDown: (r, p, x) => x.hpFrac > 0 && x.hpFrac < 0.1 } },
   { id: 'cataclysm', group: 1, name: 'Cataclysm', icon: 'nova', desc: 'Slay 5 foes with a single spell.', on: { multikill: (r, p, n) => n >= 5 } },
   { id: 'matador', group: 1, name: 'Matador', icon: 'dash', desc: 'Perfect-dodge 25 blows in one run (dash through them at the last moment).', on: { perfectDodge: (r, p, n) => n >= 25 } },
+  { id: 'spellbreaker', group: 1, name: 'Spellbreaker', icon: 'parry', desc: 'Interrupt 20 wind-ups in one run (stagger or slay a foe as it winds up a blow).', on: { interrupt: (r, p, n) => n >= 20 } },
+  { id: 'deadeye', group: 1, name: 'Deadeye', icon: 'eye', desc: 'Land 150 direct hits on weak points in one run (aim for the head).', on: { deadeye: () => true } },
   { id: 'thunder', group: 1, name: 'Thunderclap', icon: 'bolt', desc: 'Land a single hit of 1,000 damage or more.', on: { bigHit: (r, p, d) => d >= 1000 } },
   { id: 'alchemist', group: 1, name: 'Alchemist', icon: 'hex', desc: 'Trigger 150 elemental reactions in one run.', on: { reaction: (r) => r.reactions >= 150 } },
   { id: 'reaper', group: 1, name: 'Reaper', icon: 'skull', desc: 'Slay 250 foes yourself in a single run.', on: { kill: (r) => r.kills >= 250 } },

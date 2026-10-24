@@ -56,6 +56,7 @@ export class Collision {
     const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dz)) / (r * 0.8)));
     const sx = dx / steps, sz = dz / steps;
     for (let s = 0; s < steps; s++) {
+      const bx = x, bz = z;
       // X axis
       let nx = x + sx;
       if (sx !== 0) {
@@ -87,9 +88,20 @@ export class Collision {
       z = nz;
       // circle & segment colliders
       const p = this.pushOut(x, z, r);
-      if (p) { x = p.x; z = p.z; hit = true; }
+      if (p) {
+        x = p.x; z = p.z; hit = true;
+        // a prop's push must never shove the body into a wall cell (in a doorway a
+        // pillar or rail could push it back across the cell edge): undo this substep
+        if (this._wallNear(x, z, Math.min(0.2, r * 0.5), y)) { x = bx; z = bz; break; }
+      }
     }
     return { x, z, hit };
+  }
+
+  // is any blocked cell within m of (x, z) (a small box around the centre)?
+  _wallNear(x, z, m, y) {
+    return this.cellBlocked(Math.floor((x - m) / T), Math.floor((z - m) / T), y) || this.cellBlocked(Math.floor((x + m) / T), Math.floor((z - m) / T), y)
+      || this.cellBlocked(Math.floor((x - m) / T), Math.floor((z + m) / T), y) || this.cellBlocked(Math.floor((x + m) / T), Math.floor((z + m) / T), y);
   }
 
   pushOut(x, z, r) {

@@ -79,10 +79,10 @@ export function relicListHTML(p, compact = false) {
 export function relicCard(r, i, owned) {
   const d = r.def, c = relicColor(d), S = SETS[d.set];
   const have = S ? setCounts(owned)[d.set] ?? 0 : 0;
-  return `<div class="tome card relic${d.cursed ? ' cursed' : ''}" data-i="${i}" style="--rc:${c}">
+  return `<div class="tome card relic r-relic${d.cursed ? ' cursed' : ''}" data-i="${i}" style="--rc:${c}">
     <div class="rar" style="color:${c}">${d.cursed ? 'Cursed Relic' : 'Relic'}</div>
     ${S ? `<div class="augtag" style="color:${S.color};border-color:${S.color}88">${esc(S.name)} set · ${Math.min(3, have + 1)}/3</div>` : ''}
-    <div class="ticon" style="box-shadow:0 0 30px ${c}55">${iconSVG(d.icon, c, 54)}</div>
+    <div class="ticon">${iconSVG(d.icon, c, 54)}</div>
     <div class="tname">${esc(d.name)}</div>
     <div class="tdesc">${esc(d.desc)}</div>
     ${S && (have === 1 || have === 2) ? `<div class="tdesc rset-next" style="color:${S.color}">Wakes (${have + 1}): ${esc(have === 2 ? S.b3 : S.b2)}</div>` : ''}

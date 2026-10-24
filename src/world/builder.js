@@ -18,6 +18,7 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
   const mats = getBiomeMaterials(factory, biome);
   const group = new THREE.Group();
   group.name = 'level';
+  const ownTex = []; // textures made for this floor alone (material.dispose() leaves textures be: freed in dispose())
   const builders = {};
   const B = (key) => (builders[key] ??= new GeoBuilder());
   const W = level.W, H = level.H;
@@ -139,8 +140,12 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
       else if (d.dy === 1) { ax = cx0 + T; az = cz0 + T; bx = cx0; bz = cz0 + T; u = -ax; }
       else { ax = cx0; az = cz0; bx = cx0 + T; bz = cz0; u = ax; }
       const n = [-d.n[0], 0, -d.n[2]];
-      trimB.quad([ax, hn, az], [bx, hn, bz], [bx, h0, bz], [ax, h0, az], n,
-        [[u * 0.5, hn * 0.5], [(u + T) * 0.5, hn * 0.5], [(u + T) * 0.5, h0 * 0.5], [u * 0.5, h0 * 0.5]], [0.5, 0.5, 0.9, 0.9]);
+      // a tall face (a plateau's flank, a pit's wall) is built of the realm's masonry,
+      // shaded darker at its foot; a step is a plain stone riser
+      if (h0 - hn > 0.9) wallStrip(B('wall'), ax, az, bx, bz, n, hn, h0, u, 1, 1);
+      // (wound b -> a to face the lower neighbour: the other way round was culled, and steps showed as black gaps)
+      else trimB.quad([bx, hn, bz], [ax, hn, az], [ax, h0, az], [bx, h0, bz], n,
+        [[(u + T) * 0.5, hn * 0.5], [u * 0.5, hn * 0.5], [u * 0.5, h0 * 0.5], [(u + T) * 0.5, h0 * 0.5]], [0.5, 0.5, 0.9, 0.9]);
       // edge lip
       const lipG = worldBox(d.dx !== 0 ? 0.25 : T, 0.12, d.dx !== 0 ? T : 0.25);
       trimB.addGeometry(lipG, new THREE.Matrix4().makeTranslation((ax + bx) / 2 - n[0] * 0.08, h0 - 0.02, (az + bz) / 2 - n[2] * 0.08), 0.9);
@@ -573,6 +578,7 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
       side.addColorStop(0, 'rgba(0,0,0,1)'); side.addColorStop(0.3, 'rgba(0,0,0,0)'); side.addColorStop(0.7, 'rgba(0,0,0,0)'); side.addColorStop(1, 'rgba(0,0,0,1)');
       gx.globalCompositeOperation = 'destination-out'; gx.fillStyle = side; gx.fillRect(0, 0, 64, 128);
       const tex = new THREE.CanvasTexture(c);
+      ownTex.push(tex);
       const col = biome.id === 'throne' ? new THREE.Color(0.22, 0.12, 0.32) : biome.id === 'dungeon' ? new THREE.Color(0.07, 0.09, 0.14) : new THREE.Color(0.14, 0.15, 0.2);
       const shaftMat = new THREE.MeshBasicMaterial({ map: tex, color: col, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: true });
       const sm = new THREE.Mesh(shaftGeo.build(), shaftMat);
@@ -615,7 +621,9 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     const w = S * 1.9, w2 = S * 2.3, lean = 0.35;
     bg.quad([x - w / 2, top, z], [x + w / 2, top, z], [x + w2 / 2 + lean, gy + 0.02, z + lean], [x - w2 / 2 + lean, gy + 0.02, z + lean], [0, 0, 1], [[0, 1], [1, 1], [1, 0], [0, 0]]);
     bg.quad([x, top, z - w / 2], [x, top, z + w / 2], [x + lean, gy + 0.02, z + w2 / 2 + lean], [x + lean, gy + 0.02, z - w2 / 2 + lean], [1, 0, 0], [[0, 1], [1, 1], [1, 0], [0, 0]]);
-    const bm = new THREE.Mesh(bg.build(), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), color: new THREE.Color(0.1, 0.12, 0.16), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: true }));
+    const beamTex = new THREE.CanvasTexture(c);
+    ownTex.push(beamTex);
+    const bm = new THREE.Mesh(bg.build(), new THREE.MeshBasicMaterial({ map: beamTex, color: new THREE.Color(0.1, 0.12, 0.16), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: true }));
     bm.renderOrder = 6;
     group.add(bm);
     // a pool of cold light on the floor beneath it
@@ -677,6 +685,7 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
         const ms = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
         for (const m of ms) if (!shared.has(m) && !seen.has(m)) { seen.add(m); m.dispose(); }
       });
+      for (const t of ownTex) t.dispose();
     },
   };
 }

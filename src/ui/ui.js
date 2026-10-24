@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { iconSVG, classEmblem } from './icons.js';
+import { ITEMS } from '../game/items.js';
 import { CLASS_LIST, SLOTS } from '../game/classes.js';
 import { CLASS_META, ELEMENT_COLORS } from '../game/classMeta.js';
 import { RARITY, statChanges } from '../game/upgrades.js';
-import { ROOM, T } from '../world/levelgen.js';
+import { ROOM, T, K_WATER } from '../world/levelgen.js';
 import { BIOMES } from '../world/biomes.js';
 import { fightsHere } from '../game/director.js';
 import { updateRelicShelf, relicListHTML, relicCard } from './relicUI.js';
@@ -279,8 +280,9 @@ export class UI {
           <div><span class="k">${esc(keyOf('dash'))}</span> dash (brief invulnerability)</div><div><span class="k">${esc(keyOf('jump'))}</span> jump — leap over shockwaves</div>
           <div><span class="k">${esc(keyOf('interact'))}</span> interact / revive allies</div><div><span class="k">${esc(BINDS.map.map(keyLabel).join(' / '))}</span> map</div>
           <div><span class="k">Esc</span> pause & settings</div><div><span class="k">${esc(keyOf('ping'))}</span> ping a foe, item or spot</div>
+          <div><span class="k">${esc(keyOf('item'))}</span> use your item</div><div></div>
         </div>
-        <p><b style="color:var(--bronze-hi)">Skill pays:</b> dash through a blow at the last moment for a <i>perfect dodge</i> (+25% damage for a few seconds), and kill a foe mid-windup to interrupt its attack. When you fall, <i>What hit you</i> shows the blows that did it.</p>
+        <p><b style="color:var(--bronze-hi)">Skill pays:</b> dash through a blow at the last moment for a <i>perfect dodge</i> (+25% damage for a few seconds); jump during a dash (or just after) for a <i>dash-jump</i>, a long bound that keeps half its speed; aim for the head (the front of a beast; the crosshair turns gold over one) and a direct hit strikes a <i>weak point</i> for +35%, marked in gold; stagger or kill a foe as it winds up and you <i>interrupt</i> the blow (+5% ultimate). Enemy shots only bend toward you early in their flight: a late sidestep always beats them. The run summary scores your mastery against your best. <i>Items</i> (a fire flask, a frost phial, a rallying bell...) drop from elites and bosses, wait in chests and sit on the merchant's table: you carry one at a time, so spend it. A boss that lands a leap, ends a whirl or a charge is <i>EXPOSED</i> for a moment (+30% damage): dodge the blow, then punish it. When you fall, <i>What hit you</i> shows the blows that did it.</p>
         <p><b style="color:var(--bronze-hi)">For a harder fight:</b> <i>Nightmare</i> (on the wizard select) makes foes smarter and relentless and gives every boss a new move; chambers cleared without a scratch earn Dread Marks (+5% damage each). <i>Boss Rush</i> pits you against the five bosses back to back. After your first victory, <i>Pacts</i> raise the heat for finer rewards, and the Hollow King's fall opens the endless <i>Abyss</i>.</p>
         <p><b style="color:var(--bronze-hi)">Elemental reactions:</b> combine schools for bonus effects — <i>Melt</i> (fire on frozen), <i>Shatter</i> (shards, earth or blades on frozen), <i>Overload</i> (lightning on burning), <i>Electrocute</i> (lightning on wet foes in water), <i>Combust</i> (fire on poison), <i>Purge</i> (holy on hexed) and more. In co-op, set up reactions for each other!</p>
         <p><b style="color:var(--bronze-hi)">Co-op:</b> one wizard hosts and shares the party code. Fallen wizards can be revived by holding <b>${esc(keyOf('interact'))}</b> beside them. Wizards who bleed out return when the chamber is cleared. Each player picks their own rewards — no loot stealing.</p>
@@ -299,6 +301,7 @@ export class UI {
         <div class="row">Mouse sensitivity <input type="range" min="0.2" max="3" step="0.05" id="sSens" value="${settings.sensitivity}"></div>
         <div class="row">Field of view <input type="range" min="65" max="105" step="1" id="sFov" value="${settings.fov}"></div>
         <div class="row">Screen shake <input type="range" min="0" max="1.5" step="0.05" id="sShake" value="${settings.shake}"></div>
+        <div class="row">HUD scale <input type="range" min="0.75" max="1.3" step="0.05" id="sHud" value="${settings.hudScale ?? 1}"></div>
         <div class="row">Reduce flashing <input type="checkbox" id="sCalm" ${settings.calm ? 'checked' : ''}></div>
         <div class="row">High-contrast danger zones <input type="checkbox" id="sTele" ${settings.contrastTele ? 'checked' : ''}></div>
         <div class="row">Graphics quality <select id="sQual"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="ultra">Ultra (AO)</option></select></div>
@@ -309,8 +312,15 @@ export class UI {
         <div style="display:flex;gap:10px;justify-content:center"><button class="btn" id="bKeys">Controls</button><button class="btn" id="bClose">Done</button></div>
       </div>`);
     m.querySelector('#sQual').value = settings.quality;
+    // each slider shows its value beside it (a player tuning FOV or sensitivity wants the number)
+    const FMT = { sMaster: 'pct', sMusic: 'pct', sSfx: 'pct', sShake: 'pct', sHud: 'pct', sSens: 'x', sFov: 'deg' };
+    for (const [id, f] of Object.entries(FMT)) {
+      const inp = m.querySelector('#' + id), out = document.createElement('output');
+      const show = () => { const v = +inp.value; out.textContent = f === 'pct' ? `${Math.round(v * 100)}%` : f === 'deg' ? `${v}°` : `${v.toFixed(2)}×`; };
+      inp.after(out); show(); inp.addEventListener('input', show);
+    }
     const bind = (id, key, num = true) => m.querySelector(id).addEventListener('input', (e) => { settings[key] = e.target.type === 'checkbox' ? e.target.checked : num ? +e.target.value : e.target.value; onChange(settings); });
-    bind('#sMaster', 'master'); bind('#sMusic', 'music'); bind('#sSfx', 'sfx'); bind('#sSens', 'sensitivity'); bind('#sFov', 'fov'); bind('#sShake', 'shake'); bind('#sCalm', 'calm');
+    bind('#sMaster', 'master'); bind('#sMusic', 'music'); bind('#sSfx', 'sfx'); bind('#sSens', 'sensitivity'); bind('#sFov', 'fov'); bind('#sShake', 'shake'); bind('#sCalm', 'calm'); bind('#sHud', 'hudScale');
     bind('#sQual', 'quality', false); bind('#sInv', 'invertY', false); bind('#sTele', 'contrastTele', false); bind('#sFps', 'showFps', false); bind('#sDyn', 'dynamicRes', false);
     m.querySelector('#sQual').addEventListener('change', (e) => { settings.quality = e.target.value; onChange(settings); });
     m.querySelector('#bClose').onclick = () => { this._closeModal(m); onBack?.(); };
@@ -378,32 +388,36 @@ export class UI {
       <div class="hitmarker"><i></i><i></i><i></i><i></i></div>
       <div class="damage-dir"></div>
       <div class="floor-info"><div class="fname"></div><div class="fsub"></div><div class="objective"></div></div>
-      <canvas class="minimap"></canvas>
-      <div class="boss-bar hidden"><div class="bname"></div><div class="btitle"></div><div class="bar"><div class="lag"></div><div class="fill"></div><div class="phase-marks"></div></div></div>
+      <canvas class="minimap"></canvas><div class="mm-frame"><i class="pip"></i></div>
+      <div class="boss-bar hidden"><div class="bname"></div><div class="btitle"></div><div class="bframe"><i class="cap l"></i><div class="bar"><div class="lag"></div><div class="fill"></div><div class="sheen"></div><div class="phase-marks"></div></div><i class="cap r"></i></div></div>
       <div class="wave-ind"></div>
       <div class="team"></div>
-      <div class="hp-wrap">
+      <div class="hp-wrap" style="--pc:${col}">
         <div class="buffs"></div>
-        <div class="hp-name"><span>${esc(p.name)}</span><span class="cls">${p.meta.name}</span></div>
-        <div class="bar" id="hpBar"><div class="lag"></div><div class="fill"></div><div class="shield"></div><div class="txt"></div></div>
-        <div class="dash-pips"></div>
-        <div class="resource"></div>
+        <div class="pframe">
+          <div class="medal">${classEmblem(p.classId, col, 40)}</div>
+          <div class="pmain">
+            <div class="hp-name"><span>${esc(p.name)}</span><span class="cls">${p.meta.name}</span></div>
+            <div class="bar" id="hpBar"><div class="lag"></div><div class="fill"></div><div class="shield"></div><div class="ticks"></div><div class="txt"></div></div>
+            <div class="pfoot"><div class="dash-pips"></div><div class="resource"></div></div>
+          </div>
+        </div>
       </div>
-      <div class="abilities">${SLOTS.map((s) => `
+      <div class="abilities" style="--pc:${col}"><div class="slot itemslot empty" data-slot="item"><div class="iic"></div><div class="key">${slotKey('item')}</div></div>${SLOTS.map((s) => `
         <div class="slot ${s === 'ultimate' ? 'ult' : ''}" data-slot="${s}">
           ${s === 'ultimate' ? '<div class="ult-fill"></div>' : ''}
           ${iconSVG(c.spells[s].icon, col, s === 'ultimate' ? 42 : 34)}
           <div class="cd"></div><div class="cdtxt"></div><div class="key">${slotKey(s)}</div><div class="charges"></div>
         </div>`).join('')}
       </div>
-      <div class="gold-box"><span class="dread hidden" title="Dread Marks: +5% damage each, earned by flawless chambers">${iconSVG('skull', '#ff5a4a', 22)}<span id="dreadTxt">0</span></span>${iconSVG('gold', '#f0c050', 26)}<span id="goldTxt">0</span></div>
+      <div class="gold-box"><span class="dread hidden" title="Dread Marks: +5% damage each, earned by flawless chambers">${iconSVG('skull', '#ff5a4a', 20)}<span id="dreadTxt">0</span></span><span class="coin">${iconSVG('gold', '#f0c050', 24)}<span id="goldTxt">0</span></span></div>
       <div class="prompt"></div>
       <div class="toasts"></div>
       <div class="banner"><div class="b1"></div><div class="line"></div><div class="b2"></div></div>
       <div class="click-hint hidden">CLICK TO CONTINUE</div>`;
     const q = (s) => this.hudEl.querySelector(s);
     this.h = {
-      hp: q('#hpBar .fill'), hpLag: q('#hpBar .lag'), hpShield: q('#hpBar .shield'), hpTxt: q('#hpBar .txt'),
+      hpWrap: q('.hp-wrap'), itemSlot: q('.itemslot'), itemIcon: q('.itemslot .iic'), hp: q('#hpBar .fill'), hpLag: q('#hpBar .lag'), hpShield: q('#hpBar .shield'), hpTxt: q('#hpBar .txt'),
       dash: q('.dash-pips'), res: q('.resource'), buffs: q('.buffs'),
       slots: Object.fromEntries(SLOTS.map((s) => [s, q(`.slot[data-slot="${s}"]`)])),
       gold: q('#goldTxt'), goldBox: q('.gold-box'), dread: q('#dreadTxt'), dreadBox: q('.gold-box .dread'), prompt: q('.prompt'), toasts: q('.toasts'), banner: q('.banner'),
@@ -441,6 +455,8 @@ export class UI {
     setStyle(h.hp, 'width', hpPct.toFixed(1) + '%');
     setStyle(h.hpLag, 'width', hpPct.toFixed(1) + '%');
     setStyle(h.hpShield, 'width', Math.min(100, (p.shield / p.maxHp) * 100).toFixed(1) + '%');
+    const low = hpPct < 30 && !p.dead;
+    if (this._low !== low) { this._low = low; h.hpWrap.classList.toggle('low', low); }
     setText(h.hpTxt, p.downed ? `DOWNED ${Math.ceil(p.downT)}s` : p.dead ? 'SLAIN' : `${Math.ceil(p.hp)} / ${p.maxHp}${p.shield > 0 ? ` (+${Math.ceil(p.shield)})` : ''}`);
     // dash
     const pips = p.stats.dashCharges;
@@ -483,9 +499,24 @@ export class UI {
         }
         if (q.charges) setText(q.charges, maxCh > 1 ? String(p.chargesLeft[s]) : '');
       }
+      // a spell coming off cooldown flashes its slot once
+      const cooling = pctCd > 0;
+      if (el._cooling && !cooling) { el.classList.remove('ready'); void el.offsetWidth; el.classList.add('ready'); }
+      el._cooling = cooling;
       const pv = pctCd.toFixed(1) + '%';
       if (q.cd && q.cd._p !== pv) { q.cd._p = pv; q.cd.style.setProperty('--p', pv); }
       setText(q.cdtxt, String(txt));
+    }
+    // the item slot: redrawn only when the item changes
+    if (this._itemKey !== p.item) {
+      const was = this._itemKey;
+      this._itemKey = p.item;
+      const d = p.item ? ITEMS[p.item] : null;
+      h.itemIcon.innerHTML = d ? iconSVG(d.icon, d.color, 30) : '';
+      h.itemSlot.classList.toggle('empty', !d);
+      h.itemSlot.style.setProperty('--ic', d?.color ?? '#5a4426');
+      h.itemSlot.title = d ? `${d.name}: ${d.desc}` : 'No item';
+      if (d && was !== undefined) { h.itemSlot.classList.remove('ready'); void h.itemSlot.offsetWidth; h.itemSlot.classList.add('ready'); }
     }
     // gold
     setText(h.gold, String(Math.floor(p.gold)));
@@ -496,7 +527,7 @@ export class UI {
     if (tk !== this._teamKey) {
       this._teamKey = tk;
       h.team.innerHTML = team.map((r) => `
-        <div class="tm ${r.downed || r.dead ? 'down' : ''}"><div class="row">${classEmblem(r.classId, hex(r.meta.color), 22)}<span style="flex:1">${esc(r.name)}</span><span>${r.dead ? 'SLAIN' : r.downed ? 'DOWN' : Math.ceil(r.hp)}</span></div>
+        <div class="tm ${r.downed || r.dead ? 'down' : ''}" style="--pc:${hex(r.meta.color)}"><div class="row"><span class="tmedal">${classEmblem(r.classId, hex(r.meta.color), 18)}</span><span class="tname">${esc(r.name)}</span><span class="thp">${r.dead ? 'SLAIN' : r.downed ? 'DOWN' : Math.ceil(r.hp)}</span></div>
         <div class="bar small ally"><div class="fill" style="width:${Math.max(0, r.hp / r.maxHp) * 100}%;--hpc:${r.downed || r.dead ? '#8a8a8a' : allyHpColor(r.hp / r.maxHp)}"></div></div></div>`).join('');
     }
     // boss
@@ -505,6 +536,8 @@ export class UI {
       const f = Math.max(0, a.hp / a.maxHp) * 100;
       h.bossFill.style.width = f + '%';
       h.bossLag.style.width = f + '%';
+      const ex = game.time < a.exposedUntil;
+      if (this._bossEx !== ex) { this._bossEx = ex; h.boss.classList.toggle('exposed', ex); }
       if (a.dead) { setTimeout(() => h.boss.classList.add('hidden'), 1500); this.bossActor = null; }
     }
     // objective
@@ -545,14 +578,15 @@ export class UI {
     const cvs = this.h.minimap;
     cvs.classList.toggle('big', big);
     this._mmT = (this._mmT ?? 0) + 1;
-    if (!big && this._mmT % 3) return;
+    if (!big && this._mmT % 3 !== 1) return; // (every third frame, starting with the first)
     const g = this.mm;
     const L = game.level;
     const p = game.player;
     const W = cvs.width, H = cvs.height;
     g.clearRect(0, 0, W, H);
-    const scale = big ? Math.min(W / (L.W * T) * 1.9, H / (L.H * T) * 1.9) : 3.2;
     if (this._mmCenterL !== L) { this._mmCenterL = L; this._mmCenter = this._levelCenter(L); }
+    // the big map fits the rooms' extent (with a margin), not the whole level grid
+    const scale = big ? Math.min(W / (this._mmCenter.w + 8), H / (this._mmCenter.h + 8)) : 3.2;
     const cx = big ? this._mmCenter : p.pos;
     g.save();
     g.translate(W / 2, H / 2);
@@ -578,6 +612,7 @@ export class UI {
       if (a.dead || a.faction !== 'enemy') continue;
       const rm = L.roomAt(a.pos.x, a.pos.z);
       if (!rm || !rm.visited) continue;
+      if (a.def.hoarder) { g.fillStyle = '#ffd040'; g.beginPath(); g.arc(a.pos.x * scale, a.pos.z * scale, 4.5, 0, Math.PI * 2); g.fill(); g.fillStyle = '#ff4030'; continue; }
       g.beginPath(); g.arc(a.pos.x * scale, a.pos.z * scale, a.boss ? 6 : 2.5, 0, Math.PI * 2); g.fill();
     }
     // players
@@ -616,6 +651,22 @@ export class UI {
       const x = r.x * T * S, y = r.y * T * S, w = r.w * T * S, hh = r.h * T * S;
       g.fillStyle = r.visited ? (active === r.id ? 'rgba(160,40,30,0.55)' : 'rgba(120,100,75,0.45)') : 'rgba(60,50,40,0.3)';
       g.fillRect(x, y, w, hh);
+      // a visited room's ground as it lies: raised floor lighter, pits darker, water blue-grey, vents marked
+      if (r.visited) {
+        for (let cy = r.y; cy < r.y + r.h; cy++) for (let cx = r.x; cx < r.x + r.w; cx++) {
+          const i = L.idx(cx, cy);
+          if (L.roomId[i] !== r.id) continue;
+          const hgt = L.hgt[i];
+          if (L.kind[i] === K_WATER) g.fillStyle = 'rgba(70,110,130,0.45)';
+          else if (L.cells[i] !== 1) g.fillStyle = 'rgba(20,16,12,0.55)';
+          else if (hgt > 0.3) g.fillStyle = `rgba(235,215,170,${Math.min(0.32, 0.16 * hgt)})`;
+          else if (hgt < -0.3) g.fillStyle = `rgba(0,0,0,${Math.min(0.4, -0.2 * hgt)})`;
+          else continue;
+          g.fillRect(cx * T * S, cy * T * S, T * S + 0.5, T * S + 0.5);
+        }
+        g.fillStyle = 'rgba(255,120,40,0.75)';
+        for (const v of r.vents ?? []) { g.beginPath(); g.arc(v.x * S, v.z * S, 2.2, 0, Math.PI * 2); g.fill(); }
+      }
       g.strokeStyle = r.visited ? 'rgba(226,196,138,0.8)' : 'rgba(226,196,138,0.3)';
       g.lineWidth = 1.5;
       g.strokeRect(x, y, w, hh);
@@ -626,10 +677,30 @@ export class UI {
   _levelCenter(L) {
     let minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
     for (const r of L.rooms) { minX = Math.min(minX, r.x * T); maxX = Math.max(maxX, (r.x + r.w) * T); minZ = Math.min(minZ, r.y * T); maxZ = Math.max(maxZ, (r.y + r.h) * T); }
-    return { x: (minX + maxX) / 2, z: (minZ + maxZ) / 2 };
+    return { x: (minX + maxX) / 2, z: (minZ + maxZ) / 2, w: maxX - minX, h: maxZ - minZ };
   }
 
   // ---------------------------------------------------------------- 2D overlay
+  // an arrow on the screen's edge toward a teammate out of view; a downed one pulses red
+  _edgeMark(g, r) {
+    const cam = this.renderer.camera;
+    const v = (this._ev ??= new THREE.Vector3()).set(r.pos.x, r.pos.y + 1.2, r.pos.z).applyMatrix4(cam.matrixWorldInverse);
+    let dx = v.x, dy = -v.y;
+    if (Math.abs(dx) + Math.abs(dy) < 1e-3) dy = 1; // right behind: point down
+    const ang = Math.atan2(dy, dx), c = Math.cos(ang), sn = Math.sin(ang);
+    // (the bottom edge keeps clear of the spell bar and the health plate)
+    const W = innerWidth, H = innerHeight, mx = W / 2 - 46, my = sn > 0 ? H / 2 - 140 : H / 2 - 50;
+    const t = Math.min(mx / Math.max(1e-3, Math.abs(c)), my / Math.max(1e-3, Math.abs(sn)));
+    const x = W / 2 + c * t, y = H / 2 + sn * t;
+    const down = r.downed, col = down ? '#ff5050' : hex(r.meta.color2 ?? r.meta.color);
+    g.globalAlpha = down ? 0.8 + 0.2 * Math.sin(performance.now() / 120) : 0.85;
+    g.save(); g.translate(x, y); g.rotate(ang); if (down) g.scale(1.35, 1.35);
+    g.fillStyle = 'rgba(0,0,0,0.6)'; g.beginPath(); g.moveTo(16, 0); g.lineTo(-8, -11); g.lineTo(-3, 0); g.lineTo(-8, 11); g.closePath(); g.fill();
+    g.fillStyle = col; g.beginPath(); g.moveTo(13, 0); g.lineTo(-6, -8); g.lineTo(-2, 0); g.lineTo(-6, 8); g.closePath(); g.fill();
+    g.restore();
+    this._blitText(g, this._textBitmap(down ? r.name + ' — DOWNED' : r.name, '600 12px Cinzel, serif', col, { stroke: 'rgba(0,0,0,0.75)', lw: 3 }), x - c * 34, y - sn * 22);
+    g.globalAlpha = 1;
+  }
   _project(pos) {
     const v = (this._pv ??= new THREE.Vector3()).set(pos.x, pos.y, pos.z).project(this.renderer.camera);
     if (v.z > 1 || v.z < -1) return null;
@@ -747,10 +818,10 @@ export class UI {
       }
       g.globalAlpha = 1;
     }
-    // teammate name tags
+    // teammate name tags (and, for one out of view, a marker at the screen edge pointing to them)
     for (const r of game.remotes.values()) {
       const s = this._project({ x: r.pos.x, y: r.pos.y + 2.25, z: r.pos.z });
-      if (!s) continue;
+      if (!s || s.x < 0 || s.y < 0 || s.x > innerWidth || s.y > innerHeight) { if (!r.dead) this._edgeMark(g, r); continue; }
       this._blitText(g, this._textBitmap(r.name + (r.downed ? ' — DOWNED' : ''), '600 13px Cinzel, serif', r.downed ? '#ff5050' : hex(r.meta.color2 ?? r.meta.color), { stroke: 'rgba(0,0,0,0.7)', lw: 3 }), s.x, s.y - 4);
       // a teammate's bar: wide, outlined and in ally colours (never an enemy's red)
       const f = Math.max(0, Math.min(1, r.hp / r.maxHp)), bw = 64, bh = 7, bx = s.x - bw / 2, by = s.y + 5;
@@ -850,11 +921,12 @@ export class UI {
     this.numbers.push({ pos: pos.clone(), amount, key, text: String(Math.round(amount)), color: col, crit, dot: !!dot, t: 0, life: dot ? 1.3 : crit ? 1.0 : 0.8, ox: (Math.random() - 0.5) * 30 });
   }
   floatText(pos, text, color = '#fff', big = false) { this.floats.push({ pos: pos.clone(), text, color, big, t: 0 }); }
-  hitmarker(crit, kill) {
+  hitmarker(crit, kill, weak = false) {
     if (!this.h) return;
     const el = this.h.hit;
     el.classList.toggle('crit', crit);
     el.classList.toggle('kill', kill);
+    el.classList.toggle('weak', weak && !kill);
     el.style.opacity = 1;
     el.style.transform = `translate(-50%,-50%) rotate(45deg) scale(${kill ? 1.4 : crit ? 1.2 : 1})`;
     this.hitT = kill ? 0.25 : 0.12;
@@ -918,10 +990,34 @@ export class UI {
     el.querySelector('.b1').textContent = a;
     el.querySelector('.b2').textContent = b;
     el.style.color = color;
+    // mid-fight it must not hide the foes: smaller, see-through, gone sooner
+    // (a foe within 25 m or a boss up: works on every peer, the director's state lives on the host)
+    const g = this.game, pp = g?.player?.pos;
+    const bossUp = !!this.bossActor && !this.bossActor.dead;
+    const fight = !!pp && (bossUp || g.actors.hostiles().some((x) => (x.pos.x - pp.x) ** 2 + (x.pos.z - pp.z) ** 2 < 625));
+    el.classList.toggle('combat', fight);
+    el.classList.toggle('edge', fight && !bossUp); // (up in the free strip at the top, where the boss bar would be)
     el.classList.remove('show');
     void el.offsetWidth;
     el.classList.add('show');
-    this.bannerT = dur;
+    this.bannerT = fight ? Math.min(dur, 2.2) : dur;
+  }
+  // the crosshair over a weak point (Game._aimOnWeak): gold, the ring drawn in
+  aimWeak(on) {
+    const h = this.h;
+    if (!h || on === h.aimWeak) return;
+    h.aimWeak = on;
+    (h.xhair ??= this.hudEl.querySelector('.crosshair'))?.classList.toggle('weak', on); // (on this run's HUD)
+  }
+  // a kill streak's call, just under the crosshair: pops in and fades on its own (one reused element)
+  streak(text, sub, color) {
+    if (!this.h) return;
+    let el = this._streakEl;
+    if (!el) { el = this._streakEl = document.createElement('div'); el.className = 'streak'; el.innerHTML = '<div class="s1"></div><div class="s2"></div>'; this.h.banner.parentElement.appendChild(el); }
+    el.querySelector('.s1').textContent = text;
+    el.querySelector('.s2').textContent = sub;
+    el.style.color = color;
+    el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
   }
   toast(text, color) {
     const host = this.h?.toasts;
@@ -1006,12 +1102,12 @@ export class UI {
       const r = RARITY[c.rarity];
       // spell augments: tagged with the spell they change, in the class colour
       const ac = c.def.aug ? hex(CLASS_META[c.def.cls]?.color ?? 0xffffff) : null;
-      return `<div class="tome card${ac ? ' augment' : ''}" data-i="${i}" style="--rc:${r.color}${ac ? `;--ac:${ac};--ac-dim:${ac}99;--ac-glow:${ac}26` : ''}">
+      return `<div class="tome card r-${r.id}${ac ? ' augment' : ''}" data-i="${i}" style="--rc:${ac ?? r.color}${ac ? `;--ac:${ac};--ac-dim:${ac}99;--ac-glow:${ac}26` : ''}">
         <div class="rar" style="color:${r.color}">${c.from !== undefined ? `${RARITY[c.from].name} → ` : ''}${r.name}</div>
         ${ac ? `<div class="augtag">Augment · ${esc(c.def.spellName)}</div>` : ''}
-        <div class="ticon" style="box-shadow:0 0 30px ${ac ?? r.color}55">${iconSVG(c.def.icon, ac ?? (c.def.el ? hex(ELEMENT_COLORS[c.def.el] ?? 0xffffff) : r.color === '#c8c0b0' ? col : r.color), 54)}</div>
+        <div class="ticon">${iconSVG(c.def.icon, ac ?? (c.def.el ? hex(ELEMENT_COLORS[c.def.el] ?? 0xffffff) : r.color === '#c8c0b0' ? col : r.color), 54)}</div>
         <div class="tname">${c.def.name}</div>
-        <div class="tdesc">${c.def.desc(c.mult)}</div>
+        <div class="tdesc">${c.def.desc(c.mult)}</div>${c.dr && c.dr < 0.999 ? `<div class="tdesc" style="opacity:0.6;font-size:0.85em">Already held: ${Math.round(c.dr * 100)}% strength</div>` : ''}
         <div class="tkey">[${i + 1}]</div>
       </div>`;
     }, cb, true, reroll);
@@ -1034,9 +1130,10 @@ export class UI {
     const render = () => items.map((it, i) => {
       const r = it.rarity !== undefined ? RARITY[it.rarity] : null;
       if (it.available && !it.available(player)) return '';
-      return `<div class="shop-item ${it.sold ? 'sold' : ''} ${player.gold < it.price ? 'cant' : ''}" data-i="${i}">
-        <div>${iconSVG(it.icon, r ? r.color : it.relic ? it.color ?? '#ffb030' : '#e8d8b0', 40)}</div>
-        <div><div class="sname" style="color:${r ? r.color : it.relic ? it.color ?? '#ffb030' : 'var(--text)'}">${it.name}</div><div class="sdesc">${it.desc}</div>${it.sold ? '' : shopDiff(it, player)}<div class="price">${it.sold ? 'SOLD' : it.price + ' gold'}</div></div>
+      const c = r ? r.color : it.relic ? it.color ?? '#ffb030' : '#e8d8b0';
+      return `<div class="shop-item ${it.sold ? 'sold' : ''} ${player.gold < it.price ? 'cant' : ''}" data-i="${i}" style="--rc:${c}">
+        <div class="sicon">${iconSVG(it.icon, c, 34)}</div>
+        <div class="sbody"><div class="sname" style="color:${r || it.relic ? c : '#f0e2c4'}">${it.name}</div><div class="sdesc">${it.desc}</div>${it.sold ? '' : shopDiff(it, player)}<div class="price">${it.sold ? 'SOLD' : `${iconSVG('gold', '#f0c050', 14)} ${it.price}`}</div></div>
       </div>`;
     }).join('');
     const m = this._modal(`

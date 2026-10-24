@@ -23,6 +23,12 @@ export const ENEMY_DEFS = {
     attacks: [{ id: 'bite', kind: 'lunge', range: 1.6, arc: 1.4, windup: 0.32, recover: 0.6, anim: 'bite', leap: 5 }],
     flank: true, pack: [3, 6],
   },
+  // the Hoarder: a fat, gilded rat that bolts from the party and escapes after 15 s;
+  // caught, it bursts into gold and an item for every wizard (Director._spawnHoarder)
+  hoarder: {
+    name: 'Hoarder', model: 'rat', scale: 1.55, tint: 0xffc040, hp: 150, speed: 7.2, dmg: 0, cost: 0, ai: 'flee', poise: 999, gold: 0, sound: 'rat_squeak', deathSound: 'rat_death', hitSound: 'enemy_hit',
+    attacks: [], hoarder: true, statusResist: 1.5,
+  },
   slime: {
     name: 'Sewer Ooze', hp: 70, speed: 2.6, dmg: 10, cost: 3, ai: 'melee', poise: 30, gold: 2, sound: 'slime_squish', deathSound: 'slime_death', hitSound: 'slime_squish',
     attacks: [{ id: 'engulf', kind: 'lunge', range: 1.9, arc: 1.6, windup: 0.6, recover: 0.8, anim: 'attack', leap: 6 }],
@@ -208,6 +214,8 @@ export const ENEMY_DEFS = {
       // a slow, enormous overhead: the ground cracks in a long line ahead of it
       { id: 'overhead', kind: 'circle', radius: 3.0, ahead: 2.8, windup: 1.25, recover: 1.2, anim: 'overhead', el: 'physical', st: { stun: 0.6 }, dmgMult: 1.4 },
       { id: 'sweep', kind: 'melee', range: 3.6, arc: 2.4, windup: 0.85, recover: 0.9, anim: 'sweep', kb: 16, cd: 3 },
+      // too slow to chase: it leaps on a wizard who keeps away, and lands where they stood
+      { id: 'leap', kind: 'leap', range: 15, minRange: 6.5, radius: 3.2, air: 0.85, h: 4, windup: 0.9, recover: 1.1, anim: 'overhead', el: 'physical', kb: 14, cd: 9, dmgMult: 1.2 },
     ],
     armor: 0.25,
   },
@@ -264,14 +272,20 @@ export const ENEMY_DEFS = {
 export const BOSS_DEFS = {
   motherOfFilth: { name: 'Mother of Filth', title: 'Queen of the Drowned Sewers', hp: 5760, dmg: 18, poise: 9999, gold: 60, model: 'motherOfFilth', speed: 2.2, sound: 'slime_squish', deathSound: 'boss_roar', resist: { poison: 0.75 } },
   executioner: { name: 'The Executioner', title: 'Headsman of the Oubliette', hp: 9360, dmg: 30, poise: 9999, gold: 80, model: 'executioner', speed: 4.2, sound: 'beast_growl', deathSound: 'boss_roar', hitSound: 'enemy_hit' },
-  stoneWyvern: { name: 'Gravemaw', title: 'Stone Wyvern of the Bailey', hp: 17500, dmg: 34, poise: 9999, gold: 100, model: 'stoneWyvern', speed: 5, sound: 'stone_grind', deathSound: 'boss_roar', hitSound: 'enemy_hit_armor', resist: { earth: 0.8, poison: 0.8 } },
-  courtArchmage: { name: 'Archmage Veyrin', title: 'The Court Archmage', hp: 23000, dmg: 34, poise: 9999, gold: 120, model: 'courtArchmage', speed: 4, sound: 'enemy_cast', deathSound: 'boss_roar', flying: true },
-  hollowKing: { name: 'The Hollow King', title: 'Last Lord of the Ashen Keep', hp: 36000, dmg: 40, poise: 9999, gold: 0, model: 'hollowKing', speed: 4.4, sound: 'boss_roar', deathSound: 'boss_roar', hitSound: 'enemy_hit_armor', undead: true },
+  stoneWyvern: { name: 'Gravemaw', title: 'Stone Wyvern of the Bailey', hp: 24500, dmg: 34, poise: 9999, gold: 100, model: 'stoneWyvern', speed: 5, sound: 'stone_grind', deathSound: 'boss_roar', hitSound: 'enemy_hit_armor', resist: { earth: 0.8, poison: 0.8 } },
+  courtArchmage: { name: 'Archmage Veyrin', title: 'The Court Archmage', hp: 27600, dmg: 34, poise: 9999, gold: 120, model: 'courtArchmage', speed: 4, sound: 'enemy_cast', deathSound: 'boss_roar', flying: true },
+  hollowKing: { name: 'The Hollow King', title: 'Last Lord of the Ashen Keep', hp: 48600, dmg: 40, poise: 9999, gold: 0, model: 'hollowKing', speed: 4.4, sound: 'boss_roar', deathSound: 'boss_roar', hitSound: 'enemy_hit_armor', undead: true },
 };
 
 // (a run's tomes and relics compound: the later realms keep pace with them)
-export const FLOOR_HP = [1, 1.55, 2.25, 3.05, 4.0];
+export const FLOOR_HP = [1, 1.35, 1.7, 2.1, 2.5];
 export const FLOOR_DMG = [1.1, 1.4, 1.75, 2.1, 2.55];
+// The Abyss: the realms count on past the fifth (realm 5·depth + floor) and every
+// one makes its foes this much tougher and deadlier than the last. A build's power
+// grows by roughly a polynomial in the tomes it holds (its bonuses add up within
+// damage, attack speed, crit...); this grows exponentially, so it overtakes any
+// build in the end: the first descent still feels mighty, the third rarely ends well.
+export const ABYSS_HP = 1.45, ABYSS_DMG = 1.14;
 
 // Every def, and every attack, laid out with the same fields in the same order
 // (missing ones undefined). The AI reads a.def.speed, at.kind, at.range... for

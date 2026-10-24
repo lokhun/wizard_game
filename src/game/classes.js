@@ -5,6 +5,7 @@ import { rand } from '../core/rng.js';
 import { CLASS_META } from './classMeta.js';
 import { ST } from './combat.js';
 import { segPointDist2 } from '../core/math.js';
+import { isWeak, WEAK_MULT } from './spells.js';
 
 // ---------------------------------------------------------------------------
 // Class kits. Each spell is code: cast(ctx) uses the caster context (see
@@ -572,7 +573,7 @@ export const CLASSES = {
   stormcaller: {
     hp: 95, speed: 1.06, role: 'Chain AoE', difficulty: 2,
     blurb: 'Lightning arcs between enemies. Wet foes conduct even more devastating chains.',
-    passive: { name: 'Conductor', desc: 'Lightning chains to +1 extra target. Moving builds static: every 6m travelled empowers your next bolt (+50%).' },
+    passive: { name: 'Conductor', desc: 'Lightning chains to +1 extra target. Moving builds static: every 6m travelled empowers your next bolt (+50%). Extra projectiles become extra links in the chain, and piercing makes it lose less with each jump.' },
     stats: { chainBonus: 1 },
     spells: {
       primary: {
@@ -589,14 +590,20 @@ export const CLASSES = {
           ctx.muzzle('lightning');
           const empowered = ctx.consumeStatic?.() ? 1.5 : 1;
           if (hits.length) {
-            const chainN = 2 + (ctx.stats.chainBonus ?? 0);
+            // (extra projectiles, which a ray can't use, become extra links in the chain)
+            const chainN = 2 + (ctx.stats.chainBonus ?? 0) + (ctx.stats.extraProj ?? 0);
+            // (and piercing ones lose less with every jump)
+            const fall = Math.min(0.9, 0.7 + 0.06 * (ctx.stats.pierce ?? 0));
+            // (the bolt's first target takes it on its weak point when you aim for the head)
+            const h0 = hits[0], weak = isWeak(h0.actor, h0.point.x, h0.point.y, h0.point.z);
+            const H = { dmg: 15 * empowered * (aug(ctx, 'storm_fork') ? 0.8 : 1), el: 'lightning', st: { shock: 3 } };
+            ctx.hit(h0.actor, { ...H, weak, dmg: weak ? H.dmg * WEAK_MULT : H.dmg }, end); // (weak is always set: an aimed hit, for the summary's weak-point share)
+            const seen = ctx.chain(h0.actor, end, H, chainN, 7, fall, null, true);
             if (aug(ctx, 'storm_fork')) {
               // augment: the bolt forks at its first target into two separate chains
-              const H = { dmg: 13 * empowered * 0.8, el: 'lightning', st: { shock: 3 } };
-              const seen = ctx.chain(hits[0].actor, end, H, chainN, 7, 0.7);
               ctx.vfx.burst(end, { element: 'lightning', count: 10, speed: 7, life: 0.25, size: 0.05, stretch: 0.04 });
-              ctx.chain(hits[0].actor, end, H, chainN, 7, 0.7, seen, true);
-            } else ctx.chain(hits[0].actor, end, { dmg: 13 * empowered, el: 'lightning', st: { shock: 3 } }, chainN, 7, 0.7);
+              ctx.chain(h0.actor, end, H, chainN, 7, fall, seen, true);
+            }
           }
         },
       },
@@ -1088,8 +1095,8 @@ export const CLASSES = {
   bloodmage: {
     hp: 130, speed: 1.02, role: 'Risk & Reward', difficulty: 3,
     blurb: 'Spends their own life as fuel. Grows deadlier the closer they come to death, but heals by bleeding enemies.',
-    passive: { name: 'Frenzy', desc: 'Below 40% HP deal +35% damage. All damage heals for 6% (lifesteal).' },
-    stats: { lifesteal: 0.06, frenzy: 0.35 },
+    passive: { name: 'Frenzy', desc: 'Below 40% HP deal +35% damage. All damage heals for 6% (lifesteal), up to twice the usual cap.' },
+    stats: { lifesteal: 0.06, frenzy: 0.35, sustainMult: 2 },
     spells: {
       primary: {
         name: 'Blood Lance', icon: 'drop', desc: 'Fast lances of blood that cause Bleeding.', mode: 'auto', rate: 0.28, style: 'flick', hand: 'left',
@@ -2286,7 +2293,7 @@ export const CLASSES = {
         cast(ctx) {
           ctx.sound('cast_wind', 0.7);
           ctx.fan(1, 2, (dir) => ctx.proj({ el: 'wind', vel: dir.multiplyScalar(38), radius: 0.4, life: 1.2, core: 0.3, mesh: 'crescent', meshScale: 1.25, light: 3, trail: 1.6, pierce: 2,
-            hit: { dmg: 13, el: 'wind', kb: 3 } }));
+            hit: { dmg: 16, el: 'wind', kb: 3 } })); // (13 left the Tempest last of every class, single foe and pack alike)
           ctx.muzzle('wind');
         },
       },
@@ -2339,7 +2346,7 @@ export const CLASSES = {
               }
             }
           }
-          for (const a of struck) ctx.hit(a, { dmg: 16, el: 'wind', kb: 20, st }, v3(a.pos.x, a.pos.y + 1, a.pos.z));
+          for (const a of struck) ctx.hit(a, { dmg: 22, el: 'wind', kb: 20, st }, v3(a.pos.x, a.pos.y + 1, a.pos.z));
           ctx.kick(0.1, 2);
         },
       },

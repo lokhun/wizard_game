@@ -117,6 +117,8 @@ export function difficultyFor(sel, extra = {}) {
     minRarity: nm ? 1 : 0,
     bossRelic: nm,
     rush: !!r('rush'),
+    projSpeed: 1, // enemy shots' speed (the Abyss's laws raise it)
+    bossSig: false, // bosses wield their Nightmare signature move (Nightmare, or the Abyss)
     heat: heatOf(s),
     ...prefix(heatBoons(heatOf(s))),
     pacts: s,
@@ -152,3 +154,20 @@ export function dailyRite(key = utcDay()) {
 
 // a single comparable number for "best today"
 export function riteScore(r) { return (r.won ? 100000 - Math.min(99999, Math.round(r.time)) + 500000 : 0) + r.floor * 10000 + Math.min(9999, r.kills); }
+
+// The Abyss's laws: each depth adds one, for good, so every descent plays
+// differently (on top of its random curse and the realms' steeper scaling).
+export const ABYSS_LAWS = [
+  { name: 'The Deep Stirs', desc: 'Bosses wield their nightmare techniques, and champions come half again as often.', color: '#b070ff', apply: (d) => { d.bossSig = true; d.champions *= 1.5; } },
+  { name: 'Twin Souls', desc: 'Every champion bears two affixes, and enemy shots fly a fifth faster.', color: '#40d0c0', apply: (d) => { d.twinAffix = true; d.projSpeed *= 1.2; } },
+  { name: 'The Dread Tide', desc: 'Bosses loose rings of dread, foes strike in combos, and a cleared chamber heals half as much.', color: '#ff5060', apply: (d) => { d.dreadPulse = true; d.combo = Math.max(d.combo, 0.3); d.clearHeal *= 0.5; } },
+  { name: 'Endless Night', desc: 'Foes attack far more often and press you harder.', color: '#e8d8a0', apply: (d) => { d.aiCd *= 0.85; d.aiRecover *= 0.8; d.fireTokens += 1; d.meleeSlots += 1; d.bossCd *= 0.85; } },
+];
+// the difficulty at a depth: every law up to it, and past the last each depth quickens foes again
+export function abyssLaws(diff, depth) {
+  const d = { ...diff, projSpeed: diff.projSpeed ?? 1 };
+  for (let i = 0; i < Math.min(depth, ABYSS_LAWS.length); i++) ABYSS_LAWS[i].apply(d);
+  for (let i = ABYSS_LAWS.length; i < depth; i++) { d.aiCd *= 0.93; d.bossCd *= 0.93; d.projSpeed *= 1.05; }
+  return d;
+}
+export const lawAt = (depth) => (depth <= ABYSS_LAWS.length ? ABYSS_LAWS[depth - 1] : { name: 'Deeper Still', desc: 'Foes quicken again: they attack and loose their shots faster.', color: '#ff8090' });

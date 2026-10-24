@@ -74,6 +74,17 @@ function featList(ids, inline = false) {
   return `<div class="rs-sec"><h3>Feats earned · ${fs.length}</h3><div class="rs-feats${inline ? ' inline' : ''}">${fs.map((f, i) => `<div class="rs-feat" title="${esc(f.desc)}" style="animation-delay:${0.6 + i * 0.08}s">${iconSVG(f.icon, '#f0c050', 24)}<div><div class="n">${esc(f.name)}</div><div class="d">${esc(f.desc)}</div></div></div>`).join('')}</div></div>`;
 }
 
+// where the damage came from: a bar per spell (and per other source), biggest first
+function dmgBreakdown(S, color) {
+  const rows = S.dmgBy ?? [];
+  const total = rows.reduce((t, r) => t + r[2], 0);
+  if (!rows.length || total <= 0) return '';
+  return `<div class="rs-sec"><h3>Damage by source</h3><div class="rs-dmg">${rows.map(([name, icon, v], i) => {
+    const pc = (100 * v) / total;
+    return `<div class="dmr" title="${fmtNum(v)} damage" style="animation-delay:${0.5 + i * 0.07}s">${iconSVG(icon, color, 15, { glow: false })}<span class="dmn">${esc(name)}</span><span class="dmb"><i style="--w:${pc.toFixed(1)}%;animation-delay:${0.7 + i * 0.07}s"></i></span><span class="dmv">${pc < 1 ? '<1' : Math.round(pc)}%</span></div>`;
+  }).join('')}</div></div>`;
+}
+
 const tile = (label, value, fmt, sub, rec, i) => `<div class="rs-tile${rec ? ' rec' : ''}" style="animation-delay:${0.1 + i * 0.06}s"><div class="tl">${label}</div><div class="tv" data-to="${value}" data-fmt="${fmt}">${fmt === 'time' ? '0:00' : '0'}</div><div class="ts">${sub || '&nbsp;'}</div>${rec ? '<div class="ribbon">★ NEW RECORD</div>' : ''}</div>`;
 
 // one wizard's column (co-op)
@@ -84,6 +95,14 @@ function recapHTML(rc, titled = false) {
   return titled ? `<div class="rs-sec"><h3>What hit you</h3><div class="rs-recap">${rows}</div></div>` : `<div class="rs-recap small">${rows}</div>`;
 }
 
+// a wizard's biggest damage source and its share, as a party-column row
+function topSource(S) {
+  // (a teammate's summary comes off the wire: take nothing on trust)
+  const rows = Array.isArray(S.dmgBy) ? S.dmgBy.filter((x) => Array.isArray(x) && Number.isFinite(+x[2])) : [];
+  const r = rows[0], total = rows.reduce((t, x) => t + +x[2], 0);
+  return r && total > 0 ? `<tr><td>Top source</td><td title="${fmtNum(+r[2])} damage">${esc(r[0])} · ${Math.round((100 * +r[2]) / total)}%</td></tr>` : '';
+}
+
 function partyCol(S, me, best) {
   const c = CLASS_META[S.classId] ?? CLASS_META.pyromancer;
   const col = hex(c.color);
@@ -91,7 +110,8 @@ function partyCol(S, me, best) {
   return `<div class="rs-pc${me ? ' me' : ''}" style="--pc:${col}">
     <div class="ph">${classEmblem(S.classId, col, 38)}<div style="min-width:0"><div class="pn">${esc(S.name)}</div><div class="pcl">${c.name}${me ? ' · you' : ''}</div></div></div>
     <table>${row('kills', 'Foes slain', S.kills, fmtNum(S.kills))}${row('damage', 'Damage dealt', S.damage, fmtNum(S.damage))}${row('biggest', 'Biggest hit', S.biggest, fmtNum(S.biggest))}${row('reactions', 'Reactions', S.reactions, fmtNum(S.reactions))}
-    <tr><td>Taken · downed</td><td>${fmtNum(S.taken)} · ${S.downs}×</td></tr></table>
+    <tr><td>Taken · downed</td><td>${fmtNum(S.taken)} · ${S.downs}×</td></tr>
+    ${S.dodges !== undefined ? `<tr><td>Dodges · interrupts</td><td>${+S.dodges | 0} · ${+S.interrupts | 0}</td></tr>` : ''}${topSource(S)}</table>
     <div class="rs-build">${buildIcons(S, 18)}</div>
     ${S.killer ? `<div class="kb">Felled by ${esc(S.killer)}</div>` : ''}${recapHTML(S.recap)}
     ${S.feats?.length ? `<div class="rs-feats inline">${S.feats.map((id) => FEAT_BY_ID[id]).filter(Boolean).map((f) => `<div class="rs-feat" title="${esc(f.desc)}">${iconSVG(f.icon, '#f0c050', 18)}<div class="n">${esc(f.name)}</div></div>`).join('')}</div>` : ''}
@@ -123,7 +143,18 @@ export function showSummary(ui, S, { party = [], remotes = new Map(), onMenu, on
     tile('Biggest hit', S.biggest, 'num', S.biggestOn ? 'on ' + esc(S.biggestOn) : '&nbsp;', rec.biggest, 4),
     tile('Damage taken', S.taken, 'num', S.downs ? `downed ${S.downs}×` : 'never downed', false, 5),
   ].join('');
-  const left = coop ? '' : `<div class="rs-sec"><h3>The build</h3><div class="rs-build">${buildIcons(S, 22)}</div></div>${featList(S.feats)}`;
+  // mastery: the numbers that climb as you play better (never with the build), each against your best
+  const B = S.best ?? {};
+  const vs = (k, unit = '') => (rec[k] ? `best was ${B[k]}${unit}` : B[k] > 0 ? `best ${B[k]}${unit}` : '');
+  const and = (a, b) => (b ? `${a} · ${b}` : a);
+  const mastery = [
+    tile('Perfect dodges', S.dodges ?? 0, 'num', vs('dodges'), rec.dodges, 6),
+    tile('Interrupts', S.interrupts ?? 0, 'num', vs('interrupts'), rec.interrupts, 7),
+    tile('Weak points', Math.max(0, S.weakPct ?? -1), S.weakPct >= 0 ? 'pct' : 'none', S.weakPct >= 0 ? and('of aimed hits', vs('weakPct', '%')) : 'too few aimed hits', rec.weakPct, 8),
+    tile('Flawless chambers', S.flawless ?? 0, 'num', and(`of ${S.chambers ?? 0}`, vs('flawless')), rec.flawless, 9),
+  ].join('');
+  const dmg = dmgBreakdown(S, hex(meta.color));
+  const left = coop ? '' : `<div class="rs-sec"><h3>The build</h3><div class="rs-build">${buildIcons(S, 22)}</div></div>${dmg}${featList(S.feats, !!dmg && (S.feats?.length ?? 0) > 2)}`;
   const m = ui._modal(`
     <div class="rs panel" style="--acc:${acc};--deep:${deep}">
       <div class="rs-head">
@@ -148,6 +179,7 @@ export function showSummary(ui, S, { party = [], remotes = new Map(), onMenu, on
       </div>
       <div class="rs-main">
       <div class="rs-tiles">${tiles}</div>
+      ${S.dodges === undefined ? '' : `<div class="rs-mastery"><h3>Mastery</h3>${mastery}</div>`}
       ${coop ? `<div class="rs-sec"><h3>The party</h3><div class="rs-party" id="rsParty"></div></div>` : ''}
       <div class="rs-body"${coop ? ' style="grid-template-columns:minmax(0,1fr)"' : ''}>
         ${left ? `<div>${left}${!coop ? recapHTML(S.recap, true) : ''}</div>` : ''}
@@ -177,7 +209,7 @@ export function showSummary(ui, S, { party = [], remotes = new Map(), onMenu, on
   // ---- count-ups, then the record flourishes
   const nums = [...m.querySelectorAll('.tv[data-to]')];
   const t0 = performance.now();
-  const fmt = (v, f) => (f === 'time' ? fmtTime(v) : f === 'realm' ? `${Math.round(v)}<span style="font-size:0.55em;color:var(--text-dim)"> / ${BIOMES.length}</span>` : fmtNum(v));
+  const fmt = (v, f) => (f === 'time' ? fmtTime(v) : f === 'realm' ? `${Math.round(v)}<span style="font-size:0.55em;color:var(--text-dim)"> / ${BIOMES.length}</span>` : f === 'pct' ? `${Math.round(v)}%` : f === 'none' ? '—' : fmtNum(v));
   const step = (now) => {
     if (!m.isConnected) return;
     let running = false;

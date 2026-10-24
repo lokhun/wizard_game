@@ -12,8 +12,8 @@ import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 // (SHARP(uv) + BLOOM(uv)); FINISH runs after the grade (tone mapping and sRGB
 // in the fused pass).
 const GRADE_MAIN = /* glsl */ `
-    uniform float uTime, uVignette, uGrain, uDamage, uHeal, uAberration, uSaturation, uDesat, uDash;
-    uniform vec3 uLift, uGain, uTint, uFlash, uDashCol;
+    uniform float uTime, uVignette, uGrain, uDamage, uHeal, uAberration, uSaturation, uDesat, uDash, uDanger;
+    uniform vec3 uLift, uGain, uTint, uFlash, uDashCol, uDangerCol;
     uniform vec2 uRes;
     varying vec2 vUv;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
@@ -51,6 +51,8 @@ const GRADE_MAIN = /* glsl */ `
       col = mix(col, vec3(0.55, 0.0, 0.0) + col * 0.4, uDamage * edge * 0.85);
       // healing warms the screen edge green; a tint, not a wash over the view
       col = mix(col, col * vec3(0.9, 1.3, 0.95) + vec3(0.012, 0.055, 0.022), min(uHeal, 1.0) * edge * 0.85);
+      // standing in a danger zone about to land: a thin rim of its colour at the edges of the view
+      if (uDanger > 0.002) col += uDangerCol * smoothstep(0.56, 0.98, length(dc) * 1.4) * uDanger * 0.8;
       if (dashEdge > 0.0) {
         float ang = atan(dc.y, dc.x);
         float lane = floor(ang * 64.0);
@@ -84,6 +86,8 @@ const GradeShader = {
     uFlash: { value: new THREE.Vector3(0, 0, 0) },
     uDash: { value: 0 },
     uDashCol: { value: new THREE.Vector3(1, 1, 1) },
+    uDanger: { value: 0 },
+    uDangerCol: { value: new THREE.Vector3(1, 0.2, 0.1) },
     uRes: { value: new THREE.Vector2(1, 1) },
   },
   vertexShader: /* glsl */ `

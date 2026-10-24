@@ -7,7 +7,7 @@ import { SPR } from '../render/particles.js';
 import { fxOf } from '../render/vfx.js';
 import { rand } from '../core/rng.js';
 import { K_WATER, WATER_Y } from '../world/levelgen.js';
-import { applyRelicSets } from './relicDefs.js';
+import { applyRelicSets, ascendK } from './relicDefs.js';
 
 const WADE_C = [0.16, 0.22, 0.22]; // ripple rings on channel water
 
@@ -18,6 +18,8 @@ const WADE_C = [0.16, 0.22, 0.22]; // ripple rings on channel water
 const EYE = 1.62;
 const RADIUS = 0.38;
 const GRAVITY = 24;
+const DASH_CARRY = 0.55; // the share of a dash's speed a dash-jump keeps
+const DASH_SPEED = 6.5 / 0.18; // a plain dash's (the dash key's: 6.5 m in 0.18 s)
 
 export function baseStats(classId) {
   const C = CLASSES[classId];
@@ -25,7 +27,7 @@ export function baseStats(classId) {
     maxHp: C.hp, moveSpeed: 6.0 * C.speed, dmgMult: 1, critChance: 0.05, critMult: 1.75, cdr: 0, rateMult: 0,
     aoeMult: 1, projSpeed: 1, extraProj: 0, pierce: 0, bounce: 0, homing: 0, lifesteal: 0, armor: 0,
     dashCharges: 2, dashCd: 3.0, ultRate: 1, elementMult: {}, vs: {}, infuse: null, regen: 0, killHeal: 0,
-    goldMult: 1, extraLives: 0, thorns: 0, dodge: 0, cdRate: 1, statusPower: 1, jumpPower: 1,
+    goldMult: 1, extraLives: 0, thorns: 0, dashIv: 0, pdDur: 0, cdRate: 1, statusPower: 1, jumpPower: 1, sustainMult: 1,
     ...structuredClone(C.stats ?? {}),
   };
 }
@@ -34,7 +36,26 @@ export function baseStats(classId) {
 // ultRate 1). Charge-rate bonuses shorten it with diminishing returns: +100%
 // ultRate is x1.63, +200% x2.0, so a stacked build fills in ~10-12 s, never instantly.
 const ULT_FLOOR = 20;
+// all lifesteal and on-kill healing together: at most this share of max health a second
+const SUSTAIN_CAP = 0.03;
 const ultRateEff = (r) => 1 + Math.max(0, r - 1) / (1 + 0.6 * Math.max(0, r - 1)) - Math.max(0, 1 - r);
+
+// an ascended relic: apply it, then raise only what it gave (its helpful deltas) by k.
+// Whole-number gifts (dash charges, projectiles, flat health) stay whole.
+const HURTS = new Set(['armor', 'maxHp', 'rateMult', 'dmgMult', 'moveSpeed', 'cdRate', 'ultRate', 'critChance', 'critMult', 'aoeMult']);
+function applyAscended(apply, s, p, k) {
+  const before = {}, vs = { ...s.vs };
+  for (const key in s) if (typeof s[key] === 'number') before[key] = s[key];
+  apply?.(s, p);
+  for (const key in s) {
+    if (typeof s[key] !== 'number') continue;
+    const d = s[key] - (before[key] ?? 0);
+    if (d <= 0 && HURTS.has(key)) continue; // (a curse: lower armor, health, damage...)
+    if (!d) continue;
+    s[key] += Number.isInteger(d) && Number.isInteger(before[key] ?? 0) ? Math.round(d * k) - d : d * (k - 1);
+  }
+  for (const key in s.vs) { const d = s.vs[key] - (vs[key] ?? 0); if (d > 0) s.vs[key] += d * (k - 1); }
+}
 
 export class LocalPlayer {
   constructor(game, { id, name, classId }) {
@@ -61,6 +82,8 @@ export class LocalPlayer {
     this.dashCharges = this.stats.dashCharges;
     this.dashRecharge = 0;
     this.dashT = 0; this.dashVel = new THREE.Vector3();
+    this.dashEndT = -9; // (when the last dash ended: a jump just after it is still a dash-jump)
+    this.dashJump = false; // (jumped mid-dash: the dash runs its course, then its speed carries on)
     this.invuln = 0;
     this.glide = 0;
     this.cds = {}; this.chargesLeft = {};
@@ -88,6 +111,7 @@ export class LocalPlayer {
     this.histT = 0;
     this.stepDist = 0;
     this.gold = 0;
+    this.item = null; // the consumable in the item slot (items.js), or null
     this.essence = 0;
     this.hurtPulse = 0;
     this.lookDelta = { x: 0, y: 0 };
@@ -97,6 +121,7 @@ export class LocalPlayer {
     this.leanK = 0;
     this.kills = 0;
     this.damageDealt = 0;
+    this.dmgBy = { primary: 0, secondary: 0, ability1: 0, ability2: 0, ultimate: 0, dot: 0, reaction: 0, item: 0, other: 0 }; // (where it came from: the run summary)
     this.hasteT = 0;
     this.counters = {};
     this.inWater = false;
@@ -109,6 +134,7 @@ export class LocalPlayer {
     this.history.length = 0;
     this.pos.set(x, this.game.groundY(x, z), z);
     this.vel.set(0, 0, 0);
+    this.dashT = 0; this.dashJump = false; this.dashEndT = -9; // (no leftover dash, or its carry, at the new spot)
     this.yaw = yaw;
     this.pitch = 0;
   }
@@ -130,7 +156,11 @@ export class LocalPlayer {
     const s = baseStats(this.classId);
     for (const u of this.upgrades) u.def.apply(s, u.mult, this);
     for (const u of extra) u.def.apply(s, u.mult, this);
-    for (const r of this.relics) r.def.apply?.(s, this);
+    for (const r of this.relics) {
+      if (r.stars) applyAscended(r.def.apply, s, this, ascendK(r.stars));
+      else r.def.apply?.(s, this);
+    }
+    for (const r of this.relics) r.def.after?.(s, this);
     applyRelicSets(s, this);
     for (const b of this.buffs) {
       for (const k in b.mods) {
@@ -161,10 +191,6 @@ export class LocalPlayer {
     if (this.invuln > 0 && amount > 0 && fromPos && this._dashIv > g.time && !g.godMode) this._perfectDodge(); // (blows only: a pool has no fromPos)
     if (this.invuln > 0 || g.godMode) return 0;
     if (this.parryT > 0) { this._parrySuccess(fromPos); return 0; }
-    if (this.stats.dodge && Math.random() < this.stats.dodge) {
-      g.ui?.floatText(this.eye.clone().add(new THREE.Vector3(0, 0.3, 0)), 'DODGE', '#ccc');
-      return 0;
-    }
     let dmg = amount * (1 - this.stats.armor) * (g.difficulty?.playerDamage ?? 1);
     if (this.shield > 0) {
       const absorbed = Math.min(this.shield, dmg);
@@ -188,6 +214,13 @@ export class LocalPlayer {
     return dmg;
   }
 
+  _sustain(n) {
+    const take = Math.min(n, this._sustainLeft);
+    if (take <= 0) return;
+    this._sustainLeft -= take;
+    this.heal(take, true);
+  }
+
   heal(n, silent = false) {
     if (this.downed || this.dead || n <= 0) return;
     const before = this.hp;
@@ -209,6 +242,7 @@ export class LocalPlayer {
 
   _goDown() {
     const g = this.game;
+    this.dashT = 0; this.dashJump = false; // (a dash cut short by the fall: no carry after the revive)
     if ((this.stats.extraLives ?? 0) > (this.livesUsed ?? 0) || this.relicLives > 0) {
       if (this.relicLives > 0) this.relicLives--; else this.livesUsed = (this.livesUsed ?? 0) + 1;
       this.hp = Math.round(this.maxHp * 0.5);
@@ -259,7 +293,7 @@ export class LocalPlayer {
     const g = this.game;
     if (g.time < (this._pdT ?? 0)) return;
     this._pdT = g.time + 1;
-    this.addBuff('perfectDodge', 3, { dmgMult: 0.25 });
+    this.addBuff('perfectDodge', 3 + (this.stats.pdDur ?? 0), { dmgMult: 0.25 });
     this.ult = Math.min(100, this.ult + 6);
     if (g.isSolo) g.slowMo(0.4, 0.35);
     g.vfx.addFovKick(-6);
@@ -300,11 +334,19 @@ export class LocalPlayer {
   }
   flatForward() { return new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)); }
 
+  // a dash-jump's carry: a share of the dash's speed, never more than a plain dash's (a spell's
+  // 55 m/s lunge would fling you 30 m/s)
+  _carry() {
+    const k = DASH_CARRY * Math.min(1, DASH_SPEED / (this.dashVel.length() || 1));
+    this.vel.x = this.dashVel.x * k; this.vel.z = this.dashVel.z * k;
+  }
+
   dash(dir, dist, dur, opts = {}) {
-    this.dashT = dur;
+    this.dashT = dur; this.dashJump = false;
     this.dashVel.copy(dir).setY(0).normalize().multiplyScalar(dist / dur);
-    this.invuln = Math.max(this.invuln, opts.invuln ?? 0.2);
-    this._dashIv = this.game.time + (opts.invuln ?? 0.2); // (a blow that lands in here is a perfect dodge)
+    const iv = (opts.invuln ?? 0.2) + (this.stats.dashIv ?? 0); // (Blur widens it)
+    this.invuln = Math.max(this.invuln, iv);
+    this._dashIv = this.game.time + iv; // (a blow that lands in here is a perfect dodge)
     this.game.vfx.addFovKick(6);
     if (this.game.player === this) this.game.dashFx = 1;
   }
@@ -412,11 +454,15 @@ export class LocalPlayer {
     if (sp.mode === 'channel') {
       const S = {};
       this.channel = { slot, S, ctx, t: 0, max: sp.channel.max ?? 3 };
+      const sl = this.game.spells.slot; this.game.spells.slot = slot;
       sp.channel.start(ctx, S);
+      this.game.spells.slot = sl;
       this.game.net?.sendCast({ pid: this.id, slot, o: origin, d: dir, ap: aim.point, chan: 1, au: this.stats.augSlot?.[slot] });
     } else {
       const edgeBefore = this.edge;
+      const sl = this.game.spells.slot; this.game.spells.slot = slot;
       sp.cast(ctx);
+      this.game.spells.slot = sl;
       this.game.net?.sendCast({ pid: this.id, slot, o: origin, d: dir, ap: aim.point, ch: edgeBefore, au: this.stats.augSlot?.[slot] });
     }
     this.game.onLocalCast?.(slot);
@@ -431,7 +477,9 @@ export class LocalPlayer {
   endChannel() {
     if (!this.channel) return;
     const sp = this.cls.spells[this.channel.slot];
+    const sl = this.game.spells.slot; this.game.spells.slot = this.channel.slot; // (restored after: this can run nested, e.g. downed mid-callback)
     sp.channel.end(this.channel.ctx, this.channel.S);
+    this.game.spells.slot = sl;
     // cooldown scales with how long the channel was held
     const used = Math.min(1, this.channel.t / this.channel.max);
     this.cds[this.channel.slot] = Math.max(0.5, this._cdOf(this.channel.slot) * (0.35 + 0.65 * used));
@@ -496,8 +544,11 @@ export class LocalPlayer {
       this._ultPend -= take;
       this.ult = Math.min(100, this.ult + dt * 0.4 * r + take);
     } else this._ultPend = 0;
-    // regen
-    const regen = st.regen + (g.auraRegenFor?.(this) ?? 0);
+    // the sustain budget refills (a second's worth at most banked)
+    const cap = this.maxHp * SUSTAIN_CAP * (st.sustainMult ?? 1);
+    this._sustainLeft = Math.min(cap, (this._sustainLeft ?? cap) + cap * dt);
+    // regen: mostly a mender between fights (35% within 4 s of being hit)
+    const regen = st.regen * (g.time - this.lastDamageT < 4 ? 0.35 : 1) + (g.auraRegenFor?.(this) ?? 0);
     if (regen > 0 && this.alive && !this.downed && this.hp < this.maxHp) this.heal(regen * dt, true);
 
     // history for rewind
@@ -593,6 +644,10 @@ export class LocalPlayer {
       this.dashT -= dt;
       vx = this.dashVel.x; vz = this.dashVel.z;
       this.vel.y = Math.max(this.vel.y, 0);
+      if (this.dashT <= 0) {
+        this.dashEndT = g.time;
+        if (this.dashJump) { this.dashJump = false; this.dashEndT = -9; this._carry(); } // (-9: one dash-jump a dash, not a second on a double jump)
+      }
     }
 
     // jump
@@ -605,6 +660,16 @@ export class LocalPlayer {
       this.grounded = false;
       this.jumpsLeft--;
       g.audio?.play('jump', { volume: 0.4 });
+      // a dash-jump: jump during a dash (or just after one) and part of its speed carries into
+      // the leap, a long bound that slides a little on landing (air control then bleeds it off)
+      if (this.dashT > 0 || g.time - this.dashEndT < 0.12) {
+        if (this.dashT > 0) this.dashJump = true; // (mid-dash: carried when it ends)
+        else this._carry();
+        this.dashEndT = -9;
+        g.vfx.addFovKick(4);
+        g.audio?.play('dash', { volume: 0.3 });
+        g.events?.emit('dashJump');
+      }
       if (!this.wasGrounded && st.doubleJump) g.vfx.ring(this.pos, 1.5, fxOf('wind').core, 0.3, 0.3);
     }
     // gravity / glide
@@ -690,7 +755,9 @@ export class LocalPlayer {
         ch.ctx.dir.copy(aim.point).sub(ch.ctx.origin).normalize();
         ch.ctx.aimPoint.copy(aim.point);
         ch.ctx.stats = this.stats;
+        const sl = this.game.spells.slot; this.game.spells.slot = ch.slot;
         sp.channel.update(ch.ctx, ch.S, dt);
+        this.game.spells.slot = sl;
         if (this.castAnim) this.castAnim.t = Math.min(this.castAnim.t, 0.2);
       }
       return;
@@ -714,6 +781,7 @@ export class LocalPlayer {
     if (input.was('ability1')) this._tryOrBuzz('ability1');
     if (input.was('ability2')) this._tryOrBuzz('ability2');
     if (input.was('ultimate')) this._tryOrBuzz('ultimate');
+    if (input.was('item')) this.game.useItem();
   }
 
   _tryOrBuzz(slot) {
@@ -724,14 +792,19 @@ export class LocalPlayer {
   }
 
   // called by game when this player's hits connect
-  onDealtDamage(amount, killed) {
+  onDealtDamage(amount, killed, a, by = 'other') {
     this.damageDealt += amount;
-    // (damage counts relative to the realm's toughness: late realms' bigger numbers don't charge faster)
-    this._ultPend = Math.min(100, this._ultPend + amount * 0.055 * ultRateEff(this.stats.ultRate) / (this.game.director?.floorHp?.() ?? 1));
-    if (this.stats.lifesteal) this.heal(amount * this.stats.lifesteal, true);
+    this.dmgBy[by] = (this.dmgBy[by] ?? 0) + amount;
+    // (damage counts relative to the foes' toughness: late realms' bigger numbers, and a party's bigger fights, don't charge faster)
+    const tough = this.game.director?.earnScale(a) ?? 1;
+    this._ultPend = Math.min(100, this._ultPend + amount * 0.055 * ultRateEff(this.stats.ultRate) / tough);
+    // lifesteal and on-kill healing share one budget: at most SUSTAIN_CAP of max
+    // health a second (the Blood Mage's passive doubles it), and lifesteal counts
+    // damage relative to the realm's toughness like the ultimate does
+    if (this.stats.lifesteal) this._sustain(amount * this.stats.lifesteal / tough);
     if (killed) {
       this.kills++;
-      if (this.stats.killHeal) this.heal(this.stats.killHeal, true);
+      if (this.stats.killHeal) this._sustain(this.stats.killHeal);
       if (this.stats.hasteOnKill) { this.hasteT = 3; this.recomputeStats(); }
     }
   }

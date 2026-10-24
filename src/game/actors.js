@@ -6,6 +6,7 @@ import { fxOf } from '../render/vfx.js';
 import { rand } from '../core/rng.js';
 import { angleDamp, clamp } from '../core/math.js';
 import { Pathing } from './pathing.js';
+import { STEP } from '../world/collision.js';
 import { getEnemyModel } from './models.js';
 import { BossBrain } from './bosses.js';
 
@@ -32,6 +33,52 @@ export const ANIMS = ['idle', 'move', 'windup', 'attack', 'cast', 'stagger', 'de
 const _v = new THREE.Vector3();
 const _dir = { x: 0, z: 0 };
 
+// What spells hit is a capsule fitted to the model, apart from the body radius
+// that walls, doors and crowding use: radius hitR around a segment of half-length
+// hitL along the facing (long bodies: hounds, rats, the wyvern), from hitY0 to
+// hitH above the feet. Measured from the model's bounds once per model type (in
+// the pose it spawns in), never smaller than the body, and capped so wings,
+// banners and raised weapons don't count for much.
+// damage from a wizard standing 0.6 m or more above the foe (see damage)
+const HIGH_GROUND = 1.15;
+const HIT_SHAPES = new Map();
+const _hb = new THREE.Box3(), _hb2 = new THREE.Box3();
+function hitShapeOf(type, model, r0, h0) {
+  let s = HIT_SHAPES.get(type);
+  if (s) return s;
+  _hb.makeEmpty();
+  const root = model.root;
+  const sc = root.scale.x, px = root.position.x, py = root.position.y, pz = root.position.z, ry = root.rotation.y;
+  root.scale.setScalar(1); root.position.set(0, 0, 0); root.rotation.set(0, 0, 0);
+  root.updateMatrixWorld(true);
+  root.traverse((o) => {
+    if (!o.isMesh || !o.visible || !o.geometry || o.material?.transparent) return;
+    if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+    _hb.union(_hb2.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld));
+  });
+  root.scale.setScalar(sc); root.position.set(px, py, pz); root.rotation.y = ry;
+  root.updateMatrixWorld(true);
+  if (_hb.isEmpty()) s = { r: r0, l: 0, y0: 0, h: h0 };
+  else {
+    const halfX = Math.max(-_hb.min.x, _hb.max.x), halfZ = Math.max(-_hb.min.z, _hb.max.z); // (models face +z)
+    // (an upright body is mostly held weapons fore and aft: keep its capsule close)
+    const tall = h0 > r0 * 3;
+    const r = Math.min(r0 * (tall ? 1.4 : 2), Math.max(r0, halfX * 0.85));
+    const l = Math.max(0, Math.min(r0 * (tall ? 0.6 : 2.5), halfZ * 0.85 - r));
+    s = { r, l, y0: Math.min(0, _hb.min.y), h: Math.max(h0, Math.min(h0 * 1.5, _hb.max.y * 0.95)) };
+  }
+  HIT_SHAPES.set(type, s);
+  return s;
+}
+// the point of a's hit segment nearest (x, z): out.x/out.z
+export function hitPoint(a, x, z, out) {
+  if (!a.hitL) { out.x = a.pos.x; out.z = a.pos.z; return out; }
+  const fx = Math.sin(a.yaw), fz = Math.cos(a.yaw);
+  const t = Math.max(-a.hitL, Math.min(a.hitL, (x - a.pos.x) * fx + (z - a.pos.z) * fz));
+  out.x = a.pos.x + fx * t; out.z = a.pos.z + fz * t;
+  return out;
+}
+
 // a champion's affix, whichever of its (up to two) slots holds it
 export const hasAffix = (a, k) => a.affix === k || a.affix2 === k;
 
@@ -51,14 +98,17 @@ export class Actor {
     this.elite = !!opts.elite || !!this.def.elite;
     this.affix = opts.affix ?? null;
     this.affix2 = opts.affix2 ?? null; // (the Exalted pact: a second affix)
+    this.hitR = 0.5; this.hitL = 0; this.hitY0 = 0; this.hitH = 1.8; // (the hit shape: see hitShapeOf)
     this._combo = null; this._tap = false; // (Nightmare: a chained melee blow, a follow-up shot in flight)
     this._lbl = ''; this._lblFor = null; this._lblA = null; this._lblB = null; // (the HUD's cached champion label)
+    this._tele = null; this._teleE = null; // (the danger arc of a melee wind-up aimed near you: see _windupTell)
     this.pos = new THREE.Vector3(opts.x, opts.y ?? 0, opts.z);
     this.vel = new THREE.Vector3();
     this.kb = new THREE.Vector3();
     this.yaw = opts.yaw ?? 0;
     this.maxHp = opts.hp ?? this.def.hp;
     this.hp = this.maxHp;
+    this.partyK = 0; // (a boss: the party health factor it was given, see Director.rescaleBosses)
     this.dmg = opts.dmg ?? this.def.dmg;
     this.st = {};
     this.mask = 0;
@@ -100,6 +150,8 @@ export class Actor {
     this.attack = null; this.attackDef = null; this.atkTarget = null; this.brain = null; this.brainAttackType = null; this.netDur = null;
     this.leapT = 0; this.leapV = null; this.jv = null;
     this.wakeAt = 0; this.dormantT = 0; this.sinkT = 0; this.hiddenT = 0; this.deathMask = 0;
+    this.airT = 0; this.airDur = 0; this.airH = 0; this.exposedUntil = 0;
+    this.hoardT = 0; this.coinT = 0; this._escaping = false; // a Hoarder's run (fleeing time, the next coin it drops) // a boss's leap: the model rides an arc over its ground position (visual, every peer)
     this.reassembled = false; this.champion = null; this._champT = null;
     this._prevAnim = null; this._poseDt = 0; this._posedAnim = null; this._tint = null;
     this._mvLosT = 0; this._mvLosTgt = null; this._losMove = false; this._losT = 0; this._los = false;
@@ -122,7 +174,7 @@ function bodyOf(type) {
 const CORPSE_LINGER = 7;
 const CORPSE_CAP = 16;
 const RANGED_KINDS = new Set(['shoot', 'lob', 'circle']);
-const LOS_KINDS = new Set(['lunge', 'charge', 'circle', 'shoot', 'lob']); // _canUse reads los for these
+const LOS_KINDS = new Set(['lunge', 'charge', 'leap', 'circle', 'shoot', 'lob']); // _canUse reads los for these
 
 export class ActorManager {
   constructor(game) {
@@ -144,6 +196,7 @@ export class ActorManager {
     for (const a of this.list) this._disposeModel(a);
     this.list.length = 0;
     this.byId.clear();
+    this._rebuildLists(); // (or hostiles() hands out the last floor's foes until the next update)
   }
 
   hostiles() { return this._hostiles; }
@@ -175,6 +228,8 @@ export class ActorManager {
     a.model = getEnemyModel(modelType, g);
     a.radius = (a.model.radius ?? 0.5) * a.scale;
     a.height = (a.model.height ?? 1.8) * a.scale;
+    const hs = hitShapeOf(modelType, a.model, a.radius / a.scale, a.height / a.scale);
+    a.hitR = hs.r * a.scale; a.hitL = hs.l * a.scale; a.hitY0 = hs.y0 * a.scale; a.hitH = hs.h * a.scale;
     a.flying = a.def.flying ?? a.model.flying ?? false;
     a.model.root.scale.setScalar(a.scale);
     a.model.root.position.copy(a.pos);
@@ -250,8 +305,47 @@ export class ActorManager {
     }
   }
 
-  // Melee wind-ups have no ground telegraph, so they get a tell: a glint at the head,
-  // the creature's own voice, and an edge-of-screen marker when it's behind you.
+  // A Hoarder runs from the nearest wizard, steering round walls and zigzagging,
+  // leaks a coin now and then, and slips away after 15 s (host)
+  _flee(a, dt, mm, out) {
+    const g = this.g;
+    a.hoardT += dt;
+    // (escape after this frame's actor loop: it disposes the model the loop is still posing)
+    if (a.hoardT > 15) { if (!a._escaping) { a._escaping = true; g.spells.after(0, () => this.escape(a)); } return out; }
+    a.coinT -= dt;
+    if (a.coinT <= 0) { a.coinT = 1.1; g.spawnDrop('gold', a.pos, 2 + g.floorIndex); }
+    let near = null, nd = Infinity;
+    for (const p of g.allPlayers()) { if (!p.alive || p.dead) continue; const d = Math.hypot(p.pos.x - a.pos.x, p.pos.z - a.pos.z); if (d < nd) { nd = d; near = p; } }
+    const speed = a.def.speed * mm * a.speedMult * (nd < 14 ? 1 : 0.55);
+    let base = near ? Math.atan2(a.pos.x - near.pos.x, a.pos.z - near.pos.z) : a.yaw;
+    base += Math.sin(g.time * 3.1 + a.id) * 0.45; // a zigzag, so it is not a straight shot
+    let dir = null;
+    for (const off of [0, 0.6, -0.6, 1.2, -1.2, 1.8, -1.8, 2.5, -2.5]) {
+      const ang = base + off, sx = Math.sin(ang), sz = Math.cos(ang);
+      const c = (k) => g.collision.cellBlocked(Math.floor((a.pos.x + sx * k) / 2), Math.floor((a.pos.z + sz * k) / 2), a.pos.y);
+      if (!c(1.2) && !c(2.6)) { dir = ang; break; }
+    }
+    if (dir === null) dir = base + Math.PI;
+    out.x = Math.sin(dir) * speed * dt; out.z = Math.cos(dir) * speed * dt;
+    a.yaw = angleDamp(a.yaw, dir, 12, dt);
+    a.anim = 'move';
+    return out;
+  }
+  // a Hoarder that got away: a puff of gold and it is gone (everyone; the host sends 'escape')
+  escape(a) {
+    const g = this.g;
+    if (!a || a.dead) return;
+    g.vfx.burst(new THREE.Vector3(a.pos.x, a.pos.y + 0.5, a.pos.z), { count: 30, speed: 4, upward: 1.5, life: 0.9, size: 0.08, sprite: SPR.SPARK, color: [2.6, 1.9, 0.6], gravity: 4 });
+    g.vfx.smoke(new THREE.Vector3(a.pos.x, a.pos.y + 0.4, a.pos.z), { count: 6, size: 1, color: [0.5, 0.42, 0.2], alpha: 0.5 });
+    g.audio?.play('blink', { pos: a.pos });
+    if (g.isHost) { g.net?.broadcast({ t: 'escape', id: a.id }); g.hoarderNews('escape', a); }
+    a.dead = true;
+    this.remove(a);
+  }
+
+  // Melee blows are only made at the strike, so the wind-up is the warning: a glint at the head,
+  // the creature's own voice, an edge-of-screen marker when it's behind you, and for real blows
+  // that could reach you, the arc they'll sweep.
   _windupTell(a) {
     if (a.faction !== 'enemy' || a.boss || a.def.range) return;
     const g = this.g;
@@ -264,6 +358,29 @@ export class ActorManager {
     if ((a._tellT ?? 0) < g.time) { a._tellT = g.time + 1.2; g.audio?.play(a.def.sound ?? 'swing', { pos: a.pos, volume: 0.55 }); }
     const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
     if (d < 7 && (fx * dx + fz * dz) / Math.max(d, 0.01) < 0.35) g.ui?.damageDirection(a.pos);
+    // a real blow (not a rat's nip) that could reach you: its arc on the ground, turning with
+    // the swing and filling as it lands, so a hit never comes from nowhere
+    const at = a.attackDef ?? a.attack;
+    if (!at || (at.kind !== 'melee' && at.kind !== 'lunge') || (a.def.cost ?? 1) < 2 || (at.windup ?? 0.5) < 0.3) return;
+    // (a lunge's blow lands where the leap ends: the same reach as the hazard made at the strike)
+    const reach = at.kind === 'lunge' ? (at.leap ?? 6) * 0.132 + 0.5 + at.range * 0.6 + a.radius : at.range + a.radius;
+    if (d > reach + 2.5) return;
+    const gy = g.groundY(a.pos.x, a.pos.z);
+    g.vfx.telegraph({ x: a.pos.x, y: gy, z: a.pos.z }, { shape: 'cone', radius: reach, angle: Math.min(1.5, (at.arc ?? 1.4) * 0.5 + 0.1), rot: a.yaw, dur: at.windup ?? 0.5, color: g.teleColor(at.el ?? 'physical', 0.7) });
+    a._teleE = g.vfx.active[g.vfx.active.length - 1];
+    a._tele = a._teleE.mesh;
+  }
+  // the wind-up's arc follows the attacker; it fades as soon as the wind-up ends (struck, interrupted, killed)
+  _teleFollow(a) {
+    const e = a._teleE;
+    if (a.anim !== 'windup' || a.dead || !this.g.vfx.active.includes(e) || e.mesh !== a._tele) {
+      // struck: let it flash out as the blow lands; interrupted or killed: gone at once
+      if (this.g.vfx.active.includes(e) && e.mesh === a._tele) e.t = a.anim === 'attack' && !a.dead ? Math.max(e.t, e.life - 0.12) : e.life;
+      a._tele = null; a._teleE = null;
+      return;
+    }
+    a._tele.position.x = a.pos.x; a._tele.position.z = a.pos.z;
+    a._tele.rotation.y = a.yaw + Math.PI;
   }
 
   remove(a) {
@@ -289,6 +406,19 @@ export class ActorManager {
       this.wake(a);
     }
     if (def.armor) dmg *= 1 - def.armor;
+    // the high ground: a wizard striking from a ledge, a plateau or the rim of a pit hits harder
+    if (H.src && !a.boss) {
+      const ps = g.allPlayers();
+      for (let i = 0; i < ps.length; i++) {
+        const pl = ps[i];
+        if (pl.id !== H.src) continue;
+        if (g.groundY(pl.pos.x, pl.pos.z) - a.pos.y >= 0.6) { // (the ground stood on: a jump isn't high ground)
+          dmg *= HIGH_GROUND;
+          if (pl === g.player && !g._highTip) { g._highTip = true; g.ui?.toast('High ground: your blows land 15% harder from above', '#e8d080'); }
+        }
+        break;
+      }
+    }
     if (def.frontShield && H.kbDir) {
       // blocked from the front
       const fx = Math.sin(a.yaw), fz = Math.cos(a.yaw);
@@ -317,8 +447,17 @@ export class ActorManager {
     if (H.tag !== 'dot') {
       a.poiseDmg += dmg;
       a.poiseT = 2;
-      if (a.poiseDmg > (def.poise ?? 20) && !a.boss && a.state !== 'spawn') {
+      // footing scales with the foe's health (realm, Abyss, party, pacts): a stagger takes the same
+      // share of it in every realm, so late realms' bigger hits don't stunlock everything (an elite's
+      // triple health counts half: sturdier, not unbreakable)
+      // (only a made elite has the triple health to halve: a type that is elite by nature, the Plague Ogre or
+      // the Headsman, spawns with its own)
+      const poise = (def.poise ?? 20) * (a.maxHp / (def.hp || a.maxHp)) * (a.elite && !def.elite ? 0.5 : 1);
+      if (a.poiseDmg > poise && !a.boss && a.state !== 'spawn') {
         a.poiseDmg = 0;
+        // breaking a foe's footing mid-wind-up interrupts the blow it was winding up (its mark is
+        // wiped on every peer as the stagger arrives: see update) and pays whoever did it
+        if (a.state === 'windup' && a.faction === 'enemy') this.g.creditInterrupt?.(a, H.src);
         this._setState(a, 'stagger', 'stagger');
       }
       a.hitFlash = Math.max(a.hitFlash, 0.45);
@@ -347,6 +486,7 @@ export class ActorManager {
       this._rebuildLists();
       return;
     }
+    if (a.state === 'windup' && !a.boss && a.faction === 'enemy' && killer) this.g.creditInterrupt?.(a, killer);
     a.dead = true;
     a.deadT = 0;
     a.anim = 'death';
@@ -523,6 +663,12 @@ export class ActorManager {
       if (a.model) {
         const m = a.model;
         m.root.position.copy(a.pos);
+        if (a.airDur > 0) {
+          a.airT += dt;
+          const u = a.airT / a.airDur;
+          if (u >= 1) a.airDur = 0;
+          else m.root.position.y += a.airH * 4 * u * (1 - u);
+        }
         m.root.rotation.y = a.yaw;
         if (a.jv) {
           // damped spring back to upright
@@ -536,6 +682,13 @@ export class ActorManager {
         }
         if (a._laserBeam && (g.time > a._laserEnd || a.anim !== 'windup')) { a._laserBeam.release(0.05); a._laserBeam = null; }
         if (a.anim === 'windup' && a._prevAnim !== 'windup') this._windupTell(a);
+        if (a.def.hoarder) {
+          if (Math.random() < dt * 22) g.vfx.P.glow({ x: a.pos.x + rand(-0.35, 0.35), y: a.pos.y + rand(0.3, 0.9), z: a.pos.z + rand(-0.35, 0.35), vx: 0, vy: 0.7, vz: 0, r: 2.6, g: 1.9, b: 0.6, r2: 0.8, g2: 0.4, b2: 0.05, life: 0.7, size: 0.07, sprite: SPR.SPARK, drag: 1 });
+          g.lights.request(a.pos, 0xffc040, 2.2, 5);
+        }
+        if (a._tele) this._teleFollow(a);
+        // staggered out of a wind-up (or a cast-type one: its circles are placed as it starts): the blow never lands
+        if (a.anim === 'stagger' && (a._prevAnim === 'windup' || a._prevAnim === 'cast')) g.cancelHazardsFrom?.(a.id, _v.set(a.pos.x, a.pos.y + a.height + 0.4, a.pos.z));
         a._prevAnim = a.anim;
         const frozen = (a.mask & ST.frozen) !== 0;
         const animDt = frozen ? 0 : dt * (a.mask & ST.slow ? 0.5 : 1);
@@ -907,6 +1060,7 @@ export class ActorManager {
       if (a.stateT > 0.9) this._setState(a, 'chase', 'idle');
       return out;
     }
+    if (def.ai === 'flee') return this._flee(a, dt, mm, out);
     if (a.state === 'collapsed') {
       if (a.stateT > 3.0) {
         this._setState(a, 'spawn', 'spawn');
@@ -954,7 +1108,8 @@ export class ActorManager {
           if (Math.random() < 0.5) g.vfx.smoke(_v.set(a.pos.x, a.pos.y + 0.3, a.pos.z), { count: 1, size: 0.6, color: [0.3, 0.25, 0.2], alpha: 0.4 });
         }
       }
-      if (a.stateT > 0.35) this._setState(a, 'recover', 'idle');
+      // (a charge runs its whole marked lane and a leap lands before the foe recovers)
+      if (a.stateT > 0.35 && !(a.leapT > 0)) this._setState(a, 'recover', 'idle');
       return out;
     }
     if (a.state === 'recover') {
@@ -1008,7 +1163,7 @@ export class ActorManager {
       // line of sight to the target, re-checked a few times a second per actor
       if (!(a._mvLosT > g.time) || a._mvLosTgt !== tgt) {
         a._mvLosT = g.time + 0.1 + Math.random() * 0.1; a._mvLosTgt = tgt;
-        a._losMove = dist < 25 && g.collision.los(a.pos.x, a.pos.y + 0.8, a.pos.z, tp.x, tp.y + 0.8, tp.z);
+        a._losMove = dist < 25 && g.collision.los(a.pos.x, a.pos.y + 0.8, a.pos.z, tp.x, tp.y + 0.8, tp.z) && (tp.y - a.pos.y < STEP || this.pathing.walkLine(a.pos.x, a.pos.z, tp.x, tp.z));
       }
       const los = a._losMove && dist < 25;
       move = true;
@@ -1060,6 +1215,7 @@ export class ActorManager {
     switch (at.kind) {
       case 'melee': return reach <= at.range - 0.3;
       case 'lunge': return reach <= at.range && reach >= (at.minRange ?? 0) && los;
+      case 'leap': return dist <= at.range && dist >= (at.minRange ?? 6) && los;
       case 'charge': return dist < at.len * 0.9 && dist > 3 && los;
       case 'nova': return reach < at.radius * 0.7;
       case 'circle': return los && dist < 22 && (at.ahead ? reach < at.ahead + at.radius * 0.5 : true);
@@ -1097,6 +1253,13 @@ export class ActorManager {
         if (i > 0) { cx += rand(-4, 4); cz += rand(-4, 4); }
         g.broadcastHazard({ shape: 'circle', x: cx, y: g.groundY(cx, cz), z: cz, r: at.radius, delay: at.windup, dmg, el: at.el ?? 'enemy', st: at.st, kb: 6, vis: 1, src: a.id, mv: at.id, fx: at.el ?? 'enemy' });
       }
+    } else if (at.kind === 'leap') {
+      // the landing ring is marked at once, where the target stood (clamped to open floor)
+      const T = at.air ?? 0.8;
+      let lx = tgt.pos.x, lz = tgt.pos.z;
+      if (g.collision.cellBlocked(Math.floor(lx / 2), Math.floor(lz / 2), a.pos.y + 0.5)) { lx = a.pos.x; lz = a.pos.z; }
+      a.atkTarget.x = lx; a.atkTarget.z = lz;
+      g.broadcastHazard({ shape: 'circle', x: lx, y: g.groundY(lx, lz), z: lz, r: at.radius ?? 3, delay: at.windup + T, dmg, el: at.el ?? 'physical', st: at.st, kb: at.kb ?? 12, vis: 1, src: a.id, mv: at.id, fx: 'earth' });
     } else if (at.kind === 'charge') {
       g.broadcastHazard({ shape: 'rect', x: a.pos.x, y: a.pos.y, z: a.pos.z, rot: yaw, len: at.len, w: at.width, delay: at.windup + 0.25, dmg, el: 'physical', kb: 14, vis: 1, src: a.id, mv: at.id, teleDur: at.windup });
     }
@@ -1142,6 +1305,18 @@ export class ActorManager {
         g.audio?.play('swing', { pos: a.pos, volume: 0.6 });
         break;
       }
+      case 'leap': {
+        // springs along an arc to the marked ring; the ring does the damage as it lands
+        const T = at.air ?? 0.8, lx = a.atkTarget.x - a.pos.x, lz = a.atkTarget.z - a.pos.z;
+        a.yaw = Math.atan2(lx, lz);
+        a.leapT = T; a.leapV = { x: lx / T, z: lz / T };
+        a.airT = 0; a.airDur = T; a.airH = at.h ?? 3.5;
+        g.net?.broadcast({ t: 'eair', id: a.id, d: T, h: a.airH });
+        g.audio?.play('dash', { pos: a.pos, volume: 0.7 });
+        g.vfx.smoke(_v.set(a.pos.x, a.pos.y + 0.3, a.pos.z), { count: 8, size: 1.2, color: [0.3, 0.26, 0.22], alpha: 0.5, speed: 3 });
+        g.spells.after(T, () => { if (!a.dead) { g.vfx.addShake(0.25); g.audio?.play('boss_slam', { pos: a.pos, volume: 0.6 }); } });
+        break;
+      }
       case 'charge':
         a.leapT = at.len / at.speed; a.leapV = { x: fx * at.speed, z: fz * at.speed };
         g.audio?.play('boss_roar', { pos: a.pos, volume: 0.4 });
@@ -1165,7 +1340,7 @@ export class ActorManager {
           const tx = tgt.pos.x + (tgt.vel?.x ?? 0) * lead, tz = tgt.pos.z + (tgt.vel?.z ?? 0) * lead;
           const d = new THREE.Vector3(tx - muzzle.x, tY - muzzle.y, tz - muzzle.z).normalize();
           d.applyAxisAngle(new THREE.Vector3(0, 1, 0), spread);
-          g.broadcastEnemyProjectile({ x: muzzle.x, y: muzzle.y, z: muzzle.z, vx: d.x * at.speed, vy: d.y * at.speed, vz: d.z * at.speed, el: at.el ?? 'enemy', dmg, mesh: at.mesh, homing: at.homing ?? 0, aoe: at.aoe ?? 0, st: at.st, src: a.id, mv: at.id });
+          g.broadcastEnemyProjectile({ x: muzzle.x, y: muzzle.y, z: muzzle.z, vx: d.x * at.speed, vy: d.y * at.speed, vz: d.z * at.speed, el: at.el ?? 'enemy', dmg, mesh: at.mesh, homing: at.homing ?? 0, tg: at.homing ? tgt.id : undefined, aoe: at.aoe ?? 0, st: at.st, src: a.id, mv: at.id });
         }
         g.audio?.play('enemy_projectile', { pos: muzzle, volume: 0.6 });
         // Nightmare: a follow-up shot a beat later, aimed afresh (a sidestep that beat the first may not beat the second)

@@ -50,6 +50,8 @@ export const NEW_RELICS = [
   { id: 'afterimage', set: 'arcanum', name: 'Mirror of Echoes', icon: 'blink', desc: 'Dashing leaves an afterimage behind that explodes after 1s for 45 arcane damage.' },
   { id: 'laurel', set: 'arcanum', name: "Victor's Laurel", icon: 'laurel', desc: 'Every chamber you clear permanently grants +2% damage.',
     apply: (s, p) => { s.dmgMult += 0.02 * (p.laurels ?? 0); } },
+  // ---------------- Items (no set)
+  { id: 'satchel', name: 'Bottomless Satchel', icon: 'chest', desc: 'Each item you use has a 35% chance not to be used up.' },
   // ---------------- Cursed
   { id: 'crownthorns', set: 'fang', cursed: true, name: 'Crown of Thorns', icon: 'crown', desc: '+45% damage, but you take 30% more damage.',
     apply: (s) => { s.dmgMult += 0.45; s.armor -= 0.3; } },
@@ -60,7 +62,28 @@ export const NEW_RELICS = [
   { id: 'voidpact', set: 'storm', cursed: true, name: 'Pact of the Void', icon: 'hex', desc: 'Abilities recharge 45% faster, but every ability cast costs 5% of your max health.',
     apply: (s) => { s.cdRate += 0.45; } },
   { id: 'gamblersdie', cursed: true, name: "The Gambler's Die", icon: 'dice', desc: 'Every fight rolls the die. 2–5: one boon for the fight (+50% damage, +40% attack speed, +35% speed and cooldown rate, or +100% crit damage). 6: all four. 1: −30% damage.' },
+  // ---------------- Abyssal: found only past the Hollow King, each a great gift bought dearly
+  { id: 'drownedcrown', abyssal: true, cursed: true, name: 'Crown of the Drowned King', icon: 'crown', desc: '+60% damage and +60% area, but you take 25% more damage.',
+    apply: (s) => { s.dmgMult += 0.6; s.aoeMult += 0.6; s.armor -= 0.25; } },
+  { id: 'abyssaleye', abyssal: true, cursed: true, name: 'Eye of the Abyss', icon: 'eye', desc: '+20% critical chance and critical hits deal +80% damage, but −25% max health.',
+    apply: (s) => { s.critChance += 0.2; s.critMult += 0.8; s.maxHp *= 0.75; } },
+  { id: 'starvingblade', abyssal: true, cursed: true, name: 'The Starving Blade', icon: 'power', desc: '+4% damage for every tome you hold, but kills and lifesteal no longer heal you.',
+    apply: (s, p) => { s.dmgMult += 0.04 * (p.upgrades?.length ?? 0); }, after: (s) => { s.killHeal = 0; s.lifesteal = 0; } },
+  { id: 'voidclock', abyssal: true, cursed: true, name: 'The Voidclock', icon: 'clock', desc: 'Abilities recharge 50% faster and your ultimate charges 50% faster, but −20% damage.',
+    apply: (s) => { s.cdRate += 0.5; s.ultRate += 0.5; s.dmgMult -= 0.2; } },
+  { id: 'hollowheart', abyssal: true, cursed: true, name: 'The Hollow Heart', icon: 'shield', desc: '+80% max health and take 20% less damage, but −25% attack speed.',
+    apply: (s) => { s.maxHp *= 1.8; s.armor += 0.2; s.rateMult -= 0.25; } },
+  { id: 'legionsigil', abyssal: true, cursed: true, name: 'Sigil of the Legion', icon: 'multi', desc: 'Primary fires +2 projectiles, but −25% damage.',
+    apply: (s) => { s.extraProj += 2; s.dmgMult -= 0.25; } },
 ].map((r) => ({ apply: () => {}, ...r }));
+
+// Ascension: an owned relic can be raised to ★ and ★★ (chests offer it now and
+// then, and always once few relics are left to find). It multiplies the relic's
+// gift, never its curse: stat bonuses (only the ones that help) and proc damage.
+export const ASCEND_MAX = 2;
+export const ascendK = (stars) => 1 + 0.5 * (stars ?? 0);
+// relics whose gift is a rule rather than a number: nothing to raise
+export const NO_ASCEND = new Set(['phoenixash', 'lastbreath', 'gamblersdie', 'goldfever', 'undertow', 'firstblood']);
 
 export const relicColor = (def) => (def.cursed ? CURSED_COLOR : SETS[def.set]?.color ?? '#ffb030');
 // one-line description with its set and curse called out (shop, tooltips)

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ITEMS, strike } from '../game/items.js';
 
 // In-run network message handling for both host and clients.
 export function handleGameMessage(game, msg, from) {
@@ -59,7 +60,7 @@ export function handleGameMessage(game, msg, from) {
       const a = game.actors.byId.get(msg.id);
       if (a) {
         game.ui?.damageNumber(new THREE.Vector3(a.pos.x, a.pos.y + a.height * 0.8, a.pos.z), msg.d, 'fire', false, true, a.id);
-        game.player.onDealtDamage(msg.d, false);
+        game.player.onDealtDamage(msg.d, false, a, 'dot');
         game.stats.damage += msg.d;
       }
       break;
@@ -108,6 +109,19 @@ export function handleGameMessage(game, msg, from) {
       if (msg.clear) { room.cleared = true; game.onRoomCleared(room); }
       break;
     }
+    case 'locks': {
+      // the host's view of the doors (sent every 2 s): open any this peer still holds shut
+      if (game.isHost || game.loadingFloor || msg.f !== game.floorIndex || (msg.ab ?? 0) !== (game.abyss ?? 0)) return;
+      const cl = new Set(msg.cl);
+      for (const room of game.level.rooms) {
+        if (cl.has(room.id) && !room.cleared) {
+          room.cleared = true;
+          if (room._locked) game.setRoomLocked(room.id, false);
+          game.onRoomCleared(room);
+        } else if (room._locked && room.id !== msg.on) game.setRoomLocked(room.id, false);
+      }
+      break;
+    }
     case 'visit': { const room = game.level.rooms[msg.r]; if (room) room.visited = true; break; }
     case 'wave': game.ui?.wave(msg.n, msg.of); break;
     case 'boss': {
@@ -125,6 +139,11 @@ export function handleGameMessage(game, msg, from) {
     case 'snd': game.audio?.play(msg.n, { pos: new THREE.Vector3(msg.x, msg.y, msg.z), volume: msg.v }); break;
     case 'bfx': game.bossFx(msg.k, game.actors.byId.get(msg.id), msg); break;
     case 'blinkfx': game.actors.blinkFx(new THREE.Vector3(msg.x, msg.y, msg.z)); break;
+    case 'eair': { const a = game.actors.byId.get(msg.id); if (a) { a.airT = 0; a.airDur = msg.d; a.airH = msg.h; } break; } // a foe's leap: its arc (Actors._strike 'leap')
+    case 'hoard': game.hoarderNews(msg.k, game.actors.byId.get(msg.id)); break; // a Hoarder appears / is caught
+    case 'escape': game.actors.escape(game.actors.byId.get(msg.id)); game.hoarderNews('escape'); break;
+    case 'intr': game.onInterrupt(msg.x, msg.y, msg.z); break; // our blow broke a foe's wind-up
+    case 'itemfx': { if (msg.i === 'strike') strike(game, msg); else ITEMS[msg.i]?.show(game, msg); break; } // a teammate's item: its look
     case 'healfx': { const a = game.actors.byId.get(msg.id); if (a) game.vfx.burst(new THREE.Vector3(a.pos.x, a.pos.y + a.height * 0.6, a.pos.z), { element: msg.s ? 'holy' : 'poison', count: 12, speed: 1.5, upward: 1, life: 0.8, size: 0.12 }); break; }
     case 'drop': if (!game.isHost) game.spawnDrop(msg.ty, new THREE.Vector3(msg.x, msg.y, msg.z), msg.v, msg.id); break;
     case 'floor': if (!game.isHost) game.transitionToFloor(msg.i); break;
