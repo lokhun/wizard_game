@@ -140,7 +140,7 @@ export const slime = {
   build(rig) {
     rig.bone('base', null);
     rig.bone('body', 'base');
-    for (let i = 0; i < 5; i++) rig.bone('deb' + i, 'body', 0, 0.45, 0);
+    for (let i = 0; i < 5; i++) rig.bone('deb' + i, 'body', 0, 0.37, 0);
     for (let i = 0; i < 6; i++) rig.bone('bub' + i, 'body', 0, 0.1, 0);
     const g = G.sph(0.52, 40, 28);
     deform(g, (v) => {
@@ -152,6 +152,8 @@ export const slime = {
       if (v.y < 0.12) { v.y = 0.12 - (0.12 - v.y) * 0.22; v.x *= 1.08; v.z *= 1.08; }
       // drippy lumps
       v.y += Math.max(0, n) * 0.06 * clamp(v.y);
+      // the squashed base came out 9 cm up: it rests on the floor instead of hovering over it
+      v.y -= 0.08;
       void r;
     });
     rig.add('body', 'slime', g, {}, {
@@ -159,7 +161,7 @@ export const slime = {
       cfn: (v) => { const k = 0.45 + v.y * 0.7; return [0.22 * k, 0.75 * k, 0.12 * k]; },
     });
     // glowing nucleus
-    rig.add('body', 'spirit', G.sph(0.16, 14, 10), { y: 0.42 }, { c: HDR(0x5aff2a, 0.22) });
+    rig.add('body', 'spirit', G.sph(0.16, 14, 10), { y: 0.34 }, { c: HDR(0x5aff2a, 0.22) });
     // floating debris: skull, bones, rusty blade, coins
     rig.add('deb0', 'bone', skullGeo(), { s: 1.6, ry: 0.4 }, { cfn: boneShade([1.0, 1.08, 0.85], 3, 1.4) });
     // a drowned man's rusty kettle hat still on the skull

@@ -12,7 +12,7 @@
 // TextureFactory; each instance clones only its materials (hit flash / tint).
 // See src/game/models/*.js for the individual type definitions.
 // ---------------------------------------------------------------------------
-import { Rig, EnemyInstance, materialLib, setEnemyRim } from './models/core.js';
+import { Rig, EnemyInstance, materialLib, setEnemyRim, soleProbe } from './models/core.js';
 export { setEnemyRim };
 export { creatureBakes } from './models/surfaces.js';
 import { SEWER_TYPES } from './models/sewers.js';
@@ -47,7 +47,7 @@ function getTemplate(spec, factory) {
     const dims = spec.build(rig);
     if (dims) spec.dims = dims;
     rig.finish(lib);
-    tpl = { root: rig.root, tris: rig.tris, meshes: rig.root.children.filter((c) => c.isMesh).length };
+    tpl = { root: rig.root, tris: rig.tris, meshes: rig.root.children.filter((c) => c.isMesh).length, soles: spec.ground === false ? null : soleProbe(rig.root) };
     map.set(spec.id, tpl);
   }
   return tpl;
