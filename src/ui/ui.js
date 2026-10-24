@@ -29,6 +29,9 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 // DOM UI + a 2D canvas overlay for damage numbers and health bars.
 // ---------------------------------------------------------------------------
 // cached DOM writes: skip when the value hasn't changed
+// replay a one-shot CSS flash without a forced layout (the old remove / read offsetWidth / add): switch
+// between `cls` and its twin `cls2`, which run the same keyframes under another name (styles.css)
+function replay(el, cls) { const a = el.classList.contains(cls); el.classList.toggle(cls, !a); el.classList.toggle(cls + '2', a); }
 function setText(el, v) { if (el && el._t !== v) { el._t = v; el.textContent = v; } }
 function setStyle(el, k, v) { if (!el) return; const c = (el._s ??= {}); if (c[k] !== v) { c[k] = v; el.style[k] = v; } }
 
@@ -501,7 +504,7 @@ export class UI {
       }
       // a spell coming off cooldown flashes its slot once
       const cooling = pctCd > 0;
-      if (el._cooling && !cooling) { el.classList.remove('ready'); void el.offsetWidth; el.classList.add('ready'); }
+      if (el._cooling && !cooling) replay(el, 'ready');
       el._cooling = cooling;
       const pv = pctCd.toFixed(1) + '%';
       if (q.cd && q.cd._p !== pv) { q.cd._p = pv; q.cd.style.setProperty('--p', pv); }
@@ -516,7 +519,7 @@ export class UI {
       h.itemSlot.classList.toggle('empty', !d);
       h.itemSlot.style.setProperty('--ic', d?.color ?? '#5a4426');
       h.itemSlot.title = d ? `${d.name}: ${d.desc}` : 'No item';
-      if (d && was !== undefined) { h.itemSlot.classList.remove('ready'); void h.itemSlot.offsetWidth; h.itemSlot.classList.add('ready'); }
+      if (d && was !== undefined) replay(h.itemSlot, 'ready');
     }
     // gold
     setText(h.gold, String(Math.floor(p.gold)));
@@ -977,14 +980,16 @@ export class UI {
   slotDenied(slot) {
     const el = this.h?.slots[slot];
     if (!el) return;
-    el.classList.remove('denied');
-    void el.offsetWidth;
-    el.classList.add('denied');
+    replay(el, 'denied');
   }
   goldPulse() {
     const el = this.h?.goldBox;
     if (!el) return;
-    el.classList.remove('pulse'); void el.offsetWidth; el.classList.add('pulse');
+    // (a coin a pickup, up to eight a drop: one pulse in flight at a time is all the eye can see)
+    const now = performance.now();
+    if (now - (this._goldPulseT ?? 0) < 120) return;
+    this._goldPulseT = now;
+    replay(el, 'pulse');
   }
   prompt(text, progress) {
     if (!this.h) return;
@@ -1037,7 +1042,7 @@ export class UI {
     el.querySelector('.s1').textContent = text;
     el.querySelector('.s2').textContent = sub;
     el.style.color = color;
-    el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+    replay(el, 'show');
   }
   toast(text, color) {
     const host = this.h?.toasts;

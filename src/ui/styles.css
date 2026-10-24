@@ -201,24 +201,32 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .slot svg { position: relative; filter: drop-shadow(0 0 4px color-mix(in srgb, var(--pc) 45%, transparent)); }
 .slot.ult { width: 74px; height: 74px; box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px var(--bronze), 0 0 0 4px #0a0807, 0 0 0 5px var(--bronze-lo), inset 0 0 0 1px rgba(255,220,160,0.25), inset 0 0 18px #000, 0 6px 14px rgba(0,0,0,0.75); }
 .slot.ready-ult { box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px var(--bronze-hi), 0 0 0 4px #0a0807, 0 0 0 5px var(--bronze), 0 0 26px rgba(255,200,90,0.7), inset 0 0 22px rgba(255,200,90,0.35); animation: pulse 1.2s infinite; }
+/* (each replayed flash has a twin class running the same keyframes under another name: switching
+   between them restarts the animation without a forced layout, see replay() in ui.js) */
 .slot.ready { animation: slotReady 0.45s ease-out; }
+.slot.ready2 { animation: slotReady2 0.45s ease-out; }
 @keyframes slotReady { 0% { box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px #fff4d8, 0 0 0 3px #0a0807, inset 0 0 22px color-mix(in srgb, var(--pc) 80%, transparent), 0 0 22px color-mix(in srgb, var(--pc) 70%, transparent); } }
+@keyframes slotReady2 { 0% { box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px #fff4d8, 0 0 0 3px #0a0807, inset 0 0 22px color-mix(in srgb, var(--pc) 80%, transparent), 0 0 22px color-mix(in srgb, var(--pc) 70%, transparent); } }
 @keyframes pulse { 0%,100% { box-shadow: 0 0 14px rgba(255,200,90,0.45), inset 0 0 12px rgba(255,200,90,0.2);} 50% { box-shadow: 0 0 28px rgba(255,200,90,0.85), inset 0 0 22px rgba(255,200,90,0.4);} }
 .slot .cd { position: absolute; inset: 0; background: conic-gradient(rgba(4,3,2,0.8) var(--p, 0%), rgba(255,230,180,0.18) var(--p, 0%) calc(var(--p, 0%) + 1.2%), rgba(0,0,0,0) 0); }
 .slot .cdtxt { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--serif); font-size: 19px; color: #fff; text-shadow: 0 0 4px #000, 0 0 2px #000; }
 .slot .key { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); font-family: var(--serif); font-size: 10px; letter-spacing: 0.05em; background: linear-gradient(180deg, #2a2119, #0c0a08); border: 1px solid var(--bronze-lo); padding: 0 6px; line-height: 15px; color: var(--bronze-hi); box-shadow: 0 2px 4px rgba(0,0,0,0.7); }
 .slot .charges { position: absolute; bottom: 2px; right: 4px; font-family: var(--serif); font-size: 12px; color: #fff; text-shadow: 0 1px 2px #000; }
 .slot.denied { animation: deny 0.25s; }
+.slot.denied2 { animation: deny2 0.25s; }
 @keyframes deny { 0%,100% { transform: translateX(0);} 25% { transform: translateX(-4px);} 75% { transform: translateX(4px);} }
+@keyframes deny2 { 0%,100% { transform: translateX(0);} 25% { transform: translateX(-4px);} 75% { transform: translateX(4px);} }
 .slot.flash { box-shadow: 0 0 18px rgba(255,255,255,0.6); }
 .ult-fill { position: absolute; left: 0; right: 0; bottom: 0; background: linear-gradient(0deg, color-mix(in srgb, var(--pc) 45%, transparent), color-mix(in srgb, var(--pc) 8%, transparent)); border-top: 1px solid color-mix(in srgb, var(--pc) 80%, #fff); box-shadow: 0 -2px 8px color-mix(in srgb, var(--pc) 50%, transparent); transition: height 0.2s; }
 
 .gold-box { position: absolute; right: 24px; bottom: 26px; font-family: var(--serif); font-size: 20px; color: var(--gold); text-shadow: 0 0 10px rgba(240,192,80,0.4), 0 2px 2px #000; display: flex; align-items: center; gap: 10px; }
 .gold-box .coin, .gold-box .dread { display: inline-flex; align-items: center; gap: 6px; padding: 5px 14px 5px 8px; min-width: 64px; background: linear-gradient(90deg, rgba(10,8,7,0), rgba(10,8,7,0.85) 30%); border-top: 1px solid rgba(168,132,76,0.5); border-bottom: 1px solid rgba(168,132,76,0.2); }
 .gold-box.pulse { animation: gp 0.25s; }
+.gold-box.pulse2 { animation: gp2 0.25s; }
 .gold-box .dread { color: #ff8070; text-shadow: 0 0 10px rgba(255,60,40,0.5), 0 2px 2px #000; border-top-color: rgba(200,70,50,0.5); }
 .gold-box .dread.hidden { display: none; }
 @keyframes gp { 50% { transform: scale(1.15); } }
+@keyframes gp2 { 50% { transform: scale(1.15); } }
 
 .team { position: absolute; left: 24px; top: 128px; display: flex; flex-direction: column; gap: 10px; width: 230px; }
 .team .tm { font-family: var(--serif); font-size: 13px; text-shadow: 0 1px 2px #000; padding: 6px 10px 8px 6px; background: linear-gradient(90deg, rgba(10,8,7,0.8), rgba(10,8,7,0)); border-left: 2px solid var(--pc, var(--bronze)); }
@@ -433,7 +441,9 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .streak .s1 { font-family: 'Cinzel', var(--serif); font-weight: 700; font-size: clamp(18px, 2.2vw, 30px); letter-spacing: 0.16em; text-shadow: 0 0 18px currentColor, 0 2px 3px #000; }
 .streak .s2 { font-family: var(--serif); font-size: 12px; color: var(--text); letter-spacing: 0.25em; text-transform: uppercase; margin-top: 2px; text-shadow: 0 2px 3px #000; }
 .streak.show { animation: streakPop 1.6s ease-out forwards; }
+.streak.show2 { animation: streakPop2 1.6s ease-out forwards; }
 @keyframes streakPop { 0% { opacity: 0; transform: scale(1.5); } 10% { opacity: 1; transform: scale(1); } 70% { opacity: 1; } 100% { opacity: 0; transform: translateY(-14px); } }
+@keyframes streakPop2 { 0% { opacity: 0; transform: scale(1.5); } 10% { opacity: 1; transform: scale(1); } 70% { opacity: 1; } 100% { opacity: 0; transform: translateY(-14px); } }
 
 /* the ultimate's charge reads under its icon, not across it */
 .slot.ult .cdtxt { align-items: flex-end; padding-bottom: 4px; color: #f0e2c4; letter-spacing: 0.05em; }
