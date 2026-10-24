@@ -656,6 +656,7 @@ export class SpellRuntime {
     const hl = Math.hypot(dx, dz) || 1e-6;
     let best = wall, hit = null;
     for (const a of g.actors.hostiles()) {
+      if (a.model?.disguised) continue; // (a mimic still posing as a chest gives nothing away)
       const fx = Math.sin(a.yaw), fz = Math.cos(a.yaw), r = a.hitR + radius;
       for (let k = a.hitL ? -2 : 0; k <= (a.hitL ? 2 : 0); k++) {
         const cx = a.pos.x + fx * a.hitL * k / 2, cz = a.pos.z + fz * a.hitL * k / 2;

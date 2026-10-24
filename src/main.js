@@ -11,7 +11,7 @@ import { Renderer } from './render/renderer.js';
 import { Input, applyBindings } from './core/input.js';
 import { UI } from './ui/ui.js';
 import { Game } from './game/game.js';
-import { Net } from './net/net.js';
+import { Net, PROTOCOL } from './net/net.js';
 import { handleGameMessage } from './net/netgame.js';
 import { setModelModules, getAvatar } from './game/models.js';
 import { CLASS_IDS, CLASS_META } from './game/classMeta.js';
@@ -453,7 +453,7 @@ async function doJoin(code, api) {
       if (mode === 'run') ui.banner('CONNECTION LOST', 'The host has left the party', '#c04030', 6);
       setTimeout(() => { if (net !== myNet) return; leaveNet(); game.ended = true; startBackdrop(); showMenu(); }, mode === 'run' ? 4000 : 0);
     };
-    net.send({ t: 'hello', name: settings.name || 'Wizard', cls: selectedClass });
+    net.send({ t: 'hello', name: settings.name || 'Wizard', cls: selectedClass, v: PROTOCOL });
     showSelect({ isHost: false, code: net.code });
   } catch (e) {
     console.warn(e);
@@ -474,11 +474,12 @@ function pushRoster() {
 function onLobbyMessage(msg, from) {
   if (net.isHost) {
     if (msg.t === 'hello') {
+      if (msg.v !== PROTOCOL) { net.sendTo(from, { t: 'version', v: PROTOCOL }); return; } // (another build: see PROTOCOL)
       if (lobby.players.length >= 4) { net.sendTo(from, { t: 'full' }); return; }
       const p = { id: from, name: String(msg.name ?? 'Wizard').slice(0, 16), classId: CLASS_IDS.includes(msg.cls) ? msg.cls : 'pyromancer', ready: false };
       lobby.players = lobby.players.filter((x) => x.id !== from);
       lobby.players.push(p);
-      net.sendTo(from, { t: 'welcome', id: from });
+      net.sendTo(from, { t: 'welcome', id: from, v: PROTOCOL });
       pushRoster();
       audio?.play('ui_click');
       if (mode === 'run' && game && !game.menuMode) {
@@ -517,6 +518,10 @@ function onLobbyMessage(msg, from) {
       beginRun({ seed: msg.seed, localId: net.id, isHost: false, net, players: msg.players, floor: msg.floor ?? 0, abyss: +msg.ab || 0, late: msg.late, pacts: msg.pk });
     } else if (msg.t === 'full') {
       alert('That party is full (4 wizards max).');
+      leaveNet(); showMenu();
+    } else if (msg.t === 'version' || (msg.t === 'welcome' && msg.v !== PROTOCOL)) {
+      // (an older host sends no version: it is turned away here, on this side)
+      alert('The host is playing a different version of the game. Both of you refresh the page (Ctrl+F5) to update, then try again.');
       leaveNet(); showMenu();
     }
   }

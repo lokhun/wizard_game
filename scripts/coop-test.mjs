@@ -1,8 +1,8 @@
 // Two-browser co-op smoke test against a local PeerJS server.
-// Usage: (npx peerjs --port 9000 --path /wizard &) ; node scripts/coop-test.mjs
+// Usage: (npx peerjs --port 9000 --path /wizard &) ; node scripts/coop-test.mjs   (PEER=port for another PeerJS port)
 import { chromium } from 'playwright-core';
 const PORT = process.env.PORT ?? 5190;
-const peerQ = 'peerHost=127.0.0.1&peerPort=9000&peerPath=/wizard&peerSecure=0&quality=low&test=1&norender=1';
+const peerQ = `peerHost=127.0.0.1&peerPort=${process.env.PEER ?? 9000}&peerPath=/wizard&peerSecure=0&quality=low&test=1&norender=1`;
 const browser = await chromium.launch({
   executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
   args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--disable-renderer-backgrounding', '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows'],

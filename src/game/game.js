@@ -186,6 +186,7 @@ export class Game {
     }
     this.remotes.set(p.id, r);
     this._partyGen = (this._partyGen ?? 0) + 1;
+    if (this.isHost) this.director?.rescaleBosses();
     this.isSolo = false;
     this.relics?.onPeerJoin();
     this.ui?.toast(`${p.name} joined as ${CLASS_META[p.classId].name}`);
@@ -196,6 +197,7 @@ export class Game {
     r.dispose();
     this.remotes.delete(id);
     this._partyGen = (this._partyGen ?? 0) + 1;
+    if (this.isHost) this.director?.rescaleBosses();
     this.ui?.toast(`${r.name} left the party`);
   }
 
@@ -1415,7 +1417,7 @@ export class Game {
     }
   }
   _aimOnWeak(o, p) {
-    if (!p.alive || p.downed || this.cinematic) return false;
+    if (!p.alive || p.downed || p.dead || this.cinematic || this.menuMode) return false; // (dead: the camera is a spectator's)
     const cp = Math.cos(p.pitch);
     const a = this.spells.firstActor(o.x, o.y, o.z, -Math.sin(p.yaw) * cp, Math.sin(p.pitch), -Math.cos(p.yaw) * cp, 60, 0.05, _aim);
     return !!a && isWeak(a, _aim.x, _aim.y, _aim.z); // (bosses too: their heads count as anyone's)

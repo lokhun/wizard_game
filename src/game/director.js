@@ -149,15 +149,29 @@ export class Director {
     return d ? FLOOR_DMG[4] * ABYSS_DMG ** (5 * d + f - 4) : FLOOR_DMG[f];
   }
 
+  // A wizard joins or leaves mid-fight (host): a living boss keeps its share of health, its total now
+  // the new party's, so the last wizard standing isn't left facing a four-wizard boss (its phase
+  // thresholds are fractions and hold)
+  rescaleBosses() {
+    const k = 1 + BOSS_PARTY_HP * (this.partySize() - 1);
+    for (const a of this.g.actors.list) {
+      if (!a.boss || !a.alive || !a.partyK || a.partyK === k) continue;
+      const f = a.hp / a.maxHp;
+      a.maxHp *= k / a.partyK; a.hp = a.maxHp * f; a.partyK = k;
+    }
+  }
+
   spawnEnemy(type, x, z, opts = {}) {
     const def = ENEMY_DEFS[type] ?? BOSS_DEFS[type];
     // boss HP in BOSS_DEFS is already tuned per realm, so bosses skip the floor multiplier
+    const partyK = 1 + BOSS_PARTY_HP * (this.partySize() - 1);
     const hp = BOSS_DEFS[type]
-      ? def.hp * (1 + BOSS_PARTY_HP * (this.partySize() - 1)) * (this.g.difficulty?.enemyHp ?? 1) * (this.floorHp() / FLOOR_HP[this.floor])
+      ? def.hp * partyK * (this.g.difficulty?.enemyHp ?? 1) * (this.floorHp() / FLOOR_HP[this.floor])
       : def.hp * this.hpScale() * (opts.elite ? 3 : 1);
     const dmg = def.dmg * this.dmgScale() * (opts.elite ? 1.3 : 1);
     const a = this.g.actors.spawn(type, x, z, { hp, dmg, elite: opts.elite, affix: opts.affix, affix2: opts.affix2, yaw: opts.yaw ?? Math.random() * 6.28, dormant: opts.dormant, homeRoom: opts.homeRoom, spawnFx: opts.spawnFx });
     if (!BOSS_DEFS[type]) a.speedMult *= this.g.difficulty?.enemySpeed ?? 1; // the Hunt pact
+    else a.partyK = partyK;
     if (this.active && !opts.noCredit) this.active.spawned.add(a.id);
     this.g.encounters?.onSpawned(a);
     return a;
