@@ -265,7 +265,7 @@ function updateBackdrop(dt) {
 // ---------------------------------------------------------------------------
 // screens
 // ---------------------------------------------------------------------------
-function menuStats() { const p = loadProfile(); return { runs: p.runs, wins: p.wins, bestFloor: p.bestFloor, kills: p.kills, feats: `${Object.keys(p.feats).length}/${FEATS.length}` }; }
+function menuStats() { const p = loadProfile(); return { runs: p.runs, wins: p.wins, bestFloor: p.bestFloor, kills: p.kills, feats: `${FEATS.filter((f) => p.feats[f.id]).length}/${FEATS.length}` /* (only feats that still exist) */ }; }
 
 function showMenu() {
   mode = 'menu';

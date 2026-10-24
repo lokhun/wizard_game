@@ -43,7 +43,6 @@ export class RunTracker {
     E.on('dread', (n) => this.run && this.fire('dread', n));
     E.on('perfectDodge', () => this.run && this.fire('perfectDodge', ++this.run.dodges));
     E.on('itemUsed', () => this.run && this.fire('itemUsed', ++this.run.items));
-    E.on('converge', () => this.run && this.fire('converge'));
     E.on('hoarder', () => this.run && this.fire('hoarder'));
     E.on('interrupt', () => this.run && this.fire('interrupt', ++this.run.interrupts));
     E.on('weakHit', () => this.run && ++this.run.weakHits === 150 && this.fire('deadeye'));

@@ -16,7 +16,6 @@ export function handleGameMessage(game, msg, from) {
     case 'cast': {
       if (msg.pid === game.player?.id) return;
       game.remotes.get(msg.pid)?.replayCast(msg);
-      if (msg.slot === 'ultimate') game.noteUlt(msg.pid); // (a Convergence, if ours was just cast)
       break;
     }
     // ------------------------------------------------ client -> host
