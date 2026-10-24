@@ -10,7 +10,7 @@ import { buildLevel } from '../world/builder.js';
 import { Collision } from '../world/collision.js';
 import { BIOMES } from '../world/biomes.js';
 import { themeFor } from '../audio/themes.js';
-import { SpellRuntime, soundEl } from './spells.js';
+import { SpellRuntime, soundEl, isWeak } from './spells.js';
 import { ActorManager, typeIndex, hasAffix } from './actors.js';
 import { Director } from './director.js';
 import { Encounters } from './encounters.js';
@@ -39,6 +39,7 @@ const WADE_C = [0.16, 0.22, 0.22]; // ripple rings on channel water
 // ---------------------------------------------------------------------------
 
 const _v = new THREE.Vector3();
+const _aim = new THREE.Vector3(); // (the crosshair probe's hit point)
 
 // what a ping names when it lands on a thing
 const PING_NAMES = { pedestal: (it) => (it.relic ? 'Relic' : 'Tome'), chest: 'Chest', mimic: 'Chest', shop: 'Merchant', shrine: 'Shrine', altar: 'Blood Altar', gambler: 'Gambler', portal: 'Portal', victoryPortal: 'Victory', abyssPortal: 'The Abyss' };
@@ -113,6 +114,7 @@ export class Game {
     this.hitSoundT = 0;
     // what happened, for whoever listens (run tracking, feats, the run summary: src/meta)
     this.events = new Emitter();
+    this._aimT = 0; // (the crosshair's weak-point probe: next run)
     this._learned = null; this._dashN = 0; // (once-ever tips: learn())
     this.events.on('dashJump', () => this.learn('dashjump'));
     // (Nightmare) a chamber you leave untouched earns a Dread Mark: watch what the local player takes per fight
@@ -691,6 +693,8 @@ export class Game {
     this.audio?.setIntensity?.(p.alive && !p.downed ? clamp(1 - p.hp / p.maxHp - 0.4, 0, 1) * 1.6 : 1);
     // net
     if (this.net) this.net.tick(realDt, this);
+    // the crosshair turns gold over a weak point, so aim is something you can see and practise (20 Hz)
+    if ((this._aimT -= realDt) <= 0) { this._aimT = 0.05; this.ui?.aimWeak?.(this._aimOnWeak(cam.position, p)); }
     this.ui?.update(realDt, this);
     this._checkRunEnd(realDt);
   }
@@ -1409,6 +1413,12 @@ export class Game {
       this.audio?.play('pickup_health');
       if (d.id > 0) this.net?.broadcastOrSend({ t: 'pick', id: d.id });
     }
+  }
+  _aimOnWeak(o, p) {
+    if (!p.alive || p.downed || this.cinematic) return false;
+    const cp = Math.cos(p.pitch);
+    const a = this.spells.firstActor(o.x, o.y, o.z, -Math.sin(p.yaw) * cp, Math.sin(p.pitch), -Math.cos(p.yaw) * cp, 60, 0.05, _aim);
+    return !!a && !a.boss && isWeak(a, _aim.x, _aim.y, _aim.z);
   }
   // An interrupt (a foe killed or staggered mid-wind-up) pays the wizard who did it: ult charge
   // and a call (host decides; a client's credit goes to it as 'intr')

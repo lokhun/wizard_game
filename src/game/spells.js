@@ -13,10 +13,17 @@ import { segPointDist2 } from '../core/math.js';
 
 // a direct hit on a weak point (Spells.update) deals this much more: aim pays
 export const WEAK_MULT = 1.35;
-// is (x, y, z) on a's weak point? the head of an upright body (its top quarter), the front of a long one
+// is (x, y, z) on a's weak point? the front of a long body; on an upright one its head: from the base of
+// its head bone up, where the head is now (it follows a lunge or a stoop); a body with no head bone (a
+// slime, a grimoire), or a bone not yet placed, uses the top quarter of its hit capsule
 export function isWeak(a, x, y, z) {
   if (a.hitL > a.hitR * 0.9) return (x - a.pos.x) * Math.sin(a.yaw) + (z - a.pos.z) * Math.cos(a.yaw) > a.hitL * 0.45;
   const y0 = a.pos.y + a.hitY0, y1 = a.pos.y + a.hitH;
+  const hb = a.model?.bones?.head;
+  if (hb) {
+    const hy = hb.matrixWorld.elements[13];
+    if (hy > y0 + (y1 - y0) * 0.4 && hy < y1) return y >= hy - 0.06;
+  }
   return y >= y1 - (y1 - y0) * 0.25;
 }
 const _v = new THREE.Vector3();
@@ -640,6 +647,28 @@ export class SpellRuntime {
 
   // -------------------------------------------------------------- queries
   // hostile actors hit by a ray, sorted by distance (stops at walls)
+  // The first foe along a ray (the crosshair's probe, every few frames: allocation-free, same capsule
+  // test as rayActors): returns it and writes where the ray meets it into out, or null.
+  firstActor(ox, oy, oz, dx, dy, dz, maxDist, radius, out) {
+    const g = this.g;
+    const wall = g.collision.raycast(ox, oy, oz, dx, dy, dz, maxDist, 0.2);
+    const hl = Math.hypot(dx, dz) || 1e-6;
+    let best = wall, hit = null;
+    for (const a of g.actors.hostiles()) {
+      const fx = Math.sin(a.yaw), fz = Math.cos(a.yaw), r = a.hitR + radius;
+      for (let k = a.hitL ? -2 : 0; k <= (a.hitL ? 2 : 0); k++) {
+        const cx = a.pos.x + fx * a.hitL * k / 2, cz = a.pos.z + fz * a.hitL * k / 2;
+        const tt = ((cx - ox) * dx + (cz - oz) * dz) / (hl * hl);
+        if (tt < 0 || tt >= best) continue;
+        const px = ox + dx * tt, py = oy + dy * tt, pz = oz + dz * tt;
+        if ((cx - px) ** 2 + (cz - pz) ** 2 > r * r) continue;
+        if (py < a.pos.y + a.hitY0 - radius || py > a.pos.y + a.hitH + radius) continue;
+        best = tt; hit = a; out.set(px, py, pz);
+      }
+    }
+    return hit;
+  }
+
   rayActors(origin, dir, maxDist, radius = 0.2) {
     const g = this.g;
     const wall = g.collision.raycast(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, maxDist, 0.2);

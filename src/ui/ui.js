@@ -273,7 +273,7 @@ export class UI {
           <div><span class="k">Esc</span> pause & settings</div><div><span class="k">${esc(keyOf('ping'))}</span> ping a foe, item or spot</div>
           <div><span class="k">${esc(keyOf('item'))}</span> use your item</div><div></div>
         </div>
-        <p><b style="color:var(--bronze-hi)">Skill pays:</b> dash through a blow at the last moment for a <i>perfect dodge</i> (+25% damage for a few seconds); jump during a dash (or just after) for a <i>dash-jump</i>, a long bound that keeps half its speed; aim for the head (the front of a beast) and a direct hit strikes a <i>weak point</i> for +35%, marked in gold; stagger or kill a foe as it winds up and you <i>interrupt</i> the blow (+5% ultimate). Enemy shots only bend toward you early in their flight: a late sidestep always beats them. The run summary scores your mastery against your best. <i>Items</i> (a fire flask, a frost phial, a rallying bell...) drop from elites and bosses, wait in chests and sit on the merchant's table: you carry one at a time, so spend it. A boss that lands a leap, ends a whirl or a charge is <i>EXPOSED</i> for a moment (+30% damage): dodge the blow, then punish it. When you fall, <i>What hit you</i> shows the blows that did it.</p>
+        <p><b style="color:var(--bronze-hi)">Skill pays:</b> dash through a blow at the last moment for a <i>perfect dodge</i> (+25% damage for a few seconds); jump during a dash (or just after) for a <i>dash-jump</i>, a long bound that keeps half its speed; aim for the head (the front of a beast; the crosshair turns gold over one) and a direct hit strikes a <i>weak point</i> for +35%, marked in gold; stagger or kill a foe as it winds up and you <i>interrupt</i> the blow (+5% ultimate). Enemy shots only bend toward you early in their flight: a late sidestep always beats them. The run summary scores your mastery against your best. <i>Items</i> (a fire flask, a frost phial, a rallying bell...) drop from elites and bosses, wait in chests and sit on the merchant's table: you carry one at a time, so spend it. A boss that lands a leap, ends a whirl or a charge is <i>EXPOSED</i> for a moment (+30% damage): dodge the blow, then punish it. When you fall, <i>What hit you</i> shows the blows that did it.</p>
         <p><b style="color:var(--bronze-hi)">For a harder fight:</b> <i>Nightmare</i> (on the wizard select) makes foes smarter and relentless and gives every boss a new move; chambers cleared without a scratch earn Dread Marks (+5% damage each). <i>Boss Rush</i> pits you against the five bosses back to back. After your first victory, <i>Pacts</i> raise the heat for finer rewards, and the Hollow King's fall opens the endless <i>Abyss</i>.</p>
         <p><b style="color:var(--bronze-hi)">Elemental reactions:</b> combine schools for bonus effects — <i>Melt</i> (fire on frozen), <i>Shatter</i> (shards, earth or blades on frozen), <i>Overload</i> (lightning on burning), <i>Electrocute</i> (lightning on wet foes in water), <i>Combust</i> (fire on poison), <i>Purge</i> (holy on hexed) and more. In co-op, set up reactions for each other!</p>
         <p><b style="color:var(--bronze-hi)">Co-op:</b> one wizard hosts and shares the party code. Fallen wizards can be revived by holding <b>${esc(keyOf('interact'))}</b> beside them. Wizards who bleed out return when the chamber is cleared. Each player picks their own rewards — no loot stealing.</p>
@@ -989,6 +989,13 @@ export class UI {
     void el.offsetWidth;
     el.classList.add('show');
     this.bannerT = fight ? Math.min(dur, 2.2) : dur;
+  }
+  // the crosshair over a weak point (Game._aimOnWeak): gold, the ring drawn in
+  aimWeak(on) {
+    const h = this.h;
+    if (!h || on === h.aimWeak) return;
+    h.aimWeak = on;
+    (h.xhair ??= this.hudEl.querySelector('.crosshair'))?.classList.toggle('weak', on); // (on this run's HUD)
   }
   // a kill streak's call, just under the crosshair: pops in and fades on its own (one reused element)
   streak(text, sub, color) {
