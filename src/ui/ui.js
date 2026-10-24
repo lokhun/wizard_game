@@ -31,6 +31,8 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 // cached DOM writes: skip when the value hasn't changed
 // replay a one-shot CSS flash without a forced layout (the old remove / read offsetWidth / add): switch
 // between `cls` and its twin `cls2`, which run the same keyframes under another name (styles.css)
+// status pips over a foe's bar: mask bit, colour (burn, chill, frozen, shock, poison, hex, bleed, slow, empowered)
+const PIPS = [1, '#ff7a30', 2, '#7fd8ff', 4, '#c8f4ff', 8, '#9fb4ff', 16, '#9adf3a', 32, '#c050ff', 64, '#ff3048', 128, '#40e0c8', 4096, '#ffc040'];
 function replay(el, cls) { const a = el.classList.contains(cls); el.classList.toggle(cls, !a); el.classList.toggle(cls + '2', a); }
 function setText(el, v) { if (el && el._t !== v) { el._t = v; el.textContent = v; } }
 function setStyle(el, k, v) { if (!el) return; const c = (el._s ??= {}); if (c[k] !== v) { c[k] = v; el.style[k] = v; } }
@@ -787,6 +789,8 @@ export class UI {
     g.clearRect(0, 0, innerWidth, innerHeight);
     const cam = this.renderer.camera;
     // enemy health bars (only damaged or elite/boss nearby)
+    const LR = (this._nameRects ??= new Float32Array(4 * 12)); // (elite names drawn this frame: see below)
+    let nl = 0;
     for (const a of game.actors.list) {
       if (a.dead || a.boss) continue;
       if (a.hp >= a.maxHp && !a.elite && a.faction === 'enemy') continue;
@@ -811,13 +815,22 @@ export class UI {
         // (built once per affix set, not every frame; a champion's name comes after spawn)
         if (a._lblFor !== a.def || a._lblA !== a.affix || a._lblB !== a.affix2) { a._lblFor = a.def; a._lblA = a.affix; a._lblB = a.affix2; a._lbl = capAffix(a.affix) + capAffix(a.affix2) + a.def.name; }
         const b = this._textBitmap(a._lbl, '600 11px Cinzel, serif', '#ffb050', { lw: 0 });
-        const lw = b.w / 2 + 2;
-        this._blitText(g, b, Math.max(lw, Math.min(innerWidth - lw, s.x)), s.y - 9);
+        const lw = b.w / 2 + 2, lx = Math.max(lw, Math.min(innerWidth - lw, s.x));
+        // champions side by side: a name that would print over another steps up clear of it
+        let ly = s.y - 9;
+        const hw = b.w * 0.42, hh = 7;
+        for (let j = 0; j < nl; j++) {
+          const o = j * 4;
+          if (lx + hw < LR[o] || lx - hw > LR[o + 2] || ly + hh < LR[o + 1] || ly - hh > LR[o + 3]) continue;
+          ly = LR[o + 1] - hh - 1;
+        }
+        if (nl < 12) { const o = nl * 4; LR[o] = lx - hw; LR[o + 1] = ly - hh; LR[o + 2] = lx + hw; LR[o + 3] = ly + hh; nl++; }
+        this._blitText(g, b, lx, ly);
       }
       // status pips
       let px = s.x - w / 2;
-      for (const [k, col] of [[1, '#ff7a30'], [2, '#7fd8ff'], [4, '#c8f4ff'], [8, '#9fb4ff'], [16, '#9adf3a'], [32, '#c050ff'], [64, '#ff3048'], [128, '#40e0c8'], [4096, '#ffc040']]) {
-        if (a.mask & k) { g.fillStyle = col; g.fillRect(px, s.y + hgt + 2, 6, 3); px += 8; }
+      for (let j = 0; j < PIPS.length; j += 2) {
+        if (a.mask & PIPS[j]) { g.fillStyle = PIPS[j + 1]; g.fillRect(px, s.y + hgt + 2, 6, 3); px += 8; }
       }
       g.globalAlpha = 1;
     }
