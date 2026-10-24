@@ -47,7 +47,7 @@ function getTemplate(spec, factory) {
     const dims = spec.build(rig);
     if (dims) spec.dims = dims;
     rig.finish(lib);
-    tpl = { root: rig.root, tris: rig.tris, meshes: rig.root.children.filter((c) => c.isMesh).length, soles: spec.ground === false ? null : soleProbe(rig.root) };
+    tpl = { root: rig.root, tris: rig.tris, meshes: rig.root.children.filter((c) => c.isMesh).length, soles: spec.ground === false ? null : soleProbe(rig.root, spec.soles) };
     map.set(spec.id, tpl);
   }
   return tpl;

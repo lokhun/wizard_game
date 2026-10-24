@@ -32,7 +32,7 @@ function stoneC(v, seed = 1, base = 1) {
 }
 
 export const stoneWyvern = {
-  id: 'stoneWyvern', height: 3.6, radius: 1.6, length: 6.5, boss: true, eyeColor: 0xffa020, magicColor: 0xff6a18, defaultAttack: 'breath', attackTypes: ['breath', 'slam', 'sweep', 'fly', 'roar'], crackColor: MAGMA, crackIntensity: 4.5, orbSize: 0.22, flutter: 0.05,
+  id: 'stoneWyvern', height: 3.6, radius: 1.6, length: 6.5, boss: true, eyeColor: 0xffa020, magicColor: 0xff6a18, defaultAttack: 'breath', attackTypes: ['breath', 'slam', 'sweep', 'fly', 'roar'], crackColor: MAGMA, crackIntensity: 4.5, orbSize: 0.22, flutter: 0.05, soles: ['toesL', 'toesR'],
   build(rig) {
     rig.bone('base', null);
     rig.bone('ground', null); // fx on the floor, never lifted or spun

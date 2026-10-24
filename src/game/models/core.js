@@ -755,7 +755,7 @@ export class Rig {
 // the bind pose. EnemyInstance runs them through the leg each frame and lifts
 // the body by however far a sole would sink into the floor (a heavy stance or a
 // toe pitched down mid-stride buried the feet of the bigger bodies).
-export function soleProbe(root, names = ['footL', 'footR']) {
+export function soleProbe(root, names = ['footL', 'footR']) { // (a spec's soles: other bones that carry its weight)
   root.updateMatrixWorld(true);
   const out = [], v = new THREE.Vector3(), inv = new THREE.Matrix4();
   for (const name of names) {
@@ -1023,7 +1023,7 @@ export class EnemyInstance {
     const r = this.spec.pose(this, S, this.P, dt);
     if (typeof r === 'number') rate = r;
     this.P.damp(dt, rate);
-    if (this._soles) this._ground(dt, S.anim !== 'death' && S.anim !== 'spawn' && !this._flyForce);
+    if (this._soles) this._ground(dt, S.anim !== 'death' && S.anim !== 'spawn' && !this._flying);
     if (Math.abs(this._opTarget - this._opacity) > 1e-3) { this._opacity = this._opTarget; this._dirty = true; }
     this._updateOrb(dt);
     if (this._flash > 0) { this._flash = Math.max(0, this._flash - dt * 8); this._dirty = true; }
