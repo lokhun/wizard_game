@@ -850,18 +850,38 @@ export class UI {
       g.globalAlpha = 1;
     }
     // floating texts (reactions etc.)
-    for (let i = this.floats.length - 1; i >= 0; i--) {
+    // call-outs (BLOCKED, SHATTER, INTERRUPT...): oldest first, each keeps its place and a newer one
+    // that would cover it steps up just clear of it, so a pile of them stays readable; none is
+    // drawn off the top of the screen (the rects are reused: no garbage)
+    const FR = (this._floatRects ??= new Float32Array(4 * 24));
+    let nr = 0, keep = 0;
+    for (let i = 0; i < this.floats.length; i++) {
       const f = this.floats[i];
       f.t += dt;
       f.pos.y += dt * 0.8;
+      if (f.t > 1.4) continue;
+      this.floats[keep++] = f;
       const s = this._project(f.pos);
-      if (f.t > 1.4) { this.floats.splice(i, 1); continue; }
       if (!s) continue;
+      const b = this._textBitmap(f.text, `700 ${f.big ? 22 : 15}px Cinzel, serif`, f.color, { stroke: 'rgba(0,0,0,0.9)', lw: 4, glow: 12 });
+      const hw = b.w * 0.36, hh = b.h * 0.3; // (the lettering, not the glow around it)
+      let y = Math.max(s.y, hh + 34);
+      for (let pass = 0; pass < 4; pass++) {
+        let moved = false;
+        for (let j = 0; j < nr; j++) {
+          const o = j * 4;
+          if (s.x + hw < FR[o] || s.x - hw > FR[o + 2] || y + hh < FR[o + 1] || y - hh > FR[o + 3]) continue;
+          y = FR[o + 1] - hh - 2; moved = true;
+        }
+        if (!moved) break;
+      }
+      if (nr < 24) { const o = nr * 4; FR[o] = s.x - hw; FR[o + 1] = y - hh; FR[o + 2] = s.x + hw; FR[o + 3] = y + hh; nr++; }
       g.globalAlpha = f.t > 1 ? 1 - (f.t - 1) / 0.4 : 1;
       const pop = f.t < 0.15 ? 1 + (1 - f.t / 0.15) * 0.8 : 1;
-      this._blitText(g, this._textBitmap(f.text, `700 ${f.big ? 22 : 15}px Cinzel, serif`, f.color, { stroke: 'rgba(0,0,0,0.9)', lw: 4, glow: 12 }), s.x, s.y, pop);
+      this._blitText(g, b, s.x, y, pop);
       g.globalAlpha = 1;
     }
+    this.floats.length = keep;
     // pings: a foe ping rides above its foe, a thing ping names the thing; off screen
     // (or behind you) a ping clings to the screen's edge, pointing the way
     for (const pg of game.pings ?? []) {
