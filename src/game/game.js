@@ -1418,7 +1418,7 @@ export class Game {
     if (!p.alive || p.downed || this.cinematic) return false;
     const cp = Math.cos(p.pitch);
     const a = this.spells.firstActor(o.x, o.y, o.z, -Math.sin(p.yaw) * cp, Math.sin(p.pitch), -Math.cos(p.yaw) * cp, 60, 0.05, _aim);
-    return !!a && !a.boss && isWeak(a, _aim.x, _aim.y, _aim.z);
+    return !!a && isWeak(a, _aim.x, _aim.y, _aim.z); // (bosses too: their heads count as anyone's)
   }
   // An interrupt (a foe killed or staggered mid-wind-up) pays the wizard who did it: ult charge
   // and a call (host decides; a client's credit goes to it as 'intr')
