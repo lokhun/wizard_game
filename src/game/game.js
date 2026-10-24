@@ -3,6 +3,7 @@ import { TextureFactory } from '../render/textures.js';
 import { LightPool } from '../render/lights.js';
 import { Particles, SPR } from '../render/particles.js';
 import { VFX, fxOf } from '../render/vfx.js';
+import { ContactShadows } from '../render/contact.js';
 import { generateLevel, ROOM, T, K_ALT, K_WATER, WATER_Y } from '../world/levelgen.js';
 import { keyOf } from '../core/input.js';
 import { PACTS, PACT_BY_ID, difficultyFor, abyssLaws, lawAt } from '../meta/pacts.js';
@@ -75,6 +76,7 @@ export class Game {
     this.particles = new Particles(this.scene);
     this.vfx = new VFX(this.scene, renderer.camera, this.particles, this.lights);
     this.vfx.floorAt = (x, z) => this.groundY(x, z);
+    this.contact = new ContactShadows(this.scene);
     this.spells = new SpellRuntime(this);
     this.actors = new ActorManager(this);
     this.director = new Director(this);
@@ -658,6 +660,7 @@ export class Game {
     this._ventTells(realDt);
     this._ambient(realDt);
     this.critters?.update(dt, this.time, this.renderer.camera.position, this.allPlayers());
+    this.contact.update(this);
     // big boss arenas outgrow the light pool: lift the ambient a little while you stand in one
     if (this.baseHemi && !this.ended && !this._victoryLight) {
       const br = this.level.bossRoom, pp = this.player.pos;
