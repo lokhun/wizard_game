@@ -120,7 +120,7 @@ function partyCol(S, me, best) {
 
 // Show the summary. S: this machine's summary (tracker.summary()), with S.records.
 // party: [{ id, name, classId }] of the teammates, remotes: Map(pid -> summary)
-export function showSummary(ui, S, { party = [], remotes = new Map(), onMenu, onAgain } = {}) {
+export function showSummary(ui, S, { party = [], remotes = new Map(), onMenu, onAgain, menuLabel = 'Return to Menu' } = {}) {
   ui.closeAllModals();
   const won = S.won;
   const b = BIOMES[Math.min(S.floor, BIOMES.length - 1)];
@@ -187,7 +187,7 @@ export function showSummary(ui, S, { party = [], remotes = new Map(), onMenu, on
       </div>
       </div>
       <div class="rs-foot">
-        <button class="btn primary" id="rsMenu">Return to Menu <span class="hint">ENTER</span></button>
+        <button class="btn primary" id="rsMenu">${menuLabel} <span class="hint">ENTER</span></button>
         ${onAgain ? `<button class="btn" id="rsAgain">${S.daily ? 'Retry the Rite' : 'Ascend Again'} <span class="hint">R</span></button>` : ''}
       </div>
     </div>`);

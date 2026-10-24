@@ -234,3 +234,66 @@ export function rollRelics(player, n = 3, rng = Math.random) {
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// What a tome changes, as [label, from, to] rows: the merchant shows them so
+// you see exactly what you're buying ("Damage 124% -> 136%"). `before` and
+// `after` are the player's stats without and with it (LocalPlayer.computeStats).
+// ---------------------------------------------------------------------------
+const P = (x) => `${Math.round(x * 100)}%`;
+const plusP = (x) => `+${Math.round((x ?? 0) * 100)}%`;
+const STAT_VIEW = [
+  ['maxHp', 'Max health', (x) => `${Math.round(x)}`],
+  ['dmgMult', 'Damage', P],
+  ['critChance', 'Crit chance', P],
+  ['critMult', 'Crit damage', P],
+  ['rateMult', 'Attack speed', plusP],
+  ['cdr', 'Cooldown reduction', P],
+  ['extraProj', 'Extra projectiles', (x) => `${x}`],
+  ['pierce', 'Pierce', (x) => `${x}`],
+  ['bounce', 'Wall bounces', (x) => `${x}`],
+  ['homing', 'Homing', (x) => (x ? 'on' : 'off')],
+  ['splitOnHit', 'Split on hit', (x) => (x ? 'on' : 'off')],
+  ['aoeMult', 'Area', P],
+  ['projSpeed', 'Projectile speed', P],
+  ['ultRate', 'Ultimate charge', P],
+  ['execute', 'vs foes under 30%', plusP],
+  ['bossDmg', 'vs elites & bosses', plusP],
+  ['armor', 'Damage reduction', P],
+  ['regen', 'Health regen', (x) => `${(x ?? 0).toFixed(1)}/s`],
+  ['lifesteal', 'Lifesteal', P],
+  ['killHeal', 'Heal per kill', (x) => `${Math.round(x ?? 0)}`],
+  ['moveSpeed', 'Move speed', (x) => `${x.toFixed(1)} m/s`],
+  ['dashCharges', 'Dash charges', (x) => `${x}`],
+  ['dashCd', 'Dash recharge', (x) => `${x.toFixed(1)}s`],
+  ['dashIv', 'Dash untouchable', (x) => `+${Math.round((x ?? 0) * 1000)} ms`],
+  ['pdDur', 'Perfect dodge buff', (x) => `+${(x ?? 0).toFixed(1)}s`],
+  ['thorns', 'Thorns', (x) => `${Math.round(x ?? 0)}`],
+  ['goldMult', 'Gold found', P],
+  ['extraLives', 'Extra lives', (x) => `${x ?? 0}`],
+  ['echo', 'Instant recharge', (x) => P(x ?? 0)],
+];
+const STATUS_NAME = { burn: 'Burn', chill: 'Chill', shock: 'Shock', poison: 'Poison', hex: 'Hex', bleed: 'Bleed', slow: 'Slow' };
+const statuses = (inf) => Object.keys(inf ?? {}).map((k) => STATUS_NAME[k] ?? k).join(' + ') || 'none';
+
+export function statChanges(before, after, player) {
+  const rows = [];
+  for (const [k, label, fmt] of STAT_VIEW) {
+    const a = fmt(before[k] ?? 0), b = fmt(after[k] ?? 0);
+    if (a !== b) rows.push([label, a, b]);
+  }
+  const ia = statuses(before.infuse), ib = statuses(after.infuse);
+  if (ia !== ib) rows.push(['Primary hits', ia, ib]);
+  for (const el of new Set([...Object.keys(before.elementMult ?? {}), ...Object.keys(after.elementMult ?? {})])) {
+    const a = P(before.elementMult?.[el] ?? 1), b = P(after.elementMult?.[el] ?? 1);
+    if (a !== b) rows.push([`${el[0].toUpperCase() + el.slice(1)} damage`, a, b]);
+  }
+  // augments change what a spell does: name the spell, then what it becomes
+  const spells = CLASSES[player.classId].spells;
+  for (const slot of Object.keys(after.augSlot ?? {})) {
+    const names = (ids) => (ids ?? []).map((id) => AUGMENTS.find((x) => x.id === id)?.name).filter(Boolean).join(' + ');
+    const a = names(before.augSlot?.[slot]) || 'standard', b = names(after.augSlot[slot]) || 'standard';
+    if (a !== b) rows.push([spells[slot]?.name ?? slot, a, b]);
+  }
+  return rows;
+}

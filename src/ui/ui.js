@@ -3,7 +3,7 @@ import { iconSVG, classEmblem } from './icons.js';
 import { ITEMS } from '../game/items.js';
 import { CLASS_LIST, SLOTS } from '../game/classes.js';
 import { CLASS_META, ELEMENT_COLORS } from '../game/classMeta.js';
-import { RARITY } from '../game/upgrades.js';
+import { RARITY, statChanges } from '../game/upgrades.js';
 import { ROOM, T, K_WATER } from '../world/levelgen.js';
 import { BIOMES } from '../world/biomes.js';
 import { fightsHere } from '../game/director.js';
@@ -11,6 +11,15 @@ import { updateRelicShelf, relicListHTML, relicCard } from './relicUI.js';
 import { KEYS as BINDS, REBINDABLE, keyOf, keyLabel, applyBindings } from '../core/input.js';
 
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
+// a teammate's health: green, amber when hurt, orange when low - never an enemy's red
+const allyHpColor = (f) => (f > 0.5 ? '#4ade80' : f > 0.25 ? '#f5c542' : '#ff9a3c');
+// what a merchant's ware changes on you, from -> to (a tome: your stats without and with it)
+function shopDiff(it, player) {
+  let rows = it.preview?.(player) ?? [];
+  if (it.tome && player.computeStats) rows = statChanges(player.computeStats(), player.computeStats([it.tome]), player);
+  if (!rows.length) return '';
+  return `<div class="sdiff">${rows.slice(0, 4).map(([k, a, b]) => `<div><span class="k">${esc(k)}</span><span class="a">${esc(a)}</span><span class="arr">→</span><span class="b">${esc(b)}</span></div>`).join('')}</div>`;
+}
 // the key shown on a spell slot follows the player's bindings
 const capAffix = (k) => (k ? k[0].toUpperCase() + k.slice(1) + ' ' : '');
 const slotKey = (s) => (s === 'primary' ? 'LMB' : s === 'secondary' ? 'RMB' : keyOf(s));
@@ -519,7 +528,7 @@ export class UI {
       this._teamKey = tk;
       h.team.innerHTML = team.map((r) => `
         <div class="tm ${r.downed || r.dead ? 'down' : ''}" style="--pc:${hex(r.meta.color)}"><div class="row"><span class="tmedal">${classEmblem(r.classId, hex(r.meta.color), 18)}</span><span class="tname">${esc(r.name)}</span><span class="thp">${r.dead ? 'SLAIN' : r.downed ? 'DOWN' : Math.ceil(r.hp)}</span></div>
-        <div class="bar small"><div class="fill" style="width:${Math.max(0, r.hp / r.maxHp) * 100}%"></div></div></div>`).join('');
+        <div class="bar small ally"><div class="fill" style="width:${Math.max(0, r.hp / r.maxHp) * 100}%;--hpc:${r.downed || r.dead ? '#8a8a8a' : allyHpColor(r.hp / r.maxHp)}"></div></div></div>`).join('');
     }
     // boss
     if (this.bossActor) {
@@ -814,8 +823,11 @@ export class UI {
       const s = this._project({ x: r.pos.x, y: r.pos.y + 2.25, z: r.pos.z });
       if (!s || s.x < 0 || s.y < 0 || s.x > innerWidth || s.y > innerHeight) { if (!r.dead) this._edgeMark(g, r); continue; }
       this._blitText(g, this._textBitmap(r.name + (r.downed ? ' — DOWNED' : ''), '600 13px Cinzel, serif', r.downed ? '#ff5050' : hex(r.meta.color2 ?? r.meta.color), { stroke: 'rgba(0,0,0,0.7)', lw: 3 }), s.x, s.y - 4);
-      g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(s.x - 24, s.y + 5, 48, 4);
-      g.fillStyle = '#d03030'; g.fillRect(s.x - 24, s.y + 5, 48 * Math.max(0, r.hp / r.maxHp), 4);
+      // a teammate's bar: wide, outlined and in ally colours (never an enemy's red)
+      const f = Math.max(0, Math.min(1, r.hp / r.maxHp)), bw = 64, bh = 7, bx = s.x - bw / 2, by = s.y + 5;
+      g.fillStyle = 'rgba(0,0,0,0.75)'; g.fillRect(bx - 2, by - 2, bw + 4, bh + 4);
+      g.strokeStyle = 'rgba(235,245,235,0.8)'; g.lineWidth = 1; g.strokeRect(bx - 1.5, by - 1.5, bw + 3, bh + 3);
+      g.fillStyle = r.downed || r.dead ? '#8a8a8a' : allyHpColor(f); g.fillRect(bx, by, bw * f, bh);
       if (r.downed) {
         g.strokeStyle = '#ffd860'; g.lineWidth = 3;
         g.beginPath(); g.arc(s.x, s.y + 26, 12, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (r.reviveProgress ?? 0)); g.stroke();
@@ -1051,7 +1063,14 @@ export class UI {
   _closeModal(m, relock = true) {
     m.remove();
     this.modalStack = this.modalStack.filter((x) => x !== m);
-    if (relock && !this.modalOpen && this.game && !this.game.ended && !this.pauseEl) this.input.lock();
+    if (!relock) return;
+    // A pick often opens the next screen straight away (the gambler's roll ->
+    // its tome): relocking here and unlocking there in the same click raced in
+    // the browser, and the last relock could be refused, leaving the cursor
+    // loose. Relock a beat later, once no screen is open (still inside the
+    // click's user activation).
+    const want = () => !this.modalOpen && this.game && !this.game.ended && !this.pauseEl;
+    setTimeout(() => { if (want()) this.input.lock(want); }, 0);
   }
 
   _choiceModal(title, sub, items, render, onPick, allowSkip = true, reroll = null) {
@@ -1114,7 +1133,7 @@ export class UI {
       const c = r ? r.color : it.relic ? it.color ?? '#ffb030' : '#e8d8b0';
       return `<div class="shop-item ${it.sold ? 'sold' : ''} ${player.gold < it.price ? 'cant' : ''}" data-i="${i}" style="--rc:${c}">
         <div class="sicon">${iconSVG(it.icon, c, 34)}</div>
-        <div class="sbody"><div class="sname" style="color:${r || it.relic ? c : '#f0e2c4'}">${it.name}</div><div class="sdesc">${it.desc}</div><div class="price">${it.sold ? 'SOLD' : `${iconSVG('gold', '#f0c050', 14)} ${it.price}`}</div></div>
+        <div class="sbody"><div class="sname" style="color:${r || it.relic ? c : '#f0e2c4'}">${it.name}</div><div class="sdesc">${it.desc}</div>${it.sold ? '' : shopDiff(it, player)}<div class="price">${it.sold ? 'SOLD' : `${iconSVG('gold', '#f0c050', 14)} ${it.price}`}</div></div>
       </div>`;
     }).join('');
     const m = this._modal(`

@@ -11,7 +11,7 @@ export { showCodex, showPactBoard, pactStrip, pactsUnlocked, nightmareOn, toggle
 
 // Wire the meta layer onto a game: the run tracker listens to game.events,
 // feats pop a toast in-run, and the run's end opens the summary.
-// hooks: { onMenu(), onAgain() | null, canAgain() }
+// hooks: { onMenu(), onAgain() | null, canAgain(), menuLabel() (the first button's text) }
 export function attachMeta(game, ui, hooks = {}) {
   const toast = featToaster(ui);
   let screen = null;
@@ -20,7 +20,7 @@ export function attachMeta(game, ui, hooks = {}) {
     onEnd: (S, t) => {
       toast.clear();
       const party = [...game.remotes.values()].map((r) => ({ id: r.id, name: r.name, classId: r.classId }));
-      screen = showSummary(ui, S, { party, remotes: t.remote, onMenu: hooks.onMenu, onAgain: hooks.canAgain?.() ? hooks.onAgain : null });
+      screen = showSummary(ui, S, { party, remotes: t.remote, onMenu: hooks.onMenu, onAgain: hooks.canAgain?.() ? hooks.onAgain : null, menuLabel: hooks.menuLabel?.() ?? undefined });
     },
     onRemote: () => screen?.el.isConnected && screen.addRemote(),
   });

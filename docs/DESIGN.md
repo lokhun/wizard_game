@@ -197,7 +197,7 @@ The target pace is quicker than Dark and Darker, nowhere near a boomer shooter, 
 A locked room must always open. The director's watchdog (`Director._encounter`) counts progress as any foe falling or losing health: after 20 s with none, every foe the fight still counts is pulled to the party wherever it is (wedged in a wall, fallen out of the level, wandered into another room); after 65 s with none, what remains is banished and the doors open. A boss whose spawn failed is called again once. In co-op the host re-sends which room is shut and which are cleared every 2 s (`locks`), so a peer that missed a door opening never stays locked in. A wizard drawn into a fight appears just inside the door nearest them, not in the middle of the room.
 
 ## Networking
-- **One build per party.** `hello` and `welcome` carry `PROTOCOL` (`net.js`); a joiner on another build (a stale cache after a release) is turned away with a message to refresh, either side, rather than let in to play out of step. Bump it whenever a message or a shared rule changes.
+- **One build per party.** Every build has an id (`BUILD`, `src/core/version.js`, written as `version.json`); `hello` carries it and the host turns away a joiner on another build (`version`): an older joiner updates itself, a newer one is told the host should reload. An open game checks `version.json` every minute and reloads onto a new deploy in the menu.
 - **Topology:** WebRTC through PeerJS. The host is authoritative for AI, room state, drops and actor HP.
 - **Clients** own their own movement and health. Hit detection for a player's spells runs on that player's machine.
 - **Replication:**

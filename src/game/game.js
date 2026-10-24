@@ -2309,11 +2309,15 @@ function makeShopStock(game, p) {
   const f = game.floorIndex;
   const items = [];
   items.bought = 0;
-  items.push({ name: 'Healing Draught', desc: 'Restore 50% health.', icon: 'heart', base: 30 + f * 12, apply: (pl) => { pl.heal(pl.maxHp * 0.5); game.healPulse = 1; } });
-  items.push({ name: 'Elixir of Vigor', desc: '+25 max health.', icon: 'heart', base: 70 + f * 22, apply: (pl) => { pl.upgrades.push({ def: TOMES.find((t) => t.id === 'vitality'), rarity: 0, mult: 1.25 }); pl.recomputeStats(); } });
-  { const id = randomItem(), d = ITEMS[id]; items.push({ name: d.name, desc: d.desc + ' (Item: one use.)', icon: d.icon, color: d.color, relic: true, base: 45 + f * 14, apply: () => game.giveItem(id) }); }
+  // (preview: the from -> to the shop shows; a `tome` is previewed from its stats)
+  items.push({ name: 'Healing Draught', desc: 'Restore 50% health.', icon: 'heart', base: 30 + f * 12, apply: (pl) => { pl.heal(pl.maxHp * 0.5); game.healPulse = 1; },
+    preview: (pl) => [['Health', `${Math.ceil(pl.hp)}`, `${Math.min(pl.maxHp, Math.ceil(pl.hp + pl.maxHp * 0.5))}`]] });
+  const vigor = { def: TOMES.find((t) => t.id === 'vitality'), rarity: 0, mult: 1.25 };
+  items.push({ name: 'Elixir of Vigor', desc: '+25 max health.', icon: 'heart', base: 70 + f * 22, tome: vigor, apply: (pl) => { pl.upgrades.push({ ...vigor }); pl.recomputeStats(); } });
+  { const id = randomItem(), d = ITEMS[id]; items.push({ name: d.name, desc: d.desc + ' (Item: one use.)', icon: d.icon, color: d.color, relic: true, base: 45 + f * 14, apply: () => game.giveItem(id),
+    preview: (pl) => [['Item', pl.item ? ITEMS[pl.item]?.name ?? 'none' : 'none', d.name]] }); }
   const tomes = rollTomes(p, 3, 1);
-  for (const t of tomes) items.push({ name: t.def.name, desc: (t.def.aug ? `Augment · ${t.def.spellName}. ` : '') + t.def.desc(t.mult), icon: t.def.icon, rarity: t.rarity, base: [60, 110, 180, 290][t.rarity] + f * 28, apply: () => game.grantTome(t) });
+  for (const t of tomes) items.push({ name: t.def.name, desc: (t.def.aug ? `Augment · ${t.def.spellName}. ` : '') + t.def.desc(t.mult), icon: t.def.icon, rarity: t.rarity, base: [60, 110, 180, 290][t.rarity] + f * 28, tome: t, apply: () => game.grantTome(t) });
   const rel = rollRelics(p, 1);
   for (const r of rel) items.push({ name: r.def.name, desc: relicDesc(r.def), icon: r.def.icon, base: 200 + f * 45, relic: true, color: relicColor(r.def), apply: () => game.grantRelic(r) });
   // refining: three of your tomes, each a rarity finer; may be bought again (dearer)

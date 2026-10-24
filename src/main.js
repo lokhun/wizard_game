@@ -10,8 +10,10 @@ import * as THREE from 'three';
 import { Renderer } from './render/renderer.js';
 import { Input, applyBindings } from './core/input.js';
 import { UI } from './ui/ui.js';
+import { Chat } from './ui/chat.js';
+import { BUILD, newerBuild } from './core/version.js';
 import { Game } from './game/game.js';
-import { Net, PROTOCOL } from './net/net.js';
+import { Net } from './net/net.js';
 import { handleGameMessage } from './net/netgame.js';
 import { setModelModules, getAvatar } from './game/models.js';
 import { CLASS_IDS, CLASS_META } from './game/classMeta.js';
@@ -67,6 +69,7 @@ input.invertY = settings.invertY;
 let audio = null;
 const ui = new UI(document.getElementById('ui'), renderer, input, null);
 ui.loading(0.05, 'Kindling the torches');
+const chat = new Chat(document.getElementById('ui'), input);
 
 let game = null;
 let net = null;
@@ -92,7 +95,9 @@ async function boot() {
   window.__game = game;
   // run tracking, feats and the run summary (src/meta)
   attachMeta(game, ui, {
-    onMenu: () => ui.onReturnToMenu(),
+    // a co-op run's end keeps the party together: back to its lobby, not the menu
+    onMenu: () => (net ? returnToParty() : ui.onReturnToMenu()),
+    menuLabel: () => (net ? 'Back to the Party' : null),
     canAgain: () => !net,
     onAgain: () => { ui.closeAllModals(); if (dailyRun) startDaily(dailyRun); else startSolo(); },
   });
@@ -268,6 +273,8 @@ function updateBackdrop(dt) {
 function menuStats() { const p = loadProfile(); return { runs: p.runs, wins: p.wins, bestFloor: p.bestFloor, kills: p.kills, feats: `${FEATS.filter((f) => p.feats[f.id]).length}/${FEATS.length}` /* (only feats that still exist) */ }; }
 
 function showMenu() {
+  // a new version came out during the run: back at the menu is the moment to load it
+  if (pendingBuild && !net) { reloadForUpdate(); return; }
   mode = 'menu';
   placeMenuAvatar();
   // the wizard the class select opens on, built while the menu idles
@@ -379,6 +386,7 @@ function startDaily(r) {
 
 function beginRun(opts) {
   mode = 'run';
+  ui.closeAllModals(); // (a party member still reading the last run's summary)
   avatarGen++;
   dropMenuAvatar();
   nextAvatar?.av.dispose?.(); nextAvatar = null;
@@ -395,6 +403,19 @@ function beginRun(opts) {
     ui.fadeIn(1.4);
     input.lock();
   });
+}
+
+// After a co-op run ends, the party stays connected and goes back to its lobby
+// (the class select), where the host can start the next run.
+function returnToParty() {
+  if (!net) { ui.onReturnToMenu(); return; }
+  ui.closeAllModals();
+  game.ended = true;
+  startBackdrop();
+  if (lobby) for (const p of lobby.players) if (!p.host) p.ready = false;
+  showSelect({ isHost: net.isHost, code: net.code });
+  if (net.isHost) pushRoster();
+  else net.send({ t: 'ready', r: 0 });
 }
 
 ui.onReturnToMenu = () => {
@@ -417,6 +438,8 @@ async function doHost() {
     const code = await net.host();
     lobby = { players: [{ id: 'host', name: settings.name || 'Host', classId: selectedClass, host: true, ready: true }] };
     net.on(onLobbyMessage);
+    net.on(onChatMessage);
+    chat.setActive(true);
     net.on((msg, from) => { if (mode === 'run' && game && !game.menuMode) handleGameMessage(game, msg, from); });
     net.onPeerLeft = (pid) => {
       lobby.players = lobby.players.filter((p) => p.id !== pid);
@@ -447,13 +470,15 @@ async function doJoin(code, api) {
     if (gen !== joinGen || net !== myNet) { myNet.close(); return; }
     lobby = { players: [] };
     net.on(onLobbyMessage);
+    net.on(onChatMessage);
+    chat.setActive(true);
     net.on((msg, from) => { if (mode === 'run' && game && !game.menuMode) handleGameMessage(game, msg, from); });
     net.onDisconnect = () => {
       if (net !== myNet) return;
       if (mode === 'run') ui.banner('CONNECTION LOST', 'The host has left the party', '#c04030', 6);
       setTimeout(() => { if (net !== myNet) return; leaveNet(); game.ended = true; startBackdrop(); showMenu(); }, mode === 'run' ? 4000 : 0);
     };
-    net.send({ t: 'hello', name: settings.name || 'Wizard', cls: selectedClass, v: PROTOCOL });
+    net.send({ t: 'hello', name: settings.name || 'Wizard', cls: selectedClass, v: BUILD });
     showSelect({ isHost: false, code: net.code });
   } catch (e) {
     console.warn(e);
@@ -474,15 +499,16 @@ function pushRoster() {
 function onLobbyMessage(msg, from) {
   if (net.isHost) {
     if (msg.t === 'hello') {
-      if (msg.v !== PROTOCOL) { net.sendTo(from, { t: 'version', v: PROTOCOL }); return; } // (another build: see PROTOCOL)
+      // different builds don't agree on messages: everyone plays the same version
+      if (BUILD !== 'dev' && msg.v !== 'dev' && msg.v !== BUILD) { net.sendTo(from, { t: 'version', v: BUILD }); return; }
       if (lobby.players.length >= 4) { net.sendTo(from, { t: 'full' }); return; }
       const p = { id: from, name: String(msg.name ?? 'Wizard').slice(0, 16), classId: CLASS_IDS.includes(msg.cls) ? msg.cls : 'pyromancer', ready: false };
       lobby.players = lobby.players.filter((x) => x.id !== from);
       lobby.players.push(p);
-      net.sendTo(from, { t: 'welcome', id: from, v: PROTOCOL });
+      net.sendTo(from, { t: 'welcome', id: from });
       pushRoster();
       audio?.play('ui_click');
-      if (mode === 'run' && game && !game.menuMode) {
+      if (mode === 'run' && game && !game.menuMode && !game.ended) {
         // late join: bring them into the current floor; actors follow once they report 'started'
         net.sendTo(from, { t: 'start', seed: game.seed, players: lobby.players, floor: game.floorIndex, ab: game.abyss ?? 0, late: lateState(), pk: game.difficulty?.pacts ?? {} });
         game.addRemote(p);
@@ -519,10 +545,12 @@ function onLobbyMessage(msg, from) {
     } else if (msg.t === 'full') {
       alert('That party is full (4 wizards max).');
       leaveNet(); showMenu();
-    } else if (msg.t === 'version' || (msg.t === 'welcome' && msg.v !== PROTOCOL)) {
-      // (an older host sends no version: it is turned away here, on this side)
-      alert('The host is playing a different version of the game. Both of you refresh the page (Ctrl+F5) to update, then try again.');
-      leaveNet(); showMenu();
+    } else if (msg.t === 'version') {
+      leaveNet();
+      newerBuild().then((v) => {
+        if (v) { alert('A new version of the game is out. Updating now - then join the party again.'); reloadForUpdate(); }
+        else { alert('The host is playing an older version of the game. Ask them to reload the page, then join again.'); showMenu(); }
+      });
     }
   }
 }
@@ -549,7 +577,50 @@ function applyLateState(s) {
 function leaveNet() {
   if (net) { net.close(); net = null; }
   lobby = null;
+  chat.setActive(false);
 }
+
+// ---------------------------------------------------------------------------
+// updates: an open game moves onto a new deploy (core/version.js) - at once
+// when sitting in the menu, otherwise when the player is next back there
+// (never mid-run, never out of a party lobby)
+// ---------------------------------------------------------------------------
+let pendingBuild = null, updateNoted = false;
+function reloadForUpdate() {
+  ui.loading(1, 'Updating to the new version…');
+  location.reload();
+}
+async function checkForUpdate() {
+  const v = await newerBuild();
+  if (!v) return;
+  pendingBuild = v;
+  if (mode === 'menu' && !net && !ui.modalOpen) { reloadForUpdate(); return; }
+  if (!updateNoted) { updateNoted = true; ui.toast('A new version of the game is out: it loads when you return to the menu.', '#8fd0ff'); }
+}
+setInterval(checkForUpdate, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkForUpdate(); });
+
+// ---------------------------------------------------------------------------
+// party chat (ui/chat.js): Enter to talk, in the lobby and during runs
+// ---------------------------------------------------------------------------
+const classColor = (id) => (CLASS_META[id] ? '#' + CLASS_META[id].color.toString(16).padStart(6, '0') : undefined);
+chat.onSend = (text) => {
+  if (!net) return;
+  const msg = { t: 'chat', n: settings.name || 'Wizard', x: text, c: selectedClass };
+  // a client's line goes through the host, who passes it on to everyone else
+  if (net.isHost) net.broadcast(msg); else net.send({ ...msg, relay: 1 });
+  chat.add(msg.n, text, { mine: true, from: 'me', color: classColor(selectedClass) });
+};
+function onChatMessage(msg, from) {
+  if (msg.t === 'chat') chat.add(msg.n, msg.x, { from, color: classColor(msg.c) });
+}
+window.addEventListener('keydown', (e) => {
+  if ((e.key !== 'Enter' && e.code !== 'NumpadEnter') || e.repeat || !chat.active || chat.open) return;
+  if (e.target?.closest?.('input, textarea') || ui.modalOpen || ui.pauseEl) return;
+  if (mode !== 'run' && mode !== 'select') return;
+  e.preventDefault();
+  chat.show();
+});
 
 // ---------------------------------------------------------------------------
 // pause handling
@@ -570,8 +641,10 @@ input.onLockChange = (locked) => {
     game.paused = false;
   }
 };
-canvas.addEventListener('click', () => {
-  if (mode === 'run' && game && !game.ended && !ui.modalOpen) input.lock();
+// any click during a run takes the mouse back when nothing is asking for it
+// (not just one on the bare canvas: the HUD covers much of it)
+window.addEventListener('mousedown', () => {
+  if (mode === 'run' && game && !game.ended && !ui.modalOpen && !ui.pauseEl && !input.locked) input.lock();
 });
 
 // ---------------------------------------------------------------------------
