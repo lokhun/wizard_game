@@ -971,10 +971,17 @@ export class UI {
     el.querySelector('.b1').textContent = a;
     el.querySelector('.b2').textContent = b;
     el.style.color = color;
+    // mid-fight it must not hide the foes: smaller, see-through, gone sooner
+    // (a foe within 25 m or a boss up: works on every peer, the director's state lives on the host)
+    const g = this.game, pp = g?.player?.pos;
+    const bossUp = !!this.bossActor && !this.bossActor.dead;
+    const fight = !!pp && (bossUp || g.actors.hostiles().some((x) => (x.pos.x - pp.x) ** 2 + (x.pos.z - pp.z) ** 2 < 625));
+    el.classList.toggle('combat', fight);
+    el.classList.toggle('edge', fight && !bossUp); // (up in the free strip at the top, where the boss bar would be)
     el.classList.remove('show');
     void el.offsetWidth;
     el.classList.add('show');
-    this.bannerT = dur;
+    this.bannerT = fight ? Math.min(dur, 2.2) : dur;
   }
   // a kill streak's call, just under the crosshair: pops in and fades on its own (one reused element)
   streak(text, sub, color) {

@@ -258,6 +258,12 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .banner.show .line { width: 520px; }
 .banner { opacity: 0; transition: opacity 0.5s; }
 .banner.show { opacity: 1; }
+.banner.combat.show { opacity: 0.78; }
+.banner.combat .b1 { font-size: clamp(20px, 2.4vw, 32px); text-shadow: 0 0 18px currentColor, 0 2px 3px #000; }
+.banner.combat .b2 { font-size: 12px; margin: 3px auto 0; max-width: 44vw; }
+.banner.combat .line { margin: 6px auto; }
+.banner.combat.show .line { width: 340px; }
+.banner.combat.edge { top: calc(14px * var(--hud-scale, 1)); }
 
 .toasts { position: absolute; right: 28px; bottom: 90px; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
 .toast { font-family: var(--serif); font-size: 14px; padding: 6px 12px; background: rgba(10,8,7,0.85); border-left: 2px solid var(--bronze); color: var(--text); animation: toastIn 0.3s ease; letter-spacing: 0.04em; }

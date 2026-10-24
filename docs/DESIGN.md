@@ -230,6 +230,7 @@ Kills landed within 1.6 s of each other chain into a streak (`Game._streakKill`)
 
 ## Reading danger
 Anything that can hurt you must be seen in time, without looking garish.
+- **Banners keep out of the fight.** A banner raised while a foe is within 25 m (an encounter's twist, a curse) is drawn small and see-through in the strip at the top of the screen for 2.2 s at most (under the boss bar in a boss fight), so it never covers foes or their wind-ups; out of combat (a realm's title) it keeps its full size.
 - **Danger zones** (circle, lane, cone) share one look (`TELE_FRAG` in `vfx.js`): a crisp edge of constant width (a hot core line, the zone's colour glowing just inside, a dark halo just outside, so it reads on a bright floor as on a dark one), the floor under it a little darker, and a fill sweeping out from the origin that reaches the edge as the blow lands and flashes in its last quarter.
 - **Shockwaves** are a glowing wall standing exactly on the hit radius, with a crest line near jump height and the band it sweeps on the ground (`vfx.waveWall`). The old ring eased ahead of the real wave and faded as it travelled; the wall stays bright all the way out and dims only as it passes over the camera.
 - **Melee wind-ups** are made only at the strike, so the wind-up itself draws the arc the blow will sweep (same look, dimmer red), turning with the attacker and filling as it lands. Only blows that could reach you get one, and not fodder (rats, imps): a pack of rats would paint the floor. It vanishes at once when the swing is interrupted.
