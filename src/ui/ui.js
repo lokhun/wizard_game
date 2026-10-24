@@ -943,7 +943,12 @@ export class UI {
     if (!seen) return;
     this.numbers.push({ pos: pos.clone(), amount, key, text: String(Math.round(amount)), color: col, crit, dot: !!dot, t: 0, life: dot ? 1.3 : crit ? 1.0 : 0.8, ox: (Math.random() - 0.5) * 30 });
   }
-  floatText(pos, text, color = '#fff', big = false) { this.floats.push({ pos: pos.clone(), text, color, big, t: 0 }); }
+  floatText(pos, text, color = '#fff', big = false) {
+    // one AoE on a pack calls the same thing for every foe (UNAWARE x8): a call still fresh nearby
+    // already says it, so a repeat adds a tower of text and no news
+    for (const f of this.floats) if (f.text === text && f.t < 0.6 && f.pos.distanceToSquared(pos) < 36) return;
+    this.floats.push({ pos: pos.clone(), text, color, big, t: 0 });
+  }
   hitmarker(crit, kill, weak = false) {
     if (!this.h) return;
     const el = this.h.hit;
