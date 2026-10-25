@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-// Debris: a smashed barrel's staves and a crate's planks, tumbling out, bouncing on the floor and settling
+// Debris: a smashed barrel's staves and a crate's planks (or, in stone, a broken wall's blocks), tumbling out, bouncing on the floor and settling
 // before they shrink away. One instanced box in the wood material (the barrels' own program, so nothing
 // new compiles), a fixed pool of pieces with a few lines of rigid-ish motion each: gravity, a spin, a
 // bounce that bleeds speed off, a wall turning them back, and lying flat once they come to rest.
@@ -34,14 +34,15 @@ export class Debris {
 
   // n pieces of size (sx, sy, sz) +-jitter from around (x, y, z), thrown out at speed and upward
   // (sz the thinnest: a piece comes to rest lying on that side)
-  burst(x, y, z, n, sx, sy, sz, speed = 4, up = 3, spread = 0.3) {
+  // (dx, dz: a push the whole burst carries, as a fraction of speed: a wall blown out into a room)
+  burst(x, y, z, n, sx, sy, sz, speed = 4, up = 3, spread = 0.3, dx = 0, dz = 0) {
     for (let k = 0; k < n; k++) {
       const i = this.next; this.next = (this.next + 1) % MAX;
       const a = Math.random() * Math.PI * 2, j = 0.8 + Math.random() * 0.4;
       const o = i * 3;
       this.P[o] = x + Math.cos(a) * spread; this.P[o + 1] = y + (Math.random() - 0.5) * 0.4; this.P[o + 2] = z + Math.sin(a) * spread;
       const sp = speed * (0.5 + Math.random() * 0.7);
-      this.V[o] = Math.cos(a) * sp; this.V[o + 1] = up * (0.6 + Math.random() * 0.8); this.V[o + 2] = Math.sin(a) * sp;
+      this.V[o] = Math.cos(a) * sp + dx * speed; this.V[o + 1] = up * (0.6 + Math.random() * 0.8); this.V[o + 2] = Math.sin(a) * sp + dz * speed;
       this.R[o] = Math.random() * 6.28; this.R[o + 1] = Math.random() * 6.28; this.R[o + 2] = Math.random() * 6.28;
       this.W[o] = (Math.random() - 0.5) * 18; this.W[o + 1] = (Math.random() - 0.5) * 10; this.W[o + 2] = (Math.random() - 0.5) * 18;
       this.S[o] = sx * j; this.S[o + 1] = sy * j; this.S[o + 2] = sz * j;

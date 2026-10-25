@@ -105,6 +105,7 @@ export class Game {
     this.time = 0;
     this.storm = null;
     this.debris = null; // (wreckage of smashed barrels and crates: render/debris.js)
+    this.rubble = null; // (and the same in stone: a broken wall's blocks)
     this._bolt = { a: new THREE.Vector3(), b: new THREE.Vector3(), o: { jag: 7, width: 0.55, life: 0.22, branches: 3, seg: 3.5, color: [2.2, 2.5, 3.4] } };
     this.remotes = new Map();
     this.hazards = [];
@@ -266,8 +267,9 @@ export class Game {
     this.texFactory.endFloor(); // the last realm's own wall and floor textures
     this.critters?.dispose();
     this.critters = this.settings?.quality === 'low' ? null : new Critters(this.scene, level);
-    this.debris?.dispose();
+    this.debris?.dispose(); this.rubble?.dispose();
     this.debris = new Debris(this.scene, this.built.mats.wood, this.collision);
+    this.rubble = new Debris(this.scene, this.built.mats.stone, this.collision);
     this.scene.add(this.built.group);
     this.built.onDoorSlam = (d) => {
       const door = d.door;
@@ -727,6 +729,7 @@ export class Game {
     this._ambient(realDt);
     this.critters?.update(dt, this.time, this.renderer.camera.position, this.allPlayers());
     this.debris?.update(dt, this.actors._floor);
+    this.rubble?.update(dt, this.actors._floor);
     this.contact.update(this);
     if (this.storm) {
       this.storm.calm = !!this.settings.calm; this.storm.update(realDt, this.time, this.renderer.camera.position);
@@ -2387,6 +2390,8 @@ export class Game {
           if (was.tint) m?.setTint?.(was.tint[0], was.tint[1]); else m?.setTint?.(null);
           if (extra.broken) {
             this.vfx.explosion(at, G.el, 4 + a.radius, { shakeScale: 0.4 });
+            // the Wyvern's stone shell comes off it in slabs
+            if (was.k === 'stone') this.rubble?.burst(a.pos.x, a.pos.y + (a.height ?? 4) * 0.5, a.pos.z, 16, 0.42, 0.3, 0.12, 5, 4, a.radius * 0.8);
             this.ui?.floatText(new THREE.Vector3(a.pos.x, a.pos.y + (a.height ?? 4) + 1.2, a.pos.z), `${G.name.toUpperCase()} BROKEN`, '#ffe090', true);
             this.screenTint([1.25, 1.15, 0.9], 0.5);
           } else this.vfx.ring({ x: a.pos.x, y: a.pos.y + 0.1, z: a.pos.z }, 2 + a.radius, G.col, 0.5, 0.1);

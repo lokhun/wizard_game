@@ -735,7 +735,10 @@ export class Encounters {
     room.neighbors.push(host.id);
     const c = S.c;
     const out = new THREE.Vector3(-s.nx, 0.3, -s.nz);
-    g.vfx.burst(c, { count: 46, speed: 7, dir: out, spread: 0.9, life: 1.6, size: 0.16, sprite: SPR.CHUNK, solid: true, color: [0.4, 0.37, 0.33], color2: [0.28, 0.26, 0.23], gravity: 15, spin: 9, jitter: 0.8 });
+    g.vfx.burst(c, { count: 30, speed: 7, dir: out, spread: 0.9, life: 1.6, size: 0.14, sprite: SPR.CHUNK, solid: true, color: [0.4, 0.37, 0.33], color2: [0.28, 0.26, 0.23], gravity: 15, spin: 9, jitter: 0.8 });
+    // and the wall's own blocks tumble out into the room
+    g.rubble?.burst(c.x, c.y, c.z, 12, 0.34, 0.22, 0.16, 3.5, 2.5, 0.8, -s.nx * 0.9, -s.nz * 0.9);
+    g.rubble?.burst(c.x, c.y + 0.6, c.z, 10, 0.16, 0.12, 0.09, 4.5, 3, 0.9, -s.nx * 0.8, -s.nz * 0.8);
     g.vfx.smoke(c, { count: 12, size: 1.2, color: [0.3, 0.27, 0.23], alpha: 0.5, life: 2.4, spread: 1, speed: 1.2 });
     g.lights.flash(c, 0xffb060, 16, 10, 0.6);
     g.vfx.addShake(0.4);
