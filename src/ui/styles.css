@@ -471,3 +471,12 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .slot.itemslot.empty .iic::after { content: '—'; color: var(--bronze-lo); font-family: var(--serif); }
 .slot.itemslot .iic { display: flex; align-items: center; justify-content: center; }
 .slot.itemslot .key { top: auto; bottom: -11px; }
+/* a boss's gate (Brood Shield, Stoneskin...): the bar goes cold and a line under it says what breaks it */
+.boss-bar.gated .bar .fill { filter: saturate(0.35) brightness(0.8); }
+.boss-bar.gated .bar { box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px var(--gc, #b080ff), 0 0 0 3px #0a0807, 0 0 14px color-mix(in srgb, var(--gc, #b080ff) 60%, transparent), inset 0 0 8px #000; }
+.boss-bar .bgate { margin-top: 7px; font-family: var(--serif); font-size: 13px; letter-spacing: 0.12em; color: #e8dcc8; text-shadow: 0 1px 2px #000, 0 0 6px rgba(0,0,0,0.9); }
+.boss-bar .bgate .gname { color: var(--gc); font-weight: 600; text-transform: uppercase; letter-spacing: 0.25em; margin-right: 10px; }
+.boss-bar .bgate .gname::before { content: '◆ '; }
+.boss-bar .bgate .gtime { width: 40%; height: 3px; margin: 5px auto 0; background: rgba(0,0,0,0.6); box-shadow: 0 0 0 1px #0a0807; }
+.boss-bar .bgate .gtime div { height: 100%; background: var(--gc); transform-origin: left; }
+.boss-bar.gated:not(.hidden) ~ .banner { top: max(calc(15.5% + 30px), calc(146px * var(--hud-scale, 1) + 8px)); } /* (clear of the gate's line) */

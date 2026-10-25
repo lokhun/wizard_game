@@ -29,6 +29,8 @@ import { warmEruptionMeshes } from './caster.js';
 import { CLASS_META } from './classMeta.js';
 import { sigilTexture } from './models/wizard/sigil.js';
 import { ENEMY_DEFS, BOSS_DEFS } from './enemyDefs.js';
+import { GATE_LOOK } from './gates.js';
+import { SCRIPTS as BOSS_SCRIPTS } from './bosses.js';
 import { rand } from '../core/rng.js';
 import { clamp } from '../core/math.js';
 import { Emitter } from '../meta/emitter.js';
@@ -61,6 +63,7 @@ const STREAKS = [
 ];
 const _nmFog = new THREE.Color(0x2a0606);
 const DREAD_MAX = 12;
+const _gp = new THREE.Vector3(), _gq = new THREE.Vector3();
 export class Game {
   constructor({ renderer, input, audio, ui, settings }) {
     this.renderer = renderer;
@@ -121,6 +124,7 @@ export class Game {
     this._aimT = 0; // (the crosshair's weak-point probe: next run)
     this._learned = null; this._dashN = 0; // (once-ever tips: learn())
     this.events.on('dashJump', () => this.learn('dashjump'));
+    this.events.on('perfectDodge', () => { if (this.isHost) this._bossDodge(); else this.net?.send?.({ t: 'pdodge' }); });
     // (Nightmare) a chamber you leave untouched earns a Dread Mark: watch what the local player takes per fight
     this.events.on('roomLock', (room, on) => { if (on) { this._fightRoom = room; this._fightHurt = 0; } });
     this.events.on('hurt', (dmg) => { if (this._fightRoom) this._fightHurt += dmg; });
@@ -662,6 +666,7 @@ export class Game {
     this._ambient(realDt);
     this.critters?.update(dt, this.time, this.renderer.camera.position, this.allPlayers());
     this.contact.update(this);
+    if (this._gated) this._gateFx(dt);
     // big boss arenas outgrow the light pool: lift the ambient a little while you stand in one
     if (this.baseHemi && !this.ended && !this._victoryLight) {
       const br = this.level.bossRoom, pp = this.player.pos;
@@ -1701,6 +1706,9 @@ export class Game {
   }
 
   onBossSpawn(a) {
+    // the bar's notches sit where this boss's phases turn (the Wrath pact brings them on sooner)
+    const enr = this.difficulty?.bossEnrage ?? 0;
+    a.phaseAts = (BOSS_SCRIPTS[a.type]?.phases ?? []).map((p) => p.at + enr).filter((f) => f > 0 && f < 1);
     this.cinematic = { target: a, t: 0, dur: 2.6 };
     this.ui?.letterbox(true);
     this.ui?.bossIntro(a);
@@ -2230,8 +2238,107 @@ export class Game {
       case 'judgment':
         this.screenTint([0.4, 0.3, 0.6], 4);
         break;
+      case 'gate': { // a gate rises (or falls): the boss takes its colour, a ring marks it, the bar names it (ui)
+        const G = GATE_LOOK[extra.k];
+        if (!G) break;
+        const m = a.model, at = new THREE.Vector3(a.pos.x, a.pos.y + (a.height ?? 4) * 0.5, a.pos.z);
+        if (extra.on) {
+          const gl = [];
+          for (let i = 0; extra.gl && i + 1 < extra.gl.length; i += 2) gl.push({ x: extra.gl[i], z: extra.gl[i + 1], lit: false, t: 0 });
+          a.gate = { k: extra.k, n: extra.n ?? gl.length, dur: extra.dur ?? 15, until: this.time + (extra.dur ?? 15), gl, pulse: 0, tint: m?._tint ? [m._tintHex, m._tintK] : null };
+          m?.setTint?.(G.tint, 0.4);
+          this.vfx.ring({ x: a.pos.x, y: a.pos.y + 0.1, z: a.pos.z }, 3 + a.radius * 1.5, G.col, 0.8, 0.15);
+          this.vfx.burst(at, { element: G.el, count: 40, speed: 5, upward: 0.6, life: 0.9, size: 0.22 });
+          this.audio?.play('enemy_cast', { pos: a.pos, volume: 1 });
+          (this._gated ??= new Set()).add(a);
+        } else if (a.gate) {
+          const was = a.gate;
+          a.gate = null;
+          this._gated?.delete(a);
+          if (was.tint) m?.setTint?.(was.tint[0], was.tint[1]); else m?.setTint?.(null);
+          if (extra.broken) {
+            this.vfx.explosion(at, G.el, 4 + a.radius, { shakeScale: 0.4 });
+            this.ui?.floatText(new THREE.Vector3(a.pos.x, a.pos.y + (a.height ?? 4) + 1.2, a.pos.z), `${G.name.toUpperCase()} BROKEN`, '#ffe090', true);
+            this.screenTint([1.25, 1.15, 0.9], 0.5);
+          } else this.vfx.ring({ x: a.pos.x, y: a.pos.y + 0.1, z: a.pos.z }, 2 + a.radius, G.col, 0.5, 0.1);
+        }
+        this.ui?.bossGate?.(a);
+        break;
+      }
+      case 'gatehit': { // a blow turned away: say why, over the boss, and spark where the ward took it
+        const G = GATE_LOOK[extra.k];
+        if (!G) break;
+        this.ui?.floatText(new THREE.Vector3(a.pos.x, a.pos.y + (a.height ?? 4) * 0.8, a.pos.z), G.hit, '#c8c0d8'); // (on the body: over a tall boss's head it rose into its bar)
+        this.vfx.burst(new THREE.Vector3(a.pos.x, a.pos.y + (a.height ?? 4) * 0.55, a.pos.z), { element: G.el, count: 10, speed: 4, life: 0.4, size: 0.14 });
+        break;
+      }
+      case 'gatecount': // the gate weakens: one fewer to go
+        if (!a.gate) break;
+        a.gate.n = extra.n;
+        if (a.gate.k === 'judgment') { // a crack in the ward
+          this.vfx.explosion(new THREE.Vector3(a.pos.x, a.pos.y + (a.height ?? 4) * 0.55, a.pos.z), 'enemyPurple', 2.5, { shakeScale: 0.3 });
+          this.ui?.floatText(new THREE.Vector3(a.pos.x, a.pos.y + (a.height ?? 4) + 0.9, a.pos.z), extra.n > 0 ? 'THE WARD CRACKS' : 'THE WARD SHATTERS', '#d0a0ff', true);
+          this.audio?.play('crit', { pos: a.pos, volume: 0.9 });
+        }
+        this.ui?.bossGate?.(a);
+        break;
+      case 'glyph': { // a glyph burns gold
+        const q = a.gate?.gl[extra.i];
+        if (!q) break;
+        q.lit = true;
+        a.gate.n = a.gate.gl.reduce((n, g) => n + (g.lit ? 0 : 1), 0);
+        const y = this.groundY(q.x, q.z);
+        this.vfx.explosion(new THREE.Vector3(q.x, y + 0.6, q.z), 'holy', 2.6, { shakeScale: 0.2, groundY: y });
+        this.vfx.ring({ x: q.x, y: y + 0.1, z: q.z }, 2.4, [2.4, 1.8, 0.6], 0.7, 0.2);
+        q.d = 0;
+        this.ui?.bossGate?.(a);
+        break;
+      }
       default: break;
     }
+  }
+
+  // the gate's look while it holds: a pulse about the boss in its colour, and for the Archmage's ward her
+  // glyphs on the floor (each tethered to her until it burns) and for Gravemaw's stoneskin a gold mark on the
+  // floor behind it, where blows bite. Pooled rings, telegraphs, bolts and lights only.
+  _gateFx(dt) {
+    for (const a of this._gated) {
+      const gt = a.gate;
+      if (!gt || a.dead || !a.alive) { this._gated.delete(a); if (a.gate) { a.gate = null; this.ui?.bossGate?.(a); } continue; }
+      const G = GATE_LOOK[gt.k];
+      gt.pulse -= dt;
+      const beat = gt.pulse <= 0;
+      if (beat) gt.pulse = 0.5;
+      _gp.set(a.pos.x, a.pos.y + (a.height ?? 4) * 0.55, a.pos.z);
+      this.lights.request(_gp, G.light, 2.5, 7 + a.radius);
+      if (beat) {
+        this.vfx.ring(_gq.set(a.pos.x, a.pos.y + 0.1, a.pos.z), 1.6 + a.radius * 1.2, G.col, 0.6, 0.08);
+        if (gt.k === 'stone') this.vfx.telegraph(_gq, { shape: 'cone', radius: 4 + a.radius, rot: a.yaw + Math.PI, angle: 1.2, dur: 0.5, color: [1.4, 1.05, 0.3] });
+      }
+      for (const q of gt.gl) {
+        const y = this.groundY(q.x, q.z);
+        _gq.set(q.x, y + 0.8, q.z);
+        this.lights.request(_gq, q.lit ? 0xffd070 : 0xc060ff, q.lit ? 2 : 3, 5);
+        // the glyph itself, a rune on the floor (the decal pool's glow glyph, laid again before the last fades)
+        q.d = (q.d ?? 0) - dt;
+        if (q.d <= 0) { q.d = 1.6; this.vfx.decal(_gq.set(q.x, y, q.z), 'glyph', 3.9, 2, q.lit ? 0xd0a040 : 0x9040d0); }
+        if (q.lit) { if (beat) this.vfx.ring(_gq.set(q.x, y + 0.1, q.z), 1.9, [1.8, 1.4, 0.5], 0.6, 0.06); continue; }
+        // filling: the ring beats faster while a wizard stands in it
+        let on = false;
+        for (const p of this.allPlayers()) if (!p.dead && !p.downed && Math.hypot(p.pos.x - q.x, p.pos.z - q.z) < 1.9) on = true;
+        q.t -= dt;
+        if (q.t <= 0) {
+          q.t = on ? 0.18 : 0.55;
+          this.vfx.ring(_gq.set(q.x, y + 0.1, q.z), 1.9, on ? [2.2, 1.6, 0.8] : G.col, on ? 0.35 : 0.7, on ? 0.18 : 0.1);
+          if (beat) this.vfx.lightning(_gq.set(q.x, y + 0.9, q.z), _gp, { color: G.col, life: 0.18, jag: 0.6, branches: 0 });
+        }
+      }
+    }
+  }
+
+  // a perfect dodge (ours, or a teammate's sent to us as host) cracks a boss's judgment
+  _bossDodge() {
+    for (const a of this.actors.list) if (a.boss && a.brain?.gate) a.brain.script.gateDodge?.(a.brain);
   }
 }
 

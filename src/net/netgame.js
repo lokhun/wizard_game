@@ -37,6 +37,7 @@ export function handleGameMessage(game, msg, from) {
       if (a && a.alive) a.hp = Math.min(a.maxHp, a.hp + msg.d * 0.5);
       break;
     }
+    case 'pdodge': if (game.isHost) game._bossDodge(); break; // a teammate's perfect dodge (a boss's judgment cracks)
     case 'nextfloor': if (game.isHost && (msg.f === undefined || msg.f === game.floorIndex)) game.goNextFloor(); break;
     // ------------------------------------------------ shared events
     case 'pick': game.removeDrop(msg.id); break;

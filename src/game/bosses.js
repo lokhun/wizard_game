@@ -29,6 +29,8 @@ export class BossBrain {
     this.started = false;
     this.data = {};
     this.invuln = 0;
+    this.gate = null; // (see openGate)
+    this._gateHitT = 0;
     this.spin = 0; this.spinT = 0; // a whirl turns the body (rad/s) while it lasts
     this.pressT = 0; // a final phase's arena pressure (phase.press) comes round on its own clock
     this.exposed = 0; // after a committed move (a leap's crash, a whirl, a charge) the boss takes +30% for a moment
@@ -57,6 +59,10 @@ export class BossBrain {
   // rooms has to see every phase through
   modifyDamage(dmg, H) {
     if (this.invuln > 0) return 0;
+    if (this.gate) {
+      dmg = this.script.gateDamage?.(this, dmg, H) ?? 0;
+      if (dmg <= 0) { this._gateHit(); return 0; }
+    }
     if (this.script.modifyDamage) dmg = this.script.modifyDamage(this, dmg, H);
     if (this.exposed > 0) dmg *= 1.3;
     const a = this.a, max = a.maxHp;
@@ -69,6 +75,29 @@ export class BossBrain {
     return dmg;
   }
 
+  // A gate: each boss's own way of turning a threshold into a fight, not a number to burn through
+  // (the generic hold above only pauses it). While one holds, the script's gateDamage decides what gets
+  // through (nothing, or only blows from behind...), its gateUpdate breaks it when the players have done
+  // what it asks (kill the brood, light the glyphs...), and it never outlasts gate.t. Broken, it leaves
+  // the boss exposed; run out, it just drops.
+  openGate(kind, dur, extra = {}) {
+    this.gate = { kind, t: dur, n: 0, ...extra };
+    this.fx('gate', { k: kind, on: 1, dur, ...extra.fx });
+  }
+  closeGate(broken) {
+    const g = this.gate;
+    if (!g) return;
+    this.gate = null;
+    this.fx('gate', { k: g.kind, on: 0, broken: broken ? 1 : 0 });
+    if (broken) { this.expose(3.5); this.shake(0.5); this.sound('boss_roar', 0.7); }
+  }
+  // a blow that the gate turned away: say so (to every peer), a few times a second at most
+  _gateHit() {
+    if (this.g.time < this._gateHitT) return;
+    this._gateHitT = this.g.time + 0.6;
+    this.fx('gatehit', { k: this.gate.kind });
+  }
+
   // ------------------------------------------------ helpers used by scripts
   at(t, fn) { this.events.push({ t, fn }); }
   anim(anim, attackType, dur) {
@@ -79,6 +108,8 @@ export class BossBrain {
   }
   face(p, rate = 99, dt = 1) {
     if (!p) return;
+    // (a gate may slow its turning: a snap becomes a frame's worth of a slow turn)
+    if (this.gate?.turn) { rate = Math.min(rate, this.gate.turn); dt = Math.min(dt, this._dt ?? dt); }
     const a = this.a;
     a.yaw = angleDamp(a.yaw, Math.atan2(p.pos.x - a.pos.x, p.pos.z - a.pos.z), rate, dt);
   }
@@ -118,16 +149,18 @@ export class BossBrain {
     this.moveVel = { x: Math.sin(yaw) * speed, z: Math.cos(yaw) * speed, t: time };
   }
   summon(type, n, radius = 4) {
-    const g = this.g, a = this.a;
+    const g = this.g, a = this.a, out = [];
     for (let i = 0; i < n; i++) {
       for (let k = 0; k < 8; k++) {
         const ang = Math.random() * Math.PI * 2;
         const x = a.pos.x + Math.cos(ang) * radius, z = a.pos.z + Math.sin(ang) * radius;
         if (g.collision.cellBlocked(Math.floor(x / 2), Math.floor(z / 2), a.pos.y + 0.5)) continue;
-        g.director.spawnEnemy(type, x, z, { noCredit: true });
+        const m = g.director.spawnEnemy(type, x, z, { noCredit: true });
+        if (m) out.push(m);
         break;
       }
     }
+    return out;
   }
   roomRandom(margin = 2) {
     const room = this.g.level.roomAt(this.a.pos.x, this.a.pos.z) ?? this.data.room;
@@ -215,6 +248,12 @@ export class BossBrain {
     const S = this.script;
     this.invuln = Math.max(0, this.invuln - dt);
     this.exposed = Math.max(0, this.exposed - dt);
+    this._dt = dt;
+    if (this.gate) {
+      this.gate.t -= dt;
+      S.gateUpdate?.(this, dt);
+      if (this.gate && this.gate.t <= 0) this.closeGate(false);
+    }
     // phase transitions
     const phases = S.phases;
     this.fightT = (this.fightT ?? 0) + dt;
@@ -222,6 +261,7 @@ export class BossBrain {
     while (this.phase < phases.length - 1 && (this.hpf <= phases[this.phase + 1].at || (phases[this.phase + 1].after && this.fightT >= phases[this.phase + 1].after))) {
       this.phase++;
       this.events.length = 0;
+      if (this.gate) this.closeGate(false); // (one gate at a time: a new phase brings its own)
       this.moveVel = null;
       this.spinT = 0;
       this.busy = 0;
@@ -313,6 +353,13 @@ const SCRIPTS = {};
 // ---------------- MOTHER OF FILTH ---------------------------------------
 SCRIPTS.motherOfFilth = {
   keepDist: 6,
+  gateDamage: () => 0,
+  gateUpdate(B) {
+    let left = 0;
+    for (const id of B.gate.ids) { const m = B.g.actors.byId.get(id); if (m && !m.dead) left++; }
+    if (left !== B.gate.left) { B.gate.left = left; B.fx('gatecount', { n: left }); }
+    if (!left) B.closeGate(true);
+  },
   // Nightmare: lanes of bile cross the arena twice; stand in a gap, then move
   nightmare: { name: 'lattice', title: 'Bile Lattice', hint: 'Find the gaps, then find them again', w: 2, cd: 11, minPhase: 1, run(B) {
     B.anim('cast', 'spit', 1.4);
@@ -372,7 +419,13 @@ SCRIPTS.motherOfFilth = {
     },
     {
       at: 0.66,
-      enter(B) { B.banner('THE FILTH RISES', 'The Mother submerges...', '#9adf3a'); B.sound('boss_roar'); },
+      // her gate, the Brood Shield: she draws her bile about her and nothing reaches her while her brood lives
+      enter(B) {
+        B.banner('THE FILTH RISES', 'Her brood shields her — cut it down!', '#9adf3a'); B.sound('boss_roar');
+        B.anim('cast', 'summon', 1.2);
+        const brood = B.summon('slime', 3 + B.players().length, 6);
+        B.openGate('brood', 18, { ids: brood.map((m) => m.id), left: brood.length, fx: { n: brood.length } });
+      },
       speed: 1.15,
       moves: [
         { name: 'submerge', w: 3, cd: 6, run(B) {
@@ -598,6 +651,26 @@ SCRIPTS.executioner = {
 
 // ---------------- STONE WYVERN (Gravemaw) ---------------------------------
 SCRIPTS.stoneWyvern = {
+  // its gate, Stoneskin: as it lands its hide turns to stone before it; only blows from behind bite, and it
+  // turns slowly, so you have to get round it. Enough of them crack the stone open.
+  gateDamage(B, dmg, H) {
+    if (H.tag === 'dot') return 0; // (stone doesn't burn)
+    const a = B.a, fx = Math.sin(a.yaw), fz = Math.cos(a.yaw);
+    let behind;
+    if (H.kbDir) behind = H.kbDir[0] * fx + H.kbDir[1] * fz > 0.25; // (pushed the way it faces: struck from behind)
+    else {
+      const src = B.g.allPlayers().find((p) => p.id === H.src) ?? B.g.actors.byId.get(H.src);
+      if (!src) return 0;
+      const ox = src.pos.x - a.pos.x, oz = src.pos.z - a.pos.z;
+      behind = (ox * fx + oz * fz) / (Math.hypot(ox, oz) || 1) < -0.25;
+    }
+    if (!behind) return 0;
+    B.gate.dealt += dmg;
+    const left = Math.ceil((1 - B.gate.dealt / B.gate.need) * 10) * 10;
+    if (left !== B.gate.n && left > 0) { B.gate.n = left; B.fx('gatecount', { n: left }); }
+    if (B.gate.dealt >= B.gate.need) B.closeGate(true);
+    return dmg;
+  },
   // Nightmare: rows of boulders sweep across the arena, each row with one gap
   nightmare: { name: 'avalanche', title: 'Avalanche', hint: 'Each row leaves one gap', w: 2, cd: 10, minPhase: 1, run(B, t) {
     B.anim('cast', 'roar', 1.2);
@@ -686,7 +759,7 @@ SCRIPTS.stoneWyvern = {
     },
     {
       at: 0.6,
-      enter(B) { B.data.fly = false; B.fx('fly', { on: 0 }); B.banner('GRAVEMAW LANDS', 'Its wings are broken — it fights with fury', '#e0a050'); B.sound('boss_roar'); B.shake(0.6); },
+      enter(B) { B.data.fly = false; B.fx('fly', { on: 0 }); B.banner('GRAVEMAW LANDS', 'Its hide turns to stone — strike it from behind!', '#e0a050'); B.sound('boss_roar'); B.shake(0.6); B.openGate('stone', 12, { turn: 0.9, dealt: 0, need: B.a.maxHp * 0.05, n: 100, fx: { n: 100 } }); },
       speed: 1.1,
       moves: [
         { name: 'tail', w: 3, cd: 3, range: [0, 8], run(B, t) {
@@ -760,6 +833,21 @@ SCRIPTS.stoneWyvern = {
 
 // ---------------- COURT ARCHMAGE (Veyrin) ---------------------------------
 SCRIPTS.courtArchmage = {
+  gateDamage: () => 0,
+  gateUpdate(B, dt) {
+    let lit = 0;
+    const ps = B.players();
+    B.gate.gl.forEach((q, i) => {
+      if (!q.lit) {
+        let on = false;
+        for (const p of ps) if (Math.hypot(p.pos.x - q.x, p.pos.z - q.z) < 1.9) on = true;
+        q.p = on ? q.p + dt : Math.max(0, q.p - dt * 0.5);
+        if (q.p >= 1.2) { q.lit = true; B.fx('glyph', { i, x: q.x, z: q.z }); B.sound('reaction', 0.8); }
+      }
+      if (q.lit) lit++;
+    });
+    if (lit === B.gate.gl.length) B.closeGate(true);
+  },
   keepDist: 10,
   // Nightmare: a ring of runes closes on each wizard with one gap, then the centre detonates
   nightmare: { name: 'prison', title: 'Rune Prison', hint: 'Leave through the gap', w: 2, cd: 9, minPhase: 1, run(B) {
@@ -845,7 +933,20 @@ SCRIPTS.courtArchmage = {
     },
     {
       at: 0.33,
-      enter(B) { B.banner('ARCANE CATACLYSM', 'Reality unravels', '#ff60ff'); B.sound('boss_roar'); B.fx('enrage'); },
+      // her gate, the Warding Glyphs: a ward no spell crosses, anchored by three glyphs about the hall; stand in each
+      // until it burns gold and the ward falls
+      enter(B) {
+        B.banner('ARCANE CATACLYSM', 'She is warded — stand in her three glyphs!', '#ff60ff'); B.sound('boss_roar'); B.fx('enrage');
+        const A = B.arena(), cx = (A.x0 + A.x1) / 2, cz = (A.z0 + A.z1) / 2, rx = (A.x1 - A.x0) * 0.32, rz = (A.z1 - A.z0) * 0.32, o = Math.random() * Math.PI * 2;
+        const gl = [];
+        for (let i = 0; i < 3; i++) {
+          const ang = o + (i / 3) * Math.PI * 2;
+          let x = cx + Math.cos(ang) * rx, z = cz + Math.sin(ang) * rz;
+          if (B.g.collision.cellBlocked(Math.floor(x / 2), Math.floor(z / 2), B.a.pos.y + 0.5)) { const q = B.roomRandom(3); x = q.x; z = q.z; }
+          gl.push({ x, z, p: 0, lit: false });
+        }
+        B.openGate('ward', 22, { gl, fx: { gl: gl.flatMap((q) => [q.x, q.z]) } });
+      },
       // the hall's wards misfire: two beams cross the arena through its middle
       press: { name: 'Ward Surge', every: 8, run(B) {
         const A = B.arena(), cx = (A.x0 + A.x1) / 2, cz = (A.z0 + A.z1) / 2, base = Math.random() * Math.PI;
@@ -902,6 +1003,16 @@ SCRIPTS.courtArchmage = {
 
 // ---------------- THE HOLLOW KING ----------------------------------------
 SCRIPTS.hollowKing = {
+  // his gate, the Hollow Judgment: a ward no blade crosses, and he comes on harder; it cracks only when a
+  // wizard slips one of his blows at the last instant (a perfect dodge), and three cracks shatter it
+  gateDamage: () => 0,
+  gateDodge(B) {
+    if (B.gate?.kind !== 'judgment') return;
+    B.gate.n++;
+    B.fx('gatecount', { n: B.gate.need - B.gate.n });
+    if (B.gate.n >= B.gate.need) B.closeGate(true);
+  },
+  judgment(B) { B.openGate('judgment', 20, { need: 3, fx: { n: 3 } }); },
   keepDist: 3.5,
   // Nightmare: stars of blade-lines fall from the throne, each turned from the last
   nightmare: { name: 'swords', title: 'Crown of Swords', hint: 'Step between the blades as they turn', w: 2, cd: 9, minPhase: 0, run(B) {
@@ -971,6 +1082,7 @@ SCRIPTS.hollowKing = {
         B.busy = 1.6;
         B.fx('rise');
         B.wave(2, 10, 30, 0.6, 'enemyPurple', 0.6);
+        B.at(1.7, () => { B.banner('HOLLOW JUDGMENT', 'No blade crosses his ward — slip his blows!', '#b070ff'); SCRIPTS.hollowKing.judgment(B); });
       },
       speed: 1.05,
       moves: [
@@ -1015,6 +1127,7 @@ SCRIPTS.hollowKing = {
         B.sound('boss_roar'); B.shake(0.8);
         B.fx('eclipse');
         B.leapToCentre({ el: 'enemyPurple' });
+        B.at(3, () => { B.banner('HOLLOW JUDGMENT', 'His ward returns — slip three blows!', '#ff40ff'); SCRIPTS.hollowKing.judgment(B); });
       },
       // rifts of void open in the dark
       press: { name: 'Void Rift', every: 9, run(B) { for (let i = 0; i < 3; i++) { const p = B.roomRandom(3); B.circle(p.x, p.z, 2.6, 1.4 + i * 0.25, 0.65, 'enemyPurple'); } } },
