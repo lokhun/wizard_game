@@ -125,6 +125,10 @@ const _hp = { x: 0, z: 0 };
 // few seconds. A pool of 24 in one instanced mesh of the arrow (count kept at one zero-sized arrow, so its
 // program compiles with the level's).
 const ARROWS = 24, ARROW_LIFE = 6, _aq = new THREE.Quaternion(), _aw = new THREE.Quaternion(), _ap = new THREE.Vector3(), _ad = new THREE.Vector3(), _as = new THREE.Vector3(), _am = new THREE.Matrix4(), _az = new THREE.Vector3(0, 0, 1);
+// what a shot leaves on the wall it strikes, by element (and how big): scorched, rimed or cracked stone
+const WALL_MARK = { fire: ['scorch', 1.3], enemyFire: ['scorch', 1.1], lightning: ['scorch', 0.8], frost: ['frost', 1.2], earth: ['crack', 1.1], physical: ['crack', 0.8] };
+const _wmP = new THREE.Vector3();
+
 class StuckArrows {
   constructor(def) {
     this.mesh = new THREE.InstancedMesh(def.geo, def.mat, ARROWS);
@@ -195,6 +199,7 @@ export class SpellRuntime {
     this.spriteMats = new Map();
     this.meshCache = {};
     this.arrows = null; // (missed arrows stuck in walls and floors: StuckArrows)
+    this._wmT = -1; // (the last wall mark: see _wallMark)
     this._buildMeshes();
     // (the stuck-arrow pool lives in the scene for good, from before the first prewarm, so its program
     // compiles with the level's and the prewarm's sweep of what it added leaves it be)
@@ -603,6 +608,7 @@ export class SpellRuntime {
       }
       if (wallHit) {
         if (p.meshKind === 'arrow') this.arrows?.add(p.pos, p.vel);
+        else this._wallMark(p);
         if (p.onWall) p.onWall(p, p.pos);
         g.encounters?.wallHit(p); // secret walls crack under spells
         if (!p.aoe) g.vfx.impact(p.pos, p.el, 0.8);
@@ -697,6 +703,24 @@ export class SpellRuntime {
       _ta.z * len, _ts.z * w, _tn.z, 0,
       0, 0, 0, 1);
     t.matrixWorldNeedsUpdate = true;
+  }
+
+  // the mark a shot leaves where it struck a wall (on the wall's face: the cells are 2 m, faces on their
+  // edges); none on a pillar or prop, and a few a second at most however fast the volley
+  _wallMark(p) {
+    const mk = WALL_MARK[p.el], g = this.g;
+    if (!mk || g.time - this._wmT < 0.12) return;
+    const v = p.vel, l = v.length();
+    if (l < 1) return;
+    const ix = p.pos.x + v.x / l * 0.15, iz = p.pos.z + v.z / l * 0.15, cx = Math.floor(ix / 2), cz = Math.floor(iz / 2);
+    if (!g.collision.cellBlocked(cx, cz, p.pos.y)) return;
+    const bx = ix - v.x / l * 0.5, bz = iz - v.z / l * 0.5;
+    let nx = 0, nz = 0, sx = p.pos.x, sz = p.pos.z;
+    if (Math.floor(bx / 2) !== cx) { nx = v.x > 0 ? -1 : 1; sx = (cx + (nx > 0 ? 1 : 0)) * 2; }
+    else if (Math.floor(bz / 2) !== cz) { nz = v.z > 0 ? -1 : 1; sz = (cz + (nz > 0 ? 1 : 0)) * 2; }
+    else return;
+    this._wmT = g.time;
+    g.vfx.wallDecal(_wmP.set(sx, Math.max(p.pos.y, g.groundY(sx + nx * 0.5, sz + nz * 0.5) + 0.35), sz), nx, nz, mk[0], mk[1] * (0.8 + Math.random() * 0.4), 9);
   }
 
   _remove(i) {

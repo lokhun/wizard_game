@@ -483,6 +483,7 @@ function alphaNormalMap(srcCanvas, strength = 3) {
 
 // how each decal type is drawn: lit pools respond to torches and spell light,
 // additive ones (glyphs, rime) glow faintly
+const _wdN = new THREE.Vector3(), _wdUp = new THREE.Vector3(0, 1, 0), _wdQ = new THREE.Quaternion();
 const DECAL_LOOK = {
   scorch: { rough: 0.95 },
   crack: { rough: 0.95 },
@@ -1236,6 +1237,20 @@ export class VFX {
     this.drape(m, 0.03 + Math.random() * 0.01); // (a hair apart, so overlapping marks don't flicker)
     mat.opacity = 1;
     this._track(m, life, (k) => { mat.opacity = k > 0.75 ? 1 - (k - 0.75) / 0.25 : Math.min(1, k * 20); });
+    return m;
+  }
+
+  // A mark on a wall where a shot struck it: a decal laid flat (the drape grid flattened back to a plane)
+  // and turned to face out of the wall along (nx, nz), spun at random about that face.
+  wallDecal(pos, nx, nz, type, size = 1.2, life = 8, color) {
+    const m = this.decal(pos, type, size, life, color);
+    if (!m) return null;
+    const P = m.geometry.attributes.position;
+    for (let i = 0; i < P.count; i++) P.setY(i, 0);
+    P.needsUpdate = true;
+    _wdN.set(nx, 0, nz).normalize();
+    m.quaternion.setFromUnitVectors(_wdUp, _wdN).multiply(_wdQ.setFromAxisAngle(_wdUp, Math.random() * Math.PI * 2));
+    m.position.set(pos.x + _wdN.x * 0.03, pos.y, pos.z + _wdN.z * 0.03);
     return m;
   }
 
