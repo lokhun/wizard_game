@@ -497,12 +497,14 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     const geo = card.build();
     grassMat = new THREE.MeshStandardMaterial({ map: grassCardTexture(), alphaTest: 0.42, vertexColors: true, roughness: 0.85, side: THREE.DoubleSide });
     grassMat.userData.time = { value: 0 };
+    // bodies moving through it part the grass: up to 8 (x, z, reach, 0), the wizards and the nearest foes
+    grassMat.userData.push = { value: Array.from({ length: 8 }, () => new THREE.Vector4(0, 0, 0, 0)) };
     // a storm's wind drives the gusts harder and the blades flutter faster (and the wet turf is darker)
     const windK = { value: biome.storm ? 1.9 : 1 };
     if (biome.storm) grassMat.color.setScalar(0.82);
     grassMat.onBeforeCompile = (sh) => {
-      sh.uniforms.uTime = grassMat.userData.time; sh.uniforms.uWindK = windK;
-      sh.vertexShader = 'uniform float uTime; uniform float uWindK;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+      sh.uniforms.uTime = grassMat.userData.time; sh.uniforms.uWindK = windK; sh.uniforms.uPush = grassMat.userData.push;
+      sh.vertexShader = 'uniform float uTime; uniform float uWindK; uniform vec4 uPush[8];\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
         vec4 wp = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
         // gust fronts roll across the yard; each blade also flutters on its own
         float gust = 0.5 + 0.5 * sin(dot(wp.xz, vec2(0.11, 0.06)) - uTime * 1.15 * uWindK);
@@ -510,6 +512,14 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
         float flutter = sin(uTime * 3.4 * uWindK + wp.x * 1.9 + wp.z * 1.3 + position.x * 23.0 + position.z * 17.0);
         float bend = uv.y * uv.y * mix(1.0, uWindK, 0.6);
         vec3 windW = vec3(0.07 + gust * 0.2 + flutter * 0.025, -gust * 0.05, 0.03 + gust * 0.07 + flutter * 0.015) * bend;
+        // pressed aside (and down) by whatever is walking through it
+        for (int i = 0; i < 8; i++) {
+          vec4 q = uPush[i];
+          if (q.z <= 0.0) continue;
+          vec2 dv = wp.xz - q.xy; float d = length(dv);
+          float k = 1.0 - smoothstep(q.z * 0.35, q.z, d);
+          if (k > 0.0) { vec2 dir = dv / max(d, 1e-3); windW += vec3(dir.x * 0.32, -0.22, dir.y * 0.32) * k * uv.y * uv.y; }
+        }
         // into the tuft's own frame, so every tuft leans the same way whatever its rotation
         mat3 grassIM = mat3(instanceMatrix);
         transformed += transpose(grassIM) * windW / max(1e-3, dot(grassIM[0], grassIM[0]));`);
@@ -733,6 +743,10 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
       if (sky) sky.material.uniforms.uTime.value = time;
       if (dressed.streams) streamTexture().offset.y = time * 1.3;
       if (grassMat) grassMat.userData.time.value = time;
+    },
+    // the bodies parting the grass this frame (see the grass shader): i < 8, reach 0 for none
+    setGrassPush(i, x, z, r) {
+      if (grassMat) grassMat.userData.push.value[i].set(x, z, r, 0);
     },
     hideBreakable(b) {
       const zero = new THREE.Matrix4().makeScale(0, 0, 0);

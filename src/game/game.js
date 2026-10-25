@@ -107,6 +107,7 @@ export class Game {
     this._hzBusy = false; // (inside the hazard loop: see cancelHazardsFrom)
     this.debris = null; // (wreckage of smashed barrels and crates: render/debris.js)
     this.rubble = null; // (and the same in stone: a broken wall's blocks)
+    this._gpD = new Float32Array(8); this._gpA = new Array(8).fill(null); // (_grassPush's nearest foes)
     this._bolt = { a: new THREE.Vector3(), b: new THREE.Vector3(), o: { jag: 7, width: 0.55, life: 0.22, branches: 3, seg: 3.5, color: [2.2, 2.5, 3.4] } };
     this.remotes = new Map();
     this.hazards = [];
@@ -730,6 +731,7 @@ export class Game {
     this._ambient(realDt);
     this.critters?.update(dt, this.time, this.renderer.camera.position, this.allPlayers());
     this.debris?.update(dt, this.actors._floor);
+    if (this.biome?.outdoor) this._grassPush();
     this.rubble?.update(dt, this.actors._floor);
     this.contact.update(this);
     if (this.storm) {
@@ -924,6 +926,25 @@ export class Game {
   }
 
   groundY(x, z) { return this.level ? this.level.floorAt(x, z) : 0; }
+
+  // the grass parts round the wizards and the foes nearest the eye (8 at most: see the grass shader)
+  _grassPush() {
+    const B = this.built, cam = this.renderer.camera.position, D = this._gpD, A = this._gpA;
+    let n = 0, m = 0;
+    for (const pl of this.allPlayers()) { if (n < 3 && !pl.dead) B.setGrassPush(n++, pl.pos.x, pl.pos.z, 0.9); }
+    const cap = 8 - n;
+    for (const a of this.actors.list) {
+      if (a.dead || a.flying) continue;
+      const d = (a.pos.x - cam.x) ** 2 + (a.pos.z - cam.z) ** 2;
+      if (d > 400 || (m === cap && d >= D[m - 1])) continue;
+      // (kept sorted, nearest first: insert, the farthest falling off the end)
+      let j = m < cap ? m++ : m - 1;
+      while (j > 0 && D[j - 1] > d) { D[j] = D[j - 1]; A[j] = A[j - 1]; j--; }
+      D[j] = d; A[j] = a;
+    }
+    for (let k = 0; k < m; k++) B.setGrassPush(n++, A[k].pos.x, A[k].pos.z, 0.55 + A[k].radius);
+    for (; n < 8; n++) B.setGrassPush(n, 0, 0, 0);
+  }
   // channel water here (its surface is WATER_Y; the floor under it is the bed)
   waterAt(x, z) { const L = this.level; return !!L && L.kind[L.idx(Math.floor(x / T), Math.floor(z / T))] === K_WATER; }
   // something landed in the water: rings it and throws up a splash, sized k (a footfall ~1, a blast 2-3)
