@@ -3,6 +3,9 @@ import { ROOM, T, FLOOR, K_WATER } from '../world/levelgen.js';
 import { ENEMY_DEFS, BOSS_DEFS, FLOOR_HP, FLOOR_DMG, ABYSS_HP, ABYSS_DMG } from './enemyDefs.js';
 
 const HEAT_RAMP = [0.6, 0.85, 1.1, 1.4, 1.7];
+// (health climbs harder than damage: a drafted build's damage grows ~1 / 1.8 / 3 / 5.9 / 8.4x over the realms,
+// measured with scripts/curve.js &pick=greedy, and a foe that lives longer already hits you more often)
+const HEAT_RAMP_HP = [0.6, 1.0, 1.5, 2.3, 3.1];
 import { RNG } from '../core/rng.js';
 import { BIOMES } from '../world/biomes.js';
 
@@ -111,9 +114,10 @@ export class Director {
   // What heat and Nightmare add to foes' health and damage grows realm by realm (HEAT_RAMP): a flat
   // multiplier hit hardest in the Sewers, before a build exists, and was outgrown by the third realm, so a
   // high-heat run was decided in its first realm. Now the first realm carries 60% of the sworn extra and the
-  // last 170% (the Abyss the same). Unpacted runs are untouched (the extra is zero).
-  heatK(m) { return 1 + (m - 1) * HEAT_RAMP[this.depth ? 4 : Math.min(4, this.floor)]; }
-  heatHp() { return this.heatK(this.g.difficulty?.enemyHp ?? 1); }
+  // last 170% of its damage and 310% of its health (the Abyss the same). Unpacted runs are untouched (the
+  // extra is zero).
+  heatK(m, ramp = HEAT_RAMP) { return 1 + (m - 1) * ramp[this.depth ? 4 : Math.min(4, this.floor)]; }
+  heatHp() { return this.heatK(this.g.difficulty?.enemyHp ?? 1, HEAT_RAMP_HP); }
   heatDmg() { return this.heatK(this.g.difficulty?.enemyDamage ?? 1); }
   // A party meets more foes, but the wave cap and squad shapes keep it under countScale: measured
   // over the planned waves of every realm, a party of two meets ~1.5x a solo player's bodies and
