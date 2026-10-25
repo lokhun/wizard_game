@@ -876,7 +876,7 @@ export class EnemyInstance {
     this.magicColor = spec.magicColor ?? spec.eyeColor;
     this.time = Math.random() * 100;
     this.seed = Math.random();
-    this.state = { phase: Math.random() * TAU, lastAnim: null };
+    this.state = { phase: Math.random() * TAU, lastAnim: null, lastYaw: null, turnK: 0 };
     this._flash = 0;
     this._tint = null; this._tintK = 0;
     this._opacity = 1;
