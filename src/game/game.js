@@ -620,6 +620,13 @@ export class Game {
     const rnd = (r) => (Math.random() - 0.5) * r;
     // dust motes everywhere (catch the torchlight)
     if (Math.random() < dt * 14) P.glow({ x: cam.x + rnd(16), y: cam.y + rnd(4), z: cam.z + rnd(16), vx: rnd(0.15), vy: rnd(0.08), vz: rnd(0.15), r: 0.5, g: 0.42, b: 0.32, life: 6, size: 0.025, sprite: SPR.GLOW, drag: 0.2 });
+    // dust hanging in the window light: motes drift slowly through each beam near you, bright in it
+    for (const sh of this.built.shafts) {
+      if (Math.random() > dt * 9 || (sh.x - cam.x) ** 2 + ((sh.z0 + sh.z1) * 0.5 - cam.z) ** 2 > 500) continue;
+      const t = Math.random() * 0.9;
+      const k = 5 + Math.random() * 3;
+      P.glow({ x: sh.x + rnd(sh.w * (1 + t * 0.3)), y: sh.top * (1 - t) + 0.05 * t, z: sh.z0 + (sh.z1 - sh.z0) * t + rnd(0.6), vx: rnd(0.08), vy: -0.02 + rnd(0.04), vz: rnd(0.08), r: sh.col.r * k + 0.15, g: sh.col.g * k + 0.13, b: sh.col.b * k + 0.12, life: 4 + Math.random() * 3, size: 0.024 + Math.random() * 0.016, sprite: SPR.GLOW, drag: 0.3 });
+    }
     if (id === 'sewers' && Math.random() < dt * 4) {
       const x = cam.x + rnd(14), z = cam.z + rnd(14);
       const c = this.level.ceilAt(x, z);

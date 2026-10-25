@@ -559,6 +559,7 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
   }
 
   // ---------------- light shafts from the dressing's north windows: soft additive beams
+  const shafts = []; // (each beam's volume, for the dust drifting in it: Game._ambient)
   if (dressed.shafts.length) {
     const shaftGeo = new GeoBuilder();
     // each beam falls from a moonlit window high on a north wall, slanting down into the room
@@ -568,6 +569,7 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
       const { x, w, top } = sh, z0 = sh.z;
       const len = Math.min(room.h * T * 0.8, top * 1.4);
       const z1 = z0 + len * 0.6, bottom = 0.05;
+      shafts.push({ x, w, top, z0, z1, col: null });
       shaftGeo.quad([x - w / 2, top, z0], [x + w / 2, top, z0], [x + w / 2 + 0.3, bottom, z1], [x - w / 2 - 0.3, bottom, z1], [0, 0, 1], [[0, 1], [1, 1], [1, 0], [0, 0]]);
       shaftGeo.quad([x, top, z0 - w / 2 + 0.01], [x, top, z0 + w / 2], [x + 0.2, bottom, z1 + w / 2], [x + 0.2, bottom, z1 - w / 2], [1, 0, 0], [[0, 1], [1, 1], [1, 0], [0, 0]]);
     }
@@ -585,6 +587,7 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
       ownTex.push(tex);
       const col = biome.id === 'throne' ? new THREE.Color(0.22, 0.12, 0.32) : biome.id === 'dungeon' ? new THREE.Color(0.07, 0.09, 0.14) : new THREE.Color(0.14, 0.15, 0.2);
       const shaftMat = new THREE.MeshBasicMaterial({ map: tex, color: col, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: true });
+      for (const sh of shafts) sh.col = col;
       const sm = new THREE.Mesh(shaftGeo.build(), shaftMat);
       sm.renderOrder = 6;
       group.add(sm);
@@ -710,6 +713,7 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     mats,
     doors,
     flames,
+    shafts,
     interactables,
     sky,
     update(dt, time) {
