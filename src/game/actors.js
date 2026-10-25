@@ -177,7 +177,8 @@ export class Actor {
 // what an enemy's body is made of, for death debris
 function bodyOf(type) {
   if (/skeleton|lich/i.test(type)) return 'bone';
-  if (/armor|knight|guard|gargoyle|captain/i.test(type)) return 'metal';
+  if (/gargoyle/i.test(type)) return 'stone';
+  if (/armor|knight|guard|captain/i.test(type)) return 'metal';
   if (/slime|ooze/i.test(type)) return 'slime';
   if (/wraith|grimoire|imp|spirit/i.test(type)) return 'spirit';
   return 'flesh';
@@ -617,6 +618,10 @@ export class ActorManager {
     } else if (body === 'metal') {
       g.vfx.burst(c, { count: 10 * s, speed: 5, life: 1.3, size: 0.12, sprite: SPR.CHUNK, gravity: 16, solid: true, spin: 10, upward: 0.5, color: [0.34, 0.35, 0.38], color2: [0.22, 0.22, 0.24] });
       g.vfx.burst(c, { count: 18, speed: 7, life: 0.4, size: 0.04, sprite: SPR.SPARK, stretch: 0.05, gravity: 10, color: [3, 2.2, 1.2] });
+    } else if (body === 'stone') {
+      // a carved body breaks up: lumps of it tumble to the floor in a puff of grit
+      g.rubble?.burst(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z, Math.round(9 * s), 0.24 * s, 0.17 * s, 0.11 * s, 3, 2.2, 0.35 * s);
+      g.vfx.smoke(c, { count: 5, size: 0.7 * s, color: [0.34, 0.32, 0.3], alpha: 0.4, life: 1.6 });
     } else if (body === 'slime') {
       g.vfx.burst(c, { count: 24 * s, speed: 4, life: 0.9, size: 0.14, sprite: SPR.DROP, gravity: 14, solid: true, upward: 0.8, color: [0.16, 0.3, 0.06], color2: [0.1, 0.2, 0.04] });
       g.vfx.decal(new THREE.Vector3(a.pos.x, a.pos.y, a.pos.z), 'slime', 2.4 * s, 12);
