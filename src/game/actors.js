@@ -137,7 +137,11 @@ export class Actor {
     this.scale = (this.def.scale ?? 1) * (this.elite && !this.def.elite ? 1.25 : 1);
     this.net = { x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw, t: 0 };
     this.lastHitBy = null;
-    this._kbx = 0; this._kby = 0; this._kbT = null; this.deathYaw = null; // (the last blow's push; the way a body falls)
+    this._kbx = 0; this._kby = 0; this._kbT = -1; this.deathYaw = null; // (the last blow's push; the way a body falls)
+    // (declared here, never added later: a field set on the fly changes the object's shape and slows every
+    // actor through the hot loops; the stress fight paid ~0.4 ms a frame for three of them)
+    this._heavy = null; this._arcSide = 1; this._matT = 0; this._teleE = null; this._tele = null; this._tap = false; this._combo = null;
+    this.gate = null; this.phaseAts = null; this._lblFor = null; this._lblA = null; this._lblB = null; this._lbl = null;
     this.lastHitEl = 'physical';
     this.hitFlash = 0;
     this.shieldHp = 0;
@@ -381,7 +385,7 @@ export class ActorManager {
   // onto the back faces against it), or null to fall as it stands: no push in the last second, a boss, or a
   // death that isn't a topple (crumbling, flying apart, dissipating, a type's own).
   _fallYaw(a) {
-    if (a.boss || a._kbT == null || this.g.time - a._kbT > 1) return null;
+    if (a.boss || a._kbT < 0 || this.g.time - a._kbT > 1) return null;
     const st = a.model?.spec?.anim?.death ?? 'fall';
     if (st !== 'fall' && st !== 'kneel' && st !== 'fallBack') return null;
     // (not into a wall: with stone within a body's length that way, it falls as it stands)
