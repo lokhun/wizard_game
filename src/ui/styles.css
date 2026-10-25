@@ -257,7 +257,7 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 /* (as wide as fits between the realm name and the minimap at any HUD scale: the zoom multiplies the width back) */
 .boss-bar { position: absolute; left: 50%; top: 34px; transform: translateX(-50%); width: calc(min(820px * var(--hud-scale, 1), 100vw - 580px * var(--hud-scale, 1)) / var(--hud-scale, 1)); text-align: center; }
 .boss-bar .bname { font-family: 'Cinzel', var(--serif); font-weight: 600; font-size: 26px; color: #f0dcc0; letter-spacing: 0.1em; text-shadow: 0 0 16px rgba(255,80,40,0.5), 0 2px 3px #000; }
-.boss-bar .btitle { font-family: var(--serif); font-size: 11px; color: var(--text-dim); letter-spacing: 0.35em; text-transform: uppercase; margin-bottom: 6px; }
+.boss-bar .btitle { font-family: var(--serif); font-size: 11px; color: var(--text-dim); letter-spacing: 0.35em; text-transform: uppercase; margin-bottom: 6px; text-shadow: 0 1px 2px #000, 0 0 6px rgba(0,0,0,0.9); } /* (read over a bright boss behind it) */
 .boss-bar .bname { display: flex; align-items: center; justify-content: center; white-space: nowrap; }
 .boss-bar .bname::before, .boss-bar .bname::after { content: ''; flex: 0 1 90px; min-width: 12px; height: 1px; margin: 0 16px; background: linear-gradient(90deg, transparent, rgba(255,140,90,0.75)); }
 .boss-bar .bname::after { background: linear-gradient(270deg, transparent, rgba(255,140,90,0.75)); }
