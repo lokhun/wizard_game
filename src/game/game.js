@@ -76,6 +76,7 @@ export class Game {
     this.particles = new Particles(this.scene);
     this.vfx = new VFX(this.scene, renderer.camera, this.particles, this.lights);
     this.vfx.floorAt = (x, z) => this.groundY(x, z);
+    this.vfx.waterY = WATER_Y; // (danger zones over water lie on its surface)
     this.contact = new ContactShadows(this.scene);
     this.spells = new SpellRuntime(this);
     this.actors = new ActorManager(this);

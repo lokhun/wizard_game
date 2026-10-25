@@ -383,6 +383,7 @@ export class ActorManager {
     }
     a._tele.position.x = a.pos.x; a._tele.position.z = a.pos.z;
     a._tele.rotation.y = a.yaw + Math.PI;
+    this.g.vfx.drape(a._tele); // (still lying over the floor where it has moved to)
   }
 
   remove(a) {

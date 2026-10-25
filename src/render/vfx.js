@@ -134,6 +134,25 @@ export function orbMaterial(fx, time, rim = 0.8) {
   });
 }
 
+// A 2x2 ground quad divided finely enough to follow steps in the floor (see VFX.drape); its own copy per
+// zone, since each is bent to the floor under it. userData.xz keeps the flat x,z of every vertex.
+function drapeGeo(n = 20) {
+  const g = new THREE.PlaneGeometry(2, 2, n, n);
+  g.rotateX(-Math.PI / 2);
+  const p = g.attributes.position, xz = new Float32Array(p.count * 2);
+  for (let i = 0; i < p.count; i++) { xz[i * 2] = p.getX(i); xz[i * 2 + 1] = p.getZ(i); }
+  g.userData.xz = xz;
+  p.setUsage(THREE.DynamicDrawUsage);
+  return g;
+}
+
+function drapeWallGeo(src) {
+  const g = src.clone(), p = g.attributes.position;
+  g.userData.xyz = Float32Array.from(p.array);
+  p.setUsage(THREE.DynamicDrawUsage);
+  return g;
+}
+
 // ---------------------------------------------------------------- shaders
 const RING_VERT = /* glsl */ `
 varying vec2 vUv; varying float vDepth;
@@ -553,6 +572,7 @@ export class VFX {
     this.hitstop = 0;
     this.active = [];     // timed mesh effects
     this.floorAt = null;  // (x, z) -> floor height, set by the game: blasts put their ring and scorch on it
+    this.waterY = null;   // the water's surface, set by the game (danger zones over water lie on it)
 
     const plane = new THREE.PlaneGeometry(2, 2);
     plane.rotateX(-Math.PI / 2);
@@ -568,12 +588,14 @@ export class VFX {
     // telegraphs
     // (64: an arena-wide pattern marks 40+ zones at once, and a pool that ran out stole the
     // oldest warning still on the floor: a blow that landed with no mark)
-    this.telePool = this._pool(64, () => new THREE.Mesh(plane, new THREE.ShaderMaterial({
+    // (each zone its own finely divided quad: it is draped over the floor under it, see drape)
+    this.telePool = this._pool(64, () => new THREE.Mesh(drapeGeo(), new THREE.ShaderMaterial({
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }',
       fragmentShader: TELE_FRAG,
       uniforms: { uColor: { value: new THREE.Color() }, uProg: { value: 0 }, uTime: { value: 0 }, uMode: { value: 0 }, uAngle: { value: 0.6 }, uFade: { value: 1 }, uSize: { value: new THREE.Vector2(1, 1) }, uK: { value: new THREE.Vector2(1, 1) } },
       transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
     })));
+    for (const m of this.telePool.items) m.frustumCulled = false; // (draped: the flat quad's bounds no longer hold)
     // beams (unit cylinder along +Y from 0..1)
     const beamGeo = new THREE.CylinderGeometry(1, 1, 1, 12, 1, true);
     beamGeo.translate(0, 0.5, 0);
@@ -607,8 +629,9 @@ export class VFX {
       // mapped from the start: a map assigned later would not change the
       // compiled program, and the decal drew as a solid coloured quad
       const glow = new THREE.MeshBasicMaterial({ map: this.decalTex.glyph, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, blending: THREE.AdditiveBlending, fog: true });
-      const m = new THREE.Mesh(plane, lit);
+      const m = new THREE.Mesh(drapeGeo(8), lit); // (draped over the floor like the danger zones: a pool is one too)
       m.userData.lit = lit; m.userData.glow = glow;
+      m.frustumCulled = false;
       m.receiveShadow = true;
       return m;
     });
@@ -649,14 +672,15 @@ export class VFX {
     const wallGeo = new THREE.CylinderGeometry(1, 1, 1, 72, 1, true);
     wallGeo.translate(0, 0.5, 0);
     const premul = { transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor };
+    // (both draped over the floor as they grow, like the danger zones: own geometry each)
     this.wallPool = this._pool(8, () => {
-      const m = new THREE.Mesh(wallGeo, new THREE.ShaderMaterial({ vertexShader: WALL_VERT, fragmentShader: WALL_FRAG, uniforms: { uColor: { value: new THREE.Color() }, uAlpha: { value: 0 }, uTime: { value: 0 } }, side: THREE.DoubleSide, ...premul }));
+      const m = new THREE.Mesh(drapeWallGeo(wallGeo), new THREE.ShaderMaterial({ vertexShader: WALL_VERT, fragmentShader: WALL_FRAG, uniforms: { uColor: { value: new THREE.Color() }, uAlpha: { value: 0 }, uTime: { value: 0 } }, side: THREE.DoubleSide, ...premul }));
       m.material.forceSinglePass = true;
       m.frustumCulled = false;
       return m;
     });
     this.bandPool = this._pool(8, () => {
-      const m = new THREE.Mesh(plane, new THREE.ShaderMaterial({ vertexShader: WALL_VERT, fragmentShader: BAND_FRAG, uniforms: { uColor: { value: new THREE.Color() }, uAlpha: { value: 0 }, uR: { value: 1 }, uW: { value: 0.7 }, uS: { value: 1 } }, ...premul }));
+      const m = new THREE.Mesh(drapeGeo(), new THREE.ShaderMaterial({ vertexShader: WALL_VERT, fragmentShader: BAND_FRAG, uniforms: { uColor: { value: new THREE.Color() }, uAlpha: { value: 0 }, uR: { value: 1 }, uW: { value: 0.7 }, uS: { value: 1 } }, ...premul }));
       m.frustumCulled = false;
       return m;
     });
@@ -844,7 +868,7 @@ export class VFX {
     bu.uColor.value.setRGB(c[0], c[1], c[2]);
     bu.uW.value = halfWidth;
     w.position.set(pos.x, (pos.y ?? 0) - 0.05, pos.z);
-    b.position.set(pos.x, (pos.y ?? 0) + 0.07, pos.z);
+    b.position.set(pos.x, (pos.y ?? 0) + 0.02, pos.z);
     const h = { r: 0.1, a: 0, end: null };
     const step = () => {
       const r = Math.max(0.05, h.r);
@@ -853,6 +877,9 @@ export class VFX {
       const S = r + halfWidth + 0.2;
       b.scale.setScalar(S);
       bu.uS.value = S; bu.uR.value = r; bu.uAlpha.value = h.a;
+      // the wave rides the floor: up onto a dais, down off it
+      this.drape(b);
+      this.drapeWall(w, height);
     };
     step();
     this._track(w, 1e9, step);
@@ -888,6 +915,7 @@ export class VFX {
       u.uSize.value.set(opts.radius, opts.radius); u.uK.value.setScalar((opts.radius + PAD) / opts.radius);
       if (mode === 2) m.rotation.y = (opts.rot ?? 0) + Math.PI;
     }
+    this.drape(m);
     const dur = opts.dur ?? 1;
     const total = dur + 0.15;
     this._track(m, total, (k, t) => {
@@ -896,6 +924,41 @@ export class VFX {
       u.uFade.value = t > dur ? 1 - (t - dur) / 0.15 : Math.min(1, t * 8);
     });
     return m;
+  }
+
+  // Lay a danger zone over the floor under it. A zone was one flat quad at a single height, so on raised
+  // ground (a dais, a tier, the far side of a step) it lay under the floor and could not be seen. Each
+  // vertex now takes the height of the floor beneath it (the water's surface where there is water), a
+  // little above it; a step's edge becomes a short ramp in the mark. Call again after moving the zone.
+  drape(m, lift = 0.05) {
+    const at = this.floorAt;
+    const g = m.geometry, pos = g.attributes.position, base = g.userData.xz, n = pos.count;
+    const sx = m.scale.x, sy = m.scale.y, sz = m.scale.z, c = Math.cos(m.rotation.y), sn = Math.sin(m.rotation.y);
+    const px = m.position.x, py = m.position.y, pz = m.position.z, water = this.waterY ?? -Infinity;
+    for (let i = 0; i < n; i++) {
+      let y = lift / sy;
+      if (at) {
+        const lx = base[i * 2] * sx, lz = base[i * 2 + 1] * sz;
+        const f = at(px + lx * c + lz * sn, pz - lx * sn + lz * c);
+        y = ((f > water ? f : water) + lift - py) / sy;
+      }
+      pos.setY(i, y);
+    }
+    pos.needsUpdate = true;
+  }
+
+  // A shockwave's wall stands on the floor under each point of it (see drape): its foot follows the floor,
+  // its crest stays `height` above that.
+  drapeWall(m, height) {
+    const at = this.floorAt;
+    if (!at) return;
+    const g = m.geometry, pos = g.attributes.position, base = g.userData.xyz, n = pos.count;
+    const r = m.scale.x, px = m.position.x, py = m.position.y, pz = m.position.z, water = this.waterY ?? -Infinity;
+    for (let i = 0; i < n; i++) {
+      const f = at(px + base[i * 3] * r, pz + base[i * 3 + 2] * r);
+      pos.setY(i, ((f > water ? f : water) - 0.05 - py) / height + base[i * 3 + 1]);
+    }
+    pos.needsUpdate = true;
   }
 
   lightning(a, b, o = {}) {
@@ -1154,9 +1217,10 @@ export class VFX {
       // coloured lit decals (e.g. purple pools) are tinted, but kept dark
       if (color !== undefined) mat.color.multiplyScalar(0.5);
     }
-    m.position.set(pos.x, (pos.y ?? 0) + 0.03 + Math.random() * 0.01, pos.z);
+    m.position.set(pos.x, pos.y ?? 0, pos.z);
     m.rotation.set(0, Math.random() * Math.PI * 2, 0);
     m.scale.setScalar(size / 2);
+    this.drape(m, 0.03 + Math.random() * 0.01); // (a hair apart, so overlapping marks don't flicker)
     mat.opacity = 1;
     this._track(m, life, (k) => { mat.opacity = k > 0.75 ? 1 - (k - 0.75) / 0.25 : Math.min(1, k * 20); });
     return m;
