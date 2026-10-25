@@ -16,6 +16,10 @@ const C = (hex, k = 1) => {
 // Kept to ~1.5-2.2x HDR: enough to stay the brightest thing on screen and to
 // bloom a little, but ACES no longer shifts fire to pink/white or necrotic
 // to neon. Hues are deliberately deep (grim, low-key palette).
+// lightning's scratch (see VFX.lightning)
+const _boltPts = [Array.from({ length: 64 }, () => new THREE.Vector3()), Array.from({ length: 64 }, () => new THREE.Vector3())];
+const _bUp = new THREE.Vector3(0, 1, 0), _bDir = new THREE.Vector3(), _bP1 = new THREE.Vector3(), _bP2 = new THREE.Vector3(), _bSide = new THREE.Vector3(), _bSeg = new THREE.Vector3(), _bCam = new THREE.Vector3(), _bTo = new THREE.Vector3();
+const _bOpt = { element: undefined, color: undefined, life: undefined, width: 0, jag: 0, branches: 0 };
 export const FX = {
   fire: { core: C(0xffb85a, 1.9), mid: C(0xff6418, 1.45), end: C(0x4a0a00, 1), smoke: [0.06, 0.045, 0.035], spr: SPR.FLAME, spark: SPR.EMBER, light: 0xff6a20 },
   frost: { core: C(0xc8eeff, 1.8), mid: C(0x4aa8e8, 1.4), end: C(0x183a70, 0.9), smoke: [0.5, 0.62, 0.72], spr: SPR.SHARD, spark: SPR.SNOW, light: 0x80c8ff },
@@ -963,58 +967,62 @@ export class VFX {
     pos.needsUpdate = true;
   }
 
-  lightning(a, b, o = {}) {
+  // (no allocations: a stormcaller draws dozens of bolts a second, and each one used to make ~70 vectors.
+  // depth 0 is the bolt, depth 1 its branches, each with its own scratch points)
+  lightning(a, b, o = {}, depth = 0) {
     const m = this.boltPool.get();
-    const segs = Math.min(63, Math.max(4, Math.floor(a.distanceTo(b) / 0.35)));
-    const pts = [];
-    const dir = new THREE.Vector3().subVectors(b, a);
+    const pts = _boltPts[depth];
+    const dir = _bDir.subVectors(b, a);
     const len = dir.length();
+    const segs = Math.min(63, Math.max(4, Math.floor(len / 0.35)));
     const jag = o.jag ?? Math.min(1.2, len * 0.08);
-    const perp1 = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
+    const perp1 = _bP1.crossVectors(dir, _bUp);
     if (perp1.lengthSq() < 1e-6) perp1.set(1, 0, 0);
     perp1.normalize();
-    const perp2 = new THREE.Vector3().crossVectors(dir, perp1).normalize();
-    for (let i = 0; i <= segs; i++) {
+    const perp2 = _bP2.crossVectors(dir, perp1).normalize();
+    const n = segs + 1;
+    for (let i = 0; i < n; i++) {
       const t = i / segs;
       const env = Math.sin(t * Math.PI);
-      const p = new THREE.Vector3().copy(a).addScaledVector(dir, t);
+      const p = pts[i].copy(a).addScaledVector(dir, t);
       if (i > 0 && i < segs) {
         p.addScaledVector(perp1, (Math.random() - 0.5) * jag * env);
         p.addScaledVector(perp2, (Math.random() - 0.5) * jag * env);
       }
-      pts.push(p);
     }
     const pos = m.geometry.getAttribute('position');
     const uv = m.geometry.getAttribute('uv');
     const camPos = this.camera.position;
     const w = o.width ?? 0.08;
-    const side = new THREE.Vector3(), seg = new THREE.Vector3(), toCam = new THREE.Vector3();
+    const side = _bSide, seg = _bSeg, toCam = _bCam;
     for (let i = 0; i < 64; i++) {
-      const p = pts[Math.min(i, pts.length - 1)];
-      const q = pts[Math.min(i + 1, pts.length - 1)];
-      const pp = pts[Math.max(0, Math.min(i, pts.length - 1) - 1)];
+      const p = pts[Math.min(i, n - 1)];
+      const q = pts[Math.min(i + 1, n - 1)];
+      const pp = pts[Math.max(0, Math.min(i, n - 1) - 1)];
       seg.subVectors(q, pp).normalize();
       toCam.subVectors(camPos, p).normalize();
-      side.crossVectors(seg, toCam).normalize().multiplyScalar(w * (i >= pts.length - 1 ? 0.3 : 1));
+      side.crossVectors(seg, toCam).normalize().multiplyScalar(w * (i >= n - 1 ? 0.3 : 1));
       pos.setXYZ(i * 2, p.x + side.x, p.y + side.y, p.z + side.z);
       pos.setXYZ(i * 2 + 1, p.x - side.x, p.y - side.y, p.z - side.z);
       uv.setXY(i * 2, i / 63, 0); uv.setXY(i * 2 + 1, i / 63, 1);
     }
     pos.needsUpdate = true; uv.needsUpdate = true;
-    m.geometry.setDrawRange(0, (pts.length - 1) * 6);
+    m.geometry.setDrawRange(0, (n - 1) * 6);
     const fx = fxOf(o.element ?? 'lightning');
-    m.material.uniforms.uColor.value.setRGB(...(o.color ?? fx.mid));
+    const col = o.color ?? fx.mid;
+    m.material.uniforms.uColor.value.setRGB(col[0], col[1], col[2]);
     const life = o.life ?? 0.15;
     this._track(m, life, (k) => { m.material.uniforms.uAlpha.value = (1 - k) * (0.7 + Math.random() * 0.6); });
-    // branches
-    if ((o.branches ?? 1) > 0 && len > 3) {
-      for (let i = 0; i < (o.branches ?? 1); i++) {
-        const from = pts[Math.floor(rand(0.2, 0.7) * pts.length)];
-        const to = from.clone().add(new THREE.Vector3(rand(-1, 1), rand(-1, 0.6), rand(-1, 1)).multiplyScalar(len * 0.25));
-        this.lightning(from, to, { ...o, branches: 0, width: w * 0.5, jag: jag * 0.6 });
+    // branches (from a point of this bolt to a little way off it)
+    const nb = depth ? 0 : (o.branches ?? 1);
+    if (nb > 0 && len > 3) {
+      for (let i = 0; i < nb; i++) {
+        const from = pts[Math.floor(rand(0.2, 0.7) * n)];
+        _bTo.set(rand(-1, 1), rand(-1, 0.6), rand(-1, 1)).multiplyScalar(len * 0.25).add(from);
+        _bOpt.element = o.element; _bOpt.color = o.color; _bOpt.life = o.life; _bOpt.width = w * 0.5; _bOpt.jag = jag * 0.6;
+        this.lightning(from, _bTo, _bOpt, 1);
       }
     }
-    return pts;
   }
 
   // persistent beam; call update(a,b) every frame; release() when done

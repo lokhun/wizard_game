@@ -10,6 +10,7 @@ import { STEP } from '../world/collision.js';
 import { getEnemyModel } from './models.js';
 import { BossBrain } from './bosses.js';
 
+const _sparkA = new THREE.Vector3(), _sparkB = new THREE.Vector3(), SPARK = { life: 0.06, branches: 0, width: 0.03 }; // (a Shocked foe's flicker)
 const _frustum = new THREE.Frustum(), _m4 = new THREE.Matrix4(), _sph = new THREE.Sphere();
 const _aiOut = { x: 0, z: 0 }, NO_ATTACKS = [];
 const AFFIX_COL = { hasted: [0.6, 1.6, 2.6], vampiric: [2.4, 0.15, 0.25], volatile: [3, 1.2, 0.2], shielded: [2.6, 2.2, 0.8], frenzied: [2.8, 0.5, 1.6], bombardier: [3, 0.6, 0.1] };
@@ -794,7 +795,7 @@ export class ActorManager {
     if (m & ST.burn && Math.random() < dt * 30) P.glow({ x: x + rand(-r, r), y: y + rand(0.2, h), z: z + rand(-r, r), vy: rand(1, 2.2), r: 4, g: 1.5, b: 0.3, r2: 1, g2: 0.15, b2: 0.02, life: rand(0.3, 0.6), size: 0.3, size2: 0.05, sprite: SPR.FLAME, drag: 1 });
     if (m & ST.burn) g.lights.request(_v.set(x, y + h * 0.6, z), 0xff6020, 3, 4);
     if (m & ST.poison && Math.random() < dt * 8) P.glow({ x: x + rand(-r, r), y: y + rand(0.2, h), z: z + rand(-r, r), vy: rand(0.3, 0.8), r: 1.2, g: 2.4, b: 0.4, life: 0.8, size: 0.12, sprite: SPR.BUBBLE, gravity: -0.5 });
-    if (m & ST.shock && Math.random() < dt * 6) g.vfx.lightning(_v.set(x + rand(-r, r), y + rand(0, h), z + rand(-r, r)).clone(), new THREE.Vector3(x + rand(-r, r) * 2, y + rand(0, h), z + rand(-r, r) * 2), { life: 0.06, branches: 0, width: 0.03 });
+    if (m & ST.shock && Math.random() < dt * 6) g.vfx.lightning(_sparkA.set(x + rand(-r, r), y + rand(0, h), z + rand(-r, r)), _sparkB.set(x + rand(-r, r) * 2, y + rand(0, h), z + rand(-r, r) * 2), SPARK);
     if (m & ST.bleed && Math.random() < dt * 8) P.solid({ x: x + rand(-r, r) * 0.6, y: y + rand(0.4, h * 0.8), z: z + rand(-r, r) * 0.6, vy: -0.5, r: 0.35, g: 0, b: 0.02, life: 0.7, size: 0.05, sprite: SPR.DROP, gravity: 9 });
     if (m & ST.chill && Math.random() < dt * 5) P.glow({ x: x + rand(-r, r), y: y + rand(0.2, h), z: z + rand(-r, r), vy: -0.3, r: 1.5, g: 2, b: 2.6, life: 1, size: 0.06, sprite: SPR.SNOW, spin: 2 });
     if (m & ST.hex && Math.random() < dt * 4) P.glow({ x, y: y + h + 0.4, z, vy: 0.4, r: 1.6, g: 0.4, b: 2.4, life: 0.8, size: 0.35, sprite: SPR.RUNE, spin: 1 });
