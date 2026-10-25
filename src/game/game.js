@@ -100,6 +100,8 @@ export class Game {
     this.encounters = new Encounters(this);
     this.relics = new RelicRuntime(this);
     this.time = 0;
+    this.storm = null;
+    this._bolt = { a: new THREE.Vector3(), b: new THREE.Vector3(), o: { jag: 7, width: 0.55, life: 0.22, branches: 3, seg: 3.5, color: [2.2, 2.5, 3.4] } };
     this.remotes = new Map();
     this.hazards = [];
     this.pools = [];
@@ -362,6 +364,7 @@ export class Game {
       const q = this.settings.quality ?? 'high';
       this.storm = new Storm(this.scene, { count: q === 'low' ? 900 : q === 'medium' ? 1700 : 2600 });
       this.storm.onThunder = (delay) => this.audio?.play('thunder', { volume: 0.35 + 0.45 * (1 - delay / 2.4) });
+      this.storm.onStrike = (first) => this._skyBolt(first);
     }
     this._prewarm(level);
   }
@@ -877,6 +880,19 @@ export class Game {
   }
 
   groundY(x, z) { return this.level ? this.level.floorAt(x, z) : 0; }
+
+  // a lightning bolt in the sky, 55-85 m off, ahead of the wizard where they'll see it; each flash of a
+  // strike redraws it down the same path, newly forked
+  _skyBolt(first) {
+    const c = this.renderer.camera.position, B = this._bolt;
+    if (first) {
+      const ang = (this.player?.yaw ?? 0) + Math.PI + (Math.random() - 0.5) * 1.3, d = 55 + Math.random() * 30;
+      const x = c.x + Math.sin(ang) * d, z = c.z + Math.cos(ang) * d;
+      B.a.set(x + (Math.random() - 0.5) * 24, c.y + 75 + Math.random() * 20, z + (Math.random() - 0.5) * 24);
+      B.b.set(x, c.y + 4, z);
+    }
+    this.vfx.lightning(B.a, B.b, B.o);
+  }
 
   footstepSurface(pos) {
     const L = this.level;

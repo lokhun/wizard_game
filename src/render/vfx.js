@@ -19,7 +19,7 @@ const C = (hex, k = 1) => {
 // lightning's scratch (see VFX.lightning)
 const _boltPts = [Array.from({ length: 64 }, () => new THREE.Vector3()), Array.from({ length: 64 }, () => new THREE.Vector3())];
 const _bUp = new THREE.Vector3(0, 1, 0), _bDir = new THREE.Vector3(), _bP1 = new THREE.Vector3(), _bP2 = new THREE.Vector3(), _bSide = new THREE.Vector3(), _bSeg = new THREE.Vector3(), _bCam = new THREE.Vector3(), _bTo = new THREE.Vector3();
-const _bOpt = { element: undefined, color: undefined, life: undefined, width: 0, jag: 0, branches: 0 };
+const _bOpt = { element: undefined, color: undefined, life: undefined, width: 0, jag: 0, branches: 0, seg: undefined };
 export const FX = {
   fire: { core: C(0xffb85a, 1.9), mid: C(0xff6418, 1.45), end: C(0x4a0a00, 1), smoke: [0.06, 0.045, 0.035], spr: SPR.FLAME, spark: SPR.EMBER, light: 0xff6a20 },
   frost: { core: C(0xc8eeff, 1.8), mid: C(0x4aa8e8, 1.4), end: C(0x183a70, 0.9), smoke: [0.5, 0.62, 0.72], spr: SPR.SHARD, spark: SPR.SNOW, light: 0x80c8ff },
@@ -977,7 +977,7 @@ export class VFX {
     const pts = _boltPts[depth];
     const dir = _bDir.subVectors(b, a);
     const len = dir.length();
-    const segs = Math.min(63, Math.max(4, Math.floor(len / 0.35)));
+    const segs = Math.min(63, Math.max(4, Math.floor(len / (o.seg ?? 0.35)))); // (o.seg: a sky bolt takes long strides)
     const jag = o.jag ?? Math.min(1.2, len * 0.08);
     const perp1 = _bP1.crossVectors(dir, _bUp);
     if (perp1.lengthSq() < 1e-6) perp1.set(1, 0, 0);
@@ -1022,7 +1022,7 @@ export class VFX {
       for (let i = 0; i < nb; i++) {
         const from = pts[Math.floor(rand(0.2, 0.7) * n)];
         _bTo.set(rand(-1, 1), rand(-1, 0.6), rand(-1, 1)).multiplyScalar(len * 0.25).add(from);
-        _bOpt.element = o.element; _bOpt.color = o.color; _bOpt.life = o.life; _bOpt.width = w * 0.5; _bOpt.jag = jag * 0.6;
+        _bOpt.element = o.element; _bOpt.color = o.color; _bOpt.life = o.life; _bOpt.width = w * 0.5; _bOpt.jag = jag * 0.6; _bOpt.seg = o.seg;
         this.lightning(from, _bTo, _bOpt, 1);
       }
     }

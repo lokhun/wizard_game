@@ -5,7 +5,7 @@ import * as THREE from 'three';
 // it after it is built: the vertex shader drops each streak from its seed and the time, wraps it round
 // the camera on x and z, and stretches it along the fall. Walls and floors hide it through the depth
 // test (it writes no depth). Lightning is a double flash every 12-25 s that the game turns into light
-// (flash: 0..1), with thunder a moment after (onThunder).
+// (flash: 0..1) and draws as a bolt in the sky (onStrike, each flash), with thunder a moment after (onThunder).
 
 const VERT = /* glsl */ `
 attribute vec4 aSeed;
@@ -73,6 +73,8 @@ export class Storm {
     this._seq = []; // pending flash times (s from now)
     this._t = 0;
     this.onThunder = null;
+    this.onStrike = null; // (each flash of a strike: first = the strike's first)
+    this._fired = 0;
     this.calm = false; // (reduce flashing: a dim pulse, not a white frame)
   }
 
@@ -87,13 +89,14 @@ export class Storm {
       this._next = 12 + Math.random() * 13;
       this._seq = [0, 0.13 + Math.random() * 0.08];
       if (Math.random() < 0.4) this._seq.push(0.42 + Math.random() * 0.15);
-      this._strikeT = this._t;
+      this._strikeT = this._t; this._fired = 0;
       const delay = 0.6 + Math.random() * 1.8;
       setTimeout(() => this.onThunder?.(delay), delay * 1000);
     }
     let f = 0;
     if (this._seq.length) {
       const since = this._t - this._strikeT;
+      while (this._fired < this._seq.length && since >= this._seq[this._fired]) this.onStrike?.(this._fired++ === 0);
       for (const s of this._seq) { const u = since - s; if (u >= 0 && u < 0.35) f = Math.max(f, u < 0.03 ? u / 0.03 : Math.exp(-(u - 0.03) * 14)); }
       if (since > 1.2) this._seq.length = 0;
     }
