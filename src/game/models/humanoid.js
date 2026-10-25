@@ -139,6 +139,38 @@ ACT.shoot = ACT.cast;
 
 const STAGGER = { spine: [-0.25, 0.12, 0.06], chest: [-0.22, 0.18, 0], neck: [-0.15, 0, 0], head: [-0.35, -0.25, 0.12], armL: [0.35, 0, 0.55], armR: [0.3, 0, -0.45], foreL: [-0.6, 0, 0], foreR: [-0.6, 0, 0], hips: [0, 0, 0, 0, -0.04, -0.1], thighL: [-0.25, 0, 0], shinL: [0.35, 0, 0], jaw: [0.5, 0, 0] };
 
+// ---------------------------------------------------------------- fidgets ----
+// A still body doesn't stay still: every 5-14 s one rolls its neck, rolls a shoulder, glances behind
+// it, hefts its weapon arm or shifts its feet. One gesture at a time, eased in and out, on top of the
+// idle pose and gone as soon as it walks (idleW). One squaring up to a foe (look) only hefts and shifts:
+// it doesn't take its eyes off them. A type lists its own (anim.fidgets: keys of FIDGET) or opts out
+// (fidgets: false).
+const FIDGET = {
+  neck: [1.6, (P, k, u, sd) => { const a = u * TAU * sd; P.r('neck', Math.sin(a) * 0.22 * k, 0, Math.cos(a) * 0.2 * k); P.r('head', Math.sin(a) * 0.14 * k, 0, Math.cos(a) * 0.16 * k); }],
+  shoulder: [1.2, (P, k, u, sd) => { const a = u * TAU; P.r(sd > 0 ? 'armR' : 'armL', -Math.sin(a) * 0.2 * k, 0, sd * (0.1 - Math.cos(a) * 0.1) * k); P.r('chest', 0, sd * Math.sin(a) * 0.06 * k, sd * 0.05 * k); }],
+  glance: [2.2, (P, k, u, sd) => { const h = k * k; P.r('spine', 0, sd * 0.14 * h, 0); P.r('chest', 0, sd * 0.24 * h, 0); P.r('neck', 0, sd * 0.4 * h, 0); P.r('head', -0.06 * h, sd * 0.5 * h, 0); }],
+  heft: [1.1, (P, k, u) => { const up = Math.sin(Math.min(1, u * 1.6) * Math.PI), bob = u > 0.55 ? Math.sin((u - 0.55) / 0.45 * Math.PI) * 0.5 : 0; P.r('armR', (-0.42 * up + 0.12 * bob) * k, 0, -0.08 * up * k); P.r('foreR', -0.45 * up * k); P.r('chest', -0.04 * up * k); P.r('head', 0.05 * bob * k); }],
+  shift: [0.9, (P, k, u, sd) => { const lift = Math.sin(u * Math.PI); const t = sd > 0 ? 'R' : 'L'; P.r('thigh' + t, -0.32 * lift * k, 0, 0); P.r('shin' + t, 0.6 * lift * k); P.r('foot' + t, -0.2 * lift * k); P.r('hips', 0, 0, -sd * 0.05 * lift * k); }],
+};
+const FIDGET_ALL = ['neck', 'shoulder', 'glance', 'heft', 'shift'], FIDGET_SQUARED = ['heft', 'shift'];
+function fidget(m, st, P, idleW, dt, A, engaged) {
+  if (st.fidI < 0) {
+    st.fidT -= dt;
+    if (st.fidT > 0 || idleW < 0.9) return;
+    const list = engaged ? (A.fidgets ?? FIDGET_ALL).filter((k) => FIDGET_SQUARED.includes(k)) : (A.fidgets ?? FIDGET_ALL);
+    st.fidT = 5 + Math.random() * 9;
+    if (!list.length) return;
+    st.fidI = FIDGET_ALL.indexOf(list[Math.floor(Math.random() * list.length)]);
+    st.fidU = 0; st.fidS = Math.random() < 0.5 ? -1 : 1;
+    if (st.fidI < 0 || (st.fidI === 4 && A.gait === 'float')) { st.fidI = -1; return; } // (no feet to shift)
+  }
+  const f = FIDGET[FIDGET_ALL[st.fidI]];
+  st.fidU += dt / f[0];
+  if (st.fidU >= 1 || idleW < 0.3) { st.fidI = -1; return; }
+  const u = st.fidU, k = smooth(0, 0.22, u) * (1 - smooth(0.75, 1, u)) * idleW;
+  f[1](P, k, u, st.fidS);
+}
+
 // ---------------------------------------------------------------- pose ----
 export function humanoidPose(m, s, P, dt) {
   const A = m.spec.anim;
@@ -230,6 +262,9 @@ export function humanoidPose(m, s, P, dt) {
       P.r('spine', 0, 0, sh * 0.025);
     }
   }
+  // ---- fidgets: now and then a body standing still does something with itself
+  if (!dead && !spawning && !seated && !action && anim !== 'stagger' && A.fidgets !== false) fidget(m, st, P, idleW, dt, A, s.look);
+  else st.fidI = -1;
   if (A.rest && !dead) P.apply(A.rest, action ? 0 : 1);
   if (!dead && !spawning) {
     P.r('armL', 0, 0, (A.armOut ?? 0.1)); P.r('armR', 0, 0, -(A.armOut ?? 0.1));

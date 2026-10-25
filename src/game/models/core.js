@@ -931,7 +931,7 @@ export class EnemyInstance {
     this.magicColor = spec.magicColor ?? spec.eyeColor;
     this.time = Math.random() * 100;
     this.seed = Math.random();
-    this.state = { phase: Math.random() * TAU, lastAnim: null, lastYaw: null, turnK: 0 };
+    this.state = { phase: Math.random() * TAU, lastAnim: null, lastYaw: null, turnK: 0, fidT: 2 + Math.random() * 10, fidI: -1, fidU: 0, fidS: 1 };
     this._flash = 0;
     this._look = { x: 0, y: 0 }; // (the head's turn toward its foe, eased: see _layers)
     this._kick = { x: 0, z: 0, k: 0 };
@@ -989,7 +989,10 @@ export class EnemyInstance {
     this._soles = template.soles && !spec.flying ? template.soles.map((s) => {
       const chain = [];
       for (let b = this.bones[s.name]; b?.isBone; b = b.parent) chain.push(b);
-      return { chain, pts: s.pts };
+      // a leg (foot <- shin <- thigh) can bend to set its foot on a step: its two lengths, or none
+      const leg = /^foot/.test(chain[0]?.name) && /^shin/.test(chain[1]?.name) && /^thigh/.test(chain[2]?.name)
+        ? chain[0].position.length() + chain[1].position.length() : 0;
+      return { chain, pts: s.pts, leg, d: 0, lo: 0, raise: 0 };
     }) : null;
     this._lift = 0;
     this.sockets = {};
@@ -1086,7 +1089,7 @@ export class EnemyInstance {
     if (this._dissolving && S.anim !== 'death' && S.anim !== 'spawn') this.setDissolve(0); // (burnt in: whole again)
     this.P.damp(dt, rate);
     // (off in death and flight; a body rising out of the floor takes it up over the end of the rise, not in a pop)
-    if (this._soles) this._ground(dt, S.anim === 'death' || this._flying ? 0 : S.anim === 'spawn' ? smooth(0.7, 1, S.progress) : 1);
+    if (this._soles) this._ground(dt, S.anim === 'death' || this._flying ? 0 : S.anim === 'spawn' ? smooth(0.7, 1, S.progress) : 1, s.floor);
     if (Math.abs(this._opTarget - this._opacity) > 1e-3) { this._opacity = this._opTarget; this._dirty = true; }
     this._updateOrb(dt);
     if (this._flash > 0) { this._flash = Math.max(0, this._flash - dt * 8); this._dirty = true; }
@@ -1141,23 +1144,51 @@ export class EnemyInstance {
     }
   }
   // lift the body so no sole sits below the floor (y = 0 in the top bone's parent space): the leg's
-  // local matrices multiplied up by hand, a handful per foot, no world update
-  _ground(dt, w) {
-    let lo = Infinity, top = null;
+  // local matrices multiplied up by hand, a handful per foot, no world update. With the world's floor
+  // (floor(x, z): its height there) each sole also finds the floor under itself: a body astride a step
+  // drops its hips onto the lower floor and bends the other knee to set that foot on the step (a foot
+  // used to stand in the riser, or hang over the drop). On level ground this is the plain lift.
+  _ground(dt, w, floor) {
+    let lo = Infinity, top = null, dmin = 0, stepped = false;
     if (w > 0) {
+      const pw = this._soles[0].chain[this._soles[0].chain.length - 1].parent?.matrixWorld.elements;
+      const sy = pw ? Math.hypot(pw[4], pw[5], pw[6]) || 1 : 1;
       for (const s of this._soles) {
         const c = s.chain;
         _m.identity();
         for (let i = c.length - 1; i >= 0; i--) { c[i].updateMatrix(); _m.multiply(c[i].matrix); }
         const e = _m.elements, p = s.pts;
-        for (let j = 0; j < 6; j += 3) lo = Math.min(lo, e[1] * p[j] + e[5] * p[j + 1] + e[9] * p[j + 2] + e[13]);
+        let l = Infinity;
+        for (let j = 0; j < 6; j += 3) l = Math.min(l, e[1] * p[j] + e[5] * p[j + 1] + e[9] * p[j + 2] + e[13]);
+        s.lo = l; s.d = 0;
+        if (floor && pw && s.leg > 0) {
+          // the sole's middle, out into the world, and the floor there against the body's own
+          const mx = (p[0] + p[3]) * 0.5, my = (p[1] + p[4]) * 0.5, mz = (p[2] + p[5]) * 0.5;
+          const lx = e[0] * mx + e[4] * my + e[8] * mz + e[12], lz = e[2] * mx + e[6] * my + e[10] * mz + e[14];
+          const wx = pw[0] * lx + pw[8] * lz + pw[12], wz = pw[2] * lx + pw[10] * lz + pw[14];
+          const d = (floor(wx, wz) - pw[13]) / sy;
+          if (Math.abs(d) > 0.03 && Math.abs(d) < s.leg * 0.45) { s.d = d; stepped = true; }
+        }
+        lo = Math.min(lo, l);
         top = c[c.length - 1];
       }
+      if (stepped) { dmin = Infinity; for (const s of this._soles) dmin = Math.min(dmin, s.d); }
     } else top = this._soles[0].chain[this._soles[0].chain.length - 1];
-    const tgt = w > 0 ? clamp(-lo, 0, this.height * 0.2) * w : 0;
+    // the body sits on the lowest floor under it (never sunk into it: the plain lift on top)
+    const tgt = w > 0 ? (dmin + clamp(dmin - lo, 0, this.height * 0.2)) * w : 0;
     // quick to rise (a sinking foot shows), slower to settle back (no pop when an action ends or the body falls)
     this._lift += (tgt - this._lift) * (1 - Math.exp(-(tgt > this._lift ? 30 : 8) * dt));
-    if (this._lift > 1e-4) top.position.y += this._lift;
+    if (Math.abs(this._lift) > 1e-4) top.position.y += this._lift;
+    // each foot short of its own floor bends its knee to reach it: thigh forward, shin back twice as far,
+    // foot level, eased like the lift
+    for (const s of this._soles) {
+      if (!s.leg) continue;
+      const want = stepped && w > 0 ? clamp(s.d - (s.lo + this._lift), 0, s.leg * 0.45) * w : 0;
+      s.raise += (want - s.raise) * (1 - Math.exp(-(want > s.raise ? 24 : 10) * dt));
+      if (s.raise < 1e-3) continue;
+      const a = Math.acos(1 - s.raise / s.leg);
+      s.chain[2].rotation.x -= a; s.chain[1].rotation.x += 2 * a; s.chain[0].rotation.x -= a;
+    }
   }
   dispose() {
     for (const e of this.mats) e.m.dispose();

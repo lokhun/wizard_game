@@ -192,6 +192,7 @@ export class ActorManager {
     this.g = game;
     this.list = [];
     this.byId = new Map();
+    this._floor = (x, z) => game.groundY(x, z); // (the floor under each foot: see EnemyInstance._ground)
     this.nextId = 1;
     this._hostiles = [];
     this._allies = [];
@@ -767,7 +768,7 @@ export class ActorManager {
         }
         const posed = every === 1 || (this._frame + a.id) % every === 0 || a.anim !== a._posedAnim;
         if (posed) {
-          m.update(a._poseDt, { anim: a.anim, t: a.animT, speed: a.moveSpeed ?? 0, progress: a.progress, attackType: a.attackType, look: this._lookAt(a) });
+          m.update(a._poseDt, { anim: a.anim, t: a.animT, speed: a.moveSpeed ?? 0, progress: a.progress, attackType: a.attackType, look: this._lookAt(a), floor: this._floor });
           a._poseDt = 0; a._posedAnim = a.anim;
         }
         // heavy feet raise a little dust where they land (dry ground, near the camera)
