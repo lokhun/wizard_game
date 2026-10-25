@@ -579,7 +579,8 @@ export class VFX {
     this.planeGeo = plane;
 
     // ground rings
-    this.ringPool = this._pool(24, () => new THREE.Mesh(plane, new THREE.ShaderMaterial({
+    // (draped over the floor under them like the danger zones: a boss's dread ring on a dais sank under it)
+    this.ringPool = this._pool(24, () => new THREE.Mesh(drapeGeo(), new THREE.ShaderMaterial({
       vertexShader: RING_VERT,
       fragmentShader: RING_FRAG,
       uniforms: { uColor: { value: new THREE.Color() }, uProg: { value: 0 }, uWidth: { value: 0.15 }, uTime: { value: 0 } },
@@ -595,7 +596,7 @@ export class VFX {
       uniforms: { uColor: { value: new THREE.Color() }, uProg: { value: 0 }, uTime: { value: 0 }, uMode: { value: 0 }, uAngle: { value: 0.6 }, uFade: { value: 1 }, uSize: { value: new THREE.Vector2(1, 1) }, uK: { value: new THREE.Vector2(1, 1) } },
       transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
     })));
-    for (const m of this.telePool.items) m.frustumCulled = false; // (draped: the flat quad's bounds no longer hold)
+    for (const m of [...this.telePool.items, ...this.ringPool.items]) m.frustumCulled = false; // (draped: the flat quad's bounds no longer hold)
     // beams (unit cylinder along +Y from 0..1)
     const beamGeo = new THREE.CylinderGeometry(1, 1, 1, 12, 1, true);
     beamGeo.translate(0, 0.5, 0);
@@ -829,8 +830,9 @@ export class VFX {
 
   ring(pos, radius, color, life = 0.5, width = 0.2) {
     const m = this.ringPool.get();
-    m.position.set(pos.x, (pos.y ?? 0) + 0.06, pos.z);
+    m.position.set(pos.x, pos.y ?? 0, pos.z);
     m.scale.setScalar(radius);
+    this.drape(m, 0.06);
     // element core colours are HDR; a ring that wide must stay below bloom
     m.material.uniforms.uColor.value.setRGB(...clampHDR(Array.isArray(color) ? color : C(color, 2.5), 1.1, _rc));
     m.material.uniforms.uWidth.value = width;
