@@ -140,6 +140,7 @@ function applyVolumes() {
   renderer.setCalm(settings.calm);
   if (game) game.contrastTele = !!settings.contrastTele;
   document.documentElement.style.setProperty('--hud-scale', String(settings.hudScale ?? 1));
+  ui?.layoutBar?.();
 }
 
 // first user gesture starts audio
@@ -290,8 +291,11 @@ function showMenu() {
     onHost: () => { audio?.init(); doHost(); },
     onJoin: () => { audio?.init(); mode = 'join'; const api = ui.showJoin({ onJoin: (c) => doJoin(c, api), onBack: () => { joinGen++; leaveNet(); showMenu(); } }); },
     onSettings: () => {
+      // a new quality takes a reload: once, on Done (it reloaded 150 ms after any change, so the panel shut
+      // under you mid-adjustment, and stepping through the list with the arrow keys reloaded every step)
       const q0 = settings.quality;
-      ui.showSettings(settings, (s) => { settings = s; saveSettings(); applyVolumes(); if (settings.quality !== q0 && mode !== 'run') setTimeout(() => location.reload(), 150); });
+      ui.showSettings(settings, (s) => { settings = s; saveSettings(); applyVolumes(); },
+        () => { if (settings.quality !== q0 && mode !== 'run') location.reload(); });
     },
     onHelp: () => ui.showHelp(),
   });

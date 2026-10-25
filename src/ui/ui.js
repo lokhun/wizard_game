@@ -53,7 +53,7 @@ export class UI {
     document.body.appendChild(this.canvas);
     this.ctx = this.canvas.getContext('2d');
     this._resize();
-    window.addEventListener('resize', () => this._resize());
+    window.addEventListener('resize', () => { this._resize(); this.layoutBar(); });
     root.innerHTML = `
       <div id="hud" class="hidden"></div>
       <div id="screens"></div>
@@ -314,7 +314,7 @@ export class UI {
         <div class="row">Invert mouse Y <input type="checkbox" id="sInv" ${settings.invertY ? 'checked' : ''}></div>
         <div class="row">Dynamic resolution <input type="checkbox" id="sDyn" ${settings.dynamicRes !== false ? 'checked' : ''}></div>
         <div class="row">Show FPS <input type="checkbox" id="sFps" ${settings.showFps ? 'checked' : ''}></div>
-        <div style="color:var(--text-dim);font-size:12px">Quality changes apply on the next page load.</div>
+        <div style="color:var(--text-dim);font-size:12px">A new graphics quality applies when you press Done (in a run: on the next page load).</div>
         <div style="display:flex;gap:10px;justify-content:center"><button class="btn" id="bKeys">Controls</button><button class="btn" id="bClose">Done</button></div>
       </div>`);
     m.querySelector('#sQual').value = settings.quality;
@@ -423,7 +423,7 @@ export class UI {
       <div class="click-hint hidden">CLICK TO CONTINUE</div>`;
     const q = (s) => this.hudEl.querySelector(s);
     this.h = {
-      hpWrap: q('.hp-wrap'), itemSlot: q('.itemslot'), itemIcon: q('.itemslot .iic'), hp: q('#hpBar .fill'), hpLag: q('#hpBar .lag'), hpShield: q('#hpBar .shield'), hpTxt: q('#hpBar .txt'),
+      hpWrap: q('.hp-wrap'), abilities: q('.abilities'), itemSlot: q('.itemslot'), itemIcon: q('.itemslot .iic'), hp: q('#hpBar .fill'), hpLag: q('#hpBar .lag'), hpShield: q('#hpBar .shield'), hpTxt: q('#hpBar .txt'),
       dash: q('.dash-pips'), res: q('.resource'), buffs: q('.buffs'),
       slots: Object.fromEntries(SLOTS.map((s) => [s, q(`.slot[data-slot="${s}"]`)])),
       gold: q('#goldTxt'), goldBox: q('.gold-box'), dread: q('#dreadTxt'), dreadBox: q('.gold-box .dread'), prompt: q('.prompt'), toasts: q('.toasts'), banner: q('.banner'),
@@ -452,10 +452,31 @@ export class UI {
     this._mmCenter = null;
   }
 
+  // The spell bar sits at the screen's centre unless that puts it over the health plate or the gold: then it
+  // is nudged (or, if it can't clear both, centred) into the gap between them. Measured, because the HUD
+  // scale and the window size move all three (at 130% on a 1280 window it covered the health bar's end).
+  layoutBar() {
+    const h = this.h, ab = h?.abilities;
+    if (!ab || !h.hpWrap || !h.goldBox) return;
+    ab.style.marginLeft = '0px'; ab.style.zoom = '';
+    const a = h.hpWrap.getBoundingClientRect(), c = h.goldBox.getBoundingClientRect();
+    let b = ab.getBoundingClientRect();
+    if (!b.width) return;
+    const lo = a.right + 10, hi = c.left - 10;
+    // wider than the gap (a big HUD scale on a small window): shrink it to fit, then centre it there
+    if (b.width > hi - lo && hi > lo) { ab.style.zoom = String((parseFloat(getComputedStyle(ab).zoom) || 1) * (hi - lo) / b.width); b = ab.getBoundingClientRect(); }
+    let shift = 0;
+    if (b.width >= hi - lo - 1) shift = (lo + hi) / 2 - (b.left + b.right) / 2;
+    else if (b.left < lo) shift = lo - b.left;
+    else if (b.right > hi) shift = hi - b.right;
+    if (shift) ab.style.marginLeft = (shift / (parseFloat(getComputedStyle(ab).zoom) || 1)) + 'px';
+  }
+
   update(dt, game) {
     if (!this.h || !game.player) return;
     const p = game.player;
     const h = this.h;
+    if ((this._barT = (this._barT ?? 0) - dt) <= 0) { this._barT = 1; this.layoutBar(); } // (the gold's width grows with it)
     // health (DOM writes only when a value changes: the HUD updates every frame)
     const hpPct = Math.max(0, p.hp / p.maxHp) * 100;
     setStyle(h.hp, 'width', hpPct.toFixed(1) + '%');
