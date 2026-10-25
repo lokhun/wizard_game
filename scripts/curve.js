@@ -70,12 +70,44 @@
     rows.push(row);
     return row;
   };
+  // single-target damage, the clean number: before each realm's guardian, a pinned dummy of the realm's own
+  // stock takes 6 s of the build's fire (hp lost, so no overkill and no wave pacing), set against that realm's
+  // typical foe health; ttkFoe is how long one ordinary foe lasts under that fire
+  const dummy = () => {
+    const roster = [...new Set(g.biome.enemies)];
+    const at = { x: p.pos.x, z: p.pos.z - 9 };
+    let hp = 0, n = 0;
+    for (const t of roster) { const a = g.director.spawnEnemy(t, at.x, at.z, { noCredit: true }); if (!a) continue; hp += a.maxHp; n++; a.hp = 0; g.actors.kill(a, 0, 'holy'); }
+    window.__sim(0.5);
+    const a = g.director.spawnEnemy(roster[0], at.x, at.z, { noCredit: true });
+    a.maxHp = a.hp = 1e9;
+    window.__sim(1.2, 1 / 30, () => { a.pos.x = at.x; a.pos.z = at.z; });
+    const h0 = a.hp; let frames = 0;
+    window.__sim(6, 1 / 30, () => {
+      frames++; p.hp = p.maxHp; if (p.downed) p.revive(1);
+      a.pos.x = at.x; a.pos.z = at.z; a.kb.x = a.kb.z = 0;
+      const dx = a.pos.x - p.pos.x, dz = a.pos.z - p.pos.z;
+      p.yaw = Math.atan2(-dx, -dz); p.pitch = Math.atan2(a.pos.y + a.height * 0.5 - (p.pos.y + 1.6), Math.hypot(dx, dz));
+      inp.mouse.left = true;
+      if (frames % 70 === 0) inp.pressed.add('KeyQ');
+      if (frames % 97 === 0) inp.pressed.add('KeyE');
+      if (frames % 50 === 0) { inp.mouse.rightPressed = true; inp.mouse.right = true; }
+      if (frames % 50 === 30) inp.mouse.right = false;
+    });
+    inp.mouse.left = false; inp.mouse.right = false;
+    const st = (h0 - a.hp) / 6;
+    a.hp = 0; g.actors.kill(a, 0, 'holy'); window.__sim(0.5);
+    rows.push({ dummy: true, r: g.floorIndex, d: g.abyss ?? 0, foeHp: Math.round(hp / n), st: Math.round(st), ttkFoe: +(hp / n / st).toFixed(2) });
+  };
   const wait = async (f) => { for (let k = 0; k < 600 && !f(); k++) await new Promise((r) => setTimeout(r, 100)); };
   for (let lap = 0; lap <= depths; lap++) {
     for (let f = lap === 0 ? g.floorIndex : 0; f < 5; f++) {
       await wait(() => !g.loadingFloor && !g.transitioning);
       const rooms = g.level.rooms.filter((r) => r.main && ['combat', 'elite', 'trial', 'boss'].includes(r.type)).sort((a, b) => a.order - b.order);
+      let prev = null;
       for (const room of rooms) {
+        if (room.type === 'boss' && prev) { p.pos.set(prev.cx, g.groundY(prev.cx, prev.cz), prev.cz + 4); dummy(); }
+        prev = room;
         const row = fight(room, room.type === 'boss' ? 400 : 240);
         if (row.capped && room.type === 'boss') { rows.push({ stop: `boss not killed in 400 s at realm ${f + 1}, depth ${lap}` }); return report(); }
       }
@@ -88,6 +120,6 @@
     const top = {};
     for (const [k, v] of Object.entries(src)) { const d = k.split(' ')[0]; (top[d] ??= []).push([k.slice(d.length + 1), v]); }
     const lines = Object.entries(top).map(([d, l]) => { const t = l.reduce((a, x) => a + x[1], 0); return d + ' sources: ' + l.sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => k + ' ' + Math.round(v / t * 100) + '%').join(', '); });
-    return [...lines, 'relics: ' + p.relics.map((r) => r.def.id + (r.stars ? '*' + r.stars : '')).join(' '), 'stats: dmg ' + p.stats.dmgMult.toFixed(2) + ' rate ' + (p.stats.rateMult ?? 0).toFixed(2) + ' crit ' + (p.stats.critChance ?? 0).toFixed(2) + '/' + (p.stats.critMult ?? 0).toFixed(2) + ' proj ' + p.stats.extraProj, ...rows.map((r) => (r.stop ? r.stop : `R${r.r + 1} D${r.d} ${r.type.padEnd(6)} ttk ${String(r.ttk).padStart(5)}s  hurt ${String(r.hurt).padStart(5)} (${String(r.hurtMin).padStart(5)}/min)  dps ${String(r.dps).padStart(6)}  tomes ${r.tomes} relics ${r.relics}${r.capped ? '  CAPPED' : ''}`))];
+    return [...lines, 'relics: ' + p.relics.map((r) => r.def.id + (r.stars ? '*' + r.stars : '')).join(' '), 'stats: dmg ' + p.stats.dmgMult.toFixed(2) + ' rate ' + (p.stats.rateMult ?? 0).toFixed(2) + ' crit ' + (p.stats.critChance ?? 0).toFixed(2) + '/' + (p.stats.critMult ?? 0).toFixed(2) + ' proj ' + p.stats.extraProj, ...rows.map((r) => (r.stop ? r.stop : r.dummy ? `R${r.r + 1} D${r.d} DUMMY  single-target ${String(r.st).padStart(6)}/s  foe hp ${String(r.foeHp).padStart(5)}  -> one foe lasts ${r.ttkFoe}s` : `R${r.r + 1} D${r.d} ${r.type.padEnd(6)} ttk ${String(r.ttk).padStart(5)}s  hurt ${String(r.hurt).padStart(5)} (${String(r.hurtMin).padStart(5)}/min)  dps ${String(r.dps).padStart(6)}  tomes ${r.tomes} relics ${r.relics}${r.capped ? '  CAPPED' : ''}`))];
   }
 })();
