@@ -26,7 +26,7 @@ export function baseStats(classId) {
   return {
     maxHp: C.hp, moveSpeed: 6.0 * C.speed, dmgMult: 1, critChance: 0.05, critMult: 1.75, cdr: 0, rateMult: 0,
     aoeMult: 1, projSpeed: 1, extraProj: 0, pierce: 0, bounce: 0, homing: 0, lifesteal: 0, armor: 0,
-    dashCharges: 2, dashCd: 3.0, ultRate: 1, elementMult: {}, vs: {}, infuse: null, regen: 0, killHeal: 0,
+    dashCharges: 2, dashCd: 3.0, ultRate: 1, elementMult: {}, vs: {}, infuse: null, splitK: 0.5, regen: 0, killHeal: 0,
     goldMult: 1, extraLives: 0, thorns: 0, dashIv: 0, pdDur: 0, cdRate: 1, statusPower: 1, jumpPower: 1, sustainMult: 1,
     ...structuredClone(C.stats ?? {}),
   };
