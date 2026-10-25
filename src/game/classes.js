@@ -349,8 +349,13 @@ export const CLASSES = {
             } });
           for (let i = 0; i < 10; i++) {
             ctx.after(0.25 + i * 0.28, () => {
-              const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R;
-              let tx = c.x + Math.cos(a) * r, tz = c.z + Math.sin(a) * r;
+              // (on the ground the target can see: aimed at a wall, half the storm fell in the room behind it)
+              let tx = c.x, tz = c.z;
+              for (let k = 0; k < 6; k++) {
+                const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R;
+                const x = c.x + Math.cos(a) * r, z = c.z + Math.sin(a) * r;
+                if (ctx.g.collision.los(c.x, cg + 1, c.z, x, cg + 1, z)) { tx = x; tz = z; break; }
+              }
               const forge = aug(ctx, 'pyro_meteor');
               // augment: meteors seek out Burning foes in the storm
               if (forge) {
@@ -1620,7 +1625,13 @@ export const CLASSES = {
             ctx.after(0.2 + i * 0.25, () => {
               const targets = ctx.rt.inRadius(c, R);
               const t = targets.length && Math.random() < 0.8 ? targets[Math.floor(Math.random() * targets.length)] : null;
-              const p = t ? v3(t.pos.x, c.y, t.pos.z) : v3(c.x + rand(-1, 1) * R, c.y, c.z + rand(-1, 1) * R);
+              let p = t ? v3(t.pos.x, c.y, t.pos.z) : null;
+              // (a stray one rises where the caller can see: aimed at a wall, they came up in the room behind it)
+              for (let k = 0; !p && k < 6; k++) {
+                const x = c.x + rand(-1, 1) * R, z = c.z + rand(-1, 1) * R;
+                if (ctx.g.collision.los(c.x, c.y + 1, c.z, x, c.y + 1, z)) p = v3(x, c.y, z);
+              }
+              p ??= c.clone();
               ctx.tentacle(p);
               ctx.after(0.3, () => ctx.area(v3(p.x, p.y + 1, p.z), 2.6, { dmg: 45, el: 'shadow', st: { root: 1.5, hex: 3 }, kb: 3 }));
             });

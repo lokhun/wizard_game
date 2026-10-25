@@ -122,6 +122,7 @@ const _hp = { x: 0, z: 0 };
 export class SpellRuntime {
   constructor(game) {
     this.g = game;
+    this._eye = { x: 0, y: 0, z: 0, open: true }; // (an area's centre, as _seeFrom last set it)
     this.projectiles = [];
     this.zones = [];
     this.timers = [];
@@ -361,6 +362,7 @@ export class SpellRuntime {
     const hits = [];
     pos = new THREE.Vector3(pos.x, pos.y, pos.z);
     this.g.smashAt?.(pos, radius * 0.8);
+    this._seeFrom(pos);
     for (const a of this.g.actors.hostiles()) {
       if (exclude && exclude.has(a.id)) continue;
       const c = hitPoint(a, pos.x, pos.z, _hp); // (a blast reaches a long body's nearest part)
@@ -368,6 +370,7 @@ export class SpellRuntime {
       const dy = (a.pos.y + a.height * 0.5) - pos.y;
       const r = radius + a.hitR;
       if (dx * dx + dz * dz > r * r || Math.abs(dy) > radius + a.hitH * 0.6) continue;
+      if (!this._sees(a, c)) continue;
       const d = Math.sqrt(dx * dx + dz * dz);
       const fall = H.falloff ? Math.max(0.4, 1 - d / r) : 1;
       this.g.hitActor(a, { ...H, dmg: H.dmg * fall, kbDir: d > 0.01 ? [dx / d, dz / d] : [0, 1] }, new THREE.Vector3(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z));
@@ -706,20 +709,41 @@ export class SpellRuntime {
       if (filter && !filter(a)) continue;
       const dx = a.pos.x - pos.x, dz = a.pos.z - pos.z, dy = a.pos.y + a.height * 0.5 - pos.y;
       const d2 = dx * dx + dz * dz + dy * dy;
-      if (d2 < bd) { bd = d2; best = a; }
+      // (a chain's next link or a seeker's quarry must be in sight: a bounce leapt through walls)
+      if (d2 < bd && this.g.collision.los(pos.x, pos.y, pos.z, a.pos.x, a.pos.y + a.height * 0.5, a.pos.z)) { bd = d2; best = a; }
     }
     return best;
   }
 
   inRadius(pos, r) {
     const out = [];
+    this._seeFrom(pos);
     for (const a of this.g.actors.hostiles()) {
       const c = hitPoint(a, pos.x, pos.z, _hp);
       const dx = c.x - pos.x, dz = c.z - pos.z;
       const rr = r + a.hitR;
-      if (dx * dx + dz * dz <= rr * rr) out.push(a);
+      if (dx * dx + dz * dz <= rr * rr && this._sees(a, c)) out.push(a);
     }
     return out;
+  }
+
+  // An area reaches only what it can see from its heart: a rift, a nova or a blast ate through walls before
+  // (scripts/walls.js: Transfusion and Void Rift reached foes behind 6 m of stone, and most ultimates). Seen
+  // from just above the centre to the middle of the body. A centre in the stone (a star that burst on a wall)
+  // looks from the nearest open point within a metre; with none, it sees everything, as before.
+  _seeFrom(pos) {
+    const g = this.g, E = this._eye, C = g.collision;
+    E.x = pos.x; E.z = pos.z; E.y = Math.max(pos.y ?? 0, g.groundY(pos.x, pos.z)) + 0.8;
+    E.open = !C.pointSolid(E.x, E.y, E.z);
+    for (let k = 0; k < 16 && !E.open; k++) {
+      const a = (k % 8) * (Math.PI / 4), r = k < 8 ? 0.6 : 1.1;
+      const x = pos.x + Math.cos(a) * r, z = pos.z + Math.sin(a) * r;
+      if (!C.pointSolid(x, E.y, z)) { E.x = x; E.z = z; E.open = true; }
+    }
+  }
+  _sees(a, c) {
+    const E = this._eye;
+    return !E.open || this.g.collision.los(E.x, E.y, E.z, c.x, a.pos.y + a.height * 0.5, c.z);
   }
 
   inCone(origin, dir, range, halfAngle) {
