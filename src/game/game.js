@@ -104,6 +104,7 @@ export class Game {
     this.relics = new RelicRuntime(this);
     this.time = 0;
     this.storm = null;
+    this._hzBusy = false; // (inside the hazard loop: see cancelHazardsFrom)
     this.debris = null; // (wreckage of smashed barrels and crates: render/debris.js)
     this.rubble = null; // (and the same in stone: a broken wall's blocks)
     this._bolt = { a: new THREE.Vector3(), b: new THREE.Vector3(), o: { jag: 7, width: 0.55, life: 0.22, branches: 3, seg: 3.5, color: [2.2, 2.5, 3.4] } };
@@ -1193,9 +1194,11 @@ export class Game {
     let n = 0;
     for (let i = this.hazards.length - 1; i >= 0; i--) {
       const h = this.hazards[i];
-      if (h.src !== id || h.t >= (h.delay ?? 0)) continue;
+      if (h.src !== id || h.cancelled || h.t >= (h.delay ?? 0)) continue;
       if (h.tele && this.vfx.active.includes(h.tele)) h.tele.t = Math.max(h.tele.t, h.tele.life - 0.15);
-      this.hazards.splice(i, 1);
+      // (from inside _updateHazards - a landing hazard's blow, parried or reflected, killed its caster - it
+      // is only marked: splicing under that loop shifted its indices, and it read past the end)
+      if (this._hzBusy) h.cancelled = true; else this.hazards.splice(i, 1);
       n++;
     }
     if (n && pos) this.ui?.floatText(pos, 'INTERRUPTED', '#e8c070');
@@ -1207,7 +1210,7 @@ export class Game {
     if (!p.alive || p.downed || p.dead) return null;
     let best = null;
     for (const h of this.hazards) {
-      if (!h.vis || h.t >= (h.delay ?? 0) || !h.delay) continue;
+      if (!h.vis || h.cancelled || h.t >= (h.delay ?? 0) || !h.delay) continue;
       const dx = p.pos.x - h.x, dz = p.pos.z - h.z, d = Math.hypot(dx, dz), R = 0.4;
       let inside = false;
       if (h.shape === 'circle') inside = d <= h.r + R;
@@ -1248,10 +1251,17 @@ export class Game {
   }
 
   _updateHazards(dt) {
-    const p = this.player;
     this._warnIncoming();
+    this._hzBusy = true;
+    try { this._stepHazards(dt); } finally { this._hzBusy = false; }
+  }
+
+  _stepHazards(dt) {
+    const p = this.player;
     for (let i = this.hazards.length - 1; i >= 0; i--) {
       const h = this.hazards[i];
+      if (!h) continue;
+      if (h.cancelled) { this.hazards.splice(i, 1); continue; }
       h.t += dt;
       if (h.shape === 'wave') {
         if (h.t < (h.delay ?? 0)) continue;
