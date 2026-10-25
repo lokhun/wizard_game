@@ -4,6 +4,7 @@ import { FX, fxOf, nearFade, clampHDR, orbMaterial } from '../render/vfx.js';
 import { SPR } from '../render/particles.js';
 import { rand } from '../core/rng.js';
 import { segPointDist2 } from '../core/math.js';
+import { WATER_Y } from '../world/levelgen.js';
 
 // ---------------------------------------------------------------------------
 // Spell runtime: projectiles, zones, delayed actions and channel beams.
@@ -347,8 +348,10 @@ export class SpellRuntime {
 
   explode(proj, pos) {
     const a = proj.aoe;
-    if (a.vfx !== false) this.g.vfx.explosion(pos, a.el ?? proj.el, a.radius, { groundY: this.g.groundY(pos.x, pos.z) });
+    const wet = this.g.waterAt(pos.x, pos.z), gy = this.g.groundY(pos.x, pos.z);
+    if (a.vfx !== false) this.g.vfx.explosion(pos, a.el ?? proj.el, a.radius, { groundY: wet ? Math.max(gy, WATER_Y) : gy });
     if (a.sound !== false) this.g.audio?.play(a.radius > 3 ? 'explosion_big' : 'explosion', { pos });
+    if (wet && pos.y < WATER_Y + 1.2) this.g.splash(pos.x, pos.z, Math.min(3, 1 + a.radius * 0.4)); // (a blast on the water throws it up)
     if (proj.local) {
       if (proj.faction === 'player') {
         this.damageArea(pos, a.radius, { dmg: a.dmg, el: a.el ?? proj.el, st: a.st, kb: a.kb ?? 4, tag: a.tag, src: proj.owner }, proj.hitIds, a.excludeDirect ? proj.hitIds : null);
@@ -537,10 +540,11 @@ export class SpellRuntime {
         this._remove(i);
         continue;
       }
-      // floor hit for arcing projectiles
-      const gy = g.groundY(p.pos.x, p.pos.z);
+      // floor hit for arcing projectiles (over a channel, the water's surface: it splashes)
+      const wet = g.waterAt(p.pos.x, p.pos.z), gy = wet ? Math.max(WATER_Y, g.groundY(p.pos.x, p.pos.z)) : g.groundY(p.pos.x, p.pos.z);
       if (p.pos.y < gy + 0.05 && !p.noWall) {
         p.pos.y = gy + 0.05;
+        if (wet && !p.sticky) g.splash(p.pos.x, p.pos.z, p.aoe ? 0.6 : 0.8);
         if (p.sticky) { p.stuck = true; p.vel.set(0, 0, 0); }
         else if (p.bounce > 0) { p.bounce--; p.vel.y = Math.abs(p.vel.y) * 0.5; }
         else {

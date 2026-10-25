@@ -38,6 +38,7 @@ import { clamp } from '../core/math.js';
 import { Emitter } from '../meta/emitter.js';
 
 const WADE_C = [0.16, 0.22, 0.22]; // ripple rings on channel water
+const _splashV = new THREE.Vector3();
 
 // ---------------------------------------------------------------------------
 // Game: owns the world for one run and wires every system together.
@@ -889,6 +890,15 @@ export class Game {
   }
 
   groundY(x, z) { return this.level ? this.level.floorAt(x, z) : 0; }
+  // channel water here (its surface is WATER_Y; the floor under it is the bed)
+  waterAt(x, z) { const L = this.level; return !!L && L.kind[L.idx(Math.floor(x / T), Math.floor(z / T))] === K_WATER; }
+  // something landed in the water: rings it and throws up a splash, sized k (a footfall ~1, a blast 2-3)
+  splash(x, z, k = 1) {
+    waterRipple(x, z, Math.min(2.2, 0.8 + k * 0.5));
+    const cam = this.renderer.camera.position;
+    if ((cam.x - x) ** 2 + (cam.z - z) ** 2 > 900) return;
+    this.vfx.burst(_splashV.set(x, WATER_Y, z), { count: Math.round(5 + k * 6), speed: 1.6 + k * 1.1, upward: 1.6, gravity: 9, life: 0.45 + k * 0.1, size: 0.05 + k * 0.012, sprite: SPR.DROP, color: [0.5, 0.6, 0.6], solid: true, jitter: 0.15 * k });
+  }
 
   // a lightning bolt in the sky, 55-85 m off, ahead of the wizard where they'll see it; each flash of a
   // strike redraws it down the same path, newly forked
