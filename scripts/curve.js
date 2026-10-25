@@ -75,7 +75,13 @@
   // typical foe health; ttkFoe is how long one ordinary foe lasts under that fire
   const dummy = () => {
     const roster = [...new Set(g.biome.enemies)];
-    const at = { x: p.pos.x, z: p.pos.z - 9 };
+    // (somewhere in plain sight: straight ahead could put it behind a courtyard statue)
+    let at = { x: p.pos.x, z: p.pos.z - 9 };
+    find: for (const r of [8, 6, 4]) for (let k = 0; k < 12; k++) {
+      const ang = (k / 12) * Math.PI * 2, x = p.pos.x + Math.sin(ang) * r, z = p.pos.z - Math.cos(ang) * r;
+      if (g.collision.cellBlocked(Math.floor(x / 2), Math.floor(z / 2), p.pos.y + 0.3) || g.collision.pushOut(x, z, 0.6)) continue;
+      if (g.collision.los(p.pos.x, p.pos.y + 1.6, p.pos.z, x, g.groundY(x, z) + 1, z)) { at = { x, z }; break find; }
+    }
     let hp = 0, n = 0;
     for (const t of roster) { const a = g.director.spawnEnemy(t, at.x, at.z, { noCredit: true }); if (!a) continue; hp += a.maxHp; n++; a.hp = 0; g.actors.kill(a, 0, 'holy'); }
     window.__sim(0.5);
@@ -98,7 +104,7 @@
     const st = (h0 - a.hp) / 6;
     a.hp = 0; g.actors.kill(a, 0, 'holy'); window.__sim(0.5);
     rows.push({ dummy: true, r: g.floorIndex, d: g.abyss ?? 0, foeHp: Math.round(hp / n), st: Math.round(st), ttkFoe: +(hp / n / st).toFixed(2),
-      why: st > 0 ? '' : JSON.stringify({ cast: p.canCast(), alive: p.alive, downed: p.downed, dead: p.dead, paused: g.paused, modal: !!g.ui.modalOpen, top: g.ui.modalStack?.at(-1)?.textContent?.slice(0, 120), cin: !!g.cinematic, locked: inp.locked, stun: p.stunT, ch: !!p.channel }) });
+      why: st > 0 ? '' : JSON.stringify({ los: g.collision.los(p.pos.x, p.pos.y + 1.6, p.pos.z, at.x, a.pos.y + a.height * 0.5, at.z), gap: +Math.hypot(at.x - p.pos.x, at.z - p.pos.z).toFixed(1), dummy: [a.anim, a.dormant, a.dead, +a.pos.y.toFixed(2), +g.groundY(at.x, at.z).toFixed(2), +p.pos.y.toFixed(2)], cast: p.canCast(), alive: p.alive, downed: p.downed, dead: p.dead, paused: g.paused, modal: !!g.ui.modalOpen, top: g.ui.modalStack?.at(-1)?.textContent?.slice(0, 120), cin: !!g.cinematic, locked: inp.locked, stun: p.stunT, ch: !!p.channel }) });
   };
   const wait = async (f) => { for (let k = 0; k < 600 && !f(); k++) await new Promise((r) => setTimeout(r, 100)); };
   for (let lap = 0; lap <= depths; lap++) {
