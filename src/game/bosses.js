@@ -228,7 +228,9 @@ export class BossBrain {
   banner(text, sub, color) { this.g.net?.broadcast({ t: 'banner', a: text, b: sub, c: color }); this.g.ui?.banner(text, sub, color); }
   shake(k) { this.g.net?.broadcast({ t: 'shake', k }); this.g.vfx.addShake(k); }
   sound(name, vol = 1) { this.g.net?.broadcast({ t: 'snd', n: name, x: this.a.pos.x, y: this.a.pos.y, z: this.a.pos.z, v: vol }); this.g.audio?.play(name, { pos: this.a.pos, volume: vol }); }
-  fx(kind, extra = {}) { this.g.net?.broadcast({ t: 'bfx', k: kind, id: this.a.id, ...extra }); this.g.bossFx(kind, this.a, extra); }
+  // (extra rides nested: spread into the message, an extra's t / k / id overwrote the header and clients
+  // dropped it, as they did 'exposed' { t } and 'lob' { t }, and every gate)
+  fx(kind, extra = {}) { this.g.net?.broadcast({ t: 'bfx', k: kind, id: this.a.id, x: extra }); this.g.bossFx(kind, this.a, extra); }
 
   _dread() {
     const n = 12 + 2 * this.phase, off = Math.random() * Math.PI * 2, step = Math.PI * 2 / n;

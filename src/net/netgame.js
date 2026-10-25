@@ -138,7 +138,7 @@ export function handleGameMessage(game, msg, from) {
     case 'banner': game.ui?.banner(msg.a, msg.b, msg.c); break;
     case 'shake': game.vfx.addShake(msg.k); break;
     case 'snd': game.audio?.play(msg.n, { pos: new THREE.Vector3(msg.x, msg.y, msg.z), volume: msg.v }); break;
-    case 'bfx': game.bossFx(msg.k, game.actors.byId.get(msg.id), msg); break;
+    case 'bfx': game.bossFx(msg.k, game.actors.byId.get(msg.id), msg.x ?? {}); break;
     case 'blinkfx': game.actors.blinkFx(new THREE.Vector3(msg.x, msg.y, msg.z)); break;
     case 'eair': { const a = game.actors.byId.get(msg.id); if (a) { a.airT = 0; a.airDur = msg.d; a.airH = msg.h; } break; } // a foe's leap: its arc (Actors._strike 'leap')
     case 'hoard': game.hoarderNews(msg.k, game.actors.byId.get(msg.id)); break; // a Hoarder appears / is caught
