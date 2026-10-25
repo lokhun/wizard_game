@@ -5,6 +5,7 @@ import { Particles, SPR } from '../render/particles.js';
 import { VFX, fxOf } from '../render/vfx.js';
 import { ContactShadows } from '../render/contact.js';
 import { Storm } from '../render/storm.js';
+import { waterRipple } from '../world/materials.js';
 import { generateLevel, ROOM, T, K_ALT, K_WATER, WATER_Y } from '../world/levelgen.js';
 import { keyOf } from '../core/input.js';
 import { PACTS, PACT_BY_ID, difficultyFor, abyssLaws, lawAt } from '../meta/pacts.js';
@@ -613,7 +614,13 @@ export class Game {
     if (id === 'sewers' && Math.random() < dt * 4) {
       const x = cam.x + rnd(14), z = cam.z + rnd(14);
       const c = this.level.ceilAt(x, z);
-      if (c < 50) P.solid({ x, y: c - 0.1, z, vy: -1, r: 0.35, g: 0.45, b: 0.4, a: 0.7, life: 1.2, size: 0.04, sprite: SPR.DROP, gravity: 12, stretch: 0.02 });
+      if (c < 50) {
+        // a drip from the vault, gone where it lands; into the channel it rings the water
+        const wet = this.level.kind[this.level.idx(Math.floor(x / T), Math.floor(z / T))] === K_WATER;
+        const h = c - 0.1 - (wet ? WATER_Y : this.groundY(x, z)), fall = (-1 + Math.sqrt(1 + 24 * Math.max(0, h))) / 12;
+        P.solid({ x, y: c - 0.1, z, vy: -1, r: 0.35, g: 0.45, b: 0.4, a: 0.7, life: fall, size: 0.04, sprite: SPR.DROP, gravity: 12, stretch: 0.02 });
+        if (wet) this.spells.after(fall, () => waterRipple(x, z, 0.55));
+      }
     }
     if (id === 'courtyard' && Math.random() < dt * 6) {
       P.glow({ x: cam.x + rnd(20), y: cam.y + rnd(2) - 0.5, z: cam.z + rnd(20), vx: rnd(0.6), vy: rnd(0.3), vz: rnd(0.6), r: 1.6, g: 2.2, b: 0.6, life: 4, size: 0.04, sprite: SPR.GLOW, drag: 0.1 });
@@ -622,7 +629,8 @@ export class Game {
     if (this.storm && Math.random() < dt * 40) {
       const x = cam.x + rnd(14), z = cam.z + rnd(14), gy = this.groundY(x, z);
       const cell = this.level.cells[Math.floor(z / T) * this.level.W + Math.floor(x / T)];
-      if (cell === 1) for (let k = 0; k < 2; k++) P.glow({ x, y: gy + 0.04, z, vx: rnd(1), vy: 1 + Math.random() * 1.2, vz: rnd(1), r: 0.42, g: 0.48, b: 0.6, life: 0.24, size: 0.022, size2: 0.012, sprite: SPR.GLOW, gravity: 10 });
+      if (cell === 1 && this.level.kind[Math.floor(z / T) * this.level.W + Math.floor(x / T)] === K_WATER) waterRipple(x, z, 0.4);
+      else if (cell === 1) for (let k = 0; k < 2; k++) P.glow({ x, y: gy + 0.04, z, vx: rnd(1), vy: 1 + Math.random() * 1.2, vz: rnd(1), r: 0.42, g: 0.48, b: 0.6, life: 0.24, size: 0.022, size2: 0.012, sprite: SPR.GLOW, gravity: 10 });
     }
     if (id === 'courtyard' && Math.random() < dt * 3) {
       P.solid({ x: cam.x + rnd(24), y: cam.y + 6, z: cam.z + rnd(24), vx: 1.2, vy: -0.6, vz: rnd(0.5), r: 0.25, g: 0.2, b: 0.12, a: 0.8, life: 7, size: 0.06, sprite: SPR.FEATHER, spin: 2 });
@@ -802,6 +810,7 @@ export class Game {
     const cam = this.renderer.camera.position;
     if ((cam.x - e.pos.x) ** 2 + (cam.z - e.pos.z) ** 2 > 600) return;
     this.vfx.ring({ x: e.pos.x, y: WATER_Y - 0.05, z: e.pos.z }, r + 0.45, WADE_C, 1.1, 0.07);
+    waterRipple(e.pos.x, e.pos.z, 0.9);
     if (Math.random() < 0.5) this.vfx.burst(new THREE.Vector3(e.pos.x, WATER_Y, e.pos.z), { count: 4, speed: 1.6, upward: 1, gravity: 9, life: 0.35, size: 0.045, sprite: SPR.DROP, color: [0.5, 0.6, 0.6], solid: true });
   }
 

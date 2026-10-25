@@ -27,6 +27,16 @@ function wetEnv() {
   return t;
 }
 
+// Ripples on every water surface: a ring of 12 sources (x, z, start time, strength) that each spread a
+// rippling ring out over 1.8 s, in the water's own shader (no meshes; the normals bend, so a ripple catches
+// the torches). Drips, rain and anything wading feed it (waterRipple).
+const RIP_N = 12, RIP = { value: Array.from({ length: RIP_N }, () => new THREE.Vector4(0, 0, -99, 0)) }, RIP_T = { value: 0 };
+let ripI = 0;
+export function waterRipple(x, z, k = 1) {
+  RIP.value[ripI].set(x, z, RIP_T.value, k);
+  ripI = (ripI + 1) % RIP_N;
+}
+
 export function makeWaterMaterial(factory, tint = 0x0d1a12) {
   const t = factory.get('rock', 512, 7);
   const n2 = t.normalMap.clone();
@@ -50,18 +60,32 @@ export function makeWaterMaterial(factory, tint = 0x0d1a12) {
   // One extra texture read; the program compiles with the rest at load.
   const uB = { value: new THREE.Vector2() };
   mat.onBeforeCompile = (sh) => {
-    sh.uniforms.uWaterB = uB;
-    sh.fragmentShader = 'uniform vec2 uWaterB;\n' + sh.fragmentShader.replace('#include <normal_fragment_maps>', `
+    sh.uniforms.uWaterB = uB; sh.uniforms.uRip = RIP; sh.uniforms.uRipT = RIP_T;
+    sh.vertexShader = 'varying vec2 vRipW;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vRipW = (modelMatrix * vec4(transformed, 1.0)).xz;');
+    sh.fragmentShader = `uniform vec2 uWaterB; uniform vec4 uRip[${RIP_N}]; uniform float uRipT; varying vec2 vRipW;\n` + sh.fragmentShader.replace('#include <normal_fragment_maps>', `
       vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
       vec3 mapN2 = texture2D( normalMap, vNormalMapUv * 0.61 + uWaterB ).xyz * 2.0 - 1.0;
       mapN = vec3( mapN.xy + mapN2.xy, mapN.z * mapN2.z );
       mapN.xy *= normalScale;
-      normal = normalize( tbn * mapN );`);
+      // ripples: a couple of crests riding out on a ring (the surfaces' uv runs along +x and -z)
+      vec2 rip = vec2(0.0); float ripK = 0.0;
+      for (int i = 0; i < ${RIP_N}; i++) {
+        vec4 R = uRip[i];
+        float age = uRipT - R.z;
+        if (age < 0.0 || age > 1.8) continue;
+        vec2 dv = vRipW - R.xy; float d = length(dv) + 1e-4, x = d - age * 0.8;
+        float w = exp(-x * x * 36.0) * (1.0 - age / 1.8) * R.w, c = sin(x * 34.0);
+        rip += vec2(dv.x, -dv.y) / d * c * w; ripK += max(c, 0.0) * w;
+      }
+      mapN.xy += rip * 2.0;
+      normal = normalize( tbn * mapN );`).replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+      totalEmissiveRadiance += vec3(0.05, 0.065, 0.065) * min(ripK, 1.5); // (a crest's sheen, so it reads away from the torches too)`);
   };
-  mat.customProgramCacheKey = () => 'water2';
+  mat.customProgramCacheKey = () => 'water3';
   mat.userData.update = (time) => {
     t.normalMap.offset.set(time * 0.012, time * 0.02);
     uB.value.set(-time * 0.017, time * 0.009);
+    RIP_T.value = time;
   };
   void n2;
   return mat;

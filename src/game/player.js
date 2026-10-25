@@ -7,6 +7,7 @@ import { SPR } from '../render/particles.js';
 import { fxOf } from '../render/vfx.js';
 import { rand } from '../core/rng.js';
 import { K_WATER, WATER_Y } from '../world/levelgen.js';
+import { waterRipple } from '../world/materials.js';
 import { applyRelicSets, ascendK } from './relicDefs.js';
 
 const WADE_C = [0.16, 0.22, 0.22]; // ripple rings on channel water
@@ -740,6 +741,7 @@ export class LocalPlayer {
         if (this.inWater) {
           g.vfx.burst(new THREE.Vector3(this.pos.x, -0.25, this.pos.z), { count: 6, speed: 2, upward: 1, gravity: 9, life: 0.4, size: 0.05, sprite: SPR.DROP, color: [0.5, 0.6, 0.6], solid: true });
           g.vfx.ring({ x: this.pos.x, y: WATER_Y - 0.05, z: this.pos.z }, 0.75, WADE_C, 1.1, 0.07);
+          waterRipple(this.pos.x, this.pos.z, 1);
         }
       }
       if (this.stats.chainBonus !== undefined) {
