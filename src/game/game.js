@@ -64,6 +64,18 @@ const STREAKS = [
 const _nmFog = new THREE.Color(0x2a0606);
 const DREAD_MAX = 12;
 const _gp = new THREE.Vector3(), _gq = new THREE.Vector3();
+// what flies off a struck foe, by what it is made of (its hit sound says): see hitActor
+const MAT_HIT = {
+  enemy_hit_armor: { count: 5, speed: 7, spread: 0.8, life: 0.3, size: 0.045, sprite: SPR.SPARK, gravity: 9, drag: 3, stretch: 0.03, color: [3.2, 2.4, 1.3], color2: [1.2, 0.4, 0.1], dir: null },
+  enemy_hit_bone: { count: 4, speed: 4, spread: 0.9, life: 0.6, size: 0.06, sprite: SPR.CHUNK, gravity: 14, drag: 1, solid: true, spin: 6, color: [0.75, 0.72, 0.62], color2: [0.55, 0.5, 0.42], dir: null },
+  slime_squish: { count: 5, speed: 3.5, spread: 0.9, life: 0.6, size: 0.08, sprite: SPR.DROP, gravity: 12, drag: 1, solid: true, stretch: 0.02, color: [0.3, 0.55, 0.1], color2: [0.15, 0.3, 0.05], dir: null },
+  enemy_hit: { count: 4, speed: 3.5, spread: 0.7, life: 0.55, size: 0.06, sprite: SPR.DROP, gravity: 14, drag: 1, solid: true, stretch: 0.03, color: [0.32, 0.02, 0.03], color2: [0.18, 0, 0.01], dir: null },
+};
+MAT_HIT.paper = { count: 4, speed: 3, spread: 1, life: 0.9, size: 0.07, sprite: SPR.FEATHER, gravity: 3, drag: 2, solid: true, spin: 5, color: [0.62, 0.55, 0.4], color2: [0.45, 0.38, 0.26], dir: null };
+MAT_HIT.ember = { count: 5, speed: 5, spread: 0.9, life: 0.5, size: 0.04, sprite: SPR.EMBER, gravity: -1, drag: 2, color: [3, 1.2, 0.3], color2: [0.8, 0.15, 0], dir: null };
+// (by type, where the hit sound doesn't say: spirits shed nothing, a book its pages, an imp embers)
+const MAT_OF = { wraith: null, specter: null, spiritWolf: null, slimeling: 'slime_squish', motherOfFilth: 'slime_squish', skeletonMinion: 'enemy_hit_bone', archivistLich: 'enemy_hit_bone', grimoire: 'paper', imp: 'ember', mimic: 'paper' };
+const _mdir = new THREE.Vector3();
 export class Game {
   constructor({ renderer, input, audio, ui, settings }) {
     this.renderer = renderer;
@@ -912,6 +924,18 @@ export class Game {
         const kd = H.kbDir, pp = this.player.pos;
         const k = Math.min(1, 0.3 + (dmg / Math.max(1, a.maxHp)) * 4 + (res.crit ? 0.2 : 0)) * (a.boss ? 0.35 : 1);
         if (kd) a.model?.kick?.(kd[0], kd[1], k); else a.model?.kick?.(a.pos.x - pp.x, a.pos.z - pp.z, k);
+        // and something of what was struck flies off it, away from the blow: sparks from plate and stone,
+        // chips from bone, goo from an ooze, blood from flesh (a few at most, near the camera, not every tick)
+        const mk = a.type in MAT_OF ? MAT_OF[a.type] : a.def.hitSound;
+        const M = mk === null ? null : MAT_HIT[mk] ?? MAT_HIT.enemy_hit;
+        const cp = this.renderer.camera.position;
+        if (this._matF !== this.time) { this._matF = this.time; this._matN = 0; } // (at most 6 a frame, however big the fight)
+        if (M && this._matN < 6 && this.time >= (a._matT ?? 0) && (a.pos.x - cp.x) ** 2 + (a.pos.z - cp.z) ** 2 < 625 && !a.def.phase) {
+          a._matT = this.time + 0.07; this._matN++;
+          const dx = kd ? kd[0] : a.pos.x - pp.x, dz = kd ? kd[1] : a.pos.z - pp.z, dl = Math.hypot(dx, dz) || 1;
+          M.dir = _mdir.set(dx / dl, 0.55, dz / dl);
+          this.vfx.burst(pos, M);
+        }
       }
       // shield-bearers turn frontal hits: show it, so players learn to flank or stun them
       if (a.def.frontShield && H.tag !== 'dot' && !(a.st.stun?.t > 0)) {
