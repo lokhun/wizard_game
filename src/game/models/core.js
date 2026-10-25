@@ -801,6 +801,7 @@ export function turnK(m, dt) {
   if (st.lastYaw !== null && dt > 1e-4) { const d = yaw - st.lastYaw; yr = Math.atan2(Math.sin(d), Math.cos(d)) / dt; }
   st.lastYaw = yaw;
   st.turnK += (clamp(Math.abs(yr) / 2.5) - st.turnK) * (1 - Math.exp(-8 * dt));
+  st.turnS += (clamp(yr / 3, -1, 1) - st.turnS) * (1 - Math.exp(-6 * dt)); // (signed, + turning left: a run banks into it)
   return st.turnK;
 }
 
@@ -931,7 +932,7 @@ export class EnemyInstance {
     this.magicColor = spec.magicColor ?? spec.eyeColor;
     this.time = Math.random() * 100;
     this.seed = Math.random();
-    this.state = { phase: Math.random() * TAU, lastAnim: null, lastYaw: null, turnK: 0, fidT: 2 + Math.random() * 10, fidI: -1, fidU: 0, fidS: 1 };
+    this.state = { phase: Math.random() * TAU, lastAnim: null, lastYaw: null, turnK: 0, turnS: 0, fidT: 2 + Math.random() * 10, fidI: -1, fidU: 0, fidS: 1 };
     this._flash = 0;
     this._look = { x: 0, y: 0 }; // (the head's turn toward its foe, eased: see _layers)
     this._kick = { x: 0, z: 0, k: 0 };

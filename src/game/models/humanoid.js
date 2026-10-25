@@ -237,6 +237,9 @@ export function humanoidPose(m, s, P, dt) {
     P.r('spine', (0.06 + run * 0.18 + plod * 0.05) * w, -sn * 0.08 * w, -cs * plod * 0.05 * w);
     P.r('chest', 0, -sn * 0.1 * w, 0);
     P.r('head', -(0.04 + run * 0.12) * w, sn * 0.06 * w, -cs * plod * 0.04 * w);
+    // banking: a body on the move leans into its turn (harder the faster it runs) and keeps its head level
+    const bank = st.turnS * w * (0.35 + run * 0.65) * (A.bank ?? 1);
+    P.r('hips', 0, 0, -bank * 0.1); P.r('spine', 0, 0, -bank * 0.1); P.r('chest', 0, 0, -bank * 0.05); P.r('head', 0, 0, bank * 0.16);
     const armA = (A.armSwing ?? 0.45) * (1 + run * 0.5);
     if (!action) {
       P.r('armL', sn * armA * w); P.r('armR', -sn * armA * w);
