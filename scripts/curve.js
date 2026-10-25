@@ -88,6 +88,9 @@
     const a = g.director.spawnEnemy(roster[0], at.x, at.z, { noCredit: true });
     a.maxHp = a.hp = 1e9;
     a.homeRoom = { dummy: true }; // (its own room: no stalled fight elsewhere counts it, and banishes it)
+    // (if it dies anyway, say what killed it)
+    const kill0 = g.actors.kill; let died = null;
+    g.actors.kill = function (x, k, el) { if (x === a && !died) died = { k, el, hp: Math.round(x.hp), at: new Error().stack.split('\n').slice(2, 7).map((l) => l.trim().replace(/https?:\/\/[^/]+/, '')).join(' < ') }; return kill0.call(this, x, k, el); };
     window.__sim(1.2, 1 / 30, () => { a.pos.x = at.x; a.pos.z = at.z; });
     const h0 = a.hp; let frames = 0;
     window.__sim(6, 1 / 30, () => {
@@ -103,9 +106,10 @@
     });
     inp.mouse.left = false; inp.mouse.right = false;
     const st = (h0 - a.hp) / 6;
+    g.actors.kill = kill0;
     a.hp = 0; g.actors.kill(a, 0, 'holy'); window.__sim(0.5);
     rows.push({ dummy: true, r: g.floorIndex, d: g.abyss ?? 0, foeHp: Math.round(hp / n), st: Math.round(st), ttkFoe: +(hp / n / st).toFixed(2),
-      why: st > 0 ? '' : JSON.stringify({ los: g.collision.los(p.pos.x, p.pos.y + 1.6, p.pos.z, at.x, a.pos.y + a.height * 0.5, at.z), gap: +Math.hypot(at.x - p.pos.x, at.z - p.pos.z).toFixed(1), dummy: [a.anim, a.dormant, a.dead, +a.pos.y.toFixed(2), +g.groundY(at.x, at.z).toFixed(2), +p.pos.y.toFixed(2)], cast: p.canCast(), alive: p.alive, downed: p.downed, dead: p.dead, paused: g.paused, modal: !!g.ui.modalOpen, top: g.ui.modalStack?.at(-1)?.textContent?.slice(0, 120), cin: !!g.cinematic, locked: inp.locked, stun: p.stunT, ch: !!p.channel }) });
+      why: st > 0 ? '' : JSON.stringify({ died, los: g.collision.los(p.pos.x, p.pos.y + 1.6, p.pos.z, at.x, a.pos.y + a.height * 0.5, at.z), gap: +Math.hypot(at.x - p.pos.x, at.z - p.pos.z).toFixed(1), dummy: [a.anim, a.dormant, a.dead, +a.pos.y.toFixed(2), +g.groundY(at.x, at.z).toFixed(2), +p.pos.y.toFixed(2)], cast: p.canCast(), alive: p.alive, downed: p.downed, dead: p.dead, paused: g.paused, modal: !!g.ui.modalOpen, top: g.ui.modalStack?.at(-1)?.textContent?.slice(0, 120), cin: !!g.cinematic, locked: inp.locked, stun: p.stunT, ch: !!p.channel }) });
   };
   const wait = async (f) => { for (let k = 0; k < 600 && !f(); k++) await new Promise((r) => setTimeout(r, 100)); };
   for (let lap = 0; lap <= depths; lap++) {

@@ -4,6 +4,7 @@ import { FX, fxOf, nearFade, clampHDR, orbMaterial } from '../render/vfx.js';
 import { SPR } from '../render/particles.js';
 import { rand } from '../core/rng.js';
 import { segPointDist2 } from '../core/math.js';
+import { GeoBuilder } from '../render/geo.js';
 import { WATER_Y } from '../world/levelgen.js';
 
 // ---------------------------------------------------------------------------
@@ -120,6 +121,62 @@ function magmaTexture() {
 }
 
 const _hp = { x: 0, z: 0 };
+// Arrows that miss stay where they land: stuck in the wall or the floor, quivering a moment, gone after a
+// few seconds. A pool of 24 in one instanced mesh of the arrow (count kept at one zero-sized arrow, so its
+// program compiles with the level's).
+const ARROWS = 24, ARROW_LIFE = 6, _aq = new THREE.Quaternion(), _aw = new THREE.Quaternion(), _ap = new THREE.Vector3(), _ad = new THREE.Vector3(), _as = new THREE.Vector3(), _am = new THREE.Matrix4(), _az = new THREE.Vector3(0, 0, 1);
+class StuckArrows {
+  constructor(def) {
+    this.mesh = new THREE.InstancedMesh(def.geo, def.mat, ARROWS);
+    this.mesh.frustumCulled = false;
+    this.mesh.name = 'stuckArrows';
+    _am.makeScale(0, 0, 0);
+    for (let i = 0; i < ARROWS; i++) this.mesh.setMatrixAt(i, _am);
+    this.mesh.count = 1;
+    this.tip = new Float32Array(ARROWS * 3); this.q = new Float32Array(ARROWS * 4); this.ax = new Float32Array(ARROWS * 3);
+    this.age = new Float32Array(ARROWS).fill(ARROW_LIFE + 1);
+    this.next = 0; this.live = 0;
+  }
+  // stuck at pos, having flown along dir: its head buried a hand's width in
+  add(pos, dir) {
+    const i = this.next; this.next = (this.next + 1) % ARROWS;
+    _ad.copy(dir).normalize();
+    if (_ad.lengthSq() < 0.5) return;
+    this.tip[i * 3] = pos.x + _ad.x * 0.18; this.tip[i * 3 + 1] = pos.y + _ad.y * 0.18; this.tip[i * 3 + 2] = pos.z + _ad.z * 0.18;
+    _aq.setFromUnitVectors(_az, _ad);
+    this.q[i * 4] = _aq.x; this.q[i * 4 + 1] = _aq.y; this.q[i * 4 + 2] = _aq.z; this.q[i * 4 + 3] = _aq.w;
+    // it quivers about an axis across its shaft
+    _ap.set(-_ad.z, 0, _ad.x); if (_ap.lengthSq() < 1e-4) _ap.set(1, 0, 0);
+    _ap.normalize(); this.ax[i * 3] = _ap.x; this.ax[i * 3 + 1] = _ap.y; this.ax[i * 3 + 2] = _ap.z;
+    this.age[i] = 0;
+    this.live = ARROW_LIFE + 0.5;
+  }
+  update(dt) {
+    if (this.live <= -0.5) return;
+    this.live -= dt;
+    let top = 0;
+    for (let i = 0; i < ARROWS; i++) {
+      const age = (this.age[i] += dt);
+      if (age > ARROW_LIFE) { if (age - dt <= ARROW_LIFE) { _am.makeScale(0, 0, 0); this.mesh.setMatrixAt(i, _am); } continue; }
+      top = i + 1;
+      // (settled and not yet fading: its matrix stands)
+      if (age > 0.45 && age < ARROW_LIFE - 0.6) continue;
+      const wob = Math.sin(age * 48) * Math.exp(-age * 9) * 0.22;
+      _aw.setFromAxisAngle(_ap.set(this.ax[i * 3], this.ax[i * 3 + 1], this.ax[i * 3 + 2]), wob);
+      _aq.set(this.q[i * 4], this.q[i * 4 + 1], this.q[i * 4 + 2], this.q[i * 4 + 3]).premultiply(_aw);
+      // pivoting on its buried head; drawn back out as it fades
+      const f = age > ARROW_LIFE - 0.6 ? (ARROW_LIFE - age) / 0.6 : 1;
+      _ad.copy(_az).applyQuaternion(_aq);
+      _ap.set(this.tip[i * 3], this.tip[i * 3 + 1], this.tip[i * 3 + 2]).addScaledVector(_ad, -0.4 * f);
+      _as.setScalar(f);
+      _am.compose(_ap, _aq, _as);
+      this.mesh.setMatrixAt(i, _am);
+    }
+    this.mesh.count = Math.max(1, top);
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+}
+
 export class SpellRuntime {
   constructor(game) {
     this.g = game;
@@ -137,7 +194,12 @@ export class SpellRuntime {
     this.hostileMats = new Map();
     this.spriteMats = new Map();
     this.meshCache = {};
+    this.arrows = null; // (missed arrows stuck in walls and floors: StuckArrows)
     this._buildMeshes();
+    // (the stuck-arrow pool lives in the scene for good, from before the first prewarm, so its program
+    // compiles with the level's and the prewarm's sweep of what it added leaves it be)
+    this.arrows = new StuckArrows(this.meshCache.arrow);
+    game.scene.add(this.arrows.mesh);
     // fast projectiles draw a streak along their path so they read in flight
     this.tracerGeo = new THREE.PlaneGeometry(1, 1).translate(-0.5, 0, 0);
     this.tracerTex = streakTexture();
@@ -192,9 +254,15 @@ export class SpellRuntime {
     const blade = new THREE.BoxGeometry(0.06, 0.012, 1.1);
     blade.translate(0, 0, 0.2);
     M.blade = { geo: blade, mat: nearFade(new THREE.MeshBasicMaterial({ color: new THREE.Color(0.5, 1.1, 1.8), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })) };
-    const arrow = new THREE.CylinderGeometry(0.015, 0.015, 0.8, 4);
-    arrow.rotateX(Math.PI / 2);
-    M.arrow = { geo: arrow, mat: new THREE.MeshStandardMaterial({ color: 0x4a3018, roughness: 0.8 }) };
+    // an arrow, head first along +z (the way it flies): a shaft, an iron head and three vanes of fletching
+    const ab = new GeoBuilder(), am = new THREE.Matrix4();
+    ab.addGeometry(new THREE.CylinderGeometry(0.013, 0.013, 0.74, 5).rotateX(Math.PI / 2), am.makeTranslation(0, 0, -0.03));
+    ab.addGeometry(new THREE.ConeGeometry(0.028, 0.11, 4).rotateX(Math.PI / 2), am.makeTranslation(0, 0, 0.39));
+    for (let k = 0; k < 3; k++) {
+      const a = k / 3 * Math.PI * 2;
+      ab.addGeometry(new THREE.BoxGeometry(0.003, 0.045, 0.13).translate(0, 0.03, 0).rotateZ(a), am.makeTranslation(0, 0, -0.32));
+    }
+    M.arrow = { geo: ab.build(), mat: new THREE.MeshStandardMaterial({ color: 0x4a3018, roughness: 0.8 }) };
     // wind blade: a thicker crescent tapered toward the horns, bulging forward
     const cres = new THREE.TorusGeometry(0.62, 0.075, 6, 24, Math.PI * 0.9);
     {
@@ -290,6 +358,7 @@ export class SpellRuntime {
       data: p.data ?? {},
       hitPlayers: p.hitPlayers ?? true,
       noWall: p.noWall ?? false,
+      meshKind: p.mesh ?? null,
     };
     const fx = fxOf(proj.el);
     proj.lightColor = fx.light;
@@ -386,6 +455,7 @@ export class SpellRuntime {
     const g = this.g;
     const col = g.collision;
     this.orbTime.value = g.time;
+    this.arrows?.update(dt);
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
       if (p.dead) { this._remove(i); continue; }
@@ -532,6 +602,7 @@ export class SpellRuntime {
         }
       }
       if (wallHit) {
+        if (p.meshKind === 'arrow') this.arrows?.add(p.pos, p.vel);
         if (p.onWall) p.onWall(p, p.pos);
         g.encounters?.wallHit(p); // secret walls crack under spells
         if (!p.aoe) g.vfx.impact(p.pos, p.el, 0.8);
@@ -548,6 +619,7 @@ export class SpellRuntime {
         if (p.sticky) { p.stuck = true; p.vel.set(0, 0, 0); }
         else if (p.bounce > 0) { p.bounce--; p.vel.y = Math.abs(p.vel.y) * 0.5; }
         else {
+          if (p.meshKind === 'arrow' && !wet) this.arrows?.add(p.pos, p.vel);
           p.onWall?.(p, p.pos);
           if (!p.aoe) g.vfx.impact(p.pos, p.el, 0.8);
           this.kill(p, p.pos);
