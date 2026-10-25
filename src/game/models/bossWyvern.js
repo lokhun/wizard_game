@@ -449,6 +449,10 @@ function deathPose(P, T, s, st) {
     wingSpread(P, S, sd, scream * 0.8, 0.4 * scream);
     P.r('wu' + S, 0, 0, sd * -0.6 * wf); P.r('wf' + S, 0, sd * 0.8 * wf, sd * -0.3 * wf);
   }
+  // as it rolls, the wing it lands on folds up along its flank and the other drapes over it (the lower one ran
+  // 2 m into the floor; searched against the settled pose)
+  P.r('wuL', -1.0 * wf, 0, 1.2 * wf);
+  P.r('wuR', 1.0 * wf, 0, -1.2 * wf); P.r('wfR', 0, 1.2 * wf, 0);
   for (let i = 0; i < TAIL; i++) P.r('tail' + i, 0.02 * give, Math.sin(i * 0.6) * 0.1 * give, 0);
   return 8;
 }
