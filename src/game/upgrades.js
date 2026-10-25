@@ -48,7 +48,7 @@ export const TOMES = [
   { id: 'vitality', name: 'Tome of Vitality', icon: 'heart', max: 99, desc: (m) => `+${Math.round(20 * m)} max health.`, apply: (s, m) => { s.maxHp += 20 * m; } },
   { id: 'ward', name: 'Warding Script', icon: 'shield', max: 4, desc: (m) => `Take ${pct(0.07 * m)} less damage.`, apply: (s, m) => { s.armor += 0.07 * m; } },
   // (the sustain tomes: rarer than the rest, and all on-hit and on-kill healing shares a cap of 3% max health a second)
-  { id: 'regen', name: 'Troll Blood', icon: 'heart', max: 3, rare: 0.5, desc: (m) => `Regenerate ${(0.6 * m).toFixed(1)} health per second (a third as much for 4s after being hit).`, apply: (s, m) => { s.regen += 0.6 * m; } },
+  { id: 'regen', name: 'Troll Blood', icon: 'heart', max: 3, rare: 0.5, desc: (m) => `Regenerate ${(0.6 * m).toFixed(1)} health per second while you fight and for 6s after (a third as much for 4s after being hit).`, apply: (s, m) => { s.regen += 0.6 * m; } },
   { id: 'vampire', name: 'Vampiric Codex', icon: 'drop', max: 2, rare: 0.5, desc: (m) => `${pct(0.02 * m)} of damage dealt heals you (all lifesteal: at most 3% max health a second).`, apply: (s, m) => { s.lifesteal += 0.02 * m; } },
   { id: 'feast', name: 'Soul Feast', icon: 'skull', max: 2, rare: 0.5, desc: (m) => `Kills heal ${Math.round(2 * m)} health (with lifesteal, at most 3% max health a second).`, apply: (s, m) => { s.killHeal += 2 * m; } },
   { id: 'swift', name: 'Wind Walker', icon: 'speed', max: 4, desc: (m) => `+${pct(0.08 * m)} move speed.`, apply: (s, m) => { s.moveSpeed *= 1 + 0.08 * m; } },

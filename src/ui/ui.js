@@ -393,7 +393,7 @@ export class UI {
       <div class="crosshair"><div class="ring"></div></div>
       <div class="hitmarker"><i></i><i></i><i></i><i></i></div>
       <div class="damage-dir"></div>
-      <div class="floor-info"><div class="fname"></div><div class="fsub"></div><div class="objective"></div></div>
+      <div class="floor-info"><div class="fname"></div><div class="fsub"></div><div class="objective"></div><div class="deadline hidden"></div></div>
       <canvas class="minimap"></canvas><div class="mm-frame"><i class="pip"></i></div>
       <div class="boss-bar hidden"><div class="bname"></div><div class="btitle"></div><div class="bframe"><i class="cap l"></i><div class="bar"><div class="lag"></div><div class="fill"></div><div class="sheen"></div><div class="phase-marks"></div></div><i class="cap r"></i></div><div class="bgate hidden"><span class="gname"></span><span class="gleft"></span><div class="gtime"><div></div></div></div></div>
       <div class="wave-ind"></div>
@@ -429,7 +429,7 @@ export class UI {
       gold: q('#goldTxt'), goldBox: q('.gold-box'), dread: q('#dreadTxt'), dreadBox: q('.gold-box .dread'), prompt: q('.prompt'), toasts: q('.toasts'), banner: q('.banner'),
       hit: q('.hitmarker'), team: q('.team'), boss: q('.boss-bar'), bossFill: q('.boss-bar .fill'), bossLag: q('.boss-bar .lag'),
       bossName: q('.boss-bar .bname'), bossGate: q('.boss-bar .bgate'), bossGateName: q('.boss-bar .gname'), bossGateLeft: q('.boss-bar .gleft'), bossGateTime: q('.boss-bar .gtime div'), bossTitle: q('.boss-bar .btitle'), minimap: q('.minimap'), fname: q('.fname'), fsub: q('.fsub'),
-      obj: q('.objective'), wave: q('.wave-ind'), dmgDir: q('.damage-dir'), clickHint: q('.click-hint'),
+      obj: q('.objective'), deadline: q('.floor-info .deadline'), wave: q('.wave-ind'), dmgDir: q('.damage-dir'), clickHint: q('.click-hint'),
     };
     this.mm = this.h.minimap.getContext('2d');
     this.h.minimap.width = 400; this.h.minimap.height = 400;
@@ -1084,6 +1084,19 @@ export class UI {
     clearTimeout(this._waveTO);
     this._waveTO = setTimeout(() => { if (this.h) this.h.wave.textContent = ''; }, 3000);
   }
+  // Tight Deadline: the realm's clock under the objective (red in its last minute; withering once it's past)
+  deadline(D) {
+    const el = this.h?.deadline;
+    if (!el) return;
+    const show = !!D && !D.stopped;
+    if (this._dlShow !== show) { this._dlShow = show; el.classList.toggle('hidden', !show); }
+    if (!show) return;
+    const s = Math.max(0, Math.ceil(D.t));
+    const st = D.past ? 'past' : s <= 60 ? 'low' : '';
+    if (this._dlSt !== st) { this._dlSt = st; el.className = 'deadline ' + st; }
+    setText(el, D.past ? 'Withering — reach the guardian' : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} to reach the guardian`);
+  }
+
   // the boss's gate (Game.bossFx 'gate'): its name and what it still asks, under the bar, with the time it holds
   bossGate(a) {
     if (!this.h || a !== this.bossActor) return;

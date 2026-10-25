@@ -337,6 +337,10 @@ export class Game {
     this.audio?.setMusic(this._mus('explore'));
     this.audio?.play('floor_enter');
     this.ui?.onFloor(this, b, index);
+    // Tight Deadline: each realm's clock (not in Boss Rush, where every realm is its guardian)
+    this.deadline = this.difficulty.deadline && !this.difficulty.rush && !this.menuMode ? { t: this.difficulty.deadline, past: false } : null;
+    this.fightLock = null;
+    this.ui?.deadline(this.deadline);
     if (index === 0 && !this.menuMode) this._tutorialTips();
     this.events.emit('floor', index);
     this._prewarm(level);
@@ -648,6 +652,7 @@ export class Game {
     this._updatePings();
     for (const r of this.remotes.values()) r.update(dt);
     if (!this.paused || !this.isSolo) {
+      if (this.deadline) this._deadlineTick(dt);
       if (this.isHost) this.director.update(dt);
       this.actors.update(dt);
       this.spells.update(dt);
@@ -1564,6 +1569,9 @@ export class Game {
     }
     this.audio?.play(locked ? 'door_close' : 'door_open', { pos: new THREE.Vector3(room.cx, 1, room.cz) });
     this.events.emit('roomLock', room, locked);
+    this.fightLock = locked ? room : null;
+    if (!locked) this.fightEndT = this.time;
+    if (locked && room.type === ROOM.BOSS) this._deadlineStop(); // (the clock stops at the guardian's door)
     if (locked) this.critters?.startle(new THREE.Vector3(room.cx, 1, room.cz), Math.max(room.w, room.h) * T);
     this.relics?.onRoomLock(room, locked);
     if (locked) {
@@ -2335,6 +2343,28 @@ export class Game {
       }
     }
   }
+
+  // Tight Deadline: the realm's clock runs (each peer keeps its own; the floors start together) until the
+  // guardian's door shuts. Run out, and the wizard withers, 1% of their health a second, until it falls.
+  _deadlineTick(dt) {
+    const D = this.deadline, p = this.player;
+    if (D.stopped || this.ended || this.loadingFloor || this.transitioning) return;
+    const was = D.t;
+    D.t -= dt;
+    if (was > 60 && D.t <= 60) { this.ui?.toast('One minute left to reach the guardian', '#ff9a60'); this.audio?.play('enemy_cast', { volume: 0.6 }); }
+    if (D.t <= 0 && !D.past) {
+      D.past = true;
+      this.ui?.banner('THE DEADLINE PASSES', 'You wither until the guardian falls', '#ff5a40');
+      this.audio?.play('boss_roar', { volume: 0.5 });
+      this.screenTint([1.3, 0.75, 0.7], 1);
+    }
+    if (D.past && p.alive && !p.downed && !p.dead && !this.godMode) {
+      D.acc = (D.acc ?? 0) + p.maxHp * 0.01 * dt;
+      if (D.acc >= 1) { const n = Math.floor(D.acc); D.acc -= n; p.wither(n); }
+    }
+    this.ui?.deadline(D);
+  }
+  _deadlineStop() { if (this.deadline) { this.deadline.stopped = true; this.ui?.deadline(this.deadline); } }
 
   // a perfect dodge (ours, or a teammate's sent to us as host) cracks a boss's judgment
   _bossDodge() {

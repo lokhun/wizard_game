@@ -2,7 +2,7 @@
 //   node scripts/smoke.mjs "?autostart=pyromancer&test=1&norender=1&seed=4242&abyss" out.png 2000 scripts/curve.js
 // A bot plays the whole run in __sim time: every main-path fight and boss of the five
 // realms, then on into the Abyss (&depths=N, default 2), taking a tome from each reward
-// (&pick=first|random, default random) and every relic offered. Health is refilled every
+// (&pick=first|random|greedy, default random; greedy drafts for damage like a strong player) and every relic offered. Health is refilled every
 // frame, so it never dies: what's measured is how hard each fight is for the build it has
 // by then. Per room: seconds to clear, damage taken in max-health units (and per minute),
 // damage dealt per second. &rs seeds Math.random. The arc to aim for: realm 1 slow and
@@ -17,7 +17,10 @@
   const g = window.__game, p = g.player, inp = window.__input;
   const depths = +(Q.get('depths') ?? 2), pickMode = Q.get('pick') ?? 'random';
   g.abyssUnlocked = true;
-  g.ui.chooseTome = (c, cb) => cb(pickMode === 'first' ? c[0] : c[Math.floor(Math.random() * c.length)]);
+  // greedy: a player drafting for damage (the order a strong build reaches for), finer rarity first among equals
+  const GREED = ['multicast', 'empower', 'devastation', 'focus', 'haste', 'elemental', 'split', 'glass', 'pierce', 'elites', 'executioner', 'static', 'hexrune', 'velocity', 'echo', 'cdr', 'aoe', 'ember', 'venom', 'bloodrune', 'ult'];
+  const greed = (t) => { const i = GREED.indexOf(t.def.id); return (i < 0 ? (t.def.aug ? 6.5 : 40) : i) - t.rarity * 0.6; };
+  g.ui.chooseTome = (c, cb) => cb(pickMode === 'first' ? c[0] : pickMode === 'greedy' ? [...c].sort((a, b) => greed(a) - greed(b))[0] : c[Math.floor(Math.random() * c.length)]);
   g.ui.chooseRelic = (c, cb) => cb(c[0]);
   let hurt = 0, dealt = 0;
   g.events.on('hurt', (d) => { hurt += d / p.maxHp; });

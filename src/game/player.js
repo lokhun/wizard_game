@@ -214,6 +214,16 @@ export class LocalPlayer {
     return dmg;
   }
 
+  // the deadline's withering: armour, shields and dashes don't turn it, and it doesn't flinch you every
+  // second (no shake, no cry); it still shows in the death recap
+  wither(n) {
+    if (!this.alive || this.downed || this.dead || n <= 0) return;
+    this.hp -= n;
+    this.hurtPulse = Math.min(1, this.hurtPulse + 0.1);
+    this.game.events?.emit('hurt', n, 'blood', { cause: 'the deadline' }, null);
+    if (this.hp <= 0) this._goDown();
+  }
+
   // how far the passive heals (regen, lifesteal, kill-heals) may lift you: Old Wounds caps them at 75% / 50%
   _sustainRoom() { return this.maxHp * (this.game.difficulty?.healCap ?? 1) - this.hp; }
 
@@ -550,8 +560,10 @@ export class LocalPlayer {
     // the sustain budget refills (a second's worth at most banked)
     const cap = this.maxHp * SUSTAIN_CAP * (st.sustainMult ?? 1);
     this._sustainLeft = Math.min(cap, (this._sustainLeft ?? cap) + cap * dt);
-    // regen: mostly a mender between fights (35% within 4 s of being hit)
-    const regen = st.regen * (g.time - this.lastDamageT < 4 ? 0.35 : 1) + (g.auraRegenFor?.(this) ?? 0);
+    // regen: mends you through a fight and the breath after it (35% within 4 s of being hit), but not
+    // while you wait between chambers: standing about to top up made Troll Blood a full heal per room
+    const fresh = g.fightLock || g.time - (g.fightEndT ?? -99) < 6 || g.time - this.lastDamageT < 6;
+    const regen = (fresh ? st.regen * (g.time - this.lastDamageT < 4 ? 0.35 : 1) : 0) + (g.auraRegenFor?.(this) ?? 0);
     if (regen > 0 && this.alive && !this.downed && this.hp < this.maxHp) { const room = this._sustainRoom(); if (room > 0) this.heal(Math.min(regen * dt, room), true); }
 
     // history for rewind
