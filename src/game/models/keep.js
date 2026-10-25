@@ -500,6 +500,8 @@ export const royalGuard = {
   anim: {
     // (an armoured guard topples; the bone-pile collapse sank it into the floor)
     death: 'fall', spawn: 'rise', gait: 'plod', armSwing: 0.15, stride: 0.5, knee: 0.7,
+    // a corpse lays its weapon flat instead of standing it 1 m+ out of the body or the floor (scripts/grip.js)
+    deathGrip: [{ foreR: [-1.6, 0, 0], handR: [0, 0, -1.2], armL: [-1.2, 0, 0.4], foreL: [0.4, 0, 0] }, { handR: [-1.2, 0, 1.2], armL: [1.6, 0, 0.8], foreL: [-0.8, 0, 0] }],
     rest: { armR: [-0.3, 0, 0.0], foreR: [-1.15, 0, 0], handR: [-0.2, 0, 0], armL: [-0.12, -0.9, 0.25], foreL: [-1.3, 0, 0] },
     extra: (P, m, s, dt, k) => {
       glowLevel(m, s.anim === 'windup' ? 1 + smooth(0, 1, s.progress) : s.anim === 'death' ? 1 - 0.9 * s.progress : 1);

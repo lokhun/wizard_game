@@ -283,6 +283,8 @@ export const gildedSentinel = {
   },
   anim: {
     gait: 'plod', armSwing: 0.12, stride: 0.42, strideK: 0.12, knee: 0.6, breath: 1.0, look: 0.35, armOut: 0, rate: 10,
+    // a corpse lays its weapon flat instead of standing it 1 m+ out of the body or the floor (scripts/grip.js)
+    deathGrip: [{ handR: [-1.6, 0, -1.2] }, { handR: [-1.6, 0, -1.2] }],
     rest: SN_REST,
     stance: (P, m, s) => {
       if (s.anim === 'death') return;

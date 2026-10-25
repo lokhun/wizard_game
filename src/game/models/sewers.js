@@ -617,6 +617,8 @@ export const ratShaman = {
   pose: humanoidPose,
   anim: {
     death: 'fall', spawn: 'rise', armSwing: 0.2, knee: 0.9, stride: 0.5, caster: true, idleOrb: 0.15,
+    // the staff goes down flat with it, not standing out of the body with its skull in the stone (scripts/grip.js)
+    deathGrip: [{ foreR: [-1.2, 0, 0], handR: [-0.4, 0, 1.2] }, { foreR: [0.4, 0, 0], handR: [-1.6, 0, 0.4] }],
     rest: { armR: [-0.35, 0, -0.05], foreR: [-1.05, 0, 0], handR: [0.2, 0, 0], armL: [-0.2, 0, 0.1], foreL: [-0.8, 0, 0] },
     stance: (P) => P.apply({ spine: [0.32, 0, 0], chest: [0.3, 0, 0], neck: [-0.3, 0, 0], head: [-0.3, 0, 0], thighL: [-0.22, 0, 0], thighR: [-0.22, 0, 0], shinL: [0.38, 0, 0], shinR: [0.38, 0, 0], footL: [-0.15, 0, 0], footR: [-0.15, 0, 0], hips: [0, 0, 0, 0, -0.05, 0] }),
     actions: { cast: SH_CAST, summon: SH_SUMMON },

@@ -255,6 +255,10 @@ export function humanoidPose(m, s, P, dt) {
     rate = 30;
   } else if (dead) {
     rate = deathPose(m, s, P, D, A, sc);
+    // a long weapon still in hand goes down flat with the body instead of standing out of it (or out of the
+    // floor under it): a forearm/hand turn per type, one for each side the body can twist to as it falls
+    // (scripts/grip.js finds them)
+    if (A.deathGrip) P.apply(A.deathGrip[m.seed > 0.5 ? 1 : 0], smooth(0.3, 0.85, s.progress));
   } else if (spawning) {
     rate = spawnPose(m, s, P, D, A, sc);
   } else if (A.caster && A.idleOrb) {

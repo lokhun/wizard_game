@@ -100,6 +100,8 @@ export const fallenKnight = {
   pose: humanoidPose,
   anim: {
     death: 'fall', spawn: 'rise', armSwing: 0.25, knee: 0.75, stride: 0.5, gait: 'plod', breath: 1.1,
+    // a corpse lays its weapon flat instead of standing it 1 m+ out of the body or the floor (scripts/grip.js)
+    deathGrip: [{ foreR: [-1.6, 0, 0], handR: [0, 0, -1.2] }, { handR: [-1.2, 0, -1.2] }],
     rest: { armR: [-0.3, 0, -0.05], foreR: [-0.75, 0, 0], handR: [0.6, 0, 0], armL: [-0.3, -0.85, 0.22], foreL: [-1.3, 0, 0] },
     stance: (P) => P.apply({ spine: [0.12, 0, 0], neck: [0.1, 0, 0], head: [0.1, 0.1, 0.05], thighL: [-0.08, 0, 0.06], thighR: [-0.02, 0, -0.06], shinL: [0.14, 0, 0], shinR: [0.1, 0, 0] }),
     stagger: { spine: [-0.22, 0.12, 0.06], chest: [-0.2, 0.18, 0], head: [-0.35, -0.25, 0.12], armR: [0.3, 0, -0.5], foreR: [-0.6, 0, 0], armL: [0.1, -0.7, 0.4], hips: [0, 0, 0, 0, -0.05, -0.1], thighL: [-0.3, 0, 0], shinL: [0.4, 0, 0] },
@@ -146,6 +148,8 @@ export const knightCaptain = {
   pose: humanoidPose,
   anim: {
     death: 'fall', spawn: 'rise', gait: 'plod', armSwing: 0.15, knee: 0.7, stride: 0.5, breath: 1.3,
+    // a corpse lays its weapon flat instead of standing it 1 m+ out of the body or the floor (scripts/grip.js)
+    deathGrip: [{ foreR: [-1.6, 0, 0], handR: [0, 0, -1.2] }, { handR: [-1.2, 0, 0.8] }],
     rest: { armR: [-0.45, 0, 0.25], foreR: [-0.85, 0, 0], handR: [0.55, 0, 0], armL: [-0.5, 0, -0.32], foreL: [-1.0, 0, 0] },
     stance: (P) => P.apply({ spine: [0.04, 0, 0], thighL: [-0.12, 0, 0.08], thighR: [0.02, 0, -0.08], shinL: [0.16, 0, 0], shinR: [0.1, 0, 0] }),
   },
@@ -399,6 +403,8 @@ export const battlePriest = {
   pose: humanoidPose,
   anim: {
     death: 'fallBack', spawn: 'rise', caster: true, idleOrb: 0.0, armSwing: 0.2, stride: 0.45, gait: 'plod',
+    // a corpse lays its weapon flat instead of standing it 1 m+ out of the body or the floor (scripts/grip.js)
+    deathGrip: [{ foreR: [0.4, 0, 0], handR: [1.6, 0, -0.4] }, { foreR: [0.4, 0, 0], handR: [-1.6, 0, 0.4] }],
     // staff held upright: hand bone local +Y maps up when the forearm is level, so the staff runs along hand +Y
     rest: { armR: [-0.3, 0, -0.08], foreR: [-1.15, 0, 0], handR: [0.0, 0, 0], armL: [-0.25, 0, 0.12], foreL: [-0.75, 0, 0] },
     stance: (P) => P.apply({ spine: [0.1, 0, 0], neck: [0.08, 0, 0], head: [0.1, 0, 0] }),
