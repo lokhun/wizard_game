@@ -679,12 +679,16 @@ export class ActorManager {
           if (posed) a.model.update(dt, { anim: 'death', t: a.animT, speed: 0, progress: a.progress, attackType: '' });
           if (a.deadT > sinkAt) {
             a.sinkT = (a.sinkT ?? 0) + dt;
-            a.model.root.position.y = a.pos.y - a.sinkT * 0.7;
-            // the body crumbles as it goes: dark ash lifting off, a few dying embers
+            // the body burns away from the feet up behind a ragged ember front (core.js setDissolve); a body
+            // whose death already fades it out (a wraith dissipating) still sinks as before
+            const burn = a.model.setDissolve && a.model.spec?.anim?.death !== 'dissipate';
+            const k = Math.min(1, a.sinkT / 1.5) ** 1.4;
+            if (burn) { a.model.setDissolve(k); a.model.root.position.y = a.pos.y - a.sinkT * 0.08; } else a.model.root.position.y = a.pos.y - a.sinkT * 0.7;
+            // the body crumbles as it goes: dark ash lifting off, a few dying embers (rising with the front)
             const cam = g.renderer.camera.position;
-            if (a.sinkT < 1.1 && (cam.x - a.pos.x) ** 2 + (cam.z - a.pos.z) ** 2 < 700) {
+            if (a.sinkT < 1.35 && (cam.x - a.pos.x) ** 2 + (cam.z - a.pos.z) ** 2 < 700) {
               const n = Math.min(3, Math.floor(dt * 34 * Math.min(2, a.radius * 2) + Math.random()));
-              const r = a.radius * 0.9, top = Math.max(0.15, a.height * 0.35 - a.sinkT * 0.7);
+              const r = a.radius * 0.9, top = burn ? Math.max(0.15, a.height * 0.45 * (0.25 + k)) : Math.max(0.15, a.height * 0.35 - a.sinkT * 0.7);
               for (let k = 0; k < n; k++) {
                 const x = a.pos.x + rand(-r, r), z = a.pos.z + rand(-r, r), y = a.pos.y + rand(0.05, top);
                 g.vfx.P.solid({ x, y, z, vx: rand(-0.2, 0.2), vy: rand(0.3, 0.8), vz: rand(-0.2, 0.2), r: 0.13, g: 0.12, b: 0.105, a: 0.55, life: rand(0.8, 1.4), size: 0.16, size2: 0.7, sprite: SPR.SMOKE, drag: 1.5 });
@@ -695,7 +699,7 @@ export class ActorManager {
         }
         if (a.model) this._settle(a, a.deadT < (a.boss ? 4.5 : 1.8));
         if (a.model && a.casters) this._castShadow(a);
-        if ((a.sinkT ?? 0) > 1.4 || (!a.model && a.deadT > 2.6)) { this.remove(a); listDirty = false; }
+        if ((a.sinkT ?? 0) > 1.6 || (!a.model && a.deadT > 2.6)) { this.remove(a); listDirty = false; }
         continue;
       }
       if (g.isHost) this._hostUpdate(a, dt);

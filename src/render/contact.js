@@ -77,7 +77,7 @@ export class ContactShadows {
       if (a.dead) {
         // a fallen body spreads the shadow out; it goes as the body sinks away
         r *= 1 + 0.25 * Math.min(1, a.deadT / 0.8);
-        k *= Math.max(0, 1 - (a.sinkT ?? 0) / 0.6);
+        k *= Math.max(0, 1 - (a.sinkT ?? 0) / 1.1); // (gone with the body as it burns away)
       }
       const len = a.def?.length ?? m.spec?.length;
       const rz = len ? Math.max(r, len * 0.42) : r;

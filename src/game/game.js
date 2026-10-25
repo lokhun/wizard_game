@@ -403,6 +403,9 @@ export class Game {
         f._opacity = 0.5; f._applyMats();
         place(f.root);
         hold.push(() => f.dispose?.());
+        // and a corpse burning away swaps to its dissolve programs: warm a half-burnt copy
+        const d = getEnemyModelSafe(t, this);
+        if (d?.setDissolve) { d.setDissolve(0.5); place(d.root); hold.push(() => d.dispose?.()); } else d?.dispose?.();
       }
       for (const o of menu ? [] : this.spells.warmObjects()) place(o);
       for (const o of menu ? [] : warmEruptionMeshes()) place(o);

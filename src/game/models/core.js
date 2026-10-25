@@ -443,6 +443,45 @@ const FCHUNK = /* glsl */ `
 #endif
 `;
 
+// Dissolve: a dead body burns away from a ragged ember front instead of sinking through the floor. Only a
+// dying body's materials carry it (EN_DISSOLVE: its own programs, warmed at load with the faded copies), so the
+// living keep shaders without a discard. The pattern is 3D value noise over the rest-pose position, so it stays
+// put on the body; a little height bias makes the burn climb from the feet.
+const DISSOLVE_V = `
+#ifdef EN_DISSOLVE
+  vEnPos = position;
+#endif
+`;
+const DISSOLVE_PARS = `
+#ifdef EN_DISSOLVE
+  varying vec3 vEnPos;
+  uniform float uDissolve, uEnH;
+  uniform vec3 uDissolveCol;
+  float enH3(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+  float enN3(vec3 x) {
+    vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(enH3(i), enH3(i + vec3(1, 0, 0)), f.x), mix(enH3(i + vec3(0, 1, 0)), enH3(i + vec3(1, 1, 0)), f.x), f.y),
+               mix(mix(enH3(i + vec3(0, 0, 1)), enH3(i + vec3(1, 0, 1)), f.x), mix(enH3(i + vec3(0, 1, 1)), enH3(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+  }
+  float enBurn() { return enN3(vEnPos * 5.5) * 0.62 + enN3(vEnPos * 13.0) * 0.23 + clamp(vEnPos.y / uEnH, 0.0, 1.0) * 0.15; }
+#endif
+`;
+const DISSOLVE_CLIP = `
+#ifdef EN_DISSOLVE
+  float enDb = enBurn() - uDissolve * 1.08 + 0.04;
+  if (enDb < 0.0) discard;
+#endif
+`;
+const DISSOLVE_GLOW = `
+#ifdef EN_DISSOLVE
+  {
+    float enE = 1.0 - smoothstep(0.0, 0.1, enDb);
+    // a white-hot lip right at the front, cooling to embers behind it
+    totalEmissiveRadiance += (uDissolveCol * enE + vec3(1.6, 1.3, 0.9) * enE * enE * enE * enE) * step(0.001, uDissolve);
+  }
+#endif
+`;
+
 // Shared rim light for every enemy: a faint edge glow so silhouettes separate from
 // dark rooms without flattening the torch-lit look. Colour is set per realm.
 export const RIM = { uRim: { value: new THREE.Color(0.22, 0.2, 0.2) } };
@@ -508,6 +547,10 @@ export function patchInstanceMaterial(mat, U, feats) {
   if (keyBits.includes('R')) mat.defines.EN_RIM = '';
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, U, RIM);
+    sh.vertexShader = '#ifdef EN_DISSOLVE\nvarying vec3 vEnPos;\n#endif\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + DISSOLVE_V);
+    sh.fragmentShader = DISSOLVE_PARS + sh.fragmentShader
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + DISSOLVE_CLIP)
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + DISSOLVE_GLOW);
     if (atlas) {
       Object.assign(sh.uniforms, atlas.uniforms);
       sh.fragmentShader = atlasFragment(sh.fragmentShader);
@@ -524,7 +567,7 @@ export function patchInstanceMaterial(mat, U, feats) {
         sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + FCHUNK);
     }
   };
-  mat.customProgramCacheKey = () => 'enemyfx:' + keyBits.join('');
+  mat.customProgramCacheKey = () => 'enemyfx:' + keyBits.join('') + (mat.defines.EN_DISSOLVE !== undefined ? 'D' : '');
 }
 
 // ------------------------------------------------------------ rig build ----
@@ -902,7 +945,9 @@ export class EnemyInstance {
       uDrag: { value: new THREE.Vector3() }, uTint: { value: new THREE.Color(0, 0, 0) }, uCrack: { value: new THREE.Color(spec.crackColor ?? 0xff5a10).multiplyScalar(spec.crackIntensity ?? 3) },
       uCrackLo: { value: 0.045 }, uCrackHi: { value: 0.012 },
       uTintCol: { value: new THREE.Color(0, 0, 0) }, uTintMix: { value: 0 },
+      uDissolve: { value: 0 }, uEnH: { value: spec.height ?? 1.8 }, uDissolveCol: { value: new THREE.Color(spec.dissolveColor ?? 0xff7a2a).multiplyScalar(3) },
     };
+    this._dissolving = false;
     // per-instance materials
     const clones = new Map();
     this.mats = [];
@@ -1038,6 +1083,7 @@ export class EnemyInstance {
     const r = this.spec.pose(this, S, this.P, dt);
     if (typeof r === 'number') rate = r;
     this._layers(dt, S, s.look);
+    if (this._dissolving && S.anim !== 'death' && S.anim !== 'spawn') this.setDissolve(0); // (burnt in: whole again)
     this.P.damp(dt, rate);
     // (off in death and flight; a body rising out of the floor takes it up over the end of the rise, not in a pop)
     if (this._soles) this._ground(dt, S.anim === 'death' || this._flying ? 0 : S.anim === 'spawn' ? smooth(0.7, 1, S.progress) : 1);
@@ -1045,6 +1091,20 @@ export class EnemyInstance {
     this._updateOrb(dt);
     if (this._flash > 0) { this._flash = Math.max(0, this._flash - dt * 8); this._dirty = true; }
     if (this._dirty) { this._applyMats(); this._dirty = this._flash > 0; }
+  }
+  // burn the body away (k: 0 whole .. 1 gone): the first call swaps its materials to the dissolve programs
+  // (warmed at load: Game._prewarm), and its shadow twins stop casting once it is half gone
+  // (k back to 0, a body burnt into being, returns to the plain programs: the living keep no discard)
+  setDissolve(k) {
+    if (!this._dissolving && k > 0) {
+      this._dissolving = true;
+      for (const e of this.mats) { if (!e.m.defines) continue; e.m.defines.EN_DISSOLVE = ''; e.m.needsUpdate = true; }
+    } else if (this._dissolving && k <= 0) {
+      this._dissolving = false;
+      for (const e of this.mats) { if (!e.m.defines) continue; delete e.m.defines.EN_DISSOLVE; e.m.needsUpdate = true; }
+    }
+    this.U.uDissolve.value = Math.max(0, k);
+    for (const o of this.shadowProxies) o.visible = k <= 0.5;
   }
   // a blow lands: (dx, dz) the way it pushed (world), k its size (0..1)
   kick(dx, dz, k) { const K = this._kick, l = Math.hypot(dx, dz) || 1; K.x = dx / l; K.z = dz / l; K.k = Math.max(K.k, k); }

@@ -338,7 +338,8 @@ function spawnPose(m, s, P, D, A, sc) {
   const style = A.spawn ?? 'rise';
   if (typeof style === 'function') return style(P, p, m, s) ?? 14;
   if (style === 'materialize') {
-    m.setOpacity(smooth(0, 0.7, p));
+    // a ghost fades in; anything with a body burns into being behind an ember front (core.js setDissolve)
+    if (A.death === 'dissipate') m.setOpacity(smooth(0, 0.7, p)); else m.setDissolve(1 - smooth(0, 0.85, p));
     P.s('base', lerp(0.2, 1, easeOut(p)));
     P.r('base', 0, (1 - easeOut(p)) * 3, 0);
     P.apply({ armL: [-1.6, 0, 0.5], armR: [-1.6, 0, -0.5], head: [-0.3, 0, 0] }, 1 - smooth(0.5, 1, p));
