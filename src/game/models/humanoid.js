@@ -1,4 +1,4 @@
-import { clamp, lerp, smooth, easeOut, easeInOut, bump, TAU } from './core.js';
+import { clamp, lerp, smooth, easeOut, easeInOut, bump, TAU, turnK } from './core.js';
 
 // ---------------------------------------------------------------------------
 // Humanoid skeleton + procedural animation.
@@ -153,14 +153,8 @@ export function humanoidPose(m, s, P, dt) {
   const action = anim === 'windup' || anim === 'attack' || anim === 'cast';
 
   // ---- locomotion phase driven by distance travelled
-  // turning on the spot steps the feet round instead of skating them: the body's own yaw rate (the game
-  // turns the root before posing it) drives the walk cycle like a slow shuffle
-  const yaw = m.root.rotation.y;
-  let yr = 0;
-  if (st.lastYaw !== null && dt > 1e-4) { const d = yaw - st.lastYaw; yr = Math.atan2(Math.sin(d), Math.cos(d)) / dt; }
-  st.lastYaw = yaw;
-  st.turnK += (clamp(Math.abs(yr) / 2.5) - st.turnK) * (1 - Math.exp(-8 * dt));
-  const spd = dead || seated ? 0 : Math.max(s.speed, st.turnK * 0.55 * sc);
+  // (turning on the spot shuffles the feet round: see turnK)
+  const spd = dead || seated ? 0 : Math.max(s.speed, turnK(m, dt) * 0.55 * sc);
   const legLen = D.legLen;
   const ampL = Math.min(A.stride ?? 0.55, 0.18 + spd * (A.strideK ?? 0.16) / sc);
   const step = Math.max(0.12, 2 * legLen * Math.sin(ampL));

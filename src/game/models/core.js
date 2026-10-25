@@ -749,6 +749,18 @@ export class Rig {
   }
 }
 
+// How hard the body is turning on the spot, 0..1 (eased): its own yaw rate, read off the root the game
+// turns before posing it. Poses feed it to their walk cycle as a slow shuffle, so a foe tracking you
+// steps round instead of skating its feet.
+export function turnK(m, dt) {
+  const st = m.state, yaw = m.root.rotation.y;
+  let yr = 0;
+  if (st.lastYaw !== null && dt > 1e-4) { const d = yaw - st.lastYaw; yr = Math.atan2(Math.sin(d), Math.cos(d)) / dt; }
+  st.lastYaw = yaw;
+  st.turnK += (clamp(Math.abs(yr) / 2.5) - st.turnK) * (1 - Math.exp(-8 * dt));
+  return st.turnK;
+}
+
 // ------------------------------------------------------------ grounding ----
 // The sole of each foot: its heel and toe (the lowest points of the geometry
 // the foot bone carries) in that bone's own space, measured once per type on
