@@ -785,6 +785,37 @@ export class UI {
     g.drawImage(b.c, b.sx, b.sy, b.w, b.h, x - w / 2, y - h * 0.62, w, h);
   }
 
+  // The HUD's corners that text drawn over the world must not land on: the minimap, the realm and objective
+  // panel and (in a fight) the boss bar, measured twice a second (not every frame: a layout read each).
+  _hudKeepOut() {
+    const K = (this._ko ??= { n: 0, r: new Float32Array(12), t: 0 });
+    const now = performance.now();
+    if (now - K.t < 500) return K;
+    K.t = now; K.n = 0;
+    const h = this.h;
+    for (const el of [h.minimap, h.fname?.parentElement, h.boss]) {
+      if (!el || el.classList.contains('hidden')) continue;
+      const b = el.getBoundingClientRect();
+      if (!b.width) continue;
+      const o = K.n * 4; K.r[o] = b.left - 6; K.r[o + 1] = b.top - 6; K.r[o + 2] = b.right + 6; K.r[o + 3] = b.bottom + 6; K.n++;
+    }
+    return K;
+  }
+  // nudge a label (centre x, y; half-size hw, hh) off any keep-out: straight down under a panel that spans
+  // the top (the boss bar), sideways out of a corner one (the minimap, the objective). Writes _koOut.
+  _clearHud(x, y, hw, hh) {
+    const K = this._hudKeepOut(), O = (this._koOut ??= { x: 0, y: 0 });
+    for (let i = 0; i < K.n; i++) {
+      const o = i * 4, l = K.r[o], t = K.r[o + 1], r = K.r[o + 2], b = K.r[o + 3];
+      if (x + hw < l || x - hw > r || y + hh < t || y - hh > b) continue;
+      if (l > innerWidth * 0.5) x = l - hw; // (right corner: to its left)
+      else if (r < innerWidth * 0.5) x = r + hw; // (left corner: to its right)
+      else y = b + hh; // (top centre: below it)
+    }
+    O.x = x; O.y = y;
+    return O;
+  }
+
   _draw2d(dt, game) {
     const g = this.ctx;
     // nothing drawn last frame and nothing to draw now: leave the canvas alone
@@ -867,7 +898,8 @@ export class UI {
       // bigger hits read bigger; the size is rounded so a merged number only
       // re-renders its bitmap when it visibly grows, and the pop is a scale
       const size = Math.round(n.dot ? 13 : (n.crit ? 22 : 15) + Math.min(10, Math.log2(1 + n.amount / 12) * 2.5));
-      this._blitNumber(g, n.text, `${n.crit ? 700 : 600} ${size}px Cinzel, serif`, n.color, s.x + n.ox, s.y, pop);
+      const c = this._clearHud(s.x + n.ox, s.y, size * 1.2, size * 0.6);
+      this._blitNumber(g, n.text, `${n.crit ? 700 : 600} ${size}px Cinzel, serif`, n.color, c.x, c.y, pop);
       g.globalAlpha = 1;
     }
     // floating texts (reactions etc.)
@@ -887,19 +919,21 @@ export class UI {
       const b = this._textBitmap(f.text, `700 ${f.big ? 22 : 15}px Cinzel, serif`, f.color, { stroke: 'rgba(0,0,0,0.9)', lw: 4, glow: 12 });
       const hw = b.w * 0.36, hh = b.h * 0.3; // (the lettering, not the glow around it)
       let y = Math.max(s.y, hh + 34);
+      const c0 = this._clearHud(s.x, y, hw, hh), x = c0.x;
+      y = c0.y;
       for (let pass = 0; pass < 4; pass++) {
         let moved = false;
         for (let j = 0; j < nr; j++) {
           const o = j * 4;
-          if (s.x + hw < FR[o] || s.x - hw > FR[o + 2] || y + hh < FR[o + 1] || y - hh > FR[o + 3]) continue;
+          if (x + hw < FR[o] || x - hw > FR[o + 2] || y + hh < FR[o + 1] || y - hh > FR[o + 3]) continue;
           y = FR[o + 1] - hh - 2; moved = true;
         }
         if (!moved) break;
       }
-      if (nr < 24) { const o = nr * 4; FR[o] = s.x - hw; FR[o + 1] = y - hh; FR[o + 2] = s.x + hw; FR[o + 3] = y + hh; nr++; }
+      if (nr < 24) { const o = nr * 4; FR[o] = x - hw; FR[o + 1] = y - hh; FR[o + 2] = x + hw; FR[o + 3] = y + hh; nr++; }
       g.globalAlpha = f.t > 1 ? 1 - (f.t - 1) / 0.4 : 1;
       const pop = f.t < 0.15 ? 1 + (1 - f.t / 0.15) * 0.8 : 1;
-      this._blitText(g, b, s.x, y, pop);
+      this._blitText(g, b, x, y, pop);
       g.globalAlpha = 1;
     }
     this.floats.length = keep;

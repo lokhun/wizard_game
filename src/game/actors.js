@@ -964,8 +964,10 @@ export class ActorManager {
       a.moveSpeed = Math.hypot(r.x - a.pos.x, r.z - a.pos.z) / dt;
       a.pos.x = r.x; a.pos.z = r.z;
     } else a.moveSpeed = 0;
+    // up a step at once (eased up, the feet sank 36 cm into a tier's edge or a channel's lip for the first
+    // frames: scripts/collide.js), down one eased, a short hop off the edge
     const gy = g.groundY(a.pos.x, a.pos.z);
-    a.pos.y += (gy - a.pos.y) * Math.min(1, dt * 12);
+    a.pos.y += (gy - a.pos.y) * Math.min(1, dt * (gy > a.pos.y ? 40 : 12));
     a.progress = this._progress(a);
   }
 

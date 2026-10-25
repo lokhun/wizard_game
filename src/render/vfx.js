@@ -188,7 +188,7 @@ void main(){
 const TELE_FRAG = /* glsl */ `
 uniform vec3 uColor; uniform float uProg; uniform float uTime; uniform int uMode; uniform float uAngle; uniform float uFade;
 uniform vec2 uSize; uniform vec2 uK;
-varying vec2 vUv;
+varying vec2 vUv; varying float vDepth;
 void main(){
   vec2 p = (vUv * 2.0 - 1.0) * uK;
   float e, f; // signed distance to the edge in metres (negative inside), sweep coordinate
@@ -207,8 +207,11 @@ void main(){
   // fill seen from inside the zone read as a solid slab standing on the floor, not a mark painted on it
   vec2 m = p * uSize;
   float hatch = 0.45 + 0.55 * smoothstep(0.3, 0.7, abs(fract((m.x + m.y) * 2.2 - uTime * 0.35) - 0.5) * 2.0);
-  vec3 col = uColor * (line * 1.05 * pulse + glowIn * 0.28 + sweep * (0.08 + 0.22 * imminent) * hatch + front * 0.5) + vec3(0.24 * line * pulse);
-  float dark = halo * 0.5 + inside * (0.14 + 0.1 * imminent);
+  // the fill eases off right under the camera: a zone you stand in filled the lower screen with a bright
+  // wash that read as a pale slab and hid the floor (its edge stays full, so you still see where it ends)
+  float nearK = mix(0.4, 1.0, smoothstep(1.2, 5.0, vDepth));
+  vec3 col = uColor * (line * 1.05 * pulse + (glowIn * 0.28 + sweep * (0.08 + 0.22 * imminent) * hatch + front * 0.5) * nearK) + vec3(0.24 * line * pulse);
+  float dark = halo * 0.5 + inside * (0.14 + 0.1 * imminent) * nearK;
   col *= uFade; dark *= uFade;
   if (max(max(col.r, col.g), max(col.b, dark)) < 0.003) discard;
   gl_FragColor = vec4(col, dark);
@@ -595,7 +598,7 @@ export class VFX {
     // oldest warning still on the floor: a blow that landed with no mark)
     // (each zone its own finely divided quad: it is draped over the floor under it, see drape)
     this.telePool = this._pool(64, () => new THREE.Mesh(drapeGeo(), new THREE.ShaderMaterial({
-      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }',
+      vertexShader: 'varying vec2 vUv; varying float vDepth; void main(){ vUv = uv; vec4 mv = modelViewMatrix * vec4(position,1.); vDepth = -mv.z; gl_Position = projectionMatrix * mv; }',
       fragmentShader: TELE_FRAG,
       uniforms: { uColor: { value: new THREE.Color() }, uProg: { value: 0 }, uTime: { value: 0 }, uMode: { value: 0 }, uAngle: { value: 0.6 }, uFade: { value: 1 }, uSize: { value: new THREE.Vector2(1, 1) }, uK: { value: new THREE.Vector2(1, 1) } },
       transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
