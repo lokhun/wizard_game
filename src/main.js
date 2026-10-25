@@ -362,6 +362,8 @@ function refreshLobby() {
 // (Nightmare is open from the first run; the pacts after the first victory)
 function currentPacts() {
   const sel = cleanPacts(loadProfile().pacts);
+  // (test hook: &pacts=hides:3,blades:3 swears those pacts for the run)
+  if (q.get('test') && q.get('pacts')) Object.assign(sel, cleanPacts(Object.fromEntries(q.get('pacts').split(',').map((x) => x.split(':')).map(([k, v]) => [k, +(v ?? 1)]))));
   if (q.get('test') && (q.has('nightmare') || q.has('damnation') || q.has('rush'))) return { ...sel, ...(q.has('damnation') ? { nightmare: 2 } : q.has('nightmare') ? { nightmare: 1 } : {}), ...(q.has('rush') ? { rush: 1 } : {}) }; // test hooks
   if (pactsUnlocked()) return sel;
   const open = {}; // (Nightmare and Boss Rush are open from the first run)

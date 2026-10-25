@@ -23,6 +23,7 @@ export const PACTS = [
   // the deeper pacts: each is unlocked by clearing that much heat with any wizard
   { id: 'omens', name: 'Ill Omens', icon: 'eye', heat: 1, max: 2, unlock: 3, desc: (r) => (r >= 2 ? 'Every fight after a realm\'s first falls under an omen (Darkness, Blood Moon, Haunted...).' : 'Omens fall on twice as many fights.') },
   { id: 'narrow', name: 'Narrow Path', icon: 'split', heat: 1, max: 1, unlock: 3, desc: () => 'Tomes offer two choices instead of three.' },
+  { id: 'wounds', name: 'Old Wounds', icon: 'briar', heat: 1, max: 2, unlock: 3, desc: (r) => `Regeneration, lifesteal and healing on kills stop at ${r >= 2 ? 50 : 75}% health.` },
   { id: 'leaden', name: 'Leaden Steps', icon: 'stoneskin', heat: 1, max: 2, unlock: 3, desc: (r) => `Your dash recharges ${40 * r}% slower.` },
   { id: 'relentless', name: 'Relentless', icon: 'stairs', heat: 1, max: 2, unlock: 6, desc: (r) => (r >= 2 ? 'The next wave comes while three quarters of the last still stand.' : 'The next wave comes while half the last still stands.') },
   { id: 'volatile', name: 'Volatile Dead', icon: 'bomb', heat: 2, max: 1, unlock: 6, desc: () => 'Slain foes burst a moment later. Mind where they fall.' },
@@ -95,6 +96,7 @@ export function difficultyFor(sel, extra = {}) {
     omens: r('omens'),
     tomeChoices: r('narrow') ? 2 : 3,
     dashCd: 1 + 0.4 * r('leaden'),
+    healCap: [1, 0.75, 0.5][r('wounds')], // (passive heals stop here: Old Wounds)
     waveEarly: r('relentless'), // the share of a wave left standing when the next comes: 0.25 / 0.5 / 0.75
     volatileDead: !!r('volatile'),
     twinAffix: !!r('exalted') || dm,

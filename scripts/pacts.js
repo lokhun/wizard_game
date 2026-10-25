@@ -15,7 +15,7 @@
   const all = Object.fromEntries(PACTS.map((x) => [x.id, x.max]));
   const base = difficultyFor({});
   g.difficulty = difficultyFor(all);
-  ok('heat', g.difficulty.heat === 35, g.difficulty.heat);
+  ok('heat', g.difficulty.heat === 37, g.difficulty.heat);
   // omens: every fight from order 2 bears a mod
   const L0 = generateLevel(4242, 2, null, { omens: 0 }), L2 = generateLevel(4242, 2, null, { omens: 2 });
   const fights = (L) => L.rooms.filter((r) => r.main && r.type === 'combat' && r.order >= 2);
@@ -31,6 +31,12 @@
   const dashT = (d) => { g.difficulty = d; p.dashCharges = 0; p.dashRecharge = 0.01; window.__sim(0.05); let t = 0; while (p.dashCharges < p.stats.dashCharges && t < 30) { window.__sim(0.1); t += 0.1; } return t; };
   const t0 = dashT(base), t1 = dashT(difficultyFor(all));
   ok('leaden', t1 > t0 * 1.3, `${t0.toFixed(1)}s -> ${t1.toFixed(1)}s`);
+  // old wounds: regeneration and lifesteal stop at 75% / 50% health; an orb still heals past it
+  const healTo = (d) => { g.difficulty = d; p.stats.regen = 40; p.stats.lifesteal = 1; p.hp = p.maxHp * 0.2; p.lastDamageT = -99; window.__sim(3); p._sustainLeft = p.maxHp; p.onDealtDamage?.(500, false, null, 'other'); return p.hp / p.maxHp; };
+  const w0 = healTo(base), w1 = healTo(difficultyFor({ wounds: 1 })), w2 = healTo(difficultyFor({ wounds: 2 }));
+  p.heal(p.maxHp); const orb = p.hp / p.maxHp;
+  p.recomputeStats();
+  ok('old wounds', w0 > 0.99 && Math.abs(w1 - 0.75) < 0.01 && Math.abs(w2 - 0.5) < 0.01 && orb > 0.99, `heals stop at ${(w0 * 100).toFixed(0)}% / ${(w1 * 100).toFixed(0)}% / ${(w2 * 100).toFixed(0)}%, an orb heals to ${(orb * 100).toFixed(0)}%`);
   g.difficulty = difficultyFor(all);
   // reload floor 2 under the pacts and fight: champions should carry two affixes, slain foes burst, waves come early
   g.loadFloor(2);

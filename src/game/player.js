@@ -214,8 +214,11 @@ export class LocalPlayer {
     return dmg;
   }
 
+  // how far the passive heals (regen, lifesteal, kill-heals) may lift you: Old Wounds caps them at 75% / 50%
+  _sustainRoom() { return this.maxHp * (this.game.difficulty?.healCap ?? 1) - this.hp; }
+
   _sustain(n) {
-    const take = Math.min(n, this._sustainLeft);
+    const take = Math.min(n, this._sustainLeft, this._sustainRoom());
     if (take <= 0) return;
     this._sustainLeft -= take;
     this.heal(take, true);
@@ -549,7 +552,7 @@ export class LocalPlayer {
     this._sustainLeft = Math.min(cap, (this._sustainLeft ?? cap) + cap * dt);
     // regen: mostly a mender between fights (35% within 4 s of being hit)
     const regen = st.regen * (g.time - this.lastDamageT < 4 ? 0.35 : 1) + (g.auraRegenFor?.(this) ?? 0);
-    if (regen > 0 && this.alive && !this.downed && this.hp < this.maxHp) this.heal(regen * dt, true);
+    if (regen > 0 && this.alive && !this.downed && this.hp < this.maxHp) { const room = this._sustainRoom(); if (room > 0) this.heal(Math.min(regen * dt, room), true); }
 
     // history for rewind
     this.histT += dt;
