@@ -59,8 +59,8 @@ const SEAT = (D) => ({ hips: [0, 0, 0, 0, -D.thigh, -D.thigh * 0.85], thighL: [-
 
 const AX = {
   seat: { th: 0, ph: -1.42, ps: 0, gx: 0, gy: 0.02, gz: 0.42, wL: 1 },
-  rest: { th: 0, ph: -1.35, ps: 0, gx: 0, gy: -0.05, gz: 0.45, wL: 1 },
-  carry: { th: 0.35, ph: -0.75, ps: 1.4, gx: -0.36, gy: -0.32, gz: 0.12, wL: 0 },
+  rest: { th: 0, ph: -0.82, ps: 0, gx: 0, gy: 0.22, gz: 0.5, wL: 1 },
+  carry: { th: 0.35, ph: -0.4, ps: 1.4, gx: -0.36, gy: -0.32, gz: 0.12, wL: 0 },
   sweepW: { th: -1.2, ph: 1.0, ps: -Math.PI / 2, gx: -0.32, gy: 0.3, gz: 0.0, wL: 1 },
   sweepS: { th: 1.0, ph: 0.05, ps: -Math.PI / 2, gx: 0.3, gy: 0.0, gz: 0.32, wL: 1 },
   thrustW: { th: 0.55, ph: 0.08, ps: 0, gx: -0.3, gy: -0.04, gz: -0.28, wL: 0 },

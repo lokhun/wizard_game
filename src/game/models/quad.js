@@ -1,4 +1,4 @@
-import { clamp, lerp, smooth, easeOut, bump, TAU } from './core.js';
+import { clamp, lerp, smooth, easeOut, bump, TAU, turnK } from './core.js';
 
 // ---------------------------------------------------------------------------
 // Quadruped skeleton + procedural gait (trot / bound) and actions.
@@ -93,7 +93,7 @@ export function quadPose(m, s, P, dt) {
   const anim = s.anim;
   const dead = anim === 'death', spawning = anim === 'spawn';
   let rate = A.rate ?? 14;
-  const spd = dead ? 0 : s.speed;
+  const spd = dead ? 0 : Math.max(s.speed, turnK(m, dt) * 0.5); // (turning on the spot shuffles the paws round)
   const stride = A.stride ?? 0.6;
   if (spd > 0.01) st.phase += (TAU * spd * dt) / stride;
   const moveTgt = smooth(0.05, 0.5, spd);

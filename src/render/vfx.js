@@ -67,7 +67,7 @@ export function clampHDR(c, max = 1.5, out = [0, 0, 0]) {
   return out;
 }
 
-const _sc = [0, 0, 0], _sc2 = [0, 0, 0], _rc = [0, 0, 0];
+const _sc = [0, 0, 0], _sc2 = [0, 0, 0], _rc = [0, 0, 0], _gp = new THREE.Vector3();
 const _flameC = new THREE.Color();
 const scaleC = (c, k, out) => { out[0] = c[0] * k; out[1] = c[1] * k; out[2] = c[2] * k; return out; };
 
@@ -134,6 +134,25 @@ export function orbMaterial(fx, time, rim = 0.8) {
   });
 }
 
+// A 2x2 ground quad divided finely enough to follow steps in the floor (see VFX.drape); its own copy per
+// zone, since each is bent to the floor under it. userData.xz keeps the flat x,z of every vertex.
+function drapeGeo(n = 20) {
+  const g = new THREE.PlaneGeometry(2, 2, n, n);
+  g.rotateX(-Math.PI / 2);
+  const p = g.attributes.position, xz = new Float32Array(p.count * 2);
+  for (let i = 0; i < p.count; i++) { xz[i * 2] = p.getX(i); xz[i * 2 + 1] = p.getZ(i); }
+  g.userData.xz = xz;
+  p.setUsage(THREE.DynamicDrawUsage);
+  return g;
+}
+
+function drapeWallGeo(src) {
+  const g = src.clone(), p = g.attributes.position;
+  g.userData.xyz = Float32Array.from(p.array);
+  p.setUsage(THREE.DynamicDrawUsage);
+  return g;
+}
+
 // ---------------------------------------------------------------- shaders
 const RING_VERT = /* glsl */ `
 varying vec2 vUv; varying float vDepth;
@@ -180,7 +199,11 @@ void main(){
   float front = smoothstep(uProg - 0.06, uProg, f) * sweep;
   float imminent = smoothstep(0.72, 1.0, uProg);
   float pulse = 0.82 + 0.18 * sin(uTime * (9.0 + 16.0 * imminent));
-  vec3 col = uColor * (line * 1.05 * pulse + glowIn * 0.28 + sweep * (0.08 + 0.22 * imminent) + front * 0.5) + vec3(0.24 * line * pulse);
+  // the fill is hatched with slow-drifting diagonal bands (metres, so every zone shares one pitch): a flat
+  // fill seen from inside the zone read as a solid slab standing on the floor, not a mark painted on it
+  vec2 m = p * uSize;
+  float hatch = 0.45 + 0.55 * smoothstep(0.3, 0.7, abs(fract((m.x + m.y) * 2.2 - uTime * 0.35) - 0.5) * 2.0);
+  vec3 col = uColor * (line * 1.05 * pulse + glowIn * 0.28 + sweep * (0.08 + 0.22 * imminent) * hatch + front * 0.5) + vec3(0.24 * line * pulse);
   float dark = halo * 0.5 + inside * (0.14 + 0.1 * imminent);
   col *= uFade; dark *= uFade;
   if (max(max(col.r, col.g), max(col.b, dark)) < 0.003) discard;
@@ -548,13 +571,16 @@ export class VFX {
     this.fovKick = 0;
     this.hitstop = 0;
     this.active = [];     // timed mesh effects
+    this.floorAt = null;  // (x, z) -> floor height, set by the game: blasts put their ring and scorch on it
+    this.waterY = null;   // the water's surface, set by the game (danger zones over water lie on it)
 
     const plane = new THREE.PlaneGeometry(2, 2);
     plane.rotateX(-Math.PI / 2);
     this.planeGeo = plane;
 
     // ground rings
-    this.ringPool = this._pool(24, () => new THREE.Mesh(plane, new THREE.ShaderMaterial({
+    // (draped over the floor under them like the danger zones: a boss's dread ring on a dais sank under it)
+    this.ringPool = this._pool(24, () => new THREE.Mesh(drapeGeo(), new THREE.ShaderMaterial({
       vertexShader: RING_VERT,
       fragmentShader: RING_FRAG,
       uniforms: { uColor: { value: new THREE.Color() }, uProg: { value: 0 }, uWidth: { value: 0.15 }, uTime: { value: 0 } },
@@ -563,12 +589,14 @@ export class VFX {
     // telegraphs
     // (64: an arena-wide pattern marks 40+ zones at once, and a pool that ran out stole the
     // oldest warning still on the floor: a blow that landed with no mark)
-    this.telePool = this._pool(64, () => new THREE.Mesh(plane, new THREE.ShaderMaterial({
+    // (each zone its own finely divided quad: it is draped over the floor under it, see drape)
+    this.telePool = this._pool(64, () => new THREE.Mesh(drapeGeo(), new THREE.ShaderMaterial({
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }',
       fragmentShader: TELE_FRAG,
       uniforms: { uColor: { value: new THREE.Color() }, uProg: { value: 0 }, uTime: { value: 0 }, uMode: { value: 0 }, uAngle: { value: 0.6 }, uFade: { value: 1 }, uSize: { value: new THREE.Vector2(1, 1) }, uK: { value: new THREE.Vector2(1, 1) } },
       transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
     })));
+    for (const m of [...this.telePool.items, ...this.ringPool.items]) m.frustumCulled = false; // (draped: the flat quad's bounds no longer hold)
     // beams (unit cylinder along +Y from 0..1)
     const beamGeo = new THREE.CylinderGeometry(1, 1, 1, 12, 1, true);
     beamGeo.translate(0, 0.5, 0);
@@ -602,8 +630,9 @@ export class VFX {
       // mapped from the start: a map assigned later would not change the
       // compiled program, and the decal drew as a solid coloured quad
       const glow = new THREE.MeshBasicMaterial({ map: this.decalTex.glyph, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, blending: THREE.AdditiveBlending, fog: true });
-      const m = new THREE.Mesh(plane, lit);
+      const m = new THREE.Mesh(drapeGeo(8), lit); // (draped over the floor like the danger zones: a pool is one too)
       m.userData.lit = lit; m.userData.glow = glow;
+      m.frustumCulled = false;
       m.receiveShadow = true;
       return m;
     });
@@ -644,14 +673,15 @@ export class VFX {
     const wallGeo = new THREE.CylinderGeometry(1, 1, 1, 72, 1, true);
     wallGeo.translate(0, 0.5, 0);
     const premul = { transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor };
+    // (both draped over the floor as they grow, like the danger zones: own geometry each)
     this.wallPool = this._pool(8, () => {
-      const m = new THREE.Mesh(wallGeo, new THREE.ShaderMaterial({ vertexShader: WALL_VERT, fragmentShader: WALL_FRAG, uniforms: { uColor: { value: new THREE.Color() }, uAlpha: { value: 0 }, uTime: { value: 0 } }, side: THREE.DoubleSide, ...premul }));
+      const m = new THREE.Mesh(drapeWallGeo(wallGeo), new THREE.ShaderMaterial({ vertexShader: WALL_VERT, fragmentShader: WALL_FRAG, uniforms: { uColor: { value: new THREE.Color() }, uAlpha: { value: 0 }, uTime: { value: 0 } }, side: THREE.DoubleSide, ...premul }));
       m.material.forceSinglePass = true;
       m.frustumCulled = false;
       return m;
     });
     this.bandPool = this._pool(8, () => {
-      const m = new THREE.Mesh(plane, new THREE.ShaderMaterial({ vertexShader: WALL_VERT, fragmentShader: BAND_FRAG, uniforms: { uColor: { value: new THREE.Color() }, uAlpha: { value: 0 }, uR: { value: 1 }, uW: { value: 0.7 }, uS: { value: 1 } }, ...premul }));
+      const m = new THREE.Mesh(drapeGeo(), new THREE.ShaderMaterial({ vertexShader: WALL_VERT, fragmentShader: BAND_FRAG, uniforms: { uColor: { value: new THREE.Color() }, uAlpha: { value: 0 }, uR: { value: 1 }, uW: { value: 0.7 }, uS: { value: 1 } }, ...premul }));
       m.frustumCulled = false;
       return m;
     });
@@ -800,8 +830,9 @@ export class VFX {
 
   ring(pos, radius, color, life = 0.5, width = 0.2) {
     const m = this.ringPool.get();
-    m.position.set(pos.x, (pos.y ?? 0) + 0.06, pos.z);
+    m.position.set(pos.x, pos.y ?? 0, pos.z);
     m.scale.setScalar(radius);
+    this.drape(m, 0.06);
     // element core colours are HDR; a ring that wide must stay below bloom
     m.material.uniforms.uColor.value.setRGB(...clampHDR(Array.isArray(color) ? color : C(color, 2.5), 1.1, _rc));
     m.material.uniforms.uWidth.value = width;
@@ -839,7 +870,7 @@ export class VFX {
     bu.uColor.value.setRGB(c[0], c[1], c[2]);
     bu.uW.value = halfWidth;
     w.position.set(pos.x, (pos.y ?? 0) - 0.05, pos.z);
-    b.position.set(pos.x, (pos.y ?? 0) + 0.07, pos.z);
+    b.position.set(pos.x, (pos.y ?? 0) + 0.02, pos.z);
     const h = { r: 0.1, a: 0, end: null };
     const step = () => {
       const r = Math.max(0.05, h.r);
@@ -848,6 +879,9 @@ export class VFX {
       const S = r + halfWidth + 0.2;
       b.scale.setScalar(S);
       bu.uS.value = S; bu.uR.value = r; bu.uAlpha.value = h.a;
+      // the wave rides the floor: up onto a dais, down off it
+      this.drape(b);
+      this.drapeWall(w, height);
     };
     step();
     this._track(w, 1e9, step);
@@ -883,6 +917,7 @@ export class VFX {
       u.uSize.value.set(opts.radius, opts.radius); u.uK.value.setScalar((opts.radius + PAD) / opts.radius);
       if (mode === 2) m.rotation.y = (opts.rot ?? 0) + Math.PI;
     }
+    this.drape(m);
     const dur = opts.dur ?? 1;
     const total = dur + 0.15;
     this._track(m, total, (k, t) => {
@@ -891,6 +926,41 @@ export class VFX {
       u.uFade.value = t > dur ? 1 - (t - dur) / 0.15 : Math.min(1, t * 8);
     });
     return m;
+  }
+
+  // Lay a danger zone over the floor under it. A zone was one flat quad at a single height, so on raised
+  // ground (a dais, a tier, the far side of a step) it lay under the floor and could not be seen. Each
+  // vertex now takes the height of the floor beneath it (the water's surface where there is water), a
+  // little above it; a step's edge becomes a short ramp in the mark. Call again after moving the zone.
+  drape(m, lift = 0.05) {
+    const at = this.floorAt;
+    const g = m.geometry, pos = g.attributes.position, base = g.userData.xz, n = pos.count;
+    const sx = m.scale.x, sy = m.scale.y, sz = m.scale.z, c = Math.cos(m.rotation.y), sn = Math.sin(m.rotation.y);
+    const px = m.position.x, py = m.position.y, pz = m.position.z, water = this.waterY ?? -Infinity;
+    for (let i = 0; i < n; i++) {
+      let y = lift / sy;
+      if (at) {
+        const lx = base[i * 2] * sx, lz = base[i * 2 + 1] * sz;
+        const f = at(px + lx * c + lz * sn, pz - lx * sn + lz * c);
+        y = ((f > water ? f : water) + lift - py) / sy;
+      }
+      pos.setY(i, y);
+    }
+    pos.needsUpdate = true;
+  }
+
+  // A shockwave's wall stands on the floor under each point of it (see drape): its foot follows the floor,
+  // its crest stays `height` above that.
+  drapeWall(m, height) {
+    const at = this.floorAt;
+    if (!at) return;
+    const g = m.geometry, pos = g.attributes.position, base = g.userData.xyz, n = pos.count;
+    const r = m.scale.x, px = m.position.x, py = m.position.y, pz = m.position.z, water = this.waterY ?? -Infinity;
+    for (let i = 0; i < n; i++) {
+      const f = at(px + base[i * 3] * r, pz + base[i * 3 + 2] * r);
+      pos.setY(i, ((f > water ? f : water) - 0.05 - py) / height + base[i * 3 + 1]);
+    }
+    pos.needsUpdate = true;
   }
 
   lightning(a, b, o = {}) {
@@ -1131,6 +1201,7 @@ export class VFX {
   }
 
   decal(pos, type, size = 2, life = 8, color) {
+    if (!pos) return; // (no floor in reach)
     const m = this.decalPool.get();
     const look = DECAL_LOOK[type] ?? DECAL_LOOK.scorch;
     const mat = look.additive ? m.userData.glow : m.userData.lit;
@@ -1148,9 +1219,10 @@ export class VFX {
       // coloured lit decals (e.g. purple pools) are tinted, but kept dark
       if (color !== undefined) mat.color.multiplyScalar(0.5);
     }
-    m.position.set(pos.x, (pos.y ?? 0) + 0.03 + Math.random() * 0.01, pos.z);
+    m.position.set(pos.x, pos.y ?? 0, pos.z);
     m.rotation.set(0, Math.random() * Math.PI * 2, 0);
     m.scale.setScalar(size / 2);
+    this.drape(m, 0.03 + Math.random() * 0.01); // (a hair apart, so overlapping marks don't flicker)
     mat.opacity = 1;
     this._track(m, life, (k) => { mat.opacity = k > 0.75 ? 1 - (k - 0.75) / 0.25 : Math.min(1, k * 20); });
     return m;
@@ -1287,12 +1359,15 @@ export class VFX {
     const matter = element === 'fire' || element === 'enemyFire' || element === 'earth' || element === 'blood' || element === 'poison' || element === 'enemyGreen' || element === 'physical';
     if (!matter) this.P.glow({ x: pos.x, y: pos.y, z: pos.z, r: fx.core[0] * rk, g: fx.core[1] * rk, b: fx.core[2] * rk, r2: fx.mid[0] * rk * 0.5, g2: fx.mid[1] * rk * 0.5, b2: fx.mid[2] * rk * 0.5, life: 0.3, size: radius * 0.4, size2: radius * 2.4, sprite: SPR.RING });
     this.flash(pos, fx.light, Math.min(50 * s, 60) * dim, Math.min(radius * 4, 16), 0.35);
-    this.ring({ x: pos.x, y: (o.groundY ?? pos.y - 0.5), z: pos.z }, radius * 1.1, scaleC(fx.mid, 0.4 * Math.max(0.5, dim), _sc2), 0.45, 0.16);
+    // the ground ring and the scorch go on the real floor, and only when the blast reaches it: a guess of half
+    // a metre under a blast in the air laid a bright disc through the tables beside it, or a scorch hanging in mid-air
+    const gy = o.groundY ?? (this.floorAt ? this.floorAt(pos.x, pos.z) : pos.y - 0.5);
+    const ground = pos.y - gy < radius + 0.6 ? _gp.set(pos.x, gy, pos.z) : null;
+    if (ground) this.ring(ground, radius * 1.1, scaleC(fx.mid, 0.4 * Math.max(0.5, dim), _sc2), 0.45, 0.16);
     // shock shell only for the "energy" elements (fire/earth/blood/poison are matter)
     const shelled = element === 'arcane' || element === 'lightning' || element === 'frost' || element === 'time' || element === 'holy' || element === 'shadow' || element === 'enemyPurple' || element === 'blade';
     if (shelled) this.shell(pos, { element, radius: radius * 1.05, from: radius * 0.2, life: 0.3, alpha: 0.28 * dim });
     this.burst(pos, { element, count: Math.round(18 * s), speed: 10 * s, life: 0.55, size: 0.05, sprite: SPR.SPARK, gravity: 6, stretch: 0.02, drag: 2.5, color: scaleC(fx.mid, dim, _sc), color2: fx.end });
-    const ground = { x: pos.x, y: o.groundY ?? pos.y - 0.5, z: pos.z };
     switch (element) {
       case 'fire': case 'enemyFire': {
         // a churning ball of flame inside dark smoke, not a white sun
@@ -1367,7 +1442,7 @@ export class VFX {
         this.decal(ground, 'crack', radius * 1.8, 12);
         break;
       case 'time':
-        this.ring({ x: pos.x, y: ground.y, z: pos.z }, radius * 0.7, scaleC(fx.mid, 0.8, _sc), 0.7, 0.1);
+        if (ground) this.ring(ground, radius * 0.7, scaleC(fx.mid, 0.8, _sc), 0.7, 0.1);
         this.burst(pos, { element, count: 12, speed: 4, life: 1.0, size: 0.35, sprite: SPR.RING, drag: 3, color: scaleC(fx.mid, 0.8 * dim, _sc) });
         this.decal(ground, 'glyph', radius * 1.6, 2, 0x30a890);
         break;

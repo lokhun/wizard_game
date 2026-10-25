@@ -7,6 +7,7 @@ import { RARITY, statChanges } from '../game/upgrades.js';
 import { ROOM, T, K_WATER } from '../world/levelgen.js';
 import { BIOMES } from '../world/biomes.js';
 import { fightsHere } from '../game/director.js';
+import { GATE_LOOK as GATE_UI } from '../game/gates.js';
 import { updateRelicShelf, relicListHTML, relicCard } from './relicUI.js';
 import { KEYS as BINDS, REBINDABLE, keyOf, keyLabel, applyBindings } from '../core/input.js';
 
@@ -29,6 +30,11 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 // DOM UI + a 2D canvas overlay for damage numbers and health bars.
 // ---------------------------------------------------------------------------
 // cached DOM writes: skip when the value hasn't changed
+// replay a one-shot CSS flash without a forced layout (the old remove / read offsetWidth / add): switch
+// between `cls` and its twin `cls2`, which run the same keyframes under another name (styles.css)
+// status pips over a foe's bar: mask bit, colour (burn, chill, frozen, shock, poison, hex, bleed, slow, empowered)
+const PIPS = [1, '#ff7a30', 2, '#7fd8ff', 4, '#c8f4ff', 8, '#9fb4ff', 16, '#9adf3a', 32, '#c050ff', 64, '#ff3048', 128, '#40e0c8', 4096, '#ffc040'];
+function replay(el, cls) { const a = el.classList.contains(cls); el.classList.toggle(cls, !a); el.classList.toggle(cls + '2', a); }
 function setText(el, v) { if (el && el._t !== v) { el._t = v; el.textContent = v; } }
 function setStyle(el, k, v) { if (!el) return; const c = (el._s ??= {}); if (c[k] !== v) { c[k] = v; el.style[k] = v; } }
 
@@ -387,9 +393,9 @@ export class UI {
       <div class="crosshair"><div class="ring"></div></div>
       <div class="hitmarker"><i></i><i></i><i></i><i></i></div>
       <div class="damage-dir"></div>
-      <div class="floor-info"><div class="fname"></div><div class="fsub"></div><div class="objective"></div></div>
+      <div class="floor-info"><div class="fname"></div><div class="fsub"></div><div class="objective"></div><div class="deadline hidden"></div></div>
       <canvas class="minimap"></canvas><div class="mm-frame"><i class="pip"></i></div>
-      <div class="boss-bar hidden"><div class="bname"></div><div class="btitle"></div><div class="bframe"><i class="cap l"></i><div class="bar"><div class="lag"></div><div class="fill"></div><div class="sheen"></div><div class="phase-marks"></div></div><i class="cap r"></i></div></div>
+      <div class="boss-bar hidden"><div class="bname"></div><div class="btitle"></div><div class="bframe"><i class="cap l"></i><div class="bar"><div class="lag"></div><div class="fill"></div><div class="sheen"></div><div class="phase-marks"></div></div><i class="cap r"></i></div><div class="bgate hidden"><span class="gname"></span><span class="gleft"></span><div class="gtime"><div></div></div></div></div>
       <div class="wave-ind"></div>
       <div class="team"></div>
       <div class="hp-wrap" style="--pc:${col}">
@@ -422,8 +428,8 @@ export class UI {
       slots: Object.fromEntries(SLOTS.map((s) => [s, q(`.slot[data-slot="${s}"]`)])),
       gold: q('#goldTxt'), goldBox: q('.gold-box'), dread: q('#dreadTxt'), dreadBox: q('.gold-box .dread'), prompt: q('.prompt'), toasts: q('.toasts'), banner: q('.banner'),
       hit: q('.hitmarker'), team: q('.team'), boss: q('.boss-bar'), bossFill: q('.boss-bar .fill'), bossLag: q('.boss-bar .lag'),
-      bossName: q('.boss-bar .bname'), bossTitle: q('.boss-bar .btitle'), minimap: q('.minimap'), fname: q('.fname'), fsub: q('.fsub'),
-      obj: q('.objective'), wave: q('.wave-ind'), dmgDir: q('.damage-dir'), clickHint: q('.click-hint'),
+      bossName: q('.boss-bar .bname'), bossGate: q('.boss-bar .bgate'), bossGateName: q('.boss-bar .gname'), bossGateLeft: q('.boss-bar .gleft'), bossGateTime: q('.boss-bar .gtime div'), bossTitle: q('.boss-bar .btitle'), minimap: q('.minimap'), fname: q('.fname'), fsub: q('.fsub'),
+      obj: q('.objective'), deadline: q('.floor-info .deadline'), wave: q('.wave-ind'), dmgDir: q('.damage-dir'), clickHint: q('.click-hint'),
     };
     this.mm = this.h.minimap.getContext('2d');
     this.h.minimap.width = 400; this.h.minimap.height = 400;
@@ -501,7 +507,7 @@ export class UI {
       }
       // a spell coming off cooldown flashes its slot once
       const cooling = pctCd > 0;
-      if (el._cooling && !cooling) { el.classList.remove('ready'); void el.offsetWidth; el.classList.add('ready'); }
+      if (el._cooling && !cooling) replay(el, 'ready');
       el._cooling = cooling;
       const pv = pctCd.toFixed(1) + '%';
       if (q.cd && q.cd._p !== pv) { q.cd._p = pv; q.cd.style.setProperty('--p', pv); }
@@ -516,7 +522,7 @@ export class UI {
       h.itemSlot.classList.toggle('empty', !d);
       h.itemSlot.style.setProperty('--ic', d?.color ?? '#5a4426');
       h.itemSlot.title = d ? `${d.name}: ${d.desc}` : 'No item';
-      if (d && was !== undefined) { h.itemSlot.classList.remove('ready'); void h.itemSlot.offsetWidth; h.itemSlot.classList.add('ready'); }
+      if (d && was !== undefined) replay(h.itemSlot, 'ready');
     }
     // gold
     setText(h.gold, String(Math.floor(p.gold)));
@@ -538,6 +544,7 @@ export class UI {
       h.bossLag.style.width = f + '%';
       const ex = game.time < a.exposedUntil;
       if (this._bossEx !== ex) { this._bossEx = ex; h.boss.classList.toggle('exposed', ex); }
+      if (a.gate) h.bossGateTime.style.transform = `scaleX(${Math.max(0, (a.gate.until - game.time) / a.gate.dur)})`;
       if (a.dead) { setTimeout(() => h.boss.classList.add('hidden'), 1500); this.bossActor = null; }
     }
     // objective
@@ -701,10 +708,13 @@ export class UI {
     this._blitText(g, this._textBitmap(down ? r.name + ' — DOWNED' : r.name, '600 12px Cinzel, serif', col, { stroke: 'rgba(0,0,0,0.75)', lw: 3 }), x - c * 34, y - sn * 22);
     g.globalAlpha = 1;
   }
-  _project(pos) {
-    const v = (this._pv ??= new THREE.Vector3()).set(pos.x, pos.y, pos.z).project(this.renderer.camera);
+  // (one shared result, overwritten by the next call: every caller reads it at once)
+  _project(x, y, z) {
+    const v = (this._pv ??= new THREE.Vector3()).set(x, y, z).project(this.renderer.camera);
     if (v.z > 1 || v.z < -1) return null;
-    return { x: (v.x * 0.5 + 0.5) * innerWidth, y: (-v.y * 0.5 + 0.5) * innerHeight, z: v.z };
+    const s = (this._ps ??= { x: 0, y: 0, z: 0 });
+    s.x = (v.x * 0.5 + 0.5) * innerWidth; s.y = (-v.y * 0.5 + 0.5) * innerHeight; s.z = v.z;
+    return s;
   }
 
   // Text drawn into a small canvas once (font, outline and glow included) and
@@ -784,6 +794,8 @@ export class UI {
     g.clearRect(0, 0, innerWidth, innerHeight);
     const cam = this.renderer.camera;
     // enemy health bars (only damaged or elite/boss nearby)
+    const LR = (this._nameRects ??= new Float32Array(4 * 12)); // (elite names drawn this frame: see below)
+    let nl = 0;
     for (const a of game.actors.list) {
       if (a.dead || a.boss) continue;
       if (a.hp >= a.maxHp && !a.elite && a.faction === 'enemy') continue;
@@ -792,7 +804,7 @@ export class UI {
       // no health bars through walls (line of sight re-checked a few times a second)
       if (!(a._losT > game.time)) { a._losT = game.time + 0.2 + Math.random() * 0.1; a._los = game.collision.los(cam.position.x, cam.position.y, cam.position.z, a.pos.x, a.pos.y + a.height * 0.8, a.pos.z); }
       if (!a._los) continue;
-      const s = this._project({ x: a.pos.x, y: a.pos.y + a.height + 0.35, z: a.pos.z });
+      const s = this._project(a.pos.x, a.pos.y + a.height + 0.35, a.pos.z);
       if (!s) continue;
       // keep labels off the minimap corner
       if (s.x > innerWidth - 250 && s.y < 250) continue;
@@ -808,19 +820,28 @@ export class UI {
         // (built once per affix set, not every frame; a champion's name comes after spawn)
         if (a._lblFor !== a.def || a._lblA !== a.affix || a._lblB !== a.affix2) { a._lblFor = a.def; a._lblA = a.affix; a._lblB = a.affix2; a._lbl = capAffix(a.affix) + capAffix(a.affix2) + a.def.name; }
         const b = this._textBitmap(a._lbl, '600 11px Cinzel, serif', '#ffb050', { lw: 0 });
-        const lw = b.w / 2 + 2;
-        this._blitText(g, b, Math.max(lw, Math.min(innerWidth - lw, s.x)), s.y - 9);
+        const lw = b.w / 2 + 2, lx = Math.max(lw, Math.min(innerWidth - lw, s.x));
+        // champions side by side: a name that would print over another steps up clear of it
+        let ly = s.y - 9;
+        const hw = b.w * 0.42, hh = 7;
+        for (let j = 0; j < nl; j++) {
+          const o = j * 4;
+          if (lx + hw < LR[o] || lx - hw > LR[o + 2] || ly + hh < LR[o + 1] || ly - hh > LR[o + 3]) continue;
+          ly = LR[o + 1] - hh - 1;
+        }
+        if (nl < 12) { const o = nl * 4; LR[o] = lx - hw; LR[o + 1] = ly - hh; LR[o + 2] = lx + hw; LR[o + 3] = ly + hh; nl++; }
+        this._blitText(g, b, lx, ly);
       }
       // status pips
       let px = s.x - w / 2;
-      for (const [k, col] of [[1, '#ff7a30'], [2, '#7fd8ff'], [4, '#c8f4ff'], [8, '#9fb4ff'], [16, '#9adf3a'], [32, '#c050ff'], [64, '#ff3048'], [128, '#40e0c8'], [4096, '#ffc040']]) {
-        if (a.mask & k) { g.fillStyle = col; g.fillRect(px, s.y + hgt + 2, 6, 3); px += 8; }
+      for (let j = 0; j < PIPS.length; j += 2) {
+        if (a.mask & PIPS[j]) { g.fillStyle = PIPS[j + 1]; g.fillRect(px, s.y + hgt + 2, 6, 3); px += 8; }
       }
       g.globalAlpha = 1;
     }
     // teammate name tags (and, for one out of view, a marker at the screen edge pointing to them)
     for (const r of game.remotes.values()) {
-      const s = this._project({ x: r.pos.x, y: r.pos.y + 2.25, z: r.pos.z });
+      const s = this._project(r.pos.x, r.pos.y + 2.25, r.pos.z);
       if (!s || s.x < 0 || s.y < 0 || s.x > innerWidth || s.y > innerHeight) { if (!r.dead) this._edgeMark(g, r); continue; }
       this._blitText(g, this._textBitmap(r.name + (r.downed ? ' — DOWNED' : ''), '600 13px Cinzel, serif', r.downed ? '#ff5050' : hex(r.meta.color2 ?? r.meta.color), { stroke: 'rgba(0,0,0,0.7)', lw: 3 }), s.x, s.y - 4);
       // a teammate's bar: wide, outlined and in ally colours (never an enemy's red)
@@ -838,7 +859,7 @@ export class UI {
       const n = this.numbers[i];
       n.t += dt;
       n.pos.y += dt * (n.crit ? 1.4 : 1.0);
-      const s = this._project(n.pos);
+      const s = this._project(n.pos.x, n.pos.y, n.pos.z);
       if (n.t > n.life || !s) { if (n.t > n.life) this.numbers.splice(i, 1); continue; }
       const k = n.t / n.life;
       const pop = n.t < 0.12 ? 1 + (1 - n.t / 0.12) * (n.crit ? 0.9 : 0.4) : 1;
@@ -850,24 +871,44 @@ export class UI {
       g.globalAlpha = 1;
     }
     // floating texts (reactions etc.)
-    for (let i = this.floats.length - 1; i >= 0; i--) {
+    // call-outs (BLOCKED, SHATTER, INTERRUPT...): oldest first, each keeps its place and a newer one
+    // that would cover it steps up just clear of it, so a pile of them stays readable; none is
+    // drawn off the top of the screen (the rects are reused: no garbage)
+    const FR = (this._floatRects ??= new Float32Array(4 * 24));
+    let nr = 0, keep = 0;
+    for (let i = 0; i < this.floats.length; i++) {
       const f = this.floats[i];
       f.t += dt;
       f.pos.y += dt * 0.8;
-      const s = this._project(f.pos);
-      if (f.t > 1.4) { this.floats.splice(i, 1); continue; }
+      if (f.t > 1.4) continue;
+      this.floats[keep++] = f;
+      const s = this._project(f.pos.x, f.pos.y, f.pos.z);
       if (!s) continue;
+      const b = this._textBitmap(f.text, `700 ${f.big ? 22 : 15}px Cinzel, serif`, f.color, { stroke: 'rgba(0,0,0,0.9)', lw: 4, glow: 12 });
+      const hw = b.w * 0.36, hh = b.h * 0.3; // (the lettering, not the glow around it)
+      let y = Math.max(s.y, hh + 34);
+      for (let pass = 0; pass < 4; pass++) {
+        let moved = false;
+        for (let j = 0; j < nr; j++) {
+          const o = j * 4;
+          if (s.x + hw < FR[o] || s.x - hw > FR[o + 2] || y + hh < FR[o + 1] || y - hh > FR[o + 3]) continue;
+          y = FR[o + 1] - hh - 2; moved = true;
+        }
+        if (!moved) break;
+      }
+      if (nr < 24) { const o = nr * 4; FR[o] = s.x - hw; FR[o + 1] = y - hh; FR[o + 2] = s.x + hw; FR[o + 3] = y + hh; nr++; }
       g.globalAlpha = f.t > 1 ? 1 - (f.t - 1) / 0.4 : 1;
       const pop = f.t < 0.15 ? 1 + (1 - f.t / 0.15) * 0.8 : 1;
-      this._blitText(g, this._textBitmap(f.text, `700 ${f.big ? 22 : 15}px Cinzel, serif`, f.color, { stroke: 'rgba(0,0,0,0.9)', lw: 4, glow: 12 }), s.x, s.y, pop);
+      this._blitText(g, b, s.x, y, pop);
       g.globalAlpha = 1;
     }
+    this.floats.length = keep;
     // pings: a foe ping rides above its foe, a thing ping names the thing; off screen
     // (or behind you) a ping clings to the screen's edge, pointing the way
     for (const pg of game.pings ?? []) {
       const age = game.time - pg.born;
       const fade = Math.min(1, (pg.life - age) / 0.8);
-      let s = this._project(pg.pos);
+      let s = this._project(pg.pos.x, pg.pos.y, pg.pos.z);
       let edge = false;
       if (!s || s.x < 30 || s.x > innerWidth - 30 || s.y < 30 || s.y > innerHeight - 30) {
         // direction in view space, pushed to the border
@@ -920,7 +961,12 @@ export class UI {
     if (!seen) return;
     this.numbers.push({ pos: pos.clone(), amount, key, text: String(Math.round(amount)), color: col, crit, dot: !!dot, t: 0, life: dot ? 1.3 : crit ? 1.0 : 0.8, ox: (Math.random() - 0.5) * 30 });
   }
-  floatText(pos, text, color = '#fff', big = false) { this.floats.push({ pos: pos.clone(), text, color, big, t: 0 }); }
+  floatText(pos, text, color = '#fff', big = false) {
+    // one AoE on a pack calls the same thing for every foe (UNAWARE x8): a call still fresh nearby
+    // already says it, so a repeat adds a tower of text and no news
+    for (const f of this.floats) if (f.text === text && f.t < 0.6 && f.pos.distanceToSquared(pos) < 36) return;
+    this.floats.push({ pos: pos.clone(), text, color, big, t: 0 });
+  }
   hitmarker(crit, kill, weak = false) {
     if (!this.h) return;
     const el = this.h.hit;
@@ -957,14 +1003,16 @@ export class UI {
   slotDenied(slot) {
     const el = this.h?.slots[slot];
     if (!el) return;
-    el.classList.remove('denied');
-    void el.offsetWidth;
-    el.classList.add('denied');
+    replay(el, 'denied');
   }
   goldPulse() {
     const el = this.h?.goldBox;
     if (!el) return;
-    el.classList.remove('pulse'); void el.offsetWidth; el.classList.add('pulse');
+    // (a coin a pickup, up to eight a drop: one pulse in flight at a time is all the eye can see)
+    const now = performance.now();
+    if (now - (this._goldPulseT ?? 0) < 120) return;
+    this._goldPulseT = now;
+    replay(el, 'pulse');
   }
   prompt(text, progress) {
     if (!this.h) return;
@@ -1017,7 +1065,7 @@ export class UI {
     el.querySelector('.s1').textContent = text;
     el.querySelector('.s2').textContent = sub;
     el.style.color = color;
-    el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+    replay(el, 'show');
   }
   toast(text, color) {
     const host = this.h?.toasts;
@@ -1036,6 +1084,31 @@ export class UI {
     clearTimeout(this._waveTO);
     this._waveTO = setTimeout(() => { if (this.h) this.h.wave.textContent = ''; }, 3000);
   }
+  // Tight Deadline: the realm's clock under the objective (red in its last minute; withering once it's past)
+  deadline(D) {
+    const el = this.h?.deadline;
+    if (!el) return;
+    const show = !!D && !D.stopped;
+    if (this._dlShow !== show) { this._dlShow = show; el.classList.toggle('hidden', !show); }
+    if (!show) return;
+    const s = Math.max(0, Math.ceil(D.t));
+    const st = D.past ? 'past' : s <= 60 ? 'low' : '';
+    if (this._dlSt !== st) { this._dlSt = st; el.className = 'deadline ' + st; }
+    setText(el, D.past ? 'Withering — reach the guardian' : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} to reach the guardian`);
+  }
+
+  // the boss's gate (Game.bossFx 'gate'): its name and what it still asks, under the bar, with the time it holds
+  bossGate(a) {
+    if (!this.h || a !== this.bossActor) return;
+    const h = this.h, G = a.gate, L = G && GATE_UI[G.k];
+    h.boss.classList.toggle('gated', !!L);
+    h.bossGate.classList.toggle('hidden', !L);
+    if (!L) return;
+    h.boss.style.setProperty('--gc', L.color);
+    setText(h.bossGateName, L.name);
+    setText(h.bossGateLeft, L.left(G.n));
+  }
+
   bossIntro(a) {
     if (!this.h) return;
     this.bossActor = a;
@@ -1044,7 +1117,7 @@ export class UI {
     h.bossName.textContent = a.def.name;
     h.bossTitle.textContent = a.def.title ?? '';
     const marks = h.boss.querySelector('.phase-marks');
-    marks.innerHTML = [0.33, 0.66].map((f) => `<i style="left:${f * 100}%"></i>`).join('');
+    marks.innerHTML = (a.phaseAts ?? [0.33, 0.66]).map((f) => `<i style="left:${f * 100}%"></i>`).join('');
     this.banner(a.def.name, a.def.title ?? '', '#ff7050', 4);
   }
 

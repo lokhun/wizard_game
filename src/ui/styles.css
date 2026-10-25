@@ -171,9 +171,6 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .bar .shield { position: absolute; left: 0; bottom: 0; height: 5px; max-width: 100%; background: linear-gradient(180deg, rgba(255,246,200,0.95), rgba(226,186,96,0.9)); box-shadow: 0 0 8px rgba(255,220,140,0.8); }
 .bar .txt { position: absolute; inset: 0; text-align: center; font-family: var(--serif); font-size: 12.5px; line-height: 19px; color: #fff; text-shadow: 0 1px 2px #000; letter-spacing: 0.05em; }
 .bar.small { height: 9px; }
-/* teammates: ally colours (set per bar in --hpc), a lighter frame, never the red of your own or a foe's */
-.bar.ally { height: 10px; border-color: rgba(220, 240, 220, 0.55); }
-.bar.ally .fill { background: linear-gradient(180deg, var(--hpc, #4ade80), color-mix(in srgb, var(--hpc, #4ade80) 55%, #000)); }
 .dash-pips { display: flex; gap: 7px; padding-left: 3px; }
 /* dash charges: small diamonds that light in the class colour */
 .dash-pips i { width: 9px; height: 9px; transform: rotate(45deg); background: #1a1511; border: 1px solid var(--bronze-lo); transition: background 0.15s, box-shadow 0.15s; }
@@ -184,6 +181,10 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
   box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px var(--bronze-lo), 0 3px 8px rgba(0,0,0,0.7), inset 0 0 8px #000; animation: buffIn 0.25s ease; }
 .buff .t { position: absolute; bottom: -7px; left: 50%; transform: translateX(-50%); font-size: 10px; font-family: var(--serif); color: #f0e2c4; background: #0a0807; border: 1px solid var(--bronze-lo); padding: 0 4px; line-height: 12px; }
 @keyframes buffIn { from { transform: scale(0.4); opacity: 0; } }
+/* teammates: ally colours (set per bar in --hpc), a lighter frame, never the red of your own or a foe's */
+.bar.ally { border-color: rgba(220, 240, 220, 0.55); }
+.bar.ally:not(.small) { height: 10px; }
+.bar.ally .fill { background: linear-gradient(180deg, var(--hpc, #4ade80), color-mix(in srgb, var(--hpc, #4ade80) 55%, #000)); }
 
 .abilities { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; gap: 10px; align-items: flex-end; padding: 14px 26px 8px; --pc: #e2c48a; }
 /* a carved plate behind the spells, flared at the ends */
@@ -200,24 +201,32 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .slot svg { position: relative; filter: drop-shadow(0 0 4px color-mix(in srgb, var(--pc) 45%, transparent)); }
 .slot.ult { width: 74px; height: 74px; box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px var(--bronze), 0 0 0 4px #0a0807, 0 0 0 5px var(--bronze-lo), inset 0 0 0 1px rgba(255,220,160,0.25), inset 0 0 18px #000, 0 6px 14px rgba(0,0,0,0.75); }
 .slot.ready-ult { box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px var(--bronze-hi), 0 0 0 4px #0a0807, 0 0 0 5px var(--bronze), 0 0 26px rgba(255,200,90,0.7), inset 0 0 22px rgba(255,200,90,0.35); animation: pulse 1.2s infinite; }
+/* (each replayed flash has a twin class running the same keyframes under another name: switching
+   between them restarts the animation without a forced layout, see replay() in ui.js) */
 .slot.ready { animation: slotReady 0.45s ease-out; }
+.slot.ready2 { animation: slotReady2 0.45s ease-out; }
 @keyframes slotReady { 0% { box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px #fff4d8, 0 0 0 3px #0a0807, inset 0 0 22px color-mix(in srgb, var(--pc) 80%, transparent), 0 0 22px color-mix(in srgb, var(--pc) 70%, transparent); } }
+@keyframes slotReady2 { 0% { box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px #fff4d8, 0 0 0 3px #0a0807, inset 0 0 22px color-mix(in srgb, var(--pc) 80%, transparent), 0 0 22px color-mix(in srgb, var(--pc) 70%, transparent); } }
 @keyframes pulse { 0%,100% { box-shadow: 0 0 14px rgba(255,200,90,0.45), inset 0 0 12px rgba(255,200,90,0.2);} 50% { box-shadow: 0 0 28px rgba(255,200,90,0.85), inset 0 0 22px rgba(255,200,90,0.4);} }
 .slot .cd { position: absolute; inset: 0; background: conic-gradient(rgba(4,3,2,0.8) var(--p, 0%), rgba(255,230,180,0.18) var(--p, 0%) calc(var(--p, 0%) + 1.2%), rgba(0,0,0,0) 0); }
 .slot .cdtxt { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--serif); font-size: 19px; color: #fff; text-shadow: 0 0 4px #000, 0 0 2px #000; }
 .slot .key { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); font-family: var(--serif); font-size: 10px; letter-spacing: 0.05em; background: linear-gradient(180deg, #2a2119, #0c0a08); border: 1px solid var(--bronze-lo); padding: 0 6px; line-height: 15px; color: var(--bronze-hi); box-shadow: 0 2px 4px rgba(0,0,0,0.7); }
 .slot .charges { position: absolute; bottom: 2px; right: 4px; font-family: var(--serif); font-size: 12px; color: #fff; text-shadow: 0 1px 2px #000; }
 .slot.denied { animation: deny 0.25s; }
+.slot.denied2 { animation: deny2 0.25s; }
 @keyframes deny { 0%,100% { transform: translateX(0);} 25% { transform: translateX(-4px);} 75% { transform: translateX(4px);} }
+@keyframes deny2 { 0%,100% { transform: translateX(0);} 25% { transform: translateX(-4px);} 75% { transform: translateX(4px);} }
 .slot.flash { box-shadow: 0 0 18px rgba(255,255,255,0.6); }
 .ult-fill { position: absolute; left: 0; right: 0; bottom: 0; background: linear-gradient(0deg, color-mix(in srgb, var(--pc) 45%, transparent), color-mix(in srgb, var(--pc) 8%, transparent)); border-top: 1px solid color-mix(in srgb, var(--pc) 80%, #fff); box-shadow: 0 -2px 8px color-mix(in srgb, var(--pc) 50%, transparent); transition: height 0.2s; }
 
 .gold-box { position: absolute; right: 24px; bottom: 26px; font-family: var(--serif); font-size: 20px; color: var(--gold); text-shadow: 0 0 10px rgba(240,192,80,0.4), 0 2px 2px #000; display: flex; align-items: center; gap: 10px; }
 .gold-box .coin, .gold-box .dread { display: inline-flex; align-items: center; gap: 6px; padding: 5px 14px 5px 8px; min-width: 64px; background: linear-gradient(90deg, rgba(10,8,7,0), rgba(10,8,7,0.85) 30%); border-top: 1px solid rgba(168,132,76,0.5); border-bottom: 1px solid rgba(168,132,76,0.2); }
 .gold-box.pulse { animation: gp 0.25s; }
+.gold-box.pulse2 { animation: gp2 0.25s; }
 .gold-box .dread { color: #ff8070; text-shadow: 0 0 10px rgba(255,60,40,0.5), 0 2px 2px #000; border-top-color: rgba(200,70,50,0.5); }
 .gold-box .dread.hidden { display: none; }
 @keyframes gp { 50% { transform: scale(1.15); } }
+@keyframes gp2 { 50% { transform: scale(1.15); } }
 
 .team { position: absolute; left: 24px; top: 128px; display: flex; flex-direction: column; gap: 10px; width: 230px; }
 .team .tm { font-family: var(--serif); font-size: 13px; text-shadow: 0 1px 2px #000; padding: 6px 10px 8px 6px; background: linear-gradient(90deg, rgba(10,8,7,0.8), rgba(10,8,7,0)); border-left: 2px solid var(--pc, var(--bronze)); }
@@ -248,7 +257,7 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 /* (as wide as fits between the realm name and the minimap at any HUD scale: the zoom multiplies the width back) */
 .boss-bar { position: absolute; left: 50%; top: 34px; transform: translateX(-50%); width: calc(min(820px * var(--hud-scale, 1), 100vw - 580px * var(--hud-scale, 1)) / var(--hud-scale, 1)); text-align: center; }
 .boss-bar .bname { font-family: 'Cinzel', var(--serif); font-weight: 600; font-size: 26px; color: #f0dcc0; letter-spacing: 0.1em; text-shadow: 0 0 16px rgba(255,80,40,0.5), 0 2px 3px #000; }
-.boss-bar .btitle { font-family: var(--serif); font-size: 11px; color: var(--text-dim); letter-spacing: 0.35em; text-transform: uppercase; margin-bottom: 6px; }
+.boss-bar .btitle { font-family: var(--serif); font-size: 11px; color: var(--text-dim); letter-spacing: 0.35em; text-transform: uppercase; margin-bottom: 6px; text-shadow: 0 1px 2px #000, 0 0 6px rgba(0,0,0,0.9); } /* (read over a bright boss behind it) */
 .boss-bar .bname { display: flex; align-items: center; justify-content: center; white-space: nowrap; }
 .boss-bar .bname::before, .boss-bar .bname::after { content: ''; flex: 0 1 90px; min-width: 12px; height: 1px; margin: 0 16px; background: linear-gradient(90deg, transparent, rgba(255,140,90,0.75)); }
 .boss-bar .bname::after { background: linear-gradient(270deg, transparent, rgba(255,140,90,0.75)); }
@@ -281,7 +290,7 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .banner.combat.show .line { width: 340px; }
 .banner.combat.edge { top: calc(14px * var(--hud-scale, 1)); }
 
-.toasts { position: absolute; right: 28px; bottom: 90px; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+.toasts { position: absolute; right: 28px; bottom: 132px; max-width: min(420px, 30vw); /* (above the ability bar's key labels, whatever the width) */ display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
 .toast { font-family: var(--serif); font-size: 14px; padding: 6px 12px; background: rgba(10,8,7,0.85); border-left: 2px solid var(--bronze); color: var(--text); animation: toastIn 0.3s ease; letter-spacing: 0.04em; }
 @keyframes toastIn { from { opacity: 0; transform: translateX(20px);} }
 
@@ -347,7 +356,7 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .shop-item.cant .price { color: #c05050; border-color: rgba(192,80,80,0.4); }
 .shop-item.cant .price svg { opacity: 0.5; }
 /* what you're buying: your current value -> the new one */
-.shop-item .sdiff { margin: -2px 0 8px; padding: 5px 8px; background: rgba(0, 0, 0, 0.35); border-left: 2px solid #5a4630; font-size: 12.5px; display: grid; gap: 2px; }
+.shop-item .sdiff { margin: 0 0 8px; padding: 5px 8px; background: rgba(0, 0, 0, 0.35); border-left: 2px solid color-mix(in srgb, var(--rc) 45%, #5a4630); font-size: 12.5px; display: grid; gap: 2px; }
 .shop-item .sdiff > div { display: flex; gap: 6px; align-items: baseline; }
 .shop-item .sdiff .k { color: var(--text-dim); flex: 1; }
 .shop-item .sdiff .a { color: #a89a86; }
@@ -432,7 +441,9 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .streak .s1 { font-family: 'Cinzel', var(--serif); font-weight: 700; font-size: clamp(18px, 2.2vw, 30px); letter-spacing: 0.16em; text-shadow: 0 0 18px currentColor, 0 2px 3px #000; }
 .streak .s2 { font-family: var(--serif); font-size: 12px; color: var(--text); letter-spacing: 0.25em; text-transform: uppercase; margin-top: 2px; text-shadow: 0 2px 3px #000; }
 .streak.show { animation: streakPop 1.6s ease-out forwards; }
+.streak.show2 { animation: streakPop2 1.6s ease-out forwards; }
 @keyframes streakPop { 0% { opacity: 0; transform: scale(1.5); } 10% { opacity: 1; transform: scale(1); } 70% { opacity: 1; } 100% { opacity: 0; transform: translateY(-14px); } }
+@keyframes streakPop2 { 0% { opacity: 0; transform: scale(1.5); } 10% { opacity: 1; transform: scale(1); } 70% { opacity: 1; } 100% { opacity: 0; transform: translateY(-14px); } }
 
 /* the ultimate's charge reads under its icon, not across it */
 .slot.ult .cdtxt { align-items: flex-end; padding-bottom: 4px; color: #f0e2c4; letter-spacing: 0.05em; }
@@ -460,3 +471,19 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .slot.itemslot.empty .iic::after { content: '—'; color: var(--bronze-lo); font-family: var(--serif); }
 .slot.itemslot .iic { display: flex; align-items: center; justify-content: center; }
 .slot.itemslot .key { top: auto; bottom: -11px; }
+/* a boss's gate (Brood Shield, Stoneskin...): the bar goes cold and a line under it says what breaks it */
+.boss-bar.gated .bar .fill { filter: saturate(0.35) brightness(0.8); }
+.boss-bar.gated .bar { box-shadow: 0 0 0 1px #0a0807, 0 0 0 2px var(--gc, #b080ff), 0 0 0 3px #0a0807, 0 0 14px color-mix(in srgb, var(--gc, #b080ff) 60%, transparent), inset 0 0 8px #000; }
+.boss-bar .bgate { margin-top: 7px; font-family: var(--serif); font-size: 13px; letter-spacing: 0.12em; color: #e8dcc8; text-shadow: 0 1px 2px #000, 0 0 6px rgba(0,0,0,0.9); }
+.boss-bar .bgate .gname { color: var(--gc); font-weight: 600; text-transform: uppercase; letter-spacing: 0.25em; margin-right: 10px; }
+.boss-bar .bgate .gname::before { content: '◆ '; }
+.boss-bar .bgate .gtime { width: 40%; height: 3px; margin: 5px auto 0; background: rgba(0,0,0,0.6); box-shadow: 0 0 0 1px #0a0807; }
+.boss-bar .bgate .gtime div { height: 100%; background: var(--gc); transform-origin: left; }
+.boss-bar.gated:not(.hidden) ~ .banner { top: max(calc(15.5% + 30px), calc(146px * var(--hud-scale, 1) + 8px)); } /* (clear of the gate's line) */
+/* Tight Deadline: the realm's clock under the objective */
+.floor-info .deadline { margin-top: 4px; padding-left: 16px; position: relative; font-family: var(--serif); font-size: 13px; letter-spacing: 0.06em; color: #e8c890; text-shadow: 0 1px 2px #000, 0 0 8px #000; font-variant-numeric: tabular-nums; }
+.floor-info .deadline::before { content: '⧗'; position: absolute; left: 0; top: -1px; color: var(--bronze-hi); }
+.floor-info .deadline.low { color: #ff9a60; animation: dlpulse 1s ease-in-out infinite; }
+.floor-info .deadline.past { color: #ff5a40; }
+.floor-info .deadline.past::before, .floor-info .deadline.low::before { color: currentColor; }
+@keyframes dlpulse { 50% { opacity: 0.55; } }

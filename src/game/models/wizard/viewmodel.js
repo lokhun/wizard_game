@@ -18,7 +18,7 @@ import { probeDynamic, bakeAvatar } from './batch.js';
 
 // rest pose sits low and wide so the focus frames the crosshair instead of
 // covering it (cast keys are offsets from here, so they still line up)
-const BASE_R = V(0.295, -0.282, -0.56);
+const BASE_R = V(0.315, -0.305, -0.56);
 const BASE_L = V(-0.305, -0.258, -0.51);
 
 // The viewmodel is drawn a hand's length from the lens, so authored glow

@@ -100,6 +100,8 @@ export const fallenKnight = {
   pose: humanoidPose,
   anim: {
     death: 'fall', spawn: 'rise', armSwing: 0.25, knee: 0.75, stride: 0.5, gait: 'plod', breath: 1.1,
+    // a corpse lays its weapon flat instead of standing it 1 m+ out of the body or the floor (scripts/grip.js)
+    deathGrip: [{ foreR: [-1.6, 0, 0], handR: [0, 0, -1.2] }, { handR: [-1.2, 0, -1.2] }],
     rest: { armR: [-0.3, 0, -0.05], foreR: [-0.75, 0, 0], handR: [0.6, 0, 0], armL: [-0.3, -0.85, 0.22], foreL: [-1.3, 0, 0] },
     stance: (P) => P.apply({ spine: [0.12, 0, 0], neck: [0.1, 0, 0], head: [0.1, 0.1, 0.05], thighL: [-0.08, 0, 0.06], thighR: [-0.02, 0, -0.06], shinL: [0.14, 0, 0], shinR: [0.1, 0, 0] }),
     stagger: { spine: [-0.22, 0.12, 0.06], chest: [-0.2, 0.18, 0], head: [-0.35, -0.25, 0.12], armR: [0.3, 0, -0.5], foreR: [-0.6, 0, 0], armL: [0.1, -0.7, 0.4], hips: [0, 0, 0, 0, -0.05, -0.1], thighL: [-0.3, 0, 0], shinL: [0.4, 0, 0] },
@@ -146,6 +148,8 @@ export const knightCaptain = {
   pose: humanoidPose,
   anim: {
     death: 'fall', spawn: 'rise', gait: 'plod', armSwing: 0.15, knee: 0.7, stride: 0.5, breath: 1.3,
+    // a corpse lays its weapon flat instead of standing it 1 m+ out of the body or the floor (scripts/grip.js)
+    deathGrip: [{ foreR: [-1.6, 0, 0], handR: [0, 0, -1.2] }, { handR: [-1.2, 0, 0.8] }],
     rest: { armR: [-0.45, 0, 0.25], foreR: [-0.85, 0, 0], handR: [0.55, 0, 0], armL: [-0.5, 0, -0.32], foreL: [-1.0, 0, 0] },
     stance: (P) => P.apply({ spine: [0.04, 0, 0], thighL: [-0.12, 0, 0.08], thighR: [0.02, 0, -0.08], shinL: [0.16, 0, 0], shinR: [0.1, 0, 0] }),
   },
@@ -354,7 +358,7 @@ export const battlePriest = {
     rig.bone('censer', 'handL', 0, -0.08, 0.02, { rate: 0.5 });
     const albC = (v) => { const k = (0.7 + 0.4 * vnoise(v.x * 9, v.y * 9, v.z * 9, 5)) * (1 - smooth(-0.6, -0.95, v.y) * 0.5); return [PR_ALB[0] * k, PR_ALB[1] * k, PR_ALB[2] * k]; };
     // layered robes: long alb, chasuble front/back with the orphrey cross, a stole, a heavy cope
-    rig.add('hips', 'cloth', robe(0.2, 0.37, D.hipH - 0.06, { seg: 22, rows: 6, folds: 8, foldAmp: 0.08, tatter: 0.22, seed: 5 }), { y: 0.06 }, { cfn: albC, anim: (v) => clamp(-v.y / 0.9) * 0.9 });
+    rig.add('hips', 'cloth', robe(0.2, 0.37, D.hipH + 0.03, { seg: 22, rows: 6, folds: 8, foldAmp: 0.08, tatter: 0.22, seed: 5 }), { y: 0.06 }, { cfn: albC, anim: (v) => clamp(-v.y / 0.9) * 0.9 }); // (the hem brushes the floor: there are no feet under it, and a 12 cm gap read as hovering)
     rig.add('hips', 'cloth', lathe([[0.2, 0.0], [0.19, 0.12], [0.2, 0.22]], 14), { y: 0.0 }, { cfn: albC });
     rig.add('chest', 'cloth', lathe([[0.17, -0.05], [0.2, 0.14], [0.22, 0.24], [0.13, 0.32], [0.07, 0.34]], 14), { sz: 0.82 }, { cfn: albC });
     for (const [z, ry] of [[1, 0], [-1, Math.PI]]) rig.add('chest', 'cloth', panel(0.4, 1.25, { ws: 5, hs: 8, tatter: 0.25, seed: 9 + z, curve: 0.08, taperBot: 0.75 }), { y: D.chest + 0.02, z: z * 0.19, ry, rx: 0.1 }, { cfn: prChasuble, anim: (v) => clamp((-v.y - 0.3) / 1.0), skin: chainSkin([['hips', -D.spine - 0.4], ['spine', -D.spine * 0.5], ['chest', 0.0]], (v) => v.y) });
@@ -399,6 +403,8 @@ export const battlePriest = {
   pose: humanoidPose,
   anim: {
     death: 'fallBack', spawn: 'rise', caster: true, idleOrb: 0.0, armSwing: 0.2, stride: 0.45, gait: 'plod',
+    // a corpse lays its weapon flat instead of standing it 1 m+ out of the body or the floor (scripts/grip.js)
+    deathGrip: [{ foreR: [0.4, 0, 0], handR: [1.6, 0, -0.4] }, { foreR: [0.4, 0, 0], handR: [-1.6, 0, 0.4] }],
     // staff held upright: hand bone local +Y maps up when the forearm is level, so the staff runs along hand +Y
     rest: { armR: [-0.3, 0, -0.08], foreR: [-1.15, 0, 0], handR: [0.0, 0, 0], armL: [-0.25, 0, 0.12], foreL: [-0.75, 0, 0] },
     stance: (P) => P.apply({ spine: [0.1, 0, 0], neck: [0.08, 0, 0], head: [0.1, 0, 0] }),

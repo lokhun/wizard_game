@@ -1,4 +1,4 @@
-import { clamp, lerp, smooth, easeOut, easeInOut, bump, TAU } from './core.js';
+import { clamp, lerp, smooth, easeOut, easeInOut, bump, TAU, turnK } from './core.js';
 
 // ---------------------------------------------------------------------------
 // Humanoid skeleton + procedural animation.
@@ -153,7 +153,8 @@ export function humanoidPose(m, s, P, dt) {
   const action = anim === 'windup' || anim === 'attack' || anim === 'cast';
 
   // ---- locomotion phase driven by distance travelled
-  const spd = dead || seated ? 0 : s.speed;
+  // (turning on the spot shuffles the feet round: see turnK)
+  const spd = dead || seated ? 0 : Math.max(s.speed, turnK(m, dt) * 0.55 * sc);
   const legLen = D.legLen;
   const ampL = Math.min(A.stride ?? 0.55, 0.18 + spd * (A.strideK ?? 0.16) / sc);
   const step = Math.max(0.12, 2 * legLen * Math.sin(ampL));
@@ -169,7 +170,16 @@ export function humanoidPose(m, s, P, dt) {
   m.U.uFlutter.value = (m.spec.flutter ?? 0.03) * (1 + w * 1.5);
 
   // ---- base stance (hunch etc.)
-  if (A.stance) A.stance(P, m, s);
+  if (A.stance) {
+    if (dead) {
+      // a hunched body's stance would ride on through the fall and pitch it into the floor (a ghoul
+      // lay with its chest under the flagstones): the stance fades out as the body goes down
+      const k = 1 - smooth(0.25, 0.8, s.progress), pre = (P._pre ??= new Float32Array(P.tgt.length));
+      pre.set(P.tgt);
+      A.stance(P, m, s);
+      if (k < 1) for (let i = 0; i < pre.length; i++) P.tgt[i] = pre[i] + (P.tgt[i] - pre[i]) * k;
+    } else A.stance(P, m, s);
+  }
 
   const floating = A.gait === 'float';
   if (floating) {
@@ -246,6 +256,10 @@ export function humanoidPose(m, s, P, dt) {
     rate = 30;
   } else if (dead) {
     rate = deathPose(m, s, P, D, A, sc);
+    // a long weapon still in hand goes down flat with the body instead of standing out of it (or out of the
+    // floor under it): a forearm/hand turn per type, one for each side the body can twist to as it falls
+    // (scripts/grip.js finds them)
+    if (A.deathGrip) P.apply(A.deathGrip[m.seed > 0.5 ? 1 : 0], smooth(0.3, 0.85, s.progress));
   } else if (spawning) {
     rate = spawnPose(m, s, P, D, A, sc);
   } else if (A.caster && A.idleOrb) {
@@ -282,14 +296,15 @@ function deathPose(m, s, P, D, A, sc) {
   }
   if (style === 'apart') {
     // armor pieces lose their binding and clatter apart
-    const fall = { hips: [0.2, 0, 0.3 * sd, 0, -(D.hipH - 0.2 * sc), 0], thighL: [-1.0, 0, 0.6], thighR: [-0.3, 0, -0.5], shinL: [1.6, 0, 0], shinR: [0.5, 0, 0] };
+    // (the pieces come to rest on the floor, not in it: a plate's thickness kept above the flagstones)
+    const fall = { hips: [0.2, 0, 0.3 * sd, 0, -(D.hipH - 0.3 * sc), 0], thighL: [-1.0, 0, 0.6], thighR: [-0.3, 0, -0.5], shinL: [1.6, 0, 0], shinR: [0.5, 0, 0] };
     P.apply(fall, b);
     P.apply({ hips: [0, 0, 0, 0, -0.15 * sc, 0], spine: [0.3, 0, 0], head: [0.3, 0, 0] }, a * (1 - b));
     const sep = smooth(0.15, 0.6, p);
-    P.p('head', 0.3 * sd * sc * b, (0.15 * sep - 0.55 * b) * sc, 0.35 * b * sc); P.r('head', 1.4 * b, 0.8 * b, 1.6 * b * sd);
-    P.p('chest', 0, 0.06 * sep * sc - 0.15 * b * sc, -0.1 * b * sc); P.r('chest', -0.6 * b, 0.3 * b * sd, 0.5 * b);
-    P.p('armL', 0.15 * sep * sc, -0.35 * b * sc, 0.1 * b * sc); P.r('armL', -0.8 * b, 0, 1.4 * b);
-    P.p('armR', -0.15 * sep * sc, -0.3 * b * sc, -0.15 * b * sc); P.r('armR', 0.4 * b, 0, -1.5 * b);
+    P.p('head', 0.3 * sd * sc * b, (0.15 * sep - 0.42 * b) * sc, 0.35 * b * sc); P.r('head', 1.4 * b, 0.8 * b, 1.6 * b * sd);
+    P.p('chest', 0, 0.06 * sep * sc - 0.08 * b * sc, -0.1 * b * sc); P.r('chest', -0.6 * b, 0.3 * b * sd, 0.5 * b);
+    P.p('armL', 0.15 * sep * sc, -0.25 * b * sc, 0.1 * b * sc); P.r('armL', -0.8 * b, 0, 1.4 * b);
+    P.p('armR', -0.15 * sep * sc, -0.21 * b * sc, -0.15 * b * sc); P.r('armR', 0.4 * b, 0, -1.5 * b);
     P.p('foreL', 0, -0.06 * sep * sc, 0); P.p('foreR', 0, -0.06 * sep * sc, 0);
     P.r('foreL', -0.4 * b); P.r('foreR', -1.2 * b, 0.5 * b);
     P.p('shinL', 0, -0.05 * sep * sc, 0.06 * b * sc); P.p('shinR', 0, -0.05 * sep * sc, 0);
@@ -308,7 +323,7 @@ function deathPose(m, s, P, D, A, sc) {
   const K = { hips: [0, 0, 0, 0, -(D.thigh * 0.95), -0.05 * sc], thighL: [-0.25, 0, 0.1], thighR: [-0.1, 0, -0.1], shinL: [1.6, 0, 0], shinR: [1.5, 0, 0], footL: [0.5, 0, 0], footR: [0.5, 0, 0], spine: [0.35, 0, 0], chest: [0.2, 0, 0], head: [0.5, 0, 0.2], armL: [0.1, 0, 0.15], armR: [0.1, 0, -0.15], foreL: [-0.3, 0, 0], foreR: [-0.3, 0, 0] };
   const F = back
     ? { hips: [-1.5, 0, 0, 0, -(D.hipH - 0.16 * sc), -0.35 * sc], thighL: [-0.5, 0, 0.15], thighR: [-0.3, 0, -0.1], shinL: [0.7, 0, 0], shinR: [0.3, 0, 0], spine: [-0.05, 0, 0], head: [-0.2, 0.9 * sd, 0], armL: [0.3, 0, 1.3], armR: [-0.3, 0, -1.1], foreL: [-0.6, 0, 0], foreR: [-0.2, 0, 0] }
-    : { hips: [1.48, 0.2 * sd, 0, 0, -(D.hipH - 0.17 * sc), 0.2 * sc], thighL: [-0.15, 0, 0.15], thighR: [-0.3, 0, -0.1], shinL: [0.4, 0, 0], shinR: [0.9, 0, 0], spine: [0.05, 0, 0], chest: [0, 0, 0], neck: [-0.2, 0, 0], head: [-0.3, 1.1 * sd, 0], armL: [-0.4, 0, 1.2], armR: [0.3, 0, -0.9], foreL: [-0.5, 0, 0], foreR: [-0.3, 0, 0] };
+    : { hips: [1.48, 0.2 * sd, 0, 0, -(D.hipH - (0.22 + (A.deathLift ?? 0)) * sc), 0.2 * sc], thighL: [-0.15, 0, 0.15], thighR: [-0.3, 0, -0.1], shinL: [0.4, 0, 0], shinR: [0.9, 0, 0], spine: [0.05, 0, 0], chest: [0, 0, 0], neck: [-0.2, 0, 0], head: [-0.3, 1.1 * sd, 0], armL: [-0.4, 0, 1.2], armR: [0.3, 0, -0.9], foreL: [-0.5, 0, 0], foreR: [-0.3, 0, 0] };
   P.apply(K, a * (1 - b));
   P.apply(F, b);
   if (A.deathExtra) A.deathExtra(P, p, m, s);

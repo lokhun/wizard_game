@@ -17,7 +17,8 @@ const loadPeer = () => (peerjs ??= import('peerjs').catch((e) => { peerjs = null
 
 const PREFIX = 'arcane-ascent-v1-';
 // The game's protocol: a party plays one set of rules, so a joiner on another build (a stale cache
-// after a release) is turned away with a message rather than let in to play out of step. Bump it
+// after a release) is turned away with a message rather than let in to play out of step. Deployed
+// builds also compare their exact build id (main.js sameBuild); the dev server only this. Bump it
 // whenever a message or a rule both sides must agree on changes.
 export const PROTOCOL = 2;
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

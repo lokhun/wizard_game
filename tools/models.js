@@ -228,3 +228,4 @@ loop();
 void torchMarks;
 window.__actors = actors;
 window.__R = R;
+window.__factory = factory;

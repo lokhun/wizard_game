@@ -15,7 +15,7 @@
   const all = Object.fromEntries(PACTS.map((x) => [x.id, x.max]));
   const base = difficultyFor({});
   g.difficulty = difficultyFor(all);
-  ok('heat', g.difficulty.heat === 35, g.difficulty.heat);
+  ok('heat', g.difficulty.heat === 40, g.difficulty.heat);
   // omens: every fight from order 2 bears a mod
   const L0 = generateLevel(4242, 2, null, { omens: 0 }), L2 = generateLevel(4242, 2, null, { omens: 2 });
   const fights = (L) => L.rooms.filter((r) => r.main && r.type === 'combat' && r.order >= 2);
@@ -31,10 +31,22 @@
   const dashT = (d) => { g.difficulty = d; p.dashCharges = 0; p.dashRecharge = 0.01; window.__sim(0.05); let t = 0; while (p.dashCharges < p.stats.dashCharges && t < 30) { window.__sim(0.1); t += 0.1; } return t; };
   const t0 = dashT(base), t1 = dashT(difficultyFor(all));
   ok('leaden', t1 > t0 * 1.3, `${t0.toFixed(1)}s -> ${t1.toFixed(1)}s`);
+  // old wounds: regeneration and lifesteal stop at 75% / 50% health; an orb still heals past it
+  const healTo = (d) => { g.difficulty = d; g.fightLock = {}; p.stats.regen = 40; p.stats.lifesteal = 1; p.hp = p.maxHp * 0.2; p.lastDamageT = -99; window.__sim(3); p._sustainLeft = p.maxHp; p.onDealtDamage?.(500, false, null, 'other'); return p.hp / p.maxHp; };
+  const w0 = healTo(base), w1 = healTo(difficultyFor({ wounds: 1 })), w2 = healTo(difficultyFor({ wounds: 2 }));
+  p.heal(p.maxHp); const orb = p.hp / p.maxHp;
+  // troll blood: regeneration mends through a fight and the 6 s after it, never while you wait between chambers
+  g.difficulty = base; g.fightLock = null; g.fightEndT = -99;
+  p.stats.regen = 10; p.hp = p.maxHp * 0.2; p.lastDamageT = -99; window.__sim(3); const idle = p.hp / p.maxHp;
+  g.fightEndT = g.time; p.hp = p.maxHp * 0.2; window.__sim(3); const after = p.hp / p.maxHp;
+  ok('troll blood', Math.abs(idle - 0.2) < 0.01 && after > 0.4, `waiting ${(idle * 100).toFixed(0)}% -> just after a fight ${(after * 100).toFixed(0)}%`);
+  p.recomputeStats();
+  ok('old wounds', w0 > 0.99 && Math.abs(w1 - 0.75) < 0.01 && Math.abs(w2 - 0.5) < 0.01 && orb > 0.99, `heals stop at ${(w0 * 100).toFixed(0)}% / ${(w1 * 100).toFixed(0)}% / ${(w2 * 100).toFixed(0)}%, an orb heals to ${(orb * 100).toFixed(0)}%`);
   g.difficulty = difficultyFor(all);
   // reload floor 2 under the pacts and fight: champions should carry two affixes, slain foes burst, waves come early
   g.loadFloor(2);
   while (g.loadingFloor) await new Promise((r) => setTimeout(r, 100));
+  const dl0 = g.deadline?.t;
   const hz = []; const ob = g.broadcastHazard.bind(g);
   g.broadcastHazard = (h) => { hz.push(h); return ob(h); };
   const waves = []; const main = g.level.rooms.filter((r) => r.main).sort((a, b) => a.order - b.order);
@@ -58,6 +70,11 @@
     }
     inp.mouse.left = false;
   }
+  // tight deadline: the realm's clock, then the withering (1% a second), shown under the objective
+  const D = g.deadline;
+  if (D) { D.t = 0.5; p.hp = p.maxHp; window.__sim(4.5); }
+  const lost = 1 - p.hp / p.maxHp, dlTxt = document.querySelector('.floor-info .deadline')?.textContent;
+  ok('deadline', dl0 > 0 && dl0 <= 300 && D.past && lost > 0.025 && lost < 0.06 && /Withering/.test(dlTxt), `clock ${Math.round(dl0)}s, lost ${(lost * 100).toFixed(1)}% in 4 s past it, HUD "${dlTxt}"`);
   ok('volatile', hz.filter((h) => h.el === 'enemyFire' && h.delay === 1.0).length > 5, `${hz.length} hazards`);
   ok('exalted', elites === 0 || twin === elites, `${twin}/${elites} elites with two affixes`);
   ok('relentless', waves.filter((w) => w.w > 0).some((w) => w.alive > 2), JSON.stringify(waves.slice(0, 8)));

@@ -47,8 +47,9 @@ export const ENEMY_DEFS = {
   },
   bilespitter: {
     name: 'Bilespitter', hp: 70, speed: 3.0, dmg: 12, cost: 4, ai: 'ranged', range: [7, 14], poise: 25, gold: 3, sound: 'ghoul_growl', deathSound: 'slime_death',
-    attacks: [{ id: 'spit', kind: 'lob', windup: 0.8, recover: 1.4, anim: 'spit', el: 'enemyGreen', speed: 13, pool: { radius: 2.4, dur: 4, dps: 7 }, cd: 2 }],
-    deathPool: { radius: 3, dur: 4, dps: 6 },
+    attacks: [{ id: 'spit', kind: 'lob', windup: 0.8, recover: 1.4, anim: 'spit', el: 'enemyGreen', speed: 13, pool: { radius: 2.0, dur: 1.5, dps: 7 }, cd: 2 }],
+    // (its bile splashes and soaks away: 4 s pools from every spit, and another where it died, carpeted the
+    // Sewers' rooms and made the first realm the hardest of the run)
   },
   ratShaman: {
     name: 'Rat Shaman', hp: 60, speed: 3.4, dmg: 9, cost: 5, ai: 'support', range: [8, 15], poise: 20, gold: 5, sound: 'rat_squeak', deathSound: 'rat_death',

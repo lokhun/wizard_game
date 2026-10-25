@@ -236,6 +236,9 @@ export function createAvatar(classId, ctx) {
 
   // ---------------- animation state ----------------
   let phase = 0, moveK = 0, lastT = 0, deadK = 0, downK = 0, castK = 0, idleT = 0;
+  // turning on the spot (mouse-look) steps the feet round: yaw rate eased into 0..1, its sign, and a step phase
+  let turnK = 0, turnDir = 1, turnPh = 0, prevYaw = null;
+  const _te = new THREE.Euler();
   const st = { charge: 0, power: 0, glow: 1, castK: 0, accelR: V(), accelL: V(), view: false, up: root };
   const hipsBase = hips.position.clone();
   const qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), mtx = new THREE.Matrix4();
@@ -271,7 +274,7 @@ export function createAvatar(classId, ctx) {
   }
 
   function resetState() {
-    phase = 0; moveK = 0; lastT = 0; deadK = 0; downK = 0; castK = 0; idleT = 0; haveprev = false;
+    phase = 0; moveK = 0; lastT = 0; deadK = 0; downK = 0; castK = 0; idleT = 0; haveprev = false; turnK = 0; prevYaw = null;
     for (const j of allJoints) { j.t.set(0, 0, 0); j.c.set(0, 0, 0); }
     hips.position.copy(hipsBase);
     cloth.first = true;
@@ -301,6 +304,13 @@ export function createAvatar(classId, ctx) {
     // a huge turn in one frame (teleport / respawn / spawn facing): snap the cloth
     if (haveprev && rq.angleTo(prevRq) > 1.0) cloth.first = true;
     prevRq.copy(rq);
+    const yaw = _te.setFromQuaternion(rq, 'YXZ').y;
+    if (prevYaw !== null && dt > 1e-4) {
+      const d = Math.atan2(Math.sin(yaw - prevYaw), Math.cos(yaw - prevYaw)), yr = d / dt;
+      // (a snap of a whole radian is a respawn or a spawn facing, not a turn)
+      if (Math.abs(d) < 1) { turnK += (Math.min(1, Math.abs(yr) / 3) - turnK) * (1 - Math.exp(-dt * 8)); if (Math.abs(yr) > 0.3) turnDir = Math.sign(yr); }
+    }
+    prevYaw = yaw;
     wprev.copy(wpos); haveprev = true;
     lvel.copy(wvel).applyQuaternion(qa.copy(rq).invert()).divideScalar(wscale || 1);
     lvel.y = 0;
@@ -381,6 +391,18 @@ export function createAvatar(classId, ctx) {
       else armL.jS.add(swing * 0.12 * k, 0, 0);
       armR.jS.add(-swing * 0.16 * k * dirZ - 0.08 * k, 0, 0);
       if (hold === 'staff') focusDir.lerp(tmp.set(0.05, 1, 0.35), k * 0.5);
+    }
+    // ---- turning on the spot: short side steps toward the turn, one foot then the other
+    const tk = turnK * still;
+    if (tk > 0.01) {
+      turnPh += dt * TAU * (1.2 + turnK * 1.3);
+      for (let li = 0; li < 2; li++) {
+        const L = legs[li], p = turnPh + (L.s > 0 ? 0 : Math.PI), lift = Math.max(0, Math.sin(p));
+        L.jT.add(-0.12 * lift * tk, 0, 0.1 * Math.sin(p) * turnDir * L.s * tk);
+        L.jK.add(0.5 * lift * tk, 0, 0);
+        L.jA.add(-0.15 * lift * tk, 0, 0);
+      }
+      hips.position.y -= 0.01 * tk;
     }
 
     // ---- cast: big readable poses, by what the class holds
@@ -548,6 +570,7 @@ export function createAvatar(classId, ctx) {
   return {
     root, muzzle, height: 1.85,
     update,
+    legs, // (for tools and tests)
     flash(amount = 1) { flashK = Math.max(flashK, amount); applyMats(); },
     setTint(hex, k = 0.5) {
       if (hex === null || hex === undefined) { tint = null; tintK = 0; } else { tint = hex; tintColor.set(hex); tintK = THREE.MathUtils.clamp(k, 0, 1); }

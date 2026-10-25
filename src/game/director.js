@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { ROOM, T, FLOOR, K_WATER } from '../world/levelgen.js';
 import { ENEMY_DEFS, BOSS_DEFS, FLOOR_HP, FLOOR_DMG, ABYSS_HP, ABYSS_DMG } from './enemyDefs.js';
+
+const HEAT_RAMP = [0.6, 0.85, 1.1, 1.4, 1.7];
+// (health climbs harder than damage: a drafted build's damage grows ~1 / 1.8 / 3 / 5.9 / 8.4x over the realms,
+// measured with scripts/curve.js &pick=greedy, and a foe that lives longer already hits you more often)
+const HEAT_RAMP_HP = [0.6, 1.0, 1.5, 2.3, 3.1];
 import { RNG } from '../core/rng.js';
 import { BIOMES } from '../world/biomes.js';
 
@@ -104,8 +109,16 @@ export class Director {
   // still faces about what a solo player does (with 2.5x the bodies and no
   // extra damage, a 4-player party used to take ~40% less each than solo,
   // on top of revives) - and the fight gets bigger, not just longer.
-  hpScale() { return this.floorHp() * (1 + 0.28 * (this.partySize() - 1)) * (this.g.difficulty?.enemyHp ?? 1); }
-  dmgScale() { return this.floorDmg() * (1 + 0.12 * (this.partySize() - 1)) * (this.g.difficulty?.enemyDamage ?? 1); }
+  hpScale() { return this.floorHp() * (1 + 0.28 * (this.partySize() - 1)) * this.heatHp(); }
+  dmgScale() { return this.floorDmg() * (1 + 0.12 * (this.partySize() - 1)) * this.heatDmg(); }
+  // What heat and Nightmare add to foes' health and damage grows realm by realm (HEAT_RAMP): a flat
+  // multiplier hit hardest in the Sewers, before a build exists, and was outgrown by the third realm, so a
+  // high-heat run was decided in its first realm. Now the first realm carries 60% of the sworn extra and the
+  // last 170% of its damage and 310% of its health (the Abyss the same). Unpacted runs are untouched (the
+  // extra is zero).
+  heatK(m, ramp = HEAT_RAMP) { return 1 + (m - 1) * ramp[this.depth ? 4 : Math.min(4, this.floor)]; }
+  heatHp() { return this.heatK(this.g.difficulty?.enemyHp ?? 1, HEAT_RAMP_HP); }
+  heatDmg() { return this.heatK(this.g.difficulty?.enemyDamage ?? 1); }
   // A party meets more foes, but the wave cap and squad shapes keep it under countScale: measured
   // over the planned waves of every realm, a party of two meets ~1.5x a solo player's bodies and
   // 1.41x their gold, a party of four ~2.5x and 2.30x.
@@ -166,7 +179,7 @@ export class Director {
     // boss HP in BOSS_DEFS is already tuned per realm, so bosses skip the floor multiplier
     const partyK = 1 + BOSS_PARTY_HP * (this.partySize() - 1);
     const hp = BOSS_DEFS[type]
-      ? def.hp * partyK * (this.g.difficulty?.enemyHp ?? 1) * (this.floorHp() / FLOOR_HP[this.floor])
+      ? def.hp * partyK * this.heatHp() * (this.floorHp() / FLOOR_HP[this.floor])
       : def.hp * this.hpScale() * (opts.elite ? 3 : 1);
     const dmg = def.dmg * this.dmgScale() * (opts.elite ? 1.3 : 1);
     const a = this.g.actors.spawn(type, x, z, { hp, dmg, elite: opts.elite, affix: opts.affix, affix2: opts.affix2, yaw: opts.yaw ?? Math.random() * 6.28, dormant: opts.dormant, homeRoom: opts.homeRoom, spawnFx: opts.spawnFx });

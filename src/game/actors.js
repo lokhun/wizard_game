@@ -88,6 +88,8 @@ export function typeIndex() {
   return actorTypeIndex;
 }
 
+const BOSS_KEY = 26; // a boss's key light, a soft torch's worth (times the realm's rim strength: the darker the realm, the stronger)
+
 export class Actor {
   constructor(id, type, opts) {
     this.id = id;
@@ -381,6 +383,7 @@ export class ActorManager {
     }
     a._tele.position.x = a.pos.x; a._tele.position.z = a.pos.z;
     a._tele.rotation.y = a.yaw + Math.PI;
+    this.g.vfx.drape(a._tele); // (still lying over the floor where it has moved to)
   }
 
   remove(a) {
@@ -685,6 +688,13 @@ export class ActorManager {
         if (a.def.hoarder) {
           if (Math.random() < dt * 22) g.vfx.P.glow({ x: a.pos.x + rand(-0.35, 0.35), y: a.pos.y + rand(0.3, 0.9), z: a.pos.z + rand(-0.35, 0.35), vx: 0, vy: 0.7, vz: 0, r: 2.6, g: 1.9, b: 0.6, r2: 0.8, g2: 0.4, b2: 0.05, life: 0.7, size: 0.07, sprite: SPR.SPARK, drag: 1 });
           g.lights.request(a.pos, 0xffc040, 2.2, 5);
+        }
+        // a boss is never a black shape in a dark arena: a soft key light from the pool hangs before it,
+        // toward the camera (one request a frame, no new lights or shaders; stronger where the realm is darker)
+        if (a.boss && !a.dead) {
+          const cp = g.renderer.camera.position, dx = cp.x - a.pos.x, dz = cp.z - a.pos.z, dl = Math.hypot(dx, dz) || 1, off = Math.min(dl * 0.5, a.radius + 2.2);
+          _v.set(a.pos.x + dx / dl * off, a.pos.y + a.height * 0.7, a.pos.z + dz / dl * off);
+          g.lights.request(_v, 0xffe0c0, BOSS_KEY * (g.biome?.rimK ?? 0.6), Math.max(9, a.height * 2.4));
         }
         if (a._tele) this._teleFollow(a);
         // staggered out of a wind-up (or a cast-type one: its circles are placed as it starts): the blow never lands

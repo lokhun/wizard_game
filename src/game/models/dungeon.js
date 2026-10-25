@@ -497,6 +497,8 @@ export const jailer = {
   pose: humanoidPose,
   anim: {
     death: 'fall', spawn: 'rise', gait: 'plod', armSwing: 0.2, armOut: 0.28, stride: 0.42, knee: 0.7, breath: 1.2,
+    // a corpse lays its weapon flat instead of standing it 1 m+ out of the body or the floor (scripts/grip.js)
+    deathGrip: [{ foreR: [-1.6, 0, 0], handR: [-0.4, 0, -1.2], armL: [-1.2, 0, 0.4], foreL: [-0.8, 0, 0] }, { handR: [-1.6, 0, 0.8], armL: [1.6, 0, 0.8], foreL: [-0.8, 0, 0] }],
     rest: { armR: [-0.3, 0, -0.05], foreR: [-0.9, 0, 0], handR: [0.5, 0, 0], armL: [-0.32, -0.9, 0.28], foreL: [-1.3, 0, 0] },
     stance: (P) => P.apply({ spine: [0.08, 0, 0], chest: [0.1, 0, 0], neck: [-0.1, 0, 0], thighL: [-0.1, 0, 0.09], thighR: [-0.1, 0, -0.09], shinL: [0.18, 0, 0], shinR: [0.18, 0, 0], hips: [0, 0, 0, 0, -0.03, 0] }),
     stagger: { spine: [-0.18, 0.1, 0.05], chest: [-0.16, 0.15, 0], head: [-0.3, -0.2, 0.12], armR: [0.3, 0, -0.5], foreR: [-0.5, 0, 0], armL: [0.1, -0.6, 0.4], hips: [0, 0, 0, 0, -0.05, -0.1], thighL: [-0.3, 0, 0], shinL: [0.4, 0, 0] },
@@ -633,6 +635,8 @@ export const executionerGuard = {
   pose: humanoidPose,
   anim: {
     ...HEADSMAN_ANIM,
+    // a corpse lays its weapon flat instead of standing it 1 m+ out of the body or the floor (scripts/grip.js)
+    deathGrip: [{ foreR: [-0.8, 0, 0], handR: [-0.8, 0, -1.2] }, { handR: [-1.2, 0, 1.2] }],
     stagger: { spine: [-0.2, 0.1, 0.06], chest: [-0.18, 0.15, 0], head: [-0.3, -0.2, 0.1], armL: [0.2, 0, 0.4], foreL: [-0.5, 0, 0], hips: [0, 0, 0, 0, -0.05, -0.1], thighL: [-0.3, 0, 0], shinL: [0.4, 0, 0] },
     extra: (P, m, s, dt, k) => {
       // eyes burn hotter through the wind-up; a slow, heavy breath heaves the shoulders
@@ -1010,6 +1014,8 @@ export const plagueDoctor = {
   },
   anim: {
     gait: 'walk', armSwing: 0.14, stride: 0.38, strideK: 0.12, knee: 0.75, breath: 1.5, look: 0.45, armOut: 0.04, caster: true, rate: 11,
+    // a corpse lays its weapon flat instead of standing it 1 m+ out of the body or the floor (scripts/grip.js)
+    deathGrip: [{ foreR: [0.4, 0, 0], handR: [1.2, 0, -1.2] }, { foreR: [0.4, 0, 0], handR: [1.2, 0, -1.2] }],
     rest: PD_REST,
     stance: (P, m, s) => {
       if (s.anim === 'death') return;

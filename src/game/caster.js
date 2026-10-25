@@ -142,7 +142,7 @@ export function makeCtx(game, caster, o) {
           if (pr.data.split) return;
           for (const s of [-1, 1]) {
             const d = pr.vel.clone().normalize().applyAxisAngle(UP, s * 0.5);
-            const child = ctx.proj({ ...opts, pos: pos.clone(), vel: d.multiplyScalar(pr.vel.length() / speedMult), hit: { ...(opts.hit ?? {}), dmg: (opts.hit?.dmg ?? 5) * 0.5 }, data: { split: true }, life: 0.6 });
+            const child = ctx.proj({ ...opts, pos: pos.clone(), vel: d.multiplyScalar(pr.vel.length() / speedMult), hit: { ...(opts.hit ?? {}), dmg: (opts.hit?.dmg ?? 5) * (stats.splitK ?? 0.5) }, data: { split: true }, life: 0.6 });
             child.hitIds.add(a?.id);
           }
         };

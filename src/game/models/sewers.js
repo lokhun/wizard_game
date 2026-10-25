@@ -140,7 +140,7 @@ export const slime = {
   build(rig) {
     rig.bone('base', null);
     rig.bone('body', 'base');
-    for (let i = 0; i < 5; i++) rig.bone('deb' + i, 'body', 0, 0.45, 0);
+    for (let i = 0; i < 5; i++) rig.bone('deb' + i, 'body', 0, 0.37, 0);
     for (let i = 0; i < 6; i++) rig.bone('bub' + i, 'body', 0, 0.1, 0);
     const g = G.sph(0.52, 40, 28);
     deform(g, (v) => {
@@ -152,6 +152,8 @@ export const slime = {
       if (v.y < 0.12) { v.y = 0.12 - (0.12 - v.y) * 0.22; v.x *= 1.08; v.z *= 1.08; }
       // drippy lumps
       v.y += Math.max(0, n) * 0.06 * clamp(v.y);
+      // the squashed base came out 9 cm up: it rests on the floor instead of hovering over it
+      v.y -= 0.08;
       void r;
     });
     rig.add('body', 'slime', g, {}, {
@@ -159,7 +161,7 @@ export const slime = {
       cfn: (v) => { const k = 0.45 + v.y * 0.7; return [0.22 * k, 0.75 * k, 0.12 * k]; },
     });
     // glowing nucleus
-    rig.add('body', 'spirit', G.sph(0.16, 14, 10), { y: 0.42 }, { c: HDR(0x5aff2a, 0.22) });
+    rig.add('body', 'spirit', G.sph(0.16, 14, 10), { y: 0.34 }, { c: HDR(0x5aff2a, 0.22) });
     // floating debris: skull, bones, rusty blade, coins
     rig.add('deb0', 'bone', skullGeo(), { s: 1.6, ry: 0.4 }, { cfn: boneShade([1.0, 1.08, 0.85], 3, 1.4) });
     // a drowned man's rusty kettle hat still on the skull
@@ -615,6 +617,8 @@ export const ratShaman = {
   pose: humanoidPose,
   anim: {
     death: 'fall', spawn: 'rise', armSwing: 0.2, knee: 0.9, stride: 0.5, caster: true, idleOrb: 0.15,
+    // the staff goes down flat with it, not standing out of the body with its skull in the stone (scripts/grip.js)
+    deathGrip: [{ foreR: [-1.2, 0, 0], handR: [-0.4, 0, 1.2] }, { foreR: [0.4, 0, 0], handR: [-1.6, 0, 0.4] }],
     rest: { armR: [-0.35, 0, -0.05], foreR: [-1.05, 0, 0], handR: [0.2, 0, 0], armL: [-0.2, 0, 0.1], foreL: [-0.8, 0, 0] },
     stance: (P) => P.apply({ spine: [0.32, 0, 0], chest: [0.3, 0, 0], neck: [-0.3, 0, 0], head: [-0.3, 0, 0], thighL: [-0.22, 0, 0], thighR: [-0.22, 0, 0], shinL: [0.38, 0, 0], shinR: [0.38, 0, 0], footL: [-0.15, 0, 0], footR: [-0.15, 0, 0], hips: [0, 0, 0, 0, -0.05, 0] }),
     actions: { cast: SH_CAST, summon: SH_SUMMON },
@@ -681,7 +685,8 @@ export const ratOgre = {
   },
   pose: humanoidPose,
   anim: {
-    death: 'fall', spawn: 'rise', gait: 'plod', armSwing: 0.3, armOut: 0.22, stride: 0.5, knee: 0.7,
+    // (deathLift: a belly this deep, face down, sank into the floor)
+    death: 'fall', deathLift: 0.12, spawn: 'rise', gait: 'plod', armSwing: 0.3, armOut: 0.22, stride: 0.5, knee: 0.7,
     rest: { armR: [-0.3, 0, -0.1], foreR: [-0.6, 0, 0], handR: [0.4, 0, 0] },
     stance: (P) => P.apply({ spine: [0.25, 0, 0], chest: [0.3, 0, 0], neck: [-0.35, 0, 0], head: [-0.25, 0, 0], thighL: [-0.25, 0, 0.1], thighR: [-0.25, 0, -0.1], shinL: [0.4, 0, 0], shinR: [0.4, 0, 0], footL: [-0.15, 0, 0], footR: [-0.15, 0, 0], hips: [0, 0, 0, 0, -0.08, 0] }),
     actions: {

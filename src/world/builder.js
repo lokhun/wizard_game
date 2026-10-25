@@ -266,7 +266,8 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     const fy = (p.y ?? 0) + (p.type === 'chandelier' ? 0 : level.floorAt(p.x, p.z));
     if (p.type === 'cellBars') { addParts(cellBars(p.len), p.x, level.floorAt(p.x, p.z + 0.1), p.z, p.rot); continue; }
     if (p.type === 'shelfRow') { addParts(bookshelf(p.len), p.x, level.floorAt(p.x, p.z), p.z, p.rot); continue; }
-    if (p.type === 'chest' || p.type === 'shrine' || p.type === 'merchant') {
+    // (only a chest the generator meant to be opened is loot: one placed as dressing is just a prop)
+    if ((p.type === 'chest' && p.interact) || p.type === 'shrine' || p.type === 'merchant') {
       interactables.push(p);
       if (p.type !== 'chest') addParts(PROPS[p.type](r01), p.x, fy, p.z, p.rot ?? 0);
       continue;

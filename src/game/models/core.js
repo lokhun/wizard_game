@@ -749,6 +749,60 @@ export class Rig {
   }
 }
 
+// How hard the body is turning on the spot, 0..1 (eased): its own yaw rate, read off the root the game
+// turns before posing it. Poses feed it to their walk cycle as a slow shuffle, so a foe tracking you
+// steps round instead of skating its feet.
+export function turnK(m, dt) {
+  const st = m.state, yaw = m.root.rotation.y;
+  let yr = 0;
+  if (st.lastYaw !== null && dt > 1e-4) { const d = yaw - st.lastYaw; yr = Math.atan2(Math.sin(d), Math.cos(d)) / dt; }
+  st.lastYaw = yaw;
+  st.turnK += (clamp(Math.abs(yr) / 2.5) - st.turnK) * (1 - Math.exp(-8 * dt));
+  return st.turnK;
+}
+
+// ------------------------------------------------------------ grounding ----
+// The sole of each foot: its heel and toe (the lowest points of the geometry
+// the foot bone carries) in that bone's own space, measured once per type on
+// the bind pose. EnemyInstance runs them through the leg each frame and lifts
+// the body by however far a sole would sink into the floor (a heavy stance or a
+// toe pitched down mid-stride buried the feet of the bigger bodies).
+export function soleProbe(root, names = ['footL', 'footR']) { // (a spec's soles: other bones that carry its weight)
+  root.updateMatrixWorld(true);
+  const out = [], v = new THREE.Vector3(), inv = new THREE.Matrix4();
+  for (const name of names) {
+    const bone = root.getObjectByName(name);
+    if (!bone?.isBone) continue;
+    inv.copy(bone.matrixWorld).invert();
+    const pts = [];
+    root.traverse((o) => {
+      if (!o.isSkinnedMesh || o.userData.shadowProxy) return;
+      const bi = o.skeleton.bones.indexOf(bone);
+      if (bi < 0) return;
+      const g = o.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
+      for (let i = 0; i < g.attributes.position.count; i++) {
+        let w = 0;
+        for (let k = 0; k < 4; k++) if (si.getComponent(i, k) === bi) w += sw.getComponent(i, k);
+        if (w < 0.5) continue;
+        o.getVertexPosition(i, v); v.applyMatrix4(o.matrixWorld).applyMatrix4(inv);
+        pts.push(v.x, v.y, v.z);
+      }
+    });
+    if (!pts.length) continue;
+    let lo = Infinity;
+    for (let i = 1; i < pts.length; i += 3) lo = Math.min(lo, pts[i]);
+    // heel and toe: the back-most and front-most of the points near the bottom
+    let heel = -1, toe = -1;
+    for (let i = 0; i < pts.length; i += 3) {
+      if (pts[i + 1] > lo + 0.03) continue;
+      if (heel < 0 || pts[i + 2] < pts[heel + 2]) heel = i;
+      if (toe < 0 || pts[i + 2] > pts[toe + 2]) toe = i;
+    }
+    out.push({ name, pts: new Float32Array([pts[heel], pts[heel + 1], pts[heel + 2], pts[toe], pts[toe + 1], pts[toe + 2]]) });
+  }
+  return out.length ? out : null;
+}
+
 // --------------------------------------------------------- pose buffer ----
 // Additive per-frame target pose. 9 floats per bone: rx ry rz px py pz sx sy sz
 const K = 9;
@@ -761,6 +815,7 @@ export class PoseBuf {
     this.cur = new Float32Array(this.n * K);
     this.rest = bones.map((b) => b.position.clone());
     this.rate = bones.map((b) => b.userData.rate ?? 1);
+    this._pre = null; // (scratch for a pose blended in by weight: humanoidPose's dying stance)
     for (let i = 0; i < this.n; i++) this.cur[i * K + 6] = this.cur[i * K + 7] = this.cur[i * K + 8] = 1;
     this.reset();
   }
@@ -833,7 +888,7 @@ export class EnemyInstance {
     this.magicColor = spec.magicColor ?? spec.eyeColor;
     this.time = Math.random() * 100;
     this.seed = Math.random();
-    this.state = { phase: Math.random() * TAU, lastAnim: null };
+    this.state = { phase: Math.random() * TAU, lastAnim: null, lastYaw: null, turnK: 0 };
     this._flash = 0;
     this._tint = null; this._tintK = 0;
     this._opacity = 1;
@@ -882,6 +937,13 @@ export class EnemyInstance {
     this.bones = {};
     bones.forEach((b) => (this.bones[b.name] = b));
     this.P = new PoseBuf(bones);
+    // feet kept out of the floor (see soleProbe): each sole's chain of bones, foot first, up to the body's top bone
+    this._soles = template.soles && !spec.flying ? template.soles.map((s) => {
+      const chain = [];
+      for (let b = this.bones[s.name]; b?.isBone; b = b.parent) chain.push(b);
+      return { chain, pts: s.pts };
+    }) : null;
+    this._lift = 0;
     this.sockets = {};
     this.root.traverse((o) => { if (!o.isBone && !o.isMesh && o !== this.root) this.sockets[o.name] = o; });
     this.muzzle = this.sockets.muzzle ?? this.root;
@@ -973,10 +1035,31 @@ export class EnemyInstance {
     const r = this.spec.pose(this, S, this.P, dt);
     if (typeof r === 'number') rate = r;
     this.P.damp(dt, rate);
+    // (off in death and flight; a body rising out of the floor takes it up over the end of the rise, not in a pop)
+    if (this._soles) this._ground(dt, S.anim === 'death' || this._flying ? 0 : S.anim === 'spawn' ? smooth(0.7, 1, S.progress) : 1);
     if (Math.abs(this._opTarget - this._opacity) > 1e-3) { this._opacity = this._opTarget; this._dirty = true; }
     this._updateOrb(dt);
     if (this._flash > 0) { this._flash = Math.max(0, this._flash - dt * 8); this._dirty = true; }
     if (this._dirty) { this._applyMats(); this._dirty = this._flash > 0; }
+  }
+  // lift the body so no sole sits below the floor (y = 0 in the top bone's parent space): the leg's
+  // local matrices multiplied up by hand, a handful per foot, no world update
+  _ground(dt, w) {
+    let lo = Infinity, top = null;
+    if (w > 0) {
+      for (const s of this._soles) {
+        const c = s.chain;
+        _m.identity();
+        for (let i = c.length - 1; i >= 0; i--) { c[i].updateMatrix(); _m.multiply(c[i].matrix); }
+        const e = _m.elements, p = s.pts;
+        for (let j = 0; j < 6; j += 3) lo = Math.min(lo, e[1] * p[j] + e[5] * p[j + 1] + e[9] * p[j + 2] + e[13]);
+        top = c[c.length - 1];
+      }
+    } else top = this._soles[0].chain[this._soles[0].chain.length - 1];
+    const tgt = w > 0 ? clamp(-lo, 0, this.height * 0.2) * w : 0;
+    // quick to rise (a sinking foot shows), slower to settle back (no pop when an action ends or the body falls)
+    this._lift += (tgt - this._lift) * (1 - Math.exp(-(tgt > this._lift ? 30 : 8) * dt));
+    if (this._lift > 1e-4) top.position.y += this._lift;
   }
   dispose() {
     for (const e of this.mats) e.m.dispose();
