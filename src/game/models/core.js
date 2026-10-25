@@ -891,7 +891,8 @@ export class EnemyInstance {
     this.state = { phase: Math.random() * TAU, lastAnim: null, lastYaw: null, turnK: 0 };
     this._flash = 0;
     this._look = { x: 0, y: 0 }; // (the head's turn toward its foe, eased: see _layers)
-    this._kick = { x: 0, z: 0, k: 0 }; // (a blow's recoil: world push direction and its size, decaying)
+    this._kick = { x: 0, z: 0, k: 0 };
+    this.footfall = 0; // (set by a walk cycle as a foot comes down: 1 / -1, the side) // (a blow's recoil: world push direction and its size, decaying)
     this._tint = null; this._tintK = 0;
     this._opacity = 1;
     this._dirty = true;

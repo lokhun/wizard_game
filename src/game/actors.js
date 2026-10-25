@@ -734,6 +734,16 @@ export class ActorManager {
           m.update(a._poseDt, { anim: a.anim, t: a.animT, speed: a.moveSpeed ?? 0, progress: a.progress, attackType: a.attackType, look: this._lookAt(a) });
           a._poseDt = 0; a._posedAnim = a.anim;
         }
+        // heavy feet raise a little dust where they land (dry ground, near the camera)
+        if (m.footfall) {
+          const side = m.footfall; m.footfall = 0;
+          a._heavy ??= m.spec?.anim?.gait === 'plod' || a.height > 2.4;
+          if (a._heavy && a.pos.y > -0.05 && !(a.mask & ST.frozen) && (a.pos.x - cam.position.x) ** 2 + (a.pos.z - cam.position.z) ** 2 < 500) {
+            const r = (a.radius ?? 0.5) * 0.55 * side, big = Math.min(2, a.height / 1.9);
+            _v.set(a.pos.x + Math.cos(a.yaw) * r, a.pos.y + 0.05, a.pos.z - Math.sin(a.yaw) * r);
+            g.vfx.smoke(_v, { count: a.boss ? 4 : 2, color: g.biome?.dust ?? [0.13, 0.11, 0.09], alpha: 0.28, size: 0.32 * big, speed: 0.55 * big, rise: 0.25, life: 0.85, spread: 0.12 * big });
+          }
+        }
         this._settle(a, posed);
         if ((a.moveSpeed ?? 0) > 0.5 && a.pos.y < 0) g.wadeFx(a, a.moveSpeed, dt, a.radius ?? 0.5);
         if (a.hitFlash > 0) { m.flash?.(a.hitFlash); a.hitFlash = 0; }

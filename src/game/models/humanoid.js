@@ -163,6 +163,9 @@ export function humanoidPose(m, s, P, dt) {
   st.moveW = (st.moveW ?? 0) + (moveTgt - (st.moveW ?? 0)) * (1 - Math.exp(-8 * dt));
   const w = st.moveW;
   const ph = st.phase, sn = Math.sin(ph), cs = Math.cos(ph);
+  // a footfall (the legs pass each other as a foot takes the weight): the actor raises dust under heavy
+  // walkers (m.footfall: the side, read and cleared by Actors)
+  if (spd > 0.6 && w > 0.5) { const sg = sn >= 0 ? 1 : -1; if (st.stepSg && sg !== st.stepSg) m.footfall = sg; st.stepSg = sg; }
   const run = clamp((spd / sc - 2.2) / 2.5);
 
   // cloth secondary motion from movement
