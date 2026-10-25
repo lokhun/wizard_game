@@ -497,15 +497,18 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     const geo = card.build();
     grassMat = new THREE.MeshStandardMaterial({ map: grassCardTexture(), alphaTest: 0.42, vertexColors: true, roughness: 0.85, side: THREE.DoubleSide });
     grassMat.userData.time = { value: 0 };
+    // a storm's wind drives the gusts harder and the blades flutter faster (and the wet turf is darker)
+    const windK = { value: biome.storm ? 1.9 : 1 };
+    if (biome.storm) grassMat.color.setScalar(0.82);
     grassMat.onBeforeCompile = (sh) => {
-      sh.uniforms.uTime = grassMat.userData.time;
-      sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+      sh.uniforms.uTime = grassMat.userData.time; sh.uniforms.uWindK = windK;
+      sh.vertexShader = 'uniform float uTime; uniform float uWindK;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
         vec4 wp = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
         // gust fronts roll across the yard; each blade also flutters on its own
-        float gust = 0.5 + 0.5 * sin(dot(wp.xz, vec2(0.11, 0.06)) - uTime * 1.15);
+        float gust = 0.5 + 0.5 * sin(dot(wp.xz, vec2(0.11, 0.06)) - uTime * 1.15 * uWindK);
         gust = gust * gust * (0.6 + 0.4 * sin(uTime * 0.37 + wp.z * 0.05));
-        float flutter = sin(uTime * 3.4 + wp.x * 1.9 + wp.z * 1.3 + position.x * 23.0 + position.z * 17.0);
-        float bend = uv.y * uv.y;
+        float flutter = sin(uTime * 3.4 * uWindK + wp.x * 1.9 + wp.z * 1.3 + position.x * 23.0 + position.z * 17.0);
+        float bend = uv.y * uv.y * mix(1.0, uWindK, 0.6);
         vec3 windW = vec3(0.07 + gust * 0.2 + flutter * 0.025, -gust * 0.05, 0.03 + gust * 0.07 + flutter * 0.015) * bend;
         // into the tuft's own frame, so every tuft leans the same way whatever its rotation
         mat3 grassIM = mat3(instanceMatrix);
@@ -649,6 +652,7 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     update(dt, time) {
       mats.water.userData.update?.(time);
       mats.waterFlat.userData.update?.(time);
+      mats.banner.userData.update?.(time);
       if (mats.stainedGlass.uniforms) mats.stainedGlass.uniforms.uTime.value = time;
       for (const d of doors) {
         if (!d.mesh) continue;

@@ -150,6 +150,7 @@ function splatTexture() {
 }
 
 let shared = null;
+const BANNER_T = { value: 0 }, BANNER_K = { value: 1 };
 
 // Biome-independent materials are cached across floors.
 export function getSharedMaterials(factory) {
@@ -163,6 +164,18 @@ export function getSharedMaterials(factory) {
   m.gold = S('gold', { size: 512 });
   m.cloth = S('cloth', { size: 512, vertexColors: true });
   m.banner = S('cloth', { size: 512, vertexColors: true, side: THREE.DoubleSide });
+  // banners and awnings stir: a slow wave runs down the cloth along its normal, growing toward the free
+  // edge (uv.y 0; the hem at the top stays put). A draught indoors, a flapping gale under a storm
+  // (BANNER_K, set per realm: the material is shared across floors).
+  m.banner.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = BANNER_T; sh.uniforms.uSwayK = BANNER_K;
+    sh.vertexShader = 'uniform float uTime; uniform float uSwayK;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+      vec3 bw = (modelMatrix * vec4(position, 1.0)).xyz;
+      float free = pow(1.0 - uv.y, 1.3);
+      transformed += objectNormal * sin(uTime * (1.3 + uSwayK * 0.6) + bw.x * 0.7 + bw.z * 0.5 + (1.0 - uv.y) * 5.0) * 0.045 * free * uSwayK;`);
+  };
+  m.banner.customProgramCacheKey = () => 'bannerSway';
+  m.banner.userData.update = (time) => { BANNER_T.value = time; };
   m.canvas = S('cloth', { size: 512, vertexColors: true });
   m.bone = S('bone', { size: 512 });
   m.leather = S('leather', { size: 512, vertexColors: true });
@@ -202,5 +215,6 @@ export function getBiomeMaterials(factory, biome) {
   m.trim = S(biome.trimMat === 'gold' ? 'castleWall' : biome.trimMat, { vertexColors: true, color: biome.trimTint ?? (biome.trimMat === 'gold' ? 0xd8d0c0 : 0xffffff) });
   m.water = makeWaterMaterial(factory, biome.id === 'sewers' ? 0x14200c : 0x0a1418);
   m.channelBed = S('dirt', { vertexColors: true, color: 0x606850 });
+  BANNER_K.value = biome.storm ? 2.2 : biome.outdoor ? 1.2 : 0.7;
   return m;
 }
