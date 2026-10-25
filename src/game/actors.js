@@ -10,6 +10,8 @@ import { STEP } from '../world/collision.js';
 import { getEnemyModel } from './models.js';
 import { BossBrain } from './bosses.js';
 
+const ARC_SWINGS = new Set(['swing', 'sweep', 'claw', 'swipe', 'overhead', 'saw']), _arcDir = new THREE.Vector3();
+const ARC_OPTS = { alpha: 0.5, sparks: 0, life: 0.22 }, ARC_OVER = { alpha: 0.5, sparks: 0, life: 0.22, tilt: 1.2, roll: 0.1 };
 const _lk = { x: 0, y: 0, z: 0 }; // (a foe's look target: _lookAt)
 const _sparkA = new THREE.Vector3(), _sparkB = new THREE.Vector3(), SPARK = { life: 0.06, branches: 0, width: 0.03 }; // (a Shocked foe's flicker)
 const _frustum = new THREE.Frustum(), _m4 = new THREE.Matrix4(), _sph = new THREE.Sphere();
@@ -715,6 +717,15 @@ export class ActorManager {
         if (a._tele) this._teleFollow(a);
         // staggered out of a wind-up (or a cast-type one: its circles are placed as it starts): the blow never lands
         if (a.anim === 'stagger' && (a._prevAnim === 'windup' || a._prevAnim === 'cast')) g.cancelHazardsFrom?.(a.id, _v.set(a.pos.x, a.pos.y + a.height + 0.4, a.pos.z));
+        // a cutting blow leaves a faint arc in the foe's red where the blade went (every peer sees the swing
+        // start; the blow itself is the host's)
+        if (a.anim === 'attack' && a._prevAnim !== 'attack' && !a.boss && a.faction === 'enemy' && ARC_SWINGS.has(a.attackType)
+          && (a.pos.x - cam.position.x) ** 2 + (a.pos.z - cam.position.z) ** 2 < 625) {
+          const fx = Math.sin(a.yaw), fz = Math.cos(a.yaw);
+          a._arcSide = -(a._arcSide ?? 1);
+          _v.set(a.pos.x + fx * a.radius * 0.4, a.pos.y + a.height * 0.55, a.pos.z + fz * a.radius * 0.4);
+          g.vfx.slash(_v, _arcDir.set(fx, 0, fz), 'enemy', a.radius + Math.max(1, a.height * 0.7), a._arcSide, a.attackType === 'overhead' ? ARC_OVER : ARC_OPTS);
+        }
         a._prevAnim = a.anim;
         const frozen = (a.mask & ST.frozen) !== 0;
         const animDt = frozen ? 0 : dt * (a.mask & ST.slow ? 0.5 : 1);
