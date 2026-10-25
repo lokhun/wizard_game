@@ -97,7 +97,8 @@
     inp.mouse.left = false; inp.mouse.right = false;
     const st = (h0 - a.hp) / 6;
     a.hp = 0; g.actors.kill(a, 0, 'holy'); window.__sim(0.5);
-    rows.push({ dummy: true, r: g.floorIndex, d: g.abyss ?? 0, foeHp: Math.round(hp / n), st: Math.round(st), ttkFoe: +(hp / n / st).toFixed(2) });
+    rows.push({ dummy: true, r: g.floorIndex, d: g.abyss ?? 0, foeHp: Math.round(hp / n), st: Math.round(st), ttkFoe: +(hp / n / st).toFixed(2),
+      why: st > 0 ? '' : JSON.stringify({ cast: p.canCast(), alive: p.alive, downed: p.downed, dead: p.dead, paused: g.paused, modal: !!g.ui.modalOpen, top: g.ui.modalStack?.at(-1)?.textContent?.slice(0, 120), cin: !!g.cinematic, locked: inp.locked, stun: p.stunT, ch: !!p.channel }) });
   };
   const wait = async (f) => { for (let k = 0; k < 600 && !f(); k++) await new Promise((r) => setTimeout(r, 100)); };
   for (let lap = 0; lap <= depths; lap++) {
@@ -120,6 +121,6 @@
     const top = {};
     for (const [k, v] of Object.entries(src)) { const d = k.split(' ')[0]; (top[d] ??= []).push([k.slice(d.length + 1), v]); }
     const lines = Object.entries(top).map(([d, l]) => { const t = l.reduce((a, x) => a + x[1], 0); return d + ' sources: ' + l.sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => k + ' ' + Math.round(v / t * 100) + '%').join(', '); });
-    return [...lines, 'relics: ' + p.relics.map((r) => r.def.id + (r.stars ? '*' + r.stars : '')).join(' '), 'stats: dmg ' + p.stats.dmgMult.toFixed(2) + ' rate ' + (p.stats.rateMult ?? 0).toFixed(2) + ' crit ' + (p.stats.critChance ?? 0).toFixed(2) + '/' + (p.stats.critMult ?? 0).toFixed(2) + ' proj ' + p.stats.extraProj, ...rows.map((r) => (r.stop ? r.stop : r.dummy ? `R${r.r + 1} D${r.d} DUMMY  single-target ${String(r.st).padStart(6)}/s  foe hp ${String(r.foeHp).padStart(5)}  -> one foe lasts ${r.ttkFoe}s` : `R${r.r + 1} D${r.d} ${r.type.padEnd(6)} ttk ${String(r.ttk).padStart(5)}s  hurt ${String(r.hurt).padStart(5)} (${String(r.hurtMin).padStart(5)}/min)  dps ${String(r.dps).padStart(6)}  tomes ${r.tomes} relics ${r.relics}${r.capped ? '  CAPPED' : ''}`))];
+    return [...lines, 'relics: ' + p.relics.map((r) => r.def.id + (r.stars ? '*' + r.stars : '')).join(' '), 'stats: dmg ' + p.stats.dmgMult.toFixed(2) + ' rate ' + (p.stats.rateMult ?? 0).toFixed(2) + ' crit ' + (p.stats.critChance ?? 0).toFixed(2) + '/' + (p.stats.critMult ?? 0).toFixed(2) + ' proj ' + p.stats.extraProj, ...rows.map((r) => (r.stop ? r.stop : r.dummy ? `R${r.r + 1} D${r.d} DUMMY  single-target ${String(r.st).padStart(6)}/s  foe hp ${String(r.foeHp).padStart(5)}  -> one foe lasts ${r.ttkFoe}s${r.why ? '  STUCK ' + r.why : ''}` : `R${r.r + 1} D${r.d} ${r.type.padEnd(6)} ttk ${String(r.ttk).padStart(5)}s  hurt ${String(r.hurt).padStart(5)} (${String(r.hurtMin).padStart(5)}/min)  dps ${String(r.dps).padStart(6)}  tomes ${r.tomes} relics ${r.relics}${r.capped ? '  CAPPED' : ''}`))];
   }
 })();
