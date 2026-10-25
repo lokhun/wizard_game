@@ -21,6 +21,7 @@ const RADIUS = 0.38;
 const GRAVITY = 24;
 const DASH_CARRY = 0.55; // the share of a dash's speed a dash-jump keeps
 const DASH_SPEED = 6.5 / 0.18; // a plain dash's (the dash key's: 6.5 m in 0.18 s)
+const _stepV = new THREE.Vector3(); // (a footfall's spray: scratch)
 
 export function baseStats(classId) {
   const C = CLASSES[classId];
@@ -742,6 +743,9 @@ export class LocalPlayer {
           g.vfx.burst(new THREE.Vector3(this.pos.x, -0.25, this.pos.z), { count: 6, speed: 2, upward: 1, gravity: 9, life: 0.4, size: 0.05, sprite: SPR.DROP, color: [0.5, 0.6, 0.6], solid: true });
           g.vfx.ring({ x: this.pos.x, y: WATER_Y - 0.05, z: this.pos.z }, 0.75, WADE_C, 1.1, 0.07);
           waterRipple(this.pos.x, this.pos.z, 1);
+        } else if (g.storm && this.grounded) {
+          // rain-soaked stones: a footfall kicks up a little spray
+          g.vfx.burst(_stepV.set(this.pos.x, this.pos.y + 0.03, this.pos.z), { count: 3, speed: 1.1, upward: 0.9, gravity: 9, life: 0.3, size: 0.03, sprite: SPR.DROP, color: [0.45, 0.52, 0.62], solid: true, jitter: 0.2 });
         }
       }
       if (this.stats.chainBonus !== undefined) {

@@ -757,6 +757,13 @@ export class Game {
     const mx = Math.round(cx / snap) * snap, mz = Math.round(cz / snap) * snap;
     this.moon.target.position.set(mx, 0, mz);
     this.moon.position.set(mx + 30, 70, mz - 60);
+    // a lightning flash lights the bailey from the bolt: the moon's light (and every shadow) swings to it
+    // for the instant of the flash (the shadow map is redrawn each frame anyway)
+    if (this.storm && this.storm.flash > 0.15) {
+      const B = this._bolt.a;
+      _v.set(B.x - mx, 0, B.z - mz).setLength(60); _v.y = 70;
+      this.moon.position.set(mx + _v.x, _v.y, mz + _v.z);
+    }
     // audio listener
     this.audio?.setListener(cam.position, p.forward());
     this.audio?.setIntensity?.(p.alive && !p.downed ? clamp(1 - p.hp / p.maxHp - 0.4, 0, 1) * 1.6 : 1);
@@ -855,6 +862,10 @@ export class Game {
       const k = Math.min(1, this.tint.t * 3);
       g.uTint.value.set(1 + (this.tint.rgb[0] - 1) * k, 1 + (this.tint.rgb[1] - 1) * k, 1 + (this.tint.rgb[2] - 1) * k);
     } else g.uTint.value.set(...this.encounters.tint); // room modifiers grade the view while you're in them
+    // a lightning flash: the view blooms cold and bright for the instant (calm mode's flash is already dimmed)
+    const fl = this.storm?.flash ?? 0;
+    if (fl > 0) { const t = g.uTint.value; t.set(t.x * (1 + 1.1 * fl), t.y * (1 + 1.25 * fl), t.z * (1 + 1.6 * fl)); }
+    g.uFlash.value.set(0.018 * fl, 0.022 * fl, 0.034 * fl);
   }
 
   screenTint(rgb, dur) { this.tint = { rgb, t: dur }; }
