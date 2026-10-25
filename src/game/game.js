@@ -5,6 +5,7 @@ import { Particles, SPR } from '../render/particles.js';
 import { VFX, fxOf } from '../render/vfx.js';
 import { ContactShadows } from '../render/contact.js';
 import { Storm } from '../render/storm.js';
+import { Debris } from '../render/debris.js';
 import { waterRipple } from '../world/materials.js';
 import { generateLevel, ROOM, T, K_ALT, K_WATER, WATER_Y } from '../world/levelgen.js';
 import { keyOf } from '../core/input.js';
@@ -103,6 +104,7 @@ export class Game {
     this.relics = new RelicRuntime(this);
     this.time = 0;
     this.storm = null;
+    this.debris = null; // (wreckage of smashed barrels and crates: render/debris.js)
     this._bolt = { a: new THREE.Vector3(), b: new THREE.Vector3(), o: { jag: 7, width: 0.55, life: 0.22, branches: 3, seg: 3.5, color: [2.2, 2.5, 3.4] } };
     this.remotes = new Map();
     this.hazards = [];
@@ -264,6 +266,8 @@ export class Game {
     this.texFactory.endFloor(); // the last realm's own wall and floor textures
     this.critters?.dispose();
     this.critters = this.settings?.quality === 'low' ? null : new Critters(this.scene, level);
+    this.debris?.dispose();
+    this.debris = new Debris(this.scene, this.built.mats.wood, this.collision);
     this.scene.add(this.built.group);
     this.built.onDoorSlam = (d) => {
       const door = d.door;
@@ -569,7 +573,11 @@ export class Game {
     this.built.hideBreakable(b);
     const gy = this.groundY(b.x, b.z);
     const c = new THREE.Vector3(b.x, gy + 0.5, b.z);
-    this.vfx.burst(c, { count: 22, speed: 6, life: 1.1, size: 0.12, sprite: SPR.CHUNK, solid: true, color: [0.34, 0.22, 0.12], color2: [0.25, 0.16, 0.09], gravity: 16, spin: 8, upward: 0.8 });
+    this.vfx.burst(c, { count: 12, speed: 6, life: 1.1, size: 0.1, sprite: SPR.CHUNK, solid: true, color: [0.34, 0.22, 0.12], color2: [0.25, 0.16, 0.09], gravity: 16, spin: 8, upward: 0.8 });
+    // and real wreckage: staves and a lid off a barrel, planks and battens off a crate (a keg's blast flings them)
+    const D = this.debris, hard = b.type === 'keg' ? 1.8 : 1;
+    if (D && b.type === 'crate') { D.burst(b.x, gy + 0.5, b.z, 8, 0.6, 0.13, 0.025, 4 * hard, 3.5 * hard); D.burst(b.x, gy + 0.5, b.z, 3, 0.55, 0.07, 0.06, 3 * hard, 3 * hard); }
+    else if (D) { D.burst(b.x, gy + 0.5, b.z, 9, 0.12, 0.62, 0.025, 4 * hard, 3.5 * hard); D.burst(b.x, gy + 0.9, b.z, 2, 0.4, 0.4, 0.03, 2.5 * hard, 4.5 * hard, 0.1); }
     this.vfx.smoke(c, { count: 4, size: 0.6, color: [0.3, 0.26, 0.2], alpha: 0.4, life: 1.4 });
     if (b.type === 'barrel' && Math.random() < 0.5) this.vfx.burst(c, { count: 16, speed: 3, life: 0.8, size: 0.06, sprite: SPR.DROP, solid: true, color: [0.25, 0.12, 0.05], gravity: 12, upward: 1 });
     if (b.type === 'keg') this.spells.after(0.18, () => this._kegBlast(b, c, local));
@@ -711,6 +719,7 @@ export class Game {
     this._ventTells(realDt);
     this._ambient(realDt);
     this.critters?.update(dt, this.time, this.renderer.camera.position, this.allPlayers());
+    this.debris?.update(dt, this.actors._floor);
     this.contact.update(this);
     if (this.storm) {
       this.storm.calm = !!this.settings.calm; this.storm.update(realDt, this.time, this.renderer.camera.position);
