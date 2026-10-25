@@ -604,7 +604,8 @@ function decorateRoom(level, room, rng) {
     }
     for (let i = 0; i < rng.int(4, 8); i++) {
       const s = edgeSpot(); if (!s) continue;
-      P(rng.pick(['armorStand', 'banner', 'chest', 'candelabra', 'bookPile', 'banner', 'painting']), s[0], s[1], { rot: s[2] });
+      // (no chests among the dressing: every chest was lootable, so the Keep's halls held 5-11 extra ones a realm)
+      P(rng.pick(['armorStand', 'banner', 'scrolls', 'candelabra', 'bookPile', 'banner', 'painting']), s[0], s[1], { rot: s[2] });
     }
     // chandeliers
     const nCh = Math.max(1, Math.floor((w * h) / 70));
