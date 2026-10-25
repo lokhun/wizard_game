@@ -137,6 +137,7 @@ export class Actor {
     this.scale = (this.def.scale ?? 1) * (this.elite && !this.def.elite ? 1.25 : 1);
     this.net = { x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw, t: 0 };
     this.lastHitBy = null;
+    this._kbx = 0; this._kby = 0; this._kbT = null; this.deathYaw = null; // (the last blow's push; the way a body falls)
     this.lastHitEl = 'physical';
     this.hitFlash = 0;
     this.shieldHp = 0;
@@ -376,6 +377,18 @@ export class ActorManager {
     a._teleE = g.vfx.active[g.vfx.active.length - 1];
     a._tele = a._teleE.mesh;
   }
+  // The way a body should face to fall along the killing blow's push (a face-down fall faces the push, a fall
+  // onto the back faces against it), or null to fall as it stands: no push in the last second, a boss, or a
+  // death that isn't a topple (crumbling, flying apart, dissipating, a type's own).
+  _fallYaw(a) {
+    if (a.boss || a._kbT == null || this.g.time - a._kbT > 1) return null;
+    const st = a.model?.spec?.anim?.death ?? 'fall';
+    if (st !== 'fall' && st !== 'kneel' && st !== 'fallBack') return null;
+    // (not into a wall: with stone within a body's length that way, it falls as it stands)
+    const L = (a.height ?? 1.8) * 0.9, y = a.pos.y + 0.4;
+    if (!this.g.collision.los(a.pos.x, y, a.pos.z, a.pos.x + a._kbx * L, y, a.pos.z + a._kby * L)) return null;
+    return Math.atan2(a._kbx, a._kby) + (st === 'fallBack' ? Math.PI : 0);
+  }
   // where a foe's eyes go (its model turns its head there): the wizard it fights (a client, with no AI to say,
   // takes the nearest wizard in reach); nothing while dormant (a sentry's idle gaze is its own)
   _lookAt(a) {
@@ -450,6 +463,7 @@ export class ActorManager {
     if (a.brain?.modifyDamage) dmg = a.brain.modifyDamage(dmg, H);
     a.hp -= dmg;
     a.lastHitBy = H.src ?? a.lastHitBy;
+    if (H.kbDir && H.tag !== 'dot') { a._kbx = H.kbDir[0]; a._kby = H.kbDir[1]; a._kbT = this.g.time; } // (which way the last blow pushed: a body falls that way)
     a.lastHitEl = H.el ?? a.lastHitEl;
     if (H.consume?.length) consumeStatus(a, H.consume);
     if (H.st) applyStatus(a, H.st, H.power ?? 1);
@@ -512,12 +526,13 @@ export class ActorManager {
     a.deadT = 0;
     a.anim = 'death';
     a.animT = 0;
+    a.deathYaw = this._fallYaw(a);
     a.deathMask = a.mask; // kill effects (burning foes exploding, relics) read what it died with
     a.st = {};
     a.mask = 0;
     this._rebuildLists();
     if (g.isHost) {
-      g.net?.broadcast({ t: 'die', id: a.id, k: killer ?? 0, el });
+      g.net?.broadcast({ t: 'die', id: a.id, k: killer ?? 0, el, fy: a.deathYaw == null ? undefined : +a.deathYaw.toFixed(2) });
       g.onActorKilled(a, killer, el);
       // on-death behaviours
       if (a.def.splitInto) {
@@ -641,6 +656,8 @@ export class ActorManager {
         a.deadT += dt;
         a.animT += dt;
         a.progress = Math.min(1, a.deadT / 1.1);
+        // it turns as it buckles, to fall the way the killing blow pushed it (see _fallYaw)
+        if (a.deathYaw != null && a.deadT < 0.5 && a.model) { a.yaw = angleDamp(a.yaw, a.deathYaw, 9, dt); a.model.root.rotation.y = a.yaw; }
         // the killing blow carries the body for a moment
         const kbl = Math.hypot(a.kb.x, a.kb.z);
         if (kbl > 0.1 && !a.boss) {

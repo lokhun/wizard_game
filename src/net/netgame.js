@@ -88,7 +88,7 @@ export function handleGameMessage(game, msg, from) {
       if (game.isHost) return;
       const a = game.actors.byId.get(msg.id);
       if (a && !a.dead) {
-        a.dead = true; a.deadT = 0; a.anim = 'death'; a.animT = 0; a.mask = 0;
+        a.dead = true; a.deadT = 0; a.anim = 'death'; a.animT = 0; a.mask = 0; a.deathYaw = msg.fy ?? null;
         game.actors._rebuildLists();
         game.actors.deathFx(a, msg.el);
         game.stats.kills++;
