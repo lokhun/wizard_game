@@ -637,7 +637,7 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
   // ---------------- outdoor sky & distant keep
   let sky = null;
   if (biome.outdoor) {
-    sky = makeNightSky();
+    sky = makeNightSky(!!biome.storm);
     group.add(sky);
     group.add(makeDistantKeep(level, mats));
   }
@@ -923,16 +923,17 @@ function webMaterial() {
   return _web;
 }
 
-function makeNightSky() {
+// (storm: a low, racing overcast with the moon in its gaps, lit from within by lightning: uFlash, toward uBolt)
+function makeNightSky(storm = false) {
   const geo = new THREE.SphereGeometry(400, 32, 16);
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
     fog: false,
-    uniforms: { uTime: { value: 0 }, uMoonDir: { value: new THREE.Vector3(0.35, 0.45, -0.82).normalize() } },
+    uniforms: { uTime: { value: 0 }, uMoonDir: { value: new THREE.Vector3(0.35, 0.45, -0.82).normalize() }, uStorm: { value: storm ? 1 : 0 }, uFlash: { value: 0 }, uBolt: { value: new THREE.Vector3(0, 1, 0) } },
     vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.); gl_Position = p.xyww; }`,
     fragmentShader: `
-      uniform float uTime; uniform vec3 uMoonDir; varying vec3 vDir;
+      uniform float uTime; uniform vec3 uMoonDir; uniform float uStorm; uniform float uFlash; uniform vec3 uBolt; varying vec3 vDir;
       float hash(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
       float noise(vec3 x){ vec3 i = floor(x); vec3 f = fract(x); f = f*f*(3.-2.*f);
         return mix(mix(mix(hash(i+vec3(0,0,0)),hash(i+vec3(1,0,0)),f.x),mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x),f.y),
@@ -948,7 +949,7 @@ function makeNightSky() {
         float st = hash(floor(sp));
         float star = step(0.9965, st) * smoothstep(0.0, 0.2, h);
         float tw = 0.6 + 0.4 * sin(uTime * 3. + st * 100.);
-        col += vec3(0.8,0.85,1.) * star * tw * 1.6;
+        col += vec3(0.8,0.85,1.) * star * tw * 1.6 * (1.0 - uStorm * 0.75);
         // moon
         float md = dot(d, uMoonDir);
         float moon = smoothstep(0.9993, 0.9996, md);
@@ -957,10 +958,14 @@ function makeNightSky() {
         col += vec3(0.25,0.3,0.5) * pow(max(md, 0.), 300.) * 1.4;
         col += vec3(0.08,0.1,0.18) * pow(max(md, 0.), 12.);
         // drifting clouds
-        vec2 cp = d.xz / max(0.08, d.y + 0.15) * 0.8 + vec2(uTime * 0.006, uTime * 0.002);
-        float c = smoothstep(0.45, 0.85, fbm(vec3(cp, uTime * 0.01)));
+        float race = 1.0 + uStorm * 4.0;
+        vec2 cp = d.xz / max(0.08, d.y + 0.15) * 0.8 + vec2(uTime * 0.006, uTime * 0.002) * race;
+        float f = fbm(vec3(cp, uTime * 0.01 * race));
+        float c = smoothstep(0.45 - uStorm * 0.25, 0.85 - uStorm * 0.22, f);
         vec3 cloudCol = mix(vec3(0.02,0.025,0.04), vec3(0.18,0.2,0.3), pow(max(md,0.), 6.));
-        col = mix(col, cloudCol, c * smoothstep(0.0, 0.2, h) * 0.85);
+        // lightning lights the overcast from inside: brightest round the bolt, thin edges glowing more
+        cloudCol += uFlash * vec3(0.42, 0.46, 0.62) * (0.25 + 2.2 * pow(max(dot(d, uBolt), 0.), 10.)) * (1.3 - c * 0.5);
+        col = mix(col, cloudCol, c * smoothstep(0.0, 0.2, h) * (0.85 + uStorm * 0.12));
         gl_FragColor = vec4(col, 1.);
       }`,
   });

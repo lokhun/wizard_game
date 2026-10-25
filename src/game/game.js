@@ -712,7 +712,10 @@ export class Game {
     this._ambient(realDt);
     this.critters?.update(dt, this.time, this.renderer.camera.position, this.allPlayers());
     this.contact.update(this);
-    if (this.storm) { this.storm.calm = !!this.settings.calm; this.storm.update(realDt, this.time, this.renderer.camera.position); }
+    if (this.storm) {
+      this.storm.calm = !!this.settings.calm; this.storm.update(realDt, this.time, this.renderer.camera.position);
+      if (this.built?.sky) this.built.sky.material.uniforms.uFlash.value = this.storm.flash;
+    }
     if (this._gated) this._gateFx(dt);
     // big boss arenas outgrow the light pool: lift the ambient a little while you stand in one
     if (this.baseHemi && !this.ended && !this._victoryLight) {
@@ -909,6 +912,7 @@ export class Game {
       const x = c.x + Math.sin(ang) * d, z = c.z + Math.cos(ang) * d;
       B.a.set(x + (Math.random() - 0.5) * 24, c.y + 75 + Math.random() * 20, z + (Math.random() - 0.5) * 24);
       B.b.set(x, c.y + 4, z);
+      this.built?.sky?.material.uniforms.uBolt.value.set(B.a.x - c.x, B.a.y - c.y, B.a.z - c.z).normalize(); // (the clouds light up round it)
     }
     this.vfx.lightning(B.a, B.b, B.o);
   }
