@@ -77,6 +77,7 @@ const GRIPS = [{ side: -1, y: 0.2, w: 1, flip: false }, { side: 1, y: 0.04, w: 1
 const POLES = [[1, -0.6, -0.5], [-1, -0.6, -0.5]];
 
 export const hollowKing = {
+  lookAt: 0, recoil: 0, // (its own rig: the head turns on other axes; see EnemyInstance._layers)
   id: 'hollowKing', height: 5.3, radius: 1.3, boss: true, eyeColor: HOLLOW, magicColor: HOLLOW, defaultAttack: 'slam', attackTypes: ['seated', 'slam', 'sweep', 'thrust', 'summon', 'roar', 'beam', 'leap'], flutter: 0.03, orbSize: 0.14,
   build(rig) {
     rig.scale = 2.15;

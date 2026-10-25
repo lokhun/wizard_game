@@ -906,7 +906,13 @@ export class Game {
     }
     // local feedback
     if (dmg > 0) {
-      if (H.tag !== 'dot') a.hitFlash = res.crit ? 0.6 : 0.4;
+      if (H.tag !== 'dot') {
+        a.hitFlash = res.crit ? 0.6 : 0.4;
+        // the body rocks the way the blow pushed (from the wizard if it carried no push), harder for a big hit
+        const kd = H.kbDir, pp = this.player.pos;
+        const k = Math.min(1, 0.3 + (dmg / Math.max(1, a.maxHp)) * 4 + (res.crit ? 0.2 : 0)) * (a.boss ? 0.35 : 1);
+        if (kd) a.model?.kick?.(kd[0], kd[1], k); else a.model?.kick?.(a.pos.x - pp.x, a.pos.z - pp.z, k);
+      }
       // shield-bearers turn frontal hits: show it, so players learn to flank or stun them
       if (a.def.frontShield && H.tag !== 'dot' && !(a.st.stun?.t > 0)) {
         const pp = this.player.pos, dx = pp.x - a.pos.x, dz = pp.z - a.pos.z, dl = Math.hypot(dx, dz) || 1;

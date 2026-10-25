@@ -48,6 +48,7 @@ function fleshC(v, seed, base = [0.34, 0.2, 0.2], vein = [0.12, 0.05, 0.08]) {
 }
 
 export const motherOfFilth = {
+  lookAt: 0, recoil: 0, // (its own rig: the head turns on other axes; see EnemyInstance._layers)
   id: 'motherOfFilth', height: 4.6, radius: 2.4, boss: true, eyeColor: FILTH, magicColor: FILTH, defaultAttack: 'slam', attackTypes: ['slam', 'spit', 'summon', 'submerge'], wobble: true, orbSize: 0.3, length: 5, flutter: 0.04,
   build(rig) {
     rig.bone('base', null);

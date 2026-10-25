@@ -890,6 +890,8 @@ export class EnemyInstance {
     this.seed = Math.random();
     this.state = { phase: Math.random() * TAU, lastAnim: null, lastYaw: null, turnK: 0 };
     this._flash = 0;
+    this._look = { x: 0, y: 0 }; // (the head's turn toward its foe, eased: see _layers)
+    this._kick = { x: 0, z: 0, k: 0 }; // (a blow's recoil: world push direction and its size, decaying)
     this._tint = null; this._tintK = 0;
     this._opacity = 1;
     this._dirty = true;
@@ -1034,6 +1036,7 @@ export class EnemyInstance {
     let rate = 12;
     const r = this.spec.pose(this, S, this.P, dt);
     if (typeof r === 'number') rate = r;
+    this._layers(dt, S, s.look);
     this.P.damp(dt, rate);
     // (off in death and flight; a body rising out of the floor takes it up over the end of the rise, not in a pop)
     if (this._soles) this._ground(dt, S.anim === 'death' || this._flying ? 0 : S.anim === 'spawn' ? smooth(0.7, 1, S.progress) : 1);
@@ -1041,6 +1044,40 @@ export class EnemyInstance {
     this._updateOrb(dt);
     if (this._flash > 0) { this._flash = Math.max(0, this._flash - dt * 8); this._dirty = true; }
     if (this._dirty) { this._applyMats(); this._dirty = this._flash > 0; }
+  }
+  // a blow lands: (dx, dz) the way it pushed (world), k its size (0..1)
+  kick(dx, dz, k) { const K = this._kick, l = Math.hypot(dx, dz) || 1; K.x = dx / l; K.z = dz / l; K.k = Math.max(K.k, k); }
+  // Two layers over every type's own pose, on the bones a rig has (spine/chest or body/front, neck, head):
+  // - look: the head and neck turn toward the foe it fights (look: a world point), within a neck's reach,
+  //   eased, and not while dying, rising, staggered or with the foe behind it;
+  // - recoil: a blow rocks the body the way it pushed and springs back over a quarter second.
+  // A type opts down with lookAt / recoil on its spec or its anim (0 turns it off: the bosses whose rigs
+  // turn the head on other axes).
+  _layers(dt, S, look) {
+    const P = this.P, A = this.spec.anim ?? {}, L = this._look, root = this.root;
+    const lw = this.spec.lookAt ?? A.lookAt ?? 1, rk = this.spec.recoil ?? A.recoil ?? 1;
+    let ty = 0, tx = 0;
+    if (look && lw > 0 && S.anim !== 'death' && S.anim !== 'spawn' && S.anim !== 'stagger') {
+      const dx = look.x - root.position.x, dz = look.z - root.position.z, dy = look.y - (root.position.y + (this.height ?? 1.8) * 0.85);
+      let rel = Math.atan2(dx, dz) - root.rotation.y;
+      rel -= Math.round(rel / (Math.PI * 2)) * Math.PI * 2;
+      if (Math.abs(rel) < 2.3) { ty = clamp(rel, -1.05, 1.05); tx = clamp(-Math.atan2(dy, Math.hypot(dx, dz)), -0.45, 0.45); }
+    }
+    const e = 1 - Math.exp(-6 * dt);
+    L.y += (ty - L.y) * e; L.x += (tx - L.x) * e;
+    if (Math.abs(L.y) + Math.abs(L.x) > 1e-3) {
+      P.r('neck', L.x * 0.3 * lw, L.y * 0.35 * lw, 0);
+      P.r('head', L.x * 0.7 * lw, L.y * 0.65 * lw, 0);
+    }
+    const K = this._kick;
+    if (K.k > 0.01) {
+      const yaw = root.rotation.y, fx = Math.sin(yaw), fz = Math.cos(yaw);
+      const k = K.k * 1.4 * rk, f = (K.x * fx + K.z * fz) * k, sd = (K.x * fz - K.z * fx) * k;
+      P.r('spine', f * 0.14, 0, -sd * 0.1); P.r('chest', f * 0.18, -sd * 0.12, -sd * 0.12);
+      P.r('front', f * 0.12, 0, -sd * 0.1); P.r('neck', f * 0.1, 0, -sd * 0.08);
+      P.r('head', f * 0.22, -sd * 0.15, -sd * 0.16);
+      K.k *= Math.exp(-dt * 10);
+    }
   }
   // lift the body so no sole sits below the floor (y = 0 in the top bone's parent space): the leg's
   // local matrices multiplied up by hand, a handful per foot, no world update

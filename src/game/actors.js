@@ -10,6 +10,7 @@ import { STEP } from '../world/collision.js';
 import { getEnemyModel } from './models.js';
 import { BossBrain } from './bosses.js';
 
+const _lk = { x: 0, y: 0, z: 0 }; // (a foe's look target: _lookAt)
 const _sparkA = new THREE.Vector3(), _sparkB = new THREE.Vector3(), SPARK = { life: 0.06, branches: 0, width: 0.03 }; // (a Shocked foe's flicker)
 const _frustum = new THREE.Frustum(), _m4 = new THREE.Matrix4(), _sph = new THREE.Sphere();
 const _aiOut = { x: 0, z: 0 }, NO_ATTACKS = [];
@@ -373,6 +374,20 @@ export class ActorManager {
     a._teleE = g.vfx.active[g.vfx.active.length - 1];
     a._tele = a._teleE.mesh;
   }
+  // where a foe's eyes go (its model turns its head there): the wizard it fights (a client, with no AI to say,
+  // takes the nearest wizard in reach); nothing while dormant (a sentry's idle gaze is its own)
+  _lookAt(a) {
+    if (a.dead || a.dormant || a.faction !== 'enemy') return null;
+    let t = a.boss ? a.brain?.target : a.target;
+    if (t?.follow) t = t.follow;
+    if (!t && !this.g.isHost) {
+      let bd = 256;
+      for (const p of this.g.allPlayers()) { if (p.dead || p.downed) continue; const d = (p.pos.x - a.pos.x) ** 2 + (p.pos.z - a.pos.z) ** 2; if (d < bd) { bd = d; t = p; } }
+    }
+    if (!t?.pos) return null;
+    _lk.x = t.pos.x; _lk.y = t.pos.y + (t.height ? t.height * 0.85 : 1.55); _lk.z = t.pos.z;
+    return _lk;
+  }
   // the wind-up's arc follows the attacker; it fades as soon as the wind-up ends (struck, interrupted, killed)
   _teleFollow(a) {
     const e = a._teleE;
@@ -716,7 +731,7 @@ export class ActorManager {
         }
         const posed = every === 1 || (this._frame + a.id) % every === 0 || a.anim !== a._posedAnim;
         if (posed) {
-          m.update(a._poseDt, { anim: a.anim, t: a.animT, speed: a.moveSpeed ?? 0, progress: a.progress, attackType: a.attackType });
+          m.update(a._poseDt, { anim: a.anim, t: a.animT, speed: a.moveSpeed ?? 0, progress: a.progress, attackType: a.attackType, look: this._lookAt(a) });
           a._poseDt = 0; a._posedAnim = a.anim;
         }
         this._settle(a, posed);
