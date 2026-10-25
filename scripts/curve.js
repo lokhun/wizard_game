@@ -87,6 +87,7 @@
     window.__sim(0.5);
     const a = g.director.spawnEnemy(roster[0], at.x, at.z, { noCredit: true });
     a.maxHp = a.hp = 1e9;
+    a.homeRoom = { dummy: true }; // (its own room: no stalled fight elsewhere counts it, and banishes it)
     window.__sim(1.2, 1 / 30, () => { a.pos.x = at.x; a.pos.z = at.z; });
     const h0 = a.hp; let frames = 0;
     window.__sim(6, 1 / 30, () => {

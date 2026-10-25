@@ -293,6 +293,13 @@ def('explosion_big', 'boom', 0.45, (v) => {
   crackle(v, { t: 0.08, dur: 1.6, peak: 0.45, rate: 0.7, hp: 900 });
   pebbles(v, 8, 1.5, 0.3, 0.25);
 }, { cap: 4 });
+// far-off thunder over the bailey: a crack softened by distance, then a long roll that comes and goes
+def('thunder', 'boom', 0.6, (v) => {
+  burst(v, { dur: 0.25, f: 900, peak: 0.35, drive: 1 });
+  rumble(v, { t: 0.05, dur: 1.4, a: 0.05, f: 240, f2: 90, peak: 1, drive: 2 });
+  rumble(v, { t: 0.6, dur: 2.2, a: 0.3, f: 160, f2: 60, peak: 0.8 });
+  rumble(v, { t: 1.4, dur: 2.6, a: 0.5, f: 120, f2: 45, peak: 0.55 });
+}, { cap: 2 });
 def('shockwave', 'impact', 0.3, (v) => {
   v.thump({ f: 180, f2: 38, dur: 0.5, peak: 0.85 });
   v.noise({ buf: 'pink', dur: 0.6, a: 0.005, peak: 0.8, filt: { type: 'bp', f: 3000, f2: 200, ft: 0.45, q: 1.5 } });

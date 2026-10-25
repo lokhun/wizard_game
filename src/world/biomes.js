@@ -65,6 +65,7 @@ export const BIOMES = [
     ceilRoom: [9, 11],
     ceilCorr: 9,
     outdoor: true,
+    storm: true, // (rain and lightning: render/storm.js)
     fog: { color: 0x0d1424, density: 0.028 },
     ambient: { sky: 0x4a5a88, ground: 0x10120c, intensity: 0.55 },
     moon: { color: 0xa8bcff, intensity: 1.6 },

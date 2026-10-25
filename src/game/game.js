@@ -4,6 +4,7 @@ import { LightPool } from '../render/lights.js';
 import { Particles, SPR } from '../render/particles.js';
 import { VFX, fxOf } from '../render/vfx.js';
 import { ContactShadows } from '../render/contact.js';
+import { Storm } from '../render/storm.js';
 import { generateLevel, ROOM, T, K_ALT, K_WATER, WATER_Y } from '../world/levelgen.js';
 import { keyOf } from '../core/input.js';
 import { PACTS, PACT_BY_ID, difficultyFor, abyssLaws, lawAt } from '../meta/pacts.js';
@@ -237,6 +238,7 @@ export class Game {
     this.player?.endChannel();
     // tear down
     if (this.built) { this.scene.remove(this.built.group); this.built.dispose(); }
+    if (this.storm) { this.storm.dispose(); this.storm = null; }
     for (const i of this.interactables) i.dispose?.();
     this.interactables = [];
     this.spells.clear();
@@ -355,6 +357,12 @@ export class Game {
     this.ui?.deadline(this.deadline);
     if (index === 0 && !this.menuMode) this._tutorialTips();
     this.events.emit('floor', index);
+    // a storm over an open-air realm (before the prewarm, so the rain's program compiles with the rest)
+    if (b.storm) {
+      const q = this.settings.quality ?? 'high';
+      this.storm = new Storm(this.scene, { count: q === 'low' ? 900 : q === 'medium' ? 1700 : 2600 });
+      this.storm.onThunder = (delay) => this.audio?.play('thunder', { volume: 0.35 + 0.45 * (1 - delay / 2.4) });
+    }
     this._prewarm(level);
   }
 
@@ -607,6 +615,12 @@ export class Game {
     if (id === 'courtyard' && Math.random() < dt * 6) {
       P.glow({ x: cam.x + rnd(20), y: cam.y + rnd(2) - 0.5, z: cam.z + rnd(20), vx: rnd(0.6), vy: rnd(0.3), vz: rnd(0.6), r: 1.6, g: 2.2, b: 0.6, life: 4, size: 0.04, sprite: SPR.GLOW, drag: 0.1 });
     }
+    // the storm's rain landing: a couple of flecks thrown up off the stones near you
+    if (this.storm && Math.random() < dt * 40) {
+      const x = cam.x + rnd(14), z = cam.z + rnd(14), gy = this.groundY(x, z);
+      const cell = this.level.cells[Math.floor(z / T) * this.level.W + Math.floor(x / T)];
+      if (cell === 1) for (let k = 0; k < 2; k++) P.glow({ x, y: gy + 0.04, z, vx: rnd(1), vy: 1 + Math.random() * 1.2, vz: rnd(1), r: 0.42, g: 0.48, b: 0.6, life: 0.24, size: 0.022, size2: 0.012, sprite: SPR.GLOW, gravity: 10 });
+    }
     if (id === 'courtyard' && Math.random() < dt * 3) {
       P.solid({ x: cam.x + rnd(24), y: cam.y + 6, z: cam.z + rnd(24), vx: 1.2, vy: -0.6, vz: rnd(0.5), r: 0.25, g: 0.2, b: 0.12, a: 0.8, life: 7, size: 0.06, sprite: SPR.FEATHER, spin: 2 });
     }
@@ -686,6 +700,7 @@ export class Game {
     this._ambient(realDt);
     this.critters?.update(dt, this.time, this.renderer.camera.position, this.allPlayers());
     this.contact.update(this);
+    if (this.storm) { this.storm.calm = !!this.settings.calm; this.storm.update(realDt, this.time, this.renderer.camera.position); }
     if (this._gated) this._gateFx(dt);
     // big boss arenas outgrow the light pool: lift the ambient a little while you stand in one
     if (this.baseHemi && !this.ended && !this._victoryLight) {
@@ -693,6 +708,13 @@ export class Game {
       const inArena = br && this.level.roomAt(pp.x, pp.z) === br && !this.biome.outdoor;
       const want = this.baseHemi * (inArena ? 1.9 : 1) * this.encounters.hemiK;
       this.hemi.intensity += (want - this.hemi.intensity) * Math.min(1, realDt * 1.5);
+      // lightning: the sky lights the whole bailey for an instant (set, not eased: then straight back)
+      const fl = this.storm?.flash ?? 0;
+      if (fl > 0 || this._flashing) {
+        this._flashing = fl > 0;
+        this.hemi.intensity = want * (1 + 3.2 * fl);
+        if (this.moon) this.moon.intensity = (this.biome.moon?.intensity ?? 0) * (1 + 2 * fl);
+      }
     }
 
     // camera & lighting
