@@ -38,6 +38,8 @@ export const animatedArmor = {
   pose: humanoidPose,
   anim: {
     death: 'apart', armSwing: 0.25, gait: 'plod', stride: 0.5, knee: 0.7, breath: 0.9,
+    // (the gauntlet arm settled reaching 1.3 m up out of the heap, as if still standing: it comes down with the rest; scripts/grip.js)
+    deathGrip: [{ armL: [1.2, 0, -1.2], foreL: [-0.8, 0, 0] }, { armL: [1.2, 0, -1.2], foreL: [-0.4, 0, 0] }],
     spawn: (P, p, m, s) => {
       // pieces drift in from all sides and lock together
       const k = 1 - easeOut(p);
