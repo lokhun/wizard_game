@@ -807,15 +807,15 @@ export class UI {
   }
 
   // The HUD's corners that text drawn over the world must not land on: the minimap, the realm and objective
-  // panel and (in a fight) the boss bar, measured twice a second (not every frame: a layout read each).
+  // panel, (in a fight) the boss bar and a banner while it shows, measured twice a second (not every frame: a layout read each).
   _hudKeepOut() {
-    const K = (this._ko ??= { n: 0, r: new Float32Array(12), t: 0 });
+    const K = (this._ko ??= { n: 0, r: new Float32Array(16), t: 0 });
     const now = performance.now();
     if (now - K.t < 500) return K;
     K.t = now; K.n = 0;
     const h = this.h;
-    for (const el of [h.minimap, h.fname?.parentElement, h.boss]) {
-      if (!el || el.classList.contains('hidden')) continue;
+    for (const el of [h.minimap, h.fname?.parentElement, h.boss, h.banner]) {
+      if (!el || el.classList.contains('hidden') || (el === h.banner && !el.classList.contains('show'))) continue;
       const b = el.getBoundingClientRect();
       if (!b.width) continue;
       const o = K.n * 4; K.r[o] = b.left - 6; K.r[o + 1] = b.top - 6; K.r[o + 2] = b.right + 6; K.r[o + 3] = b.bottom + 6; K.n++;

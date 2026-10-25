@@ -2253,7 +2253,7 @@ export class Game {
         if (extra.on) {
           const gl = [];
           for (let i = 0; extra.gl && i + 1 < extra.gl.length; i += 2) gl.push({ x: extra.gl[i], z: extra.gl[i + 1], lit: false, t: 0 });
-          a.gate = { k: extra.k, n: extra.n ?? gl.length, dur: extra.dur ?? 15, until: this.time + (extra.dur ?? 15), gl, pulse: 0, tint: m?._tint ? [m._tintHex, m._tintK] : null };
+          a.gate = { k: extra.k, n: extra.n ?? gl.length, dur: extra.dur ?? 15, until: this.time + (extra.dur ?? 15), gl, ids: extra.ids ?? null, pulse: 0, tint: m?._tint ? [m._tintHex, m._tintK] : null };
           m?.setTint?.(G.tint, 0.4);
           this.vfx.ring({ x: a.pos.x, y: a.pos.y + 0.1, z: a.pos.z }, 3 + a.radius * 1.5, G.col, 0.8, 0.15);
           this.vfx.burst(at, { element: G.el, count: 40, speed: 5, upward: 0.6, life: 0.9, size: 0.22 });
@@ -2322,6 +2322,8 @@ export class Game {
       if (beat) {
         this.vfx.ring(_gq.set(a.pos.x, a.pos.y + 0.1, a.pos.z), 1.6 + a.radius * 1.2, G.col, 0.6, 0.08);
         if (gt.k === 'stone') this.vfx.telegraph(_gq, { shape: 'cone', radius: 4 + a.radius, rot: a.yaw + Math.PI, angle: 1.2, dur: 0.5, color: [1.4, 1.05, 0.3] });
+        // her brood, each ringed in her colour: these are what shield her
+        if (gt.ids) for (const id of gt.ids) { const m = this.actors.byId.get(id); if (m && !m.dead) this.vfx.ring(_gq.set(m.pos.x, m.pos.y + 0.1, m.pos.z), 0.9 + m.radius, G.col, 0.55, 0.12); }
       }
       for (const q of gt.gl) {
         const y = this.groundY(q.x, q.z);

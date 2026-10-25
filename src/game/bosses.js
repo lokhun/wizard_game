@@ -426,7 +426,7 @@ SCRIPTS.motherOfFilth = {
         B.banner('THE FILTH RISES', 'Her brood shields her — cut it down!', '#9adf3a'); B.sound('boss_roar');
         B.anim('cast', 'summon', 1.2);
         const brood = B.summon('slime', 3 + B.players().length, 6);
-        B.openGate('brood', 18, { ids: brood.map((m) => m.id), left: brood.length, fx: { n: brood.length } });
+        B.openGate('brood', 18, { ids: brood.map((m) => m.id), left: brood.length, fx: { n: brood.length, ids: brood.map((m) => m.id) } });
       },
       speed: 1.15,
       moves: [
