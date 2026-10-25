@@ -592,6 +592,69 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     }
   }
 
+  // ---------------- the stained-glass window's light: its own colours stream down through the air in
+  // slanted sheets and lie across the floor (and the dais) below it. Every point carries the window point
+  // its light came through (aWin, in the window's own coordinates: the glass shader's cells), so the
+  // colours run true along each ray; one additive draw.
+  for (const pr of level.props) {
+    if (pr.type !== 'stainedGlass') continue;
+    const wy0 = pr.y ?? 7, z0 = pr.z + 0.2, pos = [], win = [], kk = [], idx = [];
+    const vert = (x, y, z, k) => { pos.push(x, y, z); win.push(x - pr.x, y + (z - z0) - wy0); kk.push(k); return kk.length - 1; };
+    const quad = (a, b, c, d) => idx.push(a, b, c, a, c, d);
+    // (rays fall at 45 degrees: from window height h they reach the floor h further out)
+    const bot = wy0 - 3.5, top = wy0 + 4.1;
+    // sheets across the window at a few heights, down to the floor (a slab of light seen from the hall)
+    for (const h of [bot + 1.2, bot + 3.2, bot + 5.2, top - 0.6]) {
+      const zf = z0 + h - 0.1;
+      quad(vert(pr.x - 1.6, h, z0, 0.15), vert(pr.x + 1.6, h, z0, 0.15), vert(pr.x + 1.6, 0.1, zf, 0.035), vert(pr.x - 1.6, 0.1, zf, 0.035));
+    }
+    // sheets along the rays at a few columns (the slab's depth, seen from the side)
+    for (const x of [-1.1, 0, 1.1]) {
+      const X = pr.x + x;
+      quad(vert(X, bot, z0, 0.11), vert(X, top, z0, 0.11), vert(X, 0.1, z0 + top - 0.1, 0.025), vert(X, 0.1, z0 + bot - 0.1, 0.025));
+    }
+    // the pool: a grid draped over the floor and the dais
+    const NX = 8, NZ = 24, x0 = pr.x - 2, x1 = pr.x + 2, za = z0 + bot - 0.6, zb = z0 + top + 0.4, base = kk.length;
+    for (let j = 0; j <= NZ; j++) for (let i = 0; i <= NX; i++) {
+      const x = x0 + (x1 - x0) * i / NX, z = za + (zb - za) * j / NZ;
+      vert(x, level.floorAt(x, z) + 0.03, z, 0.55);
+    }
+    for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) { const a = base + j * (NX + 1) + i; quad(a, a + 1, a + NX + 2, a + NX + 1); }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('aWin', new THREE.Float32BufferAttribute(win, 2));
+    geo.setAttribute('aK', new THREE.Float32BufferAttribute(kk, 1));
+    geo.setIndex(idx);
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { uTime: mats.stainedGlass.uniforms?.uTime ?? { value: 0 } },
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      vertexShader: `attribute vec2 aWin; attribute float aK; varying vec2 vWin; varying float vK;
+        void main(){ vWin = aWin; vK = aK; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }`,
+      fragmentShader: `uniform float uTime; varying vec2 vWin; varying float vK;
+        vec2 h2(vec2 p){ p = vec2(dot(p, vec2(127.1,311.7)), dot(p, vec2(269.5,183.3))); return fract(sin(p)*43758.5453); }
+        void main(){
+          // inside the window's arch (shape: x within 1.6, y 0..7.6 from its sill, rounded over the top 3.1)
+          float sy = vWin.y + 3.5, ax = abs(vWin.x);
+          float halfW = sy < 4.5 ? 1.6 : 1.6 * sqrt(max(0., 1. - (sy - 4.5) * (sy - 4.5) / 9.61));
+          float inside = smoothstep(-0.25, 0.25, halfW - ax) * smoothstep(-0.2, 0.2, sy) * smoothstep(-0.2, 0.2, 7.6 - sy);
+          if (inside < 0.01) discard;
+          // the glass shader's cells and palette
+          vec2 p = vWin * vec2(2.2, 1.6);
+          vec2 i = floor(p), f = fract(p);
+          float d1 = 9., d2 = 9.; vec2 id = vec2(0);
+          for (int y=-1;y<=1;y++) for(int x=-1;x<=1;x++){ vec2 g = vec2(x,y); vec2 o = h2(i+g); vec2 r = g + o - f; float d = dot(r,r); if (d < d1){ d2 = d1; d1 = d; id = i+g; } else if (d < d2) d2 = d; }
+          float lead = smoothstep(0.02, 0.12, sqrt(d2) - sqrt(d1));
+          float k = h2(id).x * 5.;
+          vec3 c = k < 1. ? vec3(0.9,0.1,0.15) : k < 2. ? vec3(0.15,0.25,0.95) : k < 3. ? vec3(0.95,0.7,0.15) : k < 4. ? vec3(0.5,0.1,0.8) : vec3(0.1,0.6,0.35);
+          float glow = 0.75 + 0.25 * sin(uTime * 0.7 + id.x * 1.3 + id.y);
+          gl_FragColor = vec4(c * (0.35 + 0.65 * lead) * glow * inside * vK, 1.);
+        }`,
+    });
+    const m = new THREE.Mesh(geo, mat);
+    m.renderOrder = 6;
+    group.add(m);
+  }
+
   // ---------------- arrival: moonlight through a ceiling grate in the start room
   if (level.startShaft) {
     const { x, z } = level.startShaft;
