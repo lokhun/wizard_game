@@ -45,8 +45,23 @@ export function makeWaterMaterial(factory, tint = 0x0d1a12) {
     opacity: 0.88,
     depthWrite: false,
   });
+  // two ripple layers: the map scrolling one way and itself again at 0.61x the scale drifting the other,
+  // blended (the sum of their slopes): one map sliding over the channel read as moving stone, not water.
+  // One extra texture read; the program compiles with the rest at load.
+  const uB = { value: new THREE.Vector2() };
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uWaterB = uB;
+    sh.fragmentShader = 'uniform vec2 uWaterB;\n' + sh.fragmentShader.replace('#include <normal_fragment_maps>', `
+      vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
+      vec3 mapN2 = texture2D( normalMap, vNormalMapUv * 0.61 + uWaterB ).xyz * 2.0 - 1.0;
+      mapN = vec3( mapN.xy + mapN2.xy, mapN.z * mapN2.z );
+      mapN.xy *= normalScale;
+      normal = normalize( tbn * mapN );`);
+  };
+  mat.customProgramCacheKey = () => 'water2';
   mat.userData.update = (time) => {
     t.normalMap.offset.set(time * 0.012, time * 0.02);
+    uB.value.set(-time * 0.017, time * 0.009);
   };
   void n2;
   return mat;
