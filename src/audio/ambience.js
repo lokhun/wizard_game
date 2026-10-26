@@ -57,6 +57,11 @@ const gust = (v) => {
   v.noise({ buf: 'white', dur: d, a: d * 0.5, peak: 0.04, lin: true, filt: { type: 'bp', f: rnd(1800, 2600), q: 15, lfo: { rate: 0.4, depth: 300 } } });
 };
 // a fat drop smacking a stone, or a run of them off the battlements
+// a page turning somewhere in the stacks (a dry flick, then the leaf settling)
+const pageTurn = (v) => {
+  v.noise({ buf: 'white', dur: rnd(0.12, 0.2), a: 0.01, peak: 0.3, filt: [{ type: 'bp', f: rnd(2800, 4200), q: 1.4 }, { type: 'hp', f: 1500 }] });
+  v.noise({ buf: 'pink', t: rnd(0.12, 0.2), dur: rnd(0.25, 0.4), a: 0.04, peak: 0.12, lin: true, filt: { type: 'bp', f: rnd(1800, 2600), q: 1.2 } });
+};
 const patter = (v) => {
   const n = 1 + ((Math.random() * 3) | 0);
   for (let i = 0; i < n; i++) v.noise({ buf: 'white', t: i * rnd(0.03, 0.09), dur: 0.035, a: 0.001, peak: rnd(0.15, 0.35), filt: { type: 'bp', f: rnd(2200, 5200), q: 2.2 } });
@@ -131,6 +136,7 @@ export const AMBIENCE = {
       { every: [16, 30], fn: clock, vol: 0.2, verb: 0.6, pan: 0.7 },
       { every: [9, 18], fn: whispers, vol: 0.25, verb: 0.8, pan: 1 },
       { every: [14, 26], fn: thudFar, vol: 0.3, verb: 0.9, pan: 0.6 },
+      { every: [6, 14], fn: pageTurn, vol: 0.16, verb: 0.6, pan: 1 },
     ],
   },
   throne: {

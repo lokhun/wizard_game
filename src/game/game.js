@@ -275,6 +275,7 @@ export class Game {
     this.critters = this.settings?.quality === 'low' ? null : new Critters(this.scene, level);
     this.hangers?.dispose();
     this.hangers = level.biome.id === 'dungeon' ? new Hangers(this.scene, level, this.built.mats, { quality: this.settings?.quality }) : null;
+    this.built.wisps?.setEye(this.renderer.camera.position);
     this.flotsam?.dispose();
     this.flotsam = level.biome.id === 'sewers' ? new Flotsam(this.scene, level, this.built.mats, { quality: this.settings?.quality }) : null;
     // the hanging lanterns burn and light the middle of their rooms
@@ -786,7 +787,7 @@ export class Game {
     const cx = cam.position.x, cz = cam.position.z;
     for (const f of this.built.flames) {
       const dx = f.x - cx, dz = f.z - cz;
-      if (dx * dx + dz * dz > 1300 || f.out) continue;
+      if (dx * dx + dz * dz > 1300 || f.out || f.gpu !== undefined) continue; // (candles burn on the GPU: built.candles)
       this.vfx.flame(f, realDt);
     }
     this.lights.update(realDt, this.time, cam.position);

@@ -342,9 +342,11 @@ export const CHANDELIER_FLAMES = Array.from({ length: 10 }, (_, i) => [Math.cos(
 
 function candles(rng) {
   const parts = [];
+  parts.flames = []; // (each one's wick: lit by the level's candle flames)
   for (let i = 0; i < 5; i++) {
-    const h = 0.1 + rng() * 0.3;
-    parts.push(['candle', tf(cyl(0.035, 0.04, h, 7), { x: (rng() - 0.5) * 0.5, y: h / 2, z: (rng() - 0.5) * 0.4 })]);
+    const h = 0.1 + rng() * 0.3, x = (rng() - 0.5) * 0.5, z = (rng() - 0.5) * 0.4;
+    parts.push(['candle', tf(cyl(0.035, 0.04, h, 7), { x, y: h / 2, z })]);
+    parts.flames.push([x, h + 0.005, z]);
   }
   return parts;
 }

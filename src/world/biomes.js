@@ -95,10 +95,12 @@ export const BIOMES = [
     ceilRoom: [8, 10],
     ceilCorr: 5,
     outdoor: false,
-    fog: { color: 0x0c0a10, density: 0.036 },
-    ambient: { sky: 0x3a3048, ground: 0x0a0806, intensity: 0.5 },
+    // (a warm dusk of candle smoke under the vaults, lighter than the plaster so the colonnades and
+    // shelves stand dark against it)
+    fog: { color: 0x221a1e, density: 0.029 },
+    ambient: { sky: 0x4e4060, ground: 0x160f0a, intensity: 0.6 },
     torchColor: 0xffa050,
-    grade: { lift: [0.008, 0.006, 0.014], gain: [1.04, 0.98, 0.95], saturation: 0.88, exposure: 1.02, bloom: 0.75 },
+    grade: { lift: [0.012, 0.008, 0.014], gain: [1.05, 0.99, 0.93], saturation: 0.9, exposure: 1.04, bloom: 0.8 },
     rooms: 6,
     branches: 2,
     enemies: ['animatedArmor', 'grimoire', 'grimoire', 'courtSorcerer', 'grimWarden', 'wraith', 'imp'],

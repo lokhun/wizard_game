@@ -4,6 +4,9 @@ import { T, SOLID, FLOOR, BLOCK, K_MAIN, K_ALT, K_WATER, K_DAIS, ROOM } from './
 import { PROPS, PROP_FLAMES, CHANDELIER_FLAMES, cellBars, bookshelf, setPropDetail } from './props.js';
 import { getBiomeMaterials, getSharedMaterials } from './materials.js';
 import { RNG } from '../core/rng.js';
+import { CandleField } from '../render/candles.js';
+import { Pages } from '../render/pages.js';
+import { Wisps } from '../render/wisps.js';
 import { dressLevel, streamMaterial, streamTexture } from './dressing.js';
 
 // ---------------------------------------------------------------------------
@@ -306,7 +309,13 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     const fn = PROPS[type];
     if (!fn) continue;
     const rot = p.rot ?? 0;
-    addParts(fn(r01), p.x, p.type === 'chandelier' ? p.y : fy, p.z, rot);
+    const parts = fn(r01);
+    addParts(parts, p.x, p.type === 'chandelier' ? p.y : fy, p.z, rot);
+    // (a stand of candles names its wicks)
+    if (parts.flames) {
+      const c = Math.cos(rot), sn = Math.sin(rot);
+      for (const [ox, oy, oz] of parts.flames) flames.push({ x: p.x + ox * c + oz * sn, y: fy + oy, z: p.z - ox * sn + oz * c, size: 0.25, kind: 'candle', k: 0.8 });
+    }
     if (PROP_FLAMES[p.type]) {
       for (const [ox, oy, oz, s] of PROP_FLAMES[p.type]) {
         const c = Math.cos(rot), sn = Math.sin(rot);
@@ -460,6 +469,79 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
       lightPool.addTorch(new THREE.Vector3(t.x, t.y - 0.6, t.z), { color: 0xffb060, intensity: t.intensity * 3, range: t.range + 4, flicker: 0.4, priority: 0.45 });
     }
   }
+
+  // ---------------- candles: every candle flame on the floor is drawn on the GPU (render/candles.js), and
+  // the Hall of Whispers' halls and libraries have candles floating under their vaults, drifting, a warm
+  // glow over each room from the cloud of them
+  const candles = new CandleField();
+  for (const f of flames) {
+    if (f.kind !== 'candle') continue;
+    f.gpu = candles.addFlame(f.x, f.y - 0.05, f.z, { k: f.k ?? 1, color: f.color ?? null });
+    f.gk = f.k ?? 1; f.s0 = f.size;
+  }
+  if (biome.id === 'keep') {
+    const rng = new RNG((level.seed ?? 1) * 7 + 13);
+    const dens = quality === 'low' ? 0.12 : quality === 'medium' ? 0.22 : 0.34;
+    const chand = level.props.filter((p) => p.type === 'chandelier');
+    for (const room of level.rooms) {
+      if (room.type === ROOM.START || room.w < 7 || room.h < 7) continue;
+      const n = Math.round(room.w * room.h * dens);
+      let sx = 0, sy = 0, sz = 0, m = 0;
+      for (let t = 0, tries = 0; t < n && tries < n * 4; tries++) {
+        const cx = room.x + 1 + rng.next() * (room.w - 2), cz = room.y + 1 + rng.next() * (room.h - 2);
+        const i = level.idx(Math.floor(cx), Math.floor(cz));
+        if (level.roomId[i] !== room.id || level.cells[i] === SOLID) continue;
+        const x = cx * T, z = cz * T, ceil = level.ceil[i];
+        if (ceil < 6 || ceil > 30) continue;
+        // clear of the chandeliers' rings
+        if (chand.some((c) => (c.x - x) ** 2 + (c.z - z) ** 2 < 2.4 * 2.4)) continue;
+        const y = Math.max(3.9, ceil - 1.6 - rng.next() * 2.6), h = 0.18 + rng.next() * 0.24;
+        candles.addFloating(x, y, z, h, 0.026 + rng.next() * 0.01, rng.next());
+        sx += x; sy += y; sz += z; m++; t++;
+      }
+      // the cloud's own light: soft and warm from over the middle of the room
+      if (m >= 6) lightPool.addTorch(new THREE.Vector3(sx / m, sy / m - 0.4, sz / m), { color: 0xffb46a, intensity: 14 + m * 0.3, range: Math.max(room.w, room.h) * T * 0.8, flicker: 0.2, priority: 0.2 });
+    }
+  }
+  group.add(candles.build());
+  // ...and loose pages drifting down through them, let go under the vault and gone before the floor
+  const pages = new Pages();
+  if (biome.id === 'keep') {
+    const rng = new RNG((level.seed ?? 1) * 11 + 5);
+    const dens = quality === 'low' ? 0.025 : quality === 'medium' ? 0.045 : 0.07;
+    const open = (x, y) => level.inb(x, y) && level.cells[level.idx(x, y)] === FLOOR;
+    for (const room of level.rooms) {
+      if (room.w < 7 || room.h < 7) continue;
+      const n = Math.round(room.w * room.h * dens);
+      for (let t = 0, tries = 0; t < n && tries < n * 5; tries++) {
+        const cx = Math.floor(room.x + 1 + rng.next() * (room.w - 2)), cy = Math.floor(room.y + 1 + rng.next() * (room.h - 2));
+        const i = level.idx(cx, cy);
+        if (level.roomId[i] !== room.id || !open(cx, cy) || !open(cx + 1, cy) || !open(cx - 1, cy) || !open(cx, cy + 1) || !open(cx, cy - 1)) continue;
+        if (level.ceil[i] < 6 || level.ceil[i] > 30) continue;
+        const x = (cx + 0.3 + rng.next() * 0.4) * T, z = (cy + 0.3 + rng.next() * 0.4) * T;
+        const fy = level.floorAt(x, z);
+        pages.add(x, z, Math.min(level.ceil[i] - 1.2, 7.5), fy + 0.35, rng.next());
+        t++;
+      }
+    }
+  }
+  const pageMesh = pages.build();
+  if (pageMesh) group.add(pageMesh);
+  // ...and the whispers themselves: ghost-lights wandering the halls and the library stacks
+  const wisps = new Wisps();
+  if (biome.id === 'keep') {
+    const rng = new RNG((level.seed ?? 1) * 5 + 3);
+    for (const room of level.rooms) {
+      if (room.type === ROOM.START || room.w < 7 || room.h < 7) continue;
+      const n = (room.layout === 'library' ? 3 : 2) - (quality === 'low' ? 1 : 0);
+      for (let k = 0; k < n; k++) {
+        wisps.add(room.cx + (rng.next() - 0.5) * room.w * 0.5, 2.5 + rng.next() * 0.6, room.cz + (rng.next() - 0.5) * room.h * 0.5,
+          room.w * T * 0.32, room.h * T * 0.32, rng.next());
+      }
+    }
+  }
+  const wispMesh = wisps.build();
+  if (wispMesh) group.add(wispMesh);
 
   // ---------------- water surfaces
   // (each corner carries the way the water runs there, aFlow, from its room: along a channel, or wheeling
@@ -812,6 +894,9 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     mats,
     doors,
     flames,
+    candles,
+    pages,
+    wisps,
     shafts,
     interactables,
     sky,
@@ -819,6 +904,9 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
       mats.water.userData.update?.(time);
       mats.waterFlat.userData.update?.(time);
       mats.banner.userData.update?.(time);
+      candles.update(time);
+      pages.update(time);
+      wisps.update(time);
       if (mats.stainedGlass.uniforms) mats.stainedGlass.uniforms.uTime.value = time;
       for (const d of doors) {
         if (!d.mesh) continue;

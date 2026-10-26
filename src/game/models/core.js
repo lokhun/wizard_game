@@ -4,6 +4,7 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { makeSurfaceMaterial } from '../../render/textures.js';
 import { arrayTargets } from '../../render/bake.js';
 import { creatureSurface, creatureLayer } from './surfaces.js';
+import { setRotXYZ } from '../../render/rot.js';
 
 // ---------------------------------------------------------------------------
 // Enemy model core: material library, geometry kit, rig builder and the
@@ -886,14 +887,21 @@ export class PoseBuf {
   }
   blend(a, b, u, w = 1) { this.apply(a, (1 - u) * w); this.apply(b, u * w); return this; }
   get(name) { const i = this.idx.get(name); return i === undefined ? null : this.tgt.subarray(i * K, i * K + K); }
+  // Every bone of every posed body, every frame: so the ease is worked out once per rate (nearly every bone
+  // has the body's), and each bone's quaternion is written straight from its angles (setRotXYZ) instead of
+  // through rotation.set and its change callback - the same numbers, a good part of the pose cost gone.
   damp(dt, rate) {
     const { tgt, cur, bones, rest } = this;
+    const a1 = 1 - Math.exp(-rate * dt);
+    let rr = 1, ra = a1;
     for (let i = 0; i < this.n; i++) {
-      const a = 1 - Math.exp(-rate * this.rate[i] * dt);
+      const ri = this.rate[i];
+      if (ri !== 1 && ri !== rr) { rr = ri; ra = 1 - Math.exp(-rate * ri * dt); }
+      const a = ri === 1 ? a1 : ra;
       const o = i * K;
       for (let k = 0; k < K; k++) cur[o + k] += (tgt[o + k] - cur[o + k]) * a;
       const b = bones[i];
-      b.rotation.set(cur[o], cur[o + 1], cur[o + 2]);
+      setRotXYZ(b, cur[o], cur[o + 1], cur[o + 2]);
       b.position.set(rest[i].x + cur[o + 3], rest[i].y + cur[o + 4], rest[i].z + cur[o + 5]);
       b.scale.set(Math.max(1e-4, cur[o + 6]), Math.max(1e-4, cur[o + 7]), Math.max(1e-4, cur[o + 8]));
     }

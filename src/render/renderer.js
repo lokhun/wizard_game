@@ -492,6 +492,12 @@ export class Renderer {
 
   render(time) {
     this.grade.uniforms.uTime.value = time;
+    // The scene's matrix pass (three runs it for every object, seen or not) was mostly spent on hidden
+    // pool members: ~280 of a floor's ~300 top-level objects are idle decals, rings, beams and sprites
+    // waiting to be used. A hidden leaf skips it; the frame it is shown, this same pass brings it up to date.
+    // (Leaves only: a hidden group's bones can still be read, e.g. a head for a weak point.)
+    const ch = this.scene.children;
+    for (let i = 0; i < ch.length; i++) { const c = ch[i]; if (c.children.length === 0) c.matrixWorldAutoUpdate = c.visible; }
     const info = this.renderer.info;
     info.autoReset = false;
     info.reset();

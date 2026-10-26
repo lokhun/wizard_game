@@ -144,7 +144,7 @@ export class Encounters {
     if (room.mod === 'bloodmoon') {
       // the torches already burn red: you can see it from the corridor
       for (const e of st.torches) e.t.color.lerp(new THREE.Color(0xff2a14), 0.8);
-      for (const e of st.flames) e.f.color = 0xff3018;
+      for (const e of st.flames) { e.f.color = 0xff3018; if (e.f.gpu !== undefined) this.g.built.candles.sync(e.f.gpu, e.f.gk, e.f.color); }
     }
     if (room.mod === 'darkness') st.level = 0.55;
   }
@@ -159,7 +159,10 @@ export class Encounters {
       st.level += (want - st.level) * Math.min(1, dt * (want < st.level ? 1.4 : 2.5));
       const gut = st.level < 0.9 ? 0.75 + 0.25 * Math.sin(g.time * 13 + room.id) * Math.sin(g.time * 5.3) : 1;
       for (const e of st.torches) e.t.intensity = e.i0 * st.level * gut;
-      for (const e of st.flames) { e.f.out = st.level < 0.12; e.f.size = e.s0 * Math.max(0.35, st.level); }
+      for (const e of st.flames) {
+        e.f.out = st.level < 0.12; e.f.size = e.s0 * Math.max(0.35, st.level);
+        if (e.f.gpu !== undefined) g.built.candles.sync(e.f.gpu, e.f.out ? 0 : e.f.gk * Math.max(0.35, st.level), e.f.color);
+      }
       if (inRoom && active) {
         this._hemiWant = Math.min(this._hemiWant, 0.4);
         this._selfWant = Math.max(this._selfWant, 2.4);
