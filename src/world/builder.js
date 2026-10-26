@@ -571,7 +571,7 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
   // ---------------- light shafts from the dressing's north windows: soft additive beams
   const shafts = []; // (each beam's volume, for the dust drifting in it: Game._ambient)
   if (dressed.shafts.length) {
-    const shaftGeo = new GeoBuilder();
+    const shaftGeo = new GeoBuilder(), poolGeo = new GeoBuilder();
     // each beam falls from a moonlit window high on a north wall, slanting down into the room
     for (const sh of dressed.shafts) {
       const room = level.roomAt(sh.x, sh.z + 1);
@@ -580,6 +580,9 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
       const len = Math.min(room.h * T * 0.8, top * 1.4);
       const z1 = z0 + len * 0.6, bottom = 0.05;
       shafts.push({ x, w, top, z0, z1, col: null });
+      // where it lands, the window lies on the floor: a pool of its light crossed by the shadows of its bars
+      const pw = w + 0.7, zc = z1 - 0.35, fy = level.floorAt(x, zc) + 0.03;
+      poolGeo.quad([x - pw / 2, fy, zc - 1.0], [x + pw / 2, fy, zc - 1.0], [x + pw / 2, fy, zc + 1.0], [x - pw / 2, fy, zc + 1.0], [0, 1, 0], [[0, 0], [1, 0], [1, 1], [0, 1]]);
       shaftGeo.quad([x - w / 2, top, z0], [x + w / 2, top, z0], [x + w / 2 + 0.3, bottom, z1], [x - w / 2 - 0.3, bottom, z1], [0, 0, 1], [[0, 1], [1, 1], [1, 0], [0, 0]]);
       shaftGeo.quad([x, top, z0 - w / 2 + 0.01], [x, top, z0 + w / 2], [x + 0.2, bottom, z1 + w / 2], [x + 0.2, bottom, z1 - w / 2], [1, 0, 0], [[0, 1], [1, 1], [1, 0], [0, 0]]);
     }
@@ -595,12 +598,30 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
       gx.globalCompositeOperation = 'destination-out'; gx.fillStyle = side; gx.fillRect(0, 0, 64, 128);
       const tex = new THREE.CanvasTexture(c);
       ownTex.push(tex);
-      const col = biome.id === 'throne' ? new THREE.Color(0.22, 0.12, 0.32) : biome.id === 'dungeon' ? new THREE.Color(0.07, 0.09, 0.14) : new THREE.Color(0.14, 0.15, 0.2);
+      const col = biome.id === 'throne' ? new THREE.Color(0.22, 0.12, 0.32) : biome.id === 'dungeon' ? new THREE.Color(0.15, 0.19, 0.27) : new THREE.Color(0.14, 0.15, 0.2);
       const shaftMat = new THREE.MeshBasicMaterial({ map: tex, color: col, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: true });
       for (const sh of shafts) sh.col = col;
       const sm = new THREE.Mesh(shaftGeo.build(), shaftMat);
       sm.renderOrder = 6;
       group.add(sm);
+      // the pools: a soft-edged patch with three bars' shadows down it and a crossbar's across
+      const pc = document.createElement('canvas');
+      pc.width = pc.height = 128;
+      const px = pc.getContext('2d');
+      const pr = px.createRadialGradient(64, 64, 8, 64, 64, 64);
+      pr.addColorStop(0, 'rgba(255,255,255,1)'); pr.addColorStop(0.55, 'rgba(255,255,255,0.75)'); pr.addColorStop(1, 'rgba(255,255,255,0)');
+      px.fillStyle = pr; px.fillRect(0, 0, 128, 128);
+      px.globalCompositeOperation = 'destination-out';
+      px.filter = 'blur(2px)';
+      px.fillStyle = 'rgba(0,0,0,0.85)';
+      for (const bx of [40, 64, 88]) px.fillRect(bx - 4, 0, 8, 128);
+      px.fillRect(0, 56, 128, 7);
+      const poolTex = new THREE.CanvasTexture(pc);
+      ownTex.push(poolTex);
+      const poolMat = new THREE.MeshBasicMaterial({ map: poolTex, color: col.clone().multiplyScalar(2.8), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: true, polygonOffset: true, polygonOffsetFactor: -2 });
+      const pm = new THREE.Mesh(poolGeo.build(), poolMat);
+      pm.renderOrder = 5;
+      group.add(pm);
 
     }
   }

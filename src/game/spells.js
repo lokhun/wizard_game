@@ -425,6 +425,7 @@ export class SpellRuntime {
     const wet = this.g.waterAt(pos.x, pos.z), gy = this.g.groundY(pos.x, pos.z);
     if (a.vfx !== false) this.g.vfx.explosion(pos, a.el ?? proj.el, a.radius, { groundY: wet ? Math.max(gy, WATER_Y) : gy });
     if (a.sound !== false) this.g.audio?.play(a.radius > 3 ? 'explosion_big' : 'explosion', { pos });
+    this.g.rattleHangers(pos, a.radius * 1.8 + 1.5, Math.min(1.5, 0.4 + a.radius * 0.25)); // (cages and chains overhead swing)
     if (wet && pos.y < WATER_Y + 1.2) this.g.splash(pos.x, pos.z, Math.min(3, 1 + a.radius * 0.4)); // (a blast on the water throws it up)
     if (proj.local) {
       if (proj.faction === 'player') {

@@ -265,6 +265,18 @@ function grate() {
   parts.push(['decalDark', tf(new THREE.PlaneGeometry(1.1, 1.1), { y: 0.025, rx: -Math.PI / 2 })]);
   return parts;
 }
+// the oubliette's mouth: a heavy iron grate over a 2 m shaft in the floor (a frame, bars both ways, a
+// hasp and a padlock on one side, a ring to haul it by on the other)
+function pitGrate() {
+  const parts = [];
+  for (const [x, z, sx, sz] of [[0, -0.97, 2.08, 0.14], [0, 0.97, 2.08, 0.14], [-0.97, 0, 0.14, 2.08], [0.97, 0, 0.14, 2.08]]) parts.push(['iron', tf(box(sx, 0.1, sz), { x, y: 0.05, z })]);
+  for (let i = -3; i <= 3; i++) parts.push(['iron', tf(box(0.055, 0.07, 1.9), { x: i * 0.26, y: 0.06 })]);
+  for (const z of [-0.5, 0, 0.5]) parts.push(['iron', tf(box(1.9, 0.05, 0.05), { z, y: 0.09 })]);
+  parts.push(['iron', tf(box(0.16, 0.14, 0.06), { x: 1.06, y: 0.07, z: 0.3 })]);
+  parts.push(['iron', tf(new THREE.TorusGeometry(0.06, 0.014, 4, 8), { x: 1.1, y: 0.13, z: 0.3 })]);
+  parts.push(['iron', tf(new THREE.TorusGeometry(0.11, 0.02, 4, 10), { x: -1.08, y: 0.03, z: 0, rx: -Math.PI / 2 })]);
+  return parts;
+}
 function mushrooms(rng, glow = false) {
   const parts = [];
   const n = 3 + Math.floor(rng() * 5);
@@ -760,7 +772,7 @@ function glowshrooms(rng) { return mushrooms(rng, true); }
 
 export const PROPS = {
   barrel, keg, crate, rubble, bones, pillarSquare, pillarRound, pillarGrand, chains, sack, table, longTable, stool,
-  bucket, hay, rack, cage, skeletonSit, bloodstain, puddle, grate, mushrooms, glowshrooms, pipe, sconce, brazier: () => brazier(false),
+  bucket, hay, rack, cage, skeletonSit, bloodstain, puddle, grate, pitGrate, mushrooms, glowshrooms, pipe, sconce, brazier: () => brazier(false),
   brazierTall: () => brazier(true), brazierFloor, chandelier, candles, candelabra, bookPile, scrolls, armorStand, weaponRack, banner,
   painting, chest, statue, statueSmall: (r) => statue(r, true), well, fountain, tree, deadTree: (r) => tree(r, true), grave, hayCart, cart,
   ruinPillar, gallows, throne, stainedGlass, shrine, merchant: merchantStall, ladder, stairsDown, brokenWagon, trainingDummy, hayBales,

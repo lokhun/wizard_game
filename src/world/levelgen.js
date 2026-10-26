@@ -42,6 +42,7 @@ export class Level {
     this.torches = [];
     this.colliders = []; // circles {x,z,r}
     this.breakables = []; // barrels/crates {i,type,x,z,r,alive}
+    this.pits = []; // the Oubliette's grated shafts {i (cell), x, z, y (the floor round it)}
   }
   idx(x, y) { return y * this.W + x; }
   inb(x, y) { return x >= 0 && y >= 0 && x < this.W && y < this.H; }
@@ -714,6 +715,29 @@ function decorateRoom(level, room, rng) {
       P('grate', s[0], s[1], { rot: rng.int(0, 3) * Math.PI / 2 });
     }
     if (!room.vents.length) room.vents = null;
+  }
+
+  // ---------------- THE OUBLIETTE: a forgetting-hole in the floor, a 2 m shaft under a heavy grate with a
+  // cold light far down it and mist rising out. It is real: the cell's floor is 3.2 m down, so the step
+  // walls build its shaft. Nobody walks it (Collision marks it blocked to feet, but not to sight or shots).
+  if (b.id === 'dungeon' && (room.type === ROOM.COMBAT || room.type === ROOM.ELITE) && w >= 10 && h >= 10 && rng.chance(0.6)) {
+    for (let k = 0; k < 40; k++) {
+      const px = x + 3 + rng.int(0, w - 7), py = y + 3 + rng.int(0, h - 7);
+      const i0 = level.idx(px, py), h0 = level.hgt[i0];
+      let ok = true;
+      for (let dy = -2; dy <= 2 && ok; dy++) for (let dx = -2; dx <= 2; dx++) { const j = level.idx(px + dx, py + dy); if (level.cells[j] !== FLOOR || level.hgt[j] !== h0 || level.kind[j] === K_WATER) { ok = false; break; } }
+      if (!ok) continue;
+      const wx = (px + 0.5) * T, wz = (py + 0.5) * T;
+      if (level.colliders.some((c) => Math.hypot(c.x - wx, c.z - wz) < 3.2) || level.props.some((q) => Math.hypot(q.x - wx, q.z - wz) < 2.2)) continue;
+      if (room.vents?.some((v) => Math.hypot(v.x - wx, v.z - wz) < 3.5)) continue;
+      level.hgt[i0] = h0 - 3.2;
+      level.pits.push({ i: i0, x: wx, z: wz, y: h0 });
+      P('pitGrate', wx, wz, { y: 3.2, rot: rng.int(0, 3) * Math.PI / 2 });
+      P('bones', wx + rng.range(-0.4, 0.4), wz + rng.range(-0.4, 0.4), { rot: rng.range(0, 6.28) }); // (on the shaft's floor: the last one forgotten)
+      level.torches.push({ x: wx, y: h0 - 1.6, z: wz, type: 'brazier', noFlame: true, color: 0x6a9aa8, intensity: 20, range: 8, priority: 0.6 });
+      room.pit = true;
+      break;
+    }
   }
 
   // ---------------- mid-room cover for realms whose rooms are otherwise open floor,

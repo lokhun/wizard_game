@@ -293,6 +293,12 @@ def('explosion_big', 'boom', 0.45, (v) => {
   crackle(v, { t: 0.08, dur: 1.6, peak: 0.45, rate: 0.7, hp: 900 });
   pebbles(v, 8, 1.5, 0.3, 0.25);
 }, { cap: 4 });
+// a hanging cage or chains knocked swinging: iron rattling on its chain, a clank, the hook creaking
+def('cage_rattle', 'impact', 0.2, (v) => {
+  v.noise({ buf: 'chain', dur: rnd(0.6, 1.0), a: 0.01, peak: 0.6, rate: rnd(0.7, 1.0), filt: { type: 'bp', f: 1700, q: 0.8 } });
+  v.bell({ f: rnd(380, 520), dur: 0.9, peak: 0.08, partials: [[1, 1, 1], [2.4, 0.6, 0.6], [4.1, 0.3, 0.4]] });
+  v.osc({ type: 'sawtooth', t: 0.15, f: rnd(220, 300), f2: rnd(330, 420), ft: 0.5, dur: 0.6, a: 0.1, peak: 0.05, filt: { type: 'bp', f: 900, q: 6, fixed: true } });
+}, { cap: 2, pv: 0.12 });
 // far-off thunder over the bailey: a crack softened by distance, then a long roll that comes and goes
 def('thunder', 'boom', 0.6, (v) => {
   burst(v, { dur: 0.25, f: 900, peak: 0.35, drive: 1 });

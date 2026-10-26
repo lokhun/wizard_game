@@ -13,6 +13,17 @@ const chainClank = (v) => {
   v.noise({ buf: 'chain', dur: rnd(0.4, 0.9), a: 0.02, peak: 0.5, rate: rnd(0.6, 0.9), filt: { type: 'bp', f: 1800, q: 0.8 } });
   v.bell({ f: rnd(500, 750), dur: 0.8, peak: 0.05, partials: [[1, 1, 1], [2.33, 0.6, 0.6], [3.9, 0.3, 0.4]] });
 };
+// somewhere off in the cells an iron door swings shut: a latch, the slam, the bars ringing on in the stone
+const cellDoor = (v) => {
+  v.noise({ buf: 'chain', dur: 0.25, a: 0.01, peak: 0.25, rate: 1.3, filt: { type: 'bp', f: 2400, q: 1.2 } });
+  v.thump({ t: 0.32, f: 95, f2: 50, dur: 0.4, peak: 0.55 });
+  v.bell({ t: 0.32, f: rnd(170, 230), dur: 2.4, peak: 0.12, partials: [[1, 1, 1], [2.7, 0.5, 0.7], [4.3, 0.3, 0.5], [6.1, 0.15, 0.3]] });
+};
+// rats in the walls
+const squeak = (v) => {
+  const n = 1 + ((Math.random() * 3) | 0), f = rnd(2600, 3600);
+  for (let i = 0; i < n; i++) v.osc({ type: 'triangle', t: i * rnd(0.09, 0.16), f, f2: f * rnd(1.1, 1.35), ft: 0.05, dur: 0.07, a: 0.005, peak: 0.12, vib: { rate: 35, depth: 0.05 } });
+};
 const moan = (v) => {
   const f = rnd(100, 150);
   v.osc({ type: 'sawtooth', f, f2: f * rnd(1.1, 1.3), ft: 1.0, f3: f * 0.75, dur: rnd(2.2, 3.2), a: 0.8, peak: 0.2, lin: true,
@@ -86,6 +97,8 @@ export const AMBIENCE = {
       { every: [10, 22], fn: moan, vol: 0.35, verb: 0.9, pan: 0.9 },
       { every: [3, 8], fn: drip, vol: 0.25, verb: 0.8, pan: 0.9 },
       { every: [15, 30], fn: thudFar, vol: 0.4, verb: 0.8, pan: 0.6 },
+      { every: [18, 40], fn: cellDoor, vol: 0.4, verb: 0.95, pan: 0.9 },
+      { every: [7, 16], fn: squeak, vol: 0.18, verb: 0.4, pan: 1 },
     ],
   },
   // the bailey under its storm: steady rain (a hiss over a softer roar), the wind gusting through it, drops

@@ -7,7 +7,8 @@ export const STEP = 0.75;
 export class Collision {
   constructor(level) {
     this.level = level;
-    this.dyn = new Uint8Array(level.W * level.H); // door blockers
+    this.dyn = new Uint8Array(level.W * level.H); // door blockers (1: shut, blocks sight too)
+    for (const pit of level.pits ?? []) this.dyn[pit.i] = 2; // (a grated shaft: no feet, but sight and shots pass)
     // spatial hash of static circle/segment colliders
     this.hash = new Map();
     for (const c of level.colliders) this._insert(c);

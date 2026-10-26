@@ -41,10 +41,12 @@ export const BIOMES = [
     ceilRoom: [5.5, 7],
     ceilCorr: 4.2,
     outdoor: false,
-    fog: { color: 0x0b0907, density: 0.05 },
-    ambient: { sky: 0x302a28, ground: 0x0a0806, intensity: 0.3 },
+    // a cold, damp haze the torchlight pools in (it was a black fog that swallowed everything past 10 m:
+    // rooms read as voids with a few flames in them), the stone picking up the night from the light-wells
+    fog: { color: 0x1d2327, density: 0.034 },
+    ambient: { sky: 0x56626e, ground: 0x1c150f, intensity: 0.55 },
     torchColor: 0xff7a2a,
-    grade: { lift: [0.01, 0.007, 0.004], gain: [1.06, 0.98, 0.88], saturation: 0.82, exposure: 1.0, bloom: 0.7 },
+    grade: { lift: [0.004, 0.008, 0.013], gain: [1.08, 0.99, 0.88], saturation: 0.84, exposure: 1.0, bloom: 0.75 },
     rooms: 6,
     branches: 2,
     enemies: ['skeleton', 'skeleton', 'skeletonArcher', 'wraith', 'jailer', 'plagueDoctor', 'rat'],

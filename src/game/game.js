@@ -6,6 +6,7 @@ import { VFX, fxOf } from '../render/vfx.js';
 import { ContactShadows } from '../render/contact.js';
 import { Storm } from '../render/storm.js';
 import { Debris } from '../render/debris.js';
+import { Hangers } from '../world/hangers.js';
 import { waterRipple } from '../world/materials.js';
 import { generateLevel, ROOM, T, K_ALT, K_WATER, WATER_Y } from '../world/levelgen.js';
 import { keyOf } from '../core/input.js';
@@ -107,6 +108,7 @@ export class Game {
     this._hzBusy = false; // (inside the hazard loop: see cancelHazardsFrom)
     this.debris = null; // (wreckage of smashed barrels and crates: render/debris.js)
     this.rubble = null; // (and the same in stone: a broken wall's blocks)
+    this.hangers = null; // (the Oubliette's swinging cages and chains: world/hangers.js)
     this._gpD = new Float32Array(8); this._gpA = new Array(8).fill(null); // (_grassPush's nearest foes)
     this._bolt = { a: new THREE.Vector3(), b: new THREE.Vector3(), o: { jag: 7, width: 0.55, life: 0.22, branches: 3, seg: 3.5, color: [2.2, 2.5, 3.4] } };
     this.remotes = new Map();
@@ -269,6 +271,13 @@ export class Game {
     this.texFactory.endFloor(); // the last realm's own wall and floor textures
     this.critters?.dispose();
     this.critters = this.settings?.quality === 'low' ? null : new Critters(this.scene, level);
+    this.hangers?.dispose();
+    this.hangers = level.biome.id === 'dungeon' ? new Hangers(this.scene, level, this.built.mats, { quality: this.settings?.quality }) : null;
+    // the hanging lanterns burn and light the middle of their rooms
+    for (const l of this.hangers?.lanterns ?? []) {
+      this.lights.addTorch(new THREE.Vector3(l.x, l.y + 0.1, l.z), { color: level.biome.torchColor, intensity: 26, range: 15 });
+      this.built.flames.push({ x: l.x, y: l.y, z: l.z, size: 0.42, kind: 'fire', color: level.biome.torchColor });
+    }
     this.debris?.dispose(); this.rubble?.dispose();
     this.debris = new Debris(this.scene, this.built.mats.wood, this.collision);
     this.rubble = new Debris(this.scene, this.built.mats.stone, this.collision);
@@ -600,6 +609,7 @@ export class Game {
     const R = 3.6;
     this.vfx.explosion(c, 'fire', R, { groundY: c.y - 0.5 });
     this.critters?.startle(c, 14);
+    this.rattleHangers(c, R * 2.2, 1.4);
     this.vfx.addShake?.(0.35);
     this.audio?.play('explosion_big', { pos: c });
     const p = this.player;
@@ -675,6 +685,11 @@ export class Game {
       const c = ABYSS_TINT[(this.abyss - 1) % ABYSS_TINT.length].rc;
       P.glow({ x: cam.x + rnd(18), y: cam.y - 1.5 + rnd(2), z: cam.z + rnd(18), vx: rnd(0.2), vy: 0.35 + Math.random() * 0.3, vz: rnd(0.2), r: c[0] * 1.4, g: c[1] * 1.4, b: c[2] * 1.4, r2: c[0] * 0.2, g2: c[1] * 0.2, b2: c[2] * 0.2, life: 6, size: 0.05, sprite: SPR.EMBER, drag: 0.15 });
     }
+    // the oubliettes breathe: cold mist welling up out of each shaft near you and spilling over the grate
+    for (const pit of this.level.pits) {
+      if ((pit.x - cam.x) ** 2 + (pit.z - cam.z) ** 2 > 900 || Math.random() > dt * 7) continue;
+      P.solid({ x: pit.x + rnd(1.4), y: pit.y - 1.2 - Math.random() * 1.2, z: pit.z + rnd(1.4), vx: rnd(0.2), vy: 0.55 + Math.random() * 0.35, vz: rnd(0.2), r: 0.3, g: 0.37, b: 0.42, a: 0.16, life: 4 + Math.random() * 2, size: 0.9, size2: 2.4, sprite: SPR.SMOKE, spin: 0.08, drag: 0.35 });
+    }
     // the dungeon: grit sifting down from the vaults now and then
     if (id === 'dungeon' && Math.random() < dt * 1.5) {
       const x = cam.x + rnd(12), z = cam.z + rnd(12), c = this.level.ceilAt(x, z);
@@ -731,6 +746,7 @@ export class Game {
     this._ambient(realDt);
     this.critters?.update(dt, this.time, this.renderer.camera.position, this.allPlayers());
     this.debris?.update(dt, this.actors._floor);
+    this.hangers?.update(dt, this.time, this.renderer.camera.position);
     if (this.biome?.outdoor) this._grassPush();
     this.rubble?.update(dt, this.actors._floor);
     this.contact.update(this);
@@ -944,6 +960,11 @@ export class Game {
     }
     for (let k = 0; k < m; k++) B.setGrassPush(n++, A[k].pos.x, A[k].pos.z, 0.55 + A[k].radius);
     for (; n < 8; n++) B.setGrassPush(n, 0, 0, 0);
+  }
+  // a blast swings the Oubliette's cages and chains overhead, and the one it shoved hardest rattles
+  rattleHangers(p, r, k) {
+    const h = this.hangers?.push(p, r, k);
+    if (h) this.audio?.play('cage_rattle', { pos: _splashV.set(h.x, h.y - h.bottom * 0.8, h.z), volume: 0.7 });
   }
   // channel water here (its surface is WATER_Y; the floor under it is the bed)
   waterAt(x, z) { const L = this.level; return !!L && L.kind[L.idx(Math.floor(x / T), Math.floor(z / T))] === K_WATER; }
