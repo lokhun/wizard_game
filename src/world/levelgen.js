@@ -482,9 +482,14 @@ function decorateRoom(level, room, rng) {
           // bars across the opening
           const bxw = horiz ? (ax + 1) * T : (s === 0 ? (x) * T : (x + w) * T);
           const bzw = horiz ? (s === 0 ? y * T : (y + h) * T) : (ay + 1) * T;
-          level.props.push({ type: 'cellBars', x: bxw, z: bzw, rot: horiz ? 0 : Math.PI / 2, len: 4 });
-          level.colliders.push({ x: bxw, z: bzw, r: 0, seg: horiz ? [bxw - 2, bzw, bxw + 2, bzw] : [bxw, bzw - 2, bxw, bzw + 2] });
+          // (the bars are the cell's door: two leaves that swing out into the room when the fight begins,
+          // letting out whoever was locked in it: Game.openCells. out: the room's side, along the bars' +z)
           const [ccx, ccz] = [(ax + 1) * T, (ay + 1) * T];
+          const bars = { type: 'cellBars', x: bxw, z: bzw, rot: horiz ? 0 : Math.PI / 2, len: 4, cell: true, out: Math.sign(horiz ? bzw - ccz : bxw - ccx) };
+          const col = { x: bxw, z: bzw, r: 0, seg: horiz ? [bxw - 2, bzw, bxw + 2, bzw] : [bxw, bzw - 2, bxw, bzw + 2] };
+          level.props.push(bars);
+          level.colliders.push(col);
+          (room.cells ??= []).push({ x: ccx, z: ccz, bars, col, open: false });
           P(rng.pick(['bones', 'hay', 'bucket', 'chains', 'skeletonSit']), ccx + rng.range(-0.6, 0.6), ccz + rng.range(-0.6, 0.6));
         }
       }

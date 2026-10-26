@@ -149,6 +149,7 @@ export class Actor {
     this.collapsed = false;
     // sentries placed before the party arrives: idle until they notice someone
     this.dormant = !!opts.dormant;
+    this.caged = false; // (a sentry locked in an Oubliette cell: it waits for the door, not for a sight of you)
     this.homeRoom = opts.homeRoom ?? null;
     // Every field an actor ever gets, declared here in one order. Added as
     // they came up (by state, attack, status, encounter), actors ended up with
@@ -308,6 +309,15 @@ export class ActorManager {
     a.wakeAt = 0;
     a.retargetT = 0;
     const g = this.g;
+    // a prisoner roused in its cell (struck through the bars, or by the alarm) brings every cell of the room open
+    if (a.caged) {
+      a.caged = false;
+      const room = a.homeRoom;
+      if (g.isHost && room?.cells && !room.cellsOpen) {
+        g.openCells(room, true);
+        for (const id of room.sentryIds ?? []) { const b = this.byId.get(id); if (b?.caged) { b.caged = false; b.wakeAt = g.time + 0.6 + Math.random() * 0.6; } }
+      }
+    }
     if (g.isHost) g.net?.broadcast({ t: 'wake', id: a.id });
     g.audio?.play(a.def.sound ?? 'beast_growl', { pos: a.pos, volume: 0.7 });
     g.ui?.floatText(new THREE.Vector3(a.pos.x, a.pos.y + a.height + 0.3, a.pos.z), '!', '#ff6040', true);
@@ -1123,6 +1133,7 @@ export class ActorManager {
       a.yaw += Math.sin(g.time * 0.4 + a.id) * dt * 0.15;
       a.dormantT = (a.dormantT ?? 0) - dt;
       if (a.wakeAt && g.time >= a.wakeAt) this.wake(a);
+      else if (a.caged) return out;
       else if (a.dormantT <= 0) {
         a.dormantT = 0.25;
         const A = g.director.active;

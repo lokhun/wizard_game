@@ -262,9 +262,32 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     }
   };
   const interactables = [];
+  const cellDoors = []; let leafGeo = null; // (the Oubliette's cell doors: openCellDoor)
   for (const p of level.props) {
     const fy = (p.y ?? 0) + (p.type === 'chandelier' ? 0 : level.floorAt(p.x, p.z));
-    if (p.type === 'cellBars') { addParts(cellBars(p.len), p.x, level.floorAt(p.x, p.z + 0.1), p.z, p.rot); continue; }
+    if (p.type === 'cellBars') {
+      const fy = level.floorAt(p.x, p.z + 0.1);
+      if (!p.cell) { addParts(cellBars(p.len), p.x, fy, p.z, p.rot); continue; }
+      // a cell's door: two leaves hung at the ends of the opening (one merged mesh each, sharing a geometry)
+      const half = p.len / 2;
+      leafGeo ??= (() => { const gb = new GeoBuilder(); for (const [, geo] of cellBars(half)) gb.addGeometry(geo, new THREE.Matrix4()); return gb.build(); })();
+      const base = new THREE.Group();
+      base.position.set(p.x, fy, p.z); base.rotation.y = p.rot;
+      const leaves = [];
+      for (const sd of [-1, 1]) {
+        const hinge = new THREE.Group();
+        hinge.position.x = sd * half;
+        const m = new THREE.Mesh(leafGeo, mats.iron);
+        m.position.x = -sd * half / 2;
+        hinge.add(m);
+        base.add(hinge);
+        leaves.push({ hinge, sd });
+      }
+      group.add(base);
+      p.door = cellDoors.length;
+      cellDoors.push({ prop: p, leaves, t: -1 });
+      continue;
+    }
     if (p.type === 'shelfRow') { addParts(bookshelf(p.len), p.x, level.floorAt(p.x, p.z), p.z, p.rot); continue; }
     // (only a chest the generator meant to be opened is loot: one placed as dressing is just a prop)
     if ((p.type === 'chest' && p.interact) || p.type === 'shrine' || p.type === 'merchant') {
@@ -764,6 +787,19 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
       if (sky) sky.material.uniforms.uTime.value = time;
       if (dressed.streams) streamTexture().offset.y = time * 1.3;
       if (grassMat) grassMat.userData.time.value = time;
+      for (const d of cellDoors) {
+        if (d.t < 0 || d.t > 2) continue;
+        d.t += dt;
+        // flung to 150 degrees, a bounce off the wall that dies away
+        const t = d.t, a = 2.6 * (1 - Math.exp(-6 * t) * Math.cos(9 * t));
+        for (const L of d.leaves) L.hinge.rotation.y = L.sd * d.prop.out * Math.min(2.75, a);
+      }
+    },
+    // throw a cell's door open (its bars prop): both leaves swing out into the room and bang against
+    // the wall, bouncing back a little (animated in update)
+    openCellDoor(bars) {
+      const d = cellDoors[bars.door];
+      if (d && d.t < 0) d.t = 0;
     },
     // the bodies parting the grass this frame (see the grass shader): i < 8, reach 0 for none
     setGrassPush(i, x, z, r) {

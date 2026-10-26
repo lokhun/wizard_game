@@ -961,6 +961,26 @@ export class Game {
     for (let k = 0; k < m; k++) B.setGrassPush(n++, A[k].pos.x, A[k].pos.z, 0.55 + A[k].radius);
     for (; n < 8; n++) B.setGrassPush(n, 0, 0, 0);
   }
+  // an Oubliette room's cell doors fling open as its fight begins (the host decides; every peer opens them):
+  // their bars stop blocking at once, and the doors swing out one after another with a bang and grit
+  openCells(room, local) {
+    if (!room?.cells || room.cellsOpen) return;
+    room.cellsOpen = true;
+    const level = this.level;
+    room.cells.forEach((c, k) => {
+      this.collision.removeCollider(c.col);
+      c.open = true;
+      this.spells.after(k * 0.14 + Math.random() * 0.08, () => {
+        if (this.level !== level) return;
+        this.built.openCellDoor(c.bars);
+        const gy = this.groundY(c.bars.x, c.bars.z);
+        this.audio?.play('cell_open', { pos: _splashV.set(c.bars.x, gy + 1.5, c.bars.z), volume: 0.85 });
+        this.vfx.smoke(_splashV.set(c.bars.x, gy + 0.4, c.bars.z), { count: 4, size: 0.9, color: [0.3, 0.27, 0.24], alpha: 0.35, life: 1.6, spread: 1.6 });
+        for (let i = 0; i < 6; i++) this.particles.solid({ x: c.bars.x + (Math.random() - 0.5) * 3, y: gy + 3.3, z: c.bars.z + (Math.random() - 0.5) * 0.4, vy: -0.5, r: 0.3, g: 0.26, b: 0.22, a: 0.6, life: 1.4, size: 0.03, sprite: SPR.CHUNK, gravity: 7 });
+      });
+    });
+    if (local) this.net?.broadcast({ t: 'cells', r: room.id });
+  }
   // a blast swings the Oubliette's cages and chains overhead, and the one it shoved hardest rattles
   rattleHangers(p, r, k) {
     const h = this.hangers?.push(p, r, k);
