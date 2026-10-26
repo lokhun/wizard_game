@@ -462,17 +462,38 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
   }
 
   // ---------------- water surfaces
+  // (each corner carries the way the water runs there, aFlow, from its room: along a channel, or wheeling
+  // round a cistern's island; and aFoam, 1 where the corner touches anything that isn't water: the banks,
+  // a bridge's piers. The water shader scrolls along the one and froths along the other.)
   {
-    const wb = new GeoBuilder();
+    const pos = [], uv = [], nrm = [], flow = [], foam = [], idx = [];
+    const wet = (x, y) => level.inb(x, y) && level.cells[level.idx(x, y)] === FLOOR && level.kind[level.idx(x, y)] === K_WATER;
+    const SPEED = 0.55;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const i = level.idx(x, y);
-      if (level.cells[i] !== FLOOR || level.kind[i] !== K_WATER) continue;
+      if (!wet(x, y)) continue;
+      const i = level.idx(x, y), room = level.rooms[level.roomId[i]];
       const x0 = x * T, z0 = y * T, x1 = x0 + T, z1 = z0 + T, h = -0.25;
-      wb.quad([x0, h, z1], [x1, h, z1], [x1, h, z0], [x0, h, z0], [0, 1, 0],
-        [[x0 / 6, -z1 / 6], [x1 / 6, -z1 / 6], [x1 / 6, -z0 / 6], [x0 / 6, -z0 / 6]]);
+      let fx = 0, fz = 0;
+      if (room?.flow === 'ring') {
+        const dx = (x0 + 1) - room.cx, dz = (z0 + 1) - room.cz, l = Math.hypot(dx, dz) || 1;
+        fx = -dz / l * SPEED; fz = dx / l * SPEED;
+      } else if (room?.flow) { fx = room.flow[0] * SPEED; fz = room.flow[1] * SPEED; }
+      const v = pos.length / 3;
+      for (const [cx, cy, wx, wz] of [[x, y + 1, x0, z1], [x + 1, y + 1, x1, z1], [x + 1, y, x1, z0], [x, y, x0, z0]]) {
+        pos.push(wx, h, wz); nrm.push(0, 1, 0); uv.push(wx / 6, -wz / 6); flow.push(fx, fz);
+        foam.push(wet(cx - 1, cy - 1) && wet(cx, cy - 1) && wet(cx - 1, cy) && wet(cx, cy) ? 0 : 1);
+      }
+      idx.push(v, v + 1, v + 2, v, v + 2, v + 3);
     }
-    if (wb.count) {
-      const wm = new THREE.Mesh(wb.build(), mats.water);
+    if (idx.length) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      g.setAttribute('aFlow', new THREE.Float32BufferAttribute(flow, 2));
+      g.setAttribute('aFoam', new THREE.Float32BufferAttribute(foam, 1));
+      g.setIndex(idx);
+      const wm = new THREE.Mesh(g, mats.water);
       wm.renderOrder = 5;
       group.add(wm);
     }
@@ -712,26 +733,12 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     group.add(m);
   }
 
-  // ---------------- arrival: moonlight through a ceiling grate in the start room
-  if (level.startShaft) {
-    const { x, z } = level.startShaft;
-    const ci = level.idx(Math.floor(x / T), Math.floor(z / T));
-    const top = level.ceil[ci], gy = level.hgt[ci];
-    // the grate: an iron frame with bars, set into the ceiling
-    const parts = [];
-    const S = 1.5;
-    for (const sgn of [-1, 1]) {
-      parts.push(['iron', worldBox(S * 2 + 0.16, 0.12, 0.12).translate(0, -0.06, sgn * S)]);
-      parts.push(['iron', worldBox(0.12, 0.12, S * 2).translate(sgn * S, -0.06, 0)]);
-    }
-    for (let i = -2; i <= 2; i++) parts.push(['iron', worldBox(0.05, 0.06, S * 2).translate(i * S * 0.4, -0.04, 0)]);
-    for (let i = -2; i <= 2; i++) parts.push(['iron', worldBox(S * 2, 0.04, 0.05).translate(0, -0.03, i * S * 0.4)]);
-    addParts(parts, x, top, z, 0);
-    // a dark hole above the grate, so it reads as an opening rather than a decal
-    const hole = new THREE.Mesh(new THREE.PlaneGeometry(S * 2, S * 2), new THREE.MeshBasicMaterial({ color: 0x8aa0c0 }));
-    hole.rotation.x = Math.PI / 2; hole.position.set(x, top + 0.02, z);
-    group.add(hole);
-    // the beam: two crossed soft quads, cool and faint
+  // ---------------- moonlight through ceiling grates: the start room's (where you arrive), and in the
+  // Drowned Sewers the street drains over the bigger rooms. Each is an iron grate set in the vault with
+  // the night sky pale above it, a beam of two crossed soft quads leaning down from it, the grate's
+  // shadow-latticed pool of light where the beam lands, and a cold light.
+  const grates = [...(level.startShaft ? [{ ...level.startShaft, start: true }] : []), ...(level.grates ?? [])];
+  if (grates.length) {
     const c = document.createElement('canvas');
     c.width = 64; c.height = 128;
     const gx = c.getContext('2d');
@@ -741,17 +748,55 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     const side = gx.createLinearGradient(0, 0, 64, 0);
     side.addColorStop(0, 'rgba(0,0,0,1)'); side.addColorStop(0.25, 'rgba(0,0,0,0)'); side.addColorStop(0.75, 'rgba(0,0,0,0)'); side.addColorStop(1, 'rgba(0,0,0,1)');
     gx.globalCompositeOperation = 'destination-out'; gx.fillStyle = side; gx.fillRect(0, 0, 64, 128);
-    const bg = new GeoBuilder();
-    const w = S * 1.9, w2 = S * 2.3, lean = 0.35;
-    bg.quad([x - w / 2, top, z], [x + w / 2, top, z], [x + w2 / 2 + lean, gy + 0.02, z + lean], [x - w2 / 2 + lean, gy + 0.02, z + lean], [0, 0, 1], [[0, 1], [1, 1], [1, 0], [0, 0]]);
-    bg.quad([x, top, z - w / 2], [x, top, z + w / 2], [x + lean, gy + 0.02, z + w2 / 2 + lean], [x + lean, gy + 0.02, z - w2 / 2 + lean], [1, 0, 0], [[0, 1], [1, 1], [1, 0], [0, 0]]);
     const beamTex = new THREE.CanvasTexture(c);
     ownTex.push(beamTex);
+    // the pool: a soft square crossed by the grate's bars both ways
+    const pc = document.createElement('canvas');
+    pc.width = pc.height = 128;
+    const px = pc.getContext('2d');
+    const pr = px.createRadialGradient(64, 64, 10, 64, 64, 64);
+    pr.addColorStop(0, 'rgba(255,255,255,1)'); pr.addColorStop(0.6, 'rgba(255,255,255,0.7)'); pr.addColorStop(1, 'rgba(255,255,255,0)');
+    px.fillStyle = pr; px.fillRect(0, 0, 128, 128);
+    px.globalCompositeOperation = 'destination-out';
+    px.filter = 'blur(2px)';
+    px.fillStyle = 'rgba(0,0,0,0.8)';
+    for (let k = -2; k <= 2; k++) { px.fillRect(64 + k * 20 - 3, 0, 6, 128); px.fillRect(0, 64 + k * 20 - 3, 128, 6); }
+    const poolTex = new THREE.CanvasTexture(pc);
+    ownTex.push(poolTex);
+    const bg = new GeoBuilder(), pg = new GeoBuilder();
+    const holeMat = new THREE.MeshBasicMaterial({ color: 0x8aa0c0 });
+    for (const gr of grates) {
+      const { x, z } = gr;
+      const ci = level.idx(Math.floor(x / T), Math.floor(z / T));
+      const top = level.ceil[ci], gy = level.kind[ci] === K_WATER ? -0.25 : level.hgt[ci];
+      const parts = [];
+      const S = gr.start ? 1.5 : 1.1;
+      for (const sgn of [-1, 1]) {
+        parts.push(['iron', worldBox(S * 2 + 0.16, 0.12, 0.12).translate(0, -0.06, sgn * S)]);
+        parts.push(['iron', worldBox(0.12, 0.12, S * 2).translate(sgn * S, -0.06, 0)]);
+      }
+      for (let i = -2; i <= 2; i++) parts.push(['iron', worldBox(0.05, 0.06, S * 2).translate(i * S * 0.4, -0.04, 0)]);
+      for (let i = -2; i <= 2; i++) parts.push(['iron', worldBox(S * 2, 0.04, 0.05).translate(0, -0.03, i * S * 0.4)]);
+      addParts(parts, x, top, z, 0);
+      // a pale hole above the grate (the night over the street), so it reads as an opening rather than a decal
+      const hole = new THREE.Mesh(new THREE.PlaneGeometry(S * 2, S * 2), holeMat);
+      hole.rotation.x = Math.PI / 2; hole.position.set(x, top + 0.02, z);
+      group.add(hole);
+      const w = S * 1.9, w2 = S * 2.3, lean = 0.35;
+      bg.quad([x - w / 2, top, z], [x + w / 2, top, z], [x + w2 / 2 + lean, gy + 0.02, z + lean], [x - w2 / 2 + lean, gy + 0.02, z + lean], [0, 0, 1], [[0, 1], [1, 1], [1, 0], [0, 0]]);
+      bg.quad([x, top, z - w / 2], [x, top, z + w / 2], [x + lean, gy + 0.02, z + w2 / 2 + lean], [x + lean, gy + 0.02, z - w2 / 2 + lean], [1, 0, 0], [[0, 1], [1, 1], [1, 0], [0, 0]]);
+      const P2 = S * 1.35, cx = x + lean, cz = z + lean, fy = gy + 0.035;
+      pg.quad([cx - P2, fy, cz - P2], [cx + P2, fy, cz - P2], [cx + P2, fy, cz + P2], [cx - P2, fy, cz + P2], [0, 1, 0], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      // a pool of cold light beneath it
+      lightPool.addTorch(new THREE.Vector3(x + lean * 0.5, top - 0.8, z + lean * 0.5), { color: 0x9ab4e0, intensity: gr.start ? 22 : 18, range: 9, flicker: 0.05, priority: 0.5 });
+      shafts.push({ x, w: S * 1.6, top, z0: z - 0.2, z1: z + 0.4, col: new THREE.Color(0.1, 0.12, 0.16), vertical: true });
+    }
     const bm = new THREE.Mesh(bg.build(), new THREE.MeshBasicMaterial({ map: beamTex, color: new THREE.Color(0.1, 0.12, 0.16), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: true }));
     bm.renderOrder = 6;
     group.add(bm);
-    // a pool of cold light on the floor beneath it
-    lightPool.addTorch(new THREE.Vector3(x + lean * 0.5, top - 0.8, z + lean * 0.5), { color: 0x9ab4e0, intensity: 22, range: 9, flicker: 0.05, priority: 0.5 });
+    const pm = new THREE.Mesh(pg.build(), new THREE.MeshBasicMaterial({ map: poolTex, color: new THREE.Color(0.22, 0.26, 0.32), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: true, polygonOffset: true, polygonOffsetFactor: -2 }));
+    pm.renderOrder = 5;
+    group.add(pm);
   }
 
   // ---------------- outdoor sky & distant keep

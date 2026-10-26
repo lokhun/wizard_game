@@ -7,6 +7,7 @@ import { ContactShadows } from '../render/contact.js';
 import { Storm } from '../render/storm.js';
 import { Debris } from '../render/debris.js';
 import { Hangers } from '../world/hangers.js';
+import { Flotsam } from '../world/flotsam.js';
 import { waterRipple } from '../world/materials.js';
 import { generateLevel, ROOM, T, K_ALT, K_WATER, WATER_Y } from '../world/levelgen.js';
 import { keyOf } from '../core/input.js';
@@ -109,6 +110,7 @@ export class Game {
     this.debris = null; // (wreckage of smashed barrels and crates: render/debris.js)
     this.rubble = null; // (and the same in stone: a broken wall's blocks)
     this.hangers = null; // (the Oubliette's swinging cages and chains: world/hangers.js)
+    this.flotsam = null; // (wood riding the Sewers' channels: world/flotsam.js)
     this._gpD = new Float32Array(8); this._gpA = new Array(8).fill(null); // (_grassPush's nearest foes)
     this._bolt = { a: new THREE.Vector3(), b: new THREE.Vector3(), o: { jag: 7, width: 0.55, life: 0.22, branches: 3, seg: 3.5, color: [2.2, 2.5, 3.4] } };
     this.remotes = new Map();
@@ -273,6 +275,8 @@ export class Game {
     this.critters = this.settings?.quality === 'low' ? null : new Critters(this.scene, level);
     this.hangers?.dispose();
     this.hangers = level.biome.id === 'dungeon' ? new Hangers(this.scene, level, this.built.mats, { quality: this.settings?.quality }) : null;
+    this.flotsam?.dispose();
+    this.flotsam = level.biome.id === 'sewers' ? new Flotsam(this.scene, level, this.built.mats, { quality: this.settings?.quality }) : null;
     // the hanging lanterns burn and light the middle of their rooms
     for (const l of this.hangers?.lanterns ?? []) {
       this.lights.addTorch(new THREE.Vector3(l.x, l.y + 0.1, l.z), { color: level.biome.torchColor, intensity: 26, range: 15 });
@@ -747,6 +751,7 @@ export class Game {
     this.critters?.update(dt, this.time, this.renderer.camera.position, this.allPlayers());
     this.debris?.update(dt, this.actors._floor);
     this.hangers?.update(dt, this.time, this.renderer.camera.position);
+    this.flotsam?.update(dt, this.time, this.renderer.camera.position);
     if (this.biome?.outdoor) this._grassPush();
     this.rubble?.update(dt, this.actors._floor);
     this.contact.update(this);

@@ -61,10 +61,21 @@ export function makeWaterMaterial(factory, tint = 0x0d1a12) {
   const uB = { value: new THREE.Vector2() };
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uWaterB = uB; sh.uniforms.uRip = RIP; sh.uniforms.uRipT = RIP_T;
-    sh.vertexShader = 'varying vec2 vRipW;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vRipW = (modelMatrix * vec4(transformed, 1.0)).xz;');
-    sh.fragmentShader = `uniform vec2 uWaterB; uniform vec4 uRip[${RIP_N}]; uniform float uRipT; varying vec2 vRipW;\n` + sh.fragmentShader.replace('#include <normal_fragment_maps>', `
-      vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
-      vec3 mapN2 = texture2D( normalMap, vNormalMapUv * 0.61 + uWaterB ).xyz * 2.0 - 1.0;
+    // a channel's water runs (aFlow, m/s: its surface scrolls that way, the two layers at different rates)
+    // and froths where it meets the banks and a bridge's piers (aFoam), scum riding mid-stream; a basin's
+    // still water has neither (the attributes read 0)
+    sh.vertexShader = 'attribute vec2 aFlow; attribute float aFoam; varying vec2 vFlow; varying float vFoam; varying vec2 vRipW;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vRipW = (modelMatrix * vec4(transformed, 1.0)).xz; vFlow = aFlow; vFoam = aFoam;');
+    sh.fragmentShader = `uniform vec2 uWaterB; uniform vec4 uRip[${RIP_N}]; uniform float uRipT; varying vec2 vRipW; varying vec2 vFlow; varying float vFoam;\n` + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+      vec2 fUv = vec2(vFlow.x, -vFlow.y) / 6.0 * uRipT;
+      float fl = length(vFlow);
+      float wFoam = smoothstep(0.62, 1.0, vFoam) * smoothstep(0.46, 0.7, texture2D( normalMap, vNormalMapUv * 2.3 + fUv * 2.6 ).r);
+      wFoam += fl * 0.8 * (1.0 - vFoam) * smoothstep(0.74, 0.86, texture2D( normalMap, vNormalMapUv * 1.3 + fUv * 1.5 + 0.37 ).g);
+      wFoam = clamp(wFoam, 0.0, 1.0);
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.36, 0.42, 0.33), wFoam * 0.65);
+      diffuseColor.a = mix(diffuseColor.a, 1.0, wFoam * 0.5);`).replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+      roughnessFactor = mix(roughnessFactor, 0.75, wFoam);`).replace('#include <normal_fragment_maps>', `
+      vec3 mapN = texture2D( normalMap, vNormalMapUv + fUv ).xyz * 2.0 - 1.0;
+      vec3 mapN2 = texture2D( normalMap, vNormalMapUv * 0.61 + uWaterB + fUv * 0.8 ).xyz * 2.0 - 1.0;
       mapN = vec3( mapN.xy + mapN2.xy, mapN.z * mapN2.z );
       mapN.xy *= normalScale;
       // ripples: a couple of crests riding out on a ring (the surfaces' uv runs along +x and -z)
@@ -79,9 +90,10 @@ export function makeWaterMaterial(factory, tint = 0x0d1a12) {
       }
       mapN.xy += rip * 2.0;
       normal = normalize( tbn * mapN );`).replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-      totalEmissiveRadiance += vec3(0.05, 0.065, 0.065) * min(ripK, 1.5); // (a crest's sheen, so it reads away from the torches too)`);
+      totalEmissiveRadiance += vec3(0.05, 0.065, 0.065) * min(ripK, 1.5); // (a crest's sheen, so it reads away from the torches too)
+      totalEmissiveRadiance += vec3(0.035, 0.045, 0.035) * wFoam;`);
   };
-  mat.customProgramCacheKey = () => 'water3';
+  mat.customProgramCacheKey = () => 'water4';
   mat.userData.update = (time) => {
     t.normalMap.offset.set(time * 0.012, time * 0.02);
     uB.value.set(-time * 0.017, time * 0.009);

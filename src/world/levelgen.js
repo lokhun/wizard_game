@@ -43,6 +43,7 @@ export class Level {
     this.colliders = []; // circles {x,z,r}
     this.breakables = []; // barrels/crates {i,type,x,z,r,alive}
     this.pits = []; // the Oubliette's grated shafts {i (cell), x, z, y (the floor round it)}
+    this.grates = []; // street drains in the Sewers' vaults, moonlight falling through them {x, z}
   }
   idx(x, y) { return y * this.W + x; }
   inb(x, y) { return x >= 0 && y >= 0 && x < this.W && y < this.H; }
@@ -421,18 +422,23 @@ function decorateRoom(level, room, rng) {
         const bx = rng.int(x + 2, x + w - 4);
         setRect(level, bx, yy, 2, cwid, (i) => { level.kind[i] = K_ALT; level.hgt[i] = 0; });
         room.layout = 'channelH';
+        room.flow = [rng.chance(0.5) ? 1 : -1, 0]; // (the way its water runs)
+        room.chan = { x0: x, x1: x + w, y0: yy, y1: yy + cwid, bridge: bx };
       } else {
         const xx = Math.floor(cx - cwid / 2);
         setRect(level, xx, y, cwid, h, (i) => { level.kind[i] = K_WATER; level.hgt[i] = -0.7; });
         const by = rng.int(y + 2, y + h - 4);
         setRect(level, xx, by, cwid, 2, (i) => { level.kind[i] = K_ALT; level.hgt[i] = 0; });
         room.layout = 'channelV';
+        room.flow = [0, rng.chance(0.5) ? 1 : -1];
+        room.chan = { x0: xx, x1: xx + cwid, y0: y, y1: y + h, bridge: by };
       }
     } else if (isBoss) {
       // boss cistern: big central pool ring
       setRect(level, x + 3, y + 3, w - 6, h - 6, (i) => { level.kind[i] = K_WATER; level.hgt[i] = -0.6; });
       setRect(level, x + 6, y + 6, w - 12, h - 12, (i) => { level.kind[i] = K_ALT; level.hgt[i] = 0; });
       room.layout = 'cistern';
+      room.flow = 'ring'; // (it wheels round the island, sunwise)
     }
     // pillars
     if (w >= 10 && h >= 10 && rng.chance(0.6)) {
@@ -449,6 +455,17 @@ function decorateRoom(level, room, rng) {
       const s = randFloorSpot(1); if (s) P(rng.pick(['grate', 'puddle', 'mushrooms', 'rubble']), s[0], s[1]);
     }
     wallTorches(level, room, rng, isBoss ? 3 : 4);
+    // a street drain in the vault of the bigger rooms, the night's light falling through it: over the
+    // channel where there is one (a bright patch on the moving water), else somewhere mid-room
+    if (room.type !== ROOM.START && w * h >= 90 && rng.chance(0.75)) {
+      let gx, gz;
+      if (room.chan) {
+        const c = room.chan, horiz = c.x1 - c.x0 > c.y1 - c.y0;
+        gx = horiz ? (rng.int(c.x0 + 2, c.x1 - 3) + 0.5) * T : (c.x0 + c.x1) / 2 * T;
+        gz = horiz ? (c.y0 + c.y1) / 2 * T : (rng.int(c.y0 + 2, c.y1 - 3) + 0.5) * T;
+      } else { gx = (x + w / 2 + rng.range(-w * 0.2, w * 0.2)) * T; gz = (y + h / 2 + rng.range(-h * 0.2, h * 0.2)) * T; }
+      if (!level.colliders.some((c) => Math.hypot(c.x - gx, c.z - gz) < 2)) level.grates.push({ x: gx, z: gz });
+    }
     // glowing fungus lights
     for (let i = 0; i < rng.int(1, 3); i++) {
       const s = edgeSpot(); if (!s) continue;
