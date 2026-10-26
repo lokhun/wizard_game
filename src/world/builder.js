@@ -7,6 +7,7 @@ import { RNG } from '../core/rng.js';
 import { CandleField } from '../render/candles.js';
 import { Pages } from '../render/pages.js';
 import { Wisps } from '../render/wisps.js';
+import { SpectralCourt, SoulAsh } from '../render/court.js';
 import { dressLevel, streamMaterial, streamTexture } from './dressing.js';
 
 // ---------------------------------------------------------------------------
@@ -543,6 +544,65 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
   const wispMesh = wisps.build();
   if (wispMesh) group.add(wispMesh);
 
+  // ---------------- the Hollow Throne's dead court (render/court.js): ghosts keeping their places in rows
+  // along each hall's aisles, facing the carpet, and on their knees before the throne; and the ash of
+  // souls sifting down through every room
+  const court = new SpectralCourt(), ash = new SoulAsh();
+  if (biome.id === 'throne') {
+    const rng = new RNG((level.seed ?? 1) * 13 + 7);
+    const clear = (x, z) => {
+      const cx = Math.floor(x / T), cz = Math.floor(z / T);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (!level.inb(cx + dx, cz + dy)) return false;
+        const c = level.cells[level.idx(cx + dx, cz + dy)];
+        if (c === SOLID && dx === 0 && dy === 0) return false;
+      }
+      const i = level.idx(cx, cz);
+      if (level.cells[i] !== FLOOR || level.kind[i] === K_DAIS) return false;
+      if (level.colliders.some((c) => Math.hypot(c.x - x, c.z - z) < (c.r ?? 0.5) + 0.75)) return false;
+      if (level.props.some((q) => Math.hypot(q.x - x, q.z - z) < 0.9)) return false;
+      // (standing on level ground: not astride a tier's step)
+      const f = level.floorAt(x, z);
+      return Math.abs(level.floorAt(x + 0.3, z) - f) < 0.05 && Math.abs(level.floorAt(x - 0.3, z) - f) < 0.05 && Math.abs(level.floorAt(x, z + 0.3) - f) < 0.05 && Math.abs(level.floorAt(x, z - 0.3) - f) < 0.05;
+    };
+    const person = (x, z, yaw, kneel) => {
+      if (!clear(x, z)) return false;
+      court.add(x, level.floorAt(x, z), z, yaw + (rng.next() - 0.5) * 0.25, { seed: rng.next(), kneel, crown: rng.next() < 0.15 ? 1 : 0, scale: 0.92 + rng.next() * 0.14 });
+      return true;
+    };
+    const keep = quality === 'low' ? 0.5 : 1;
+    for (const room of level.rooms) {
+      if (room.type === ROOM.START || room.w < 7 || room.h < 7) continue;
+      const cx = room.cx, z0 = room.y * T, z1 = (room.y + room.h) * T;
+      if (room.layout === 'throne') {
+        // kneeling in ranks before the dais, facing the throne
+        for (let z = z0 + 13; z < z1 - 3; z += 2.6) for (const side of [-1, 1]) for (let k = 0; k < 3; k++) {
+          if (rng.next() > 0.8 * keep) continue;
+          person(cx + side * (3.4 + k * 1.7) + (rng.next() - 0.5) * 0.3, z + (rng.next() - 0.5) * 0.4, Math.PI, 1);
+        }
+      } else {
+        // standing in a row down each side of the carpet, turned to it
+        // (each place tries a few distances out from the carpet: pillars and a tier's steps take some)
+        for (let z = z0 + 3; z < z1 - 3; z += 2.1) for (const side of [-1, 1]) {
+          if (rng.next() > 0.8 * keep) continue;
+          const jz = z + (rng.next() - 0.5) * 0.4, yaw = side < 0 ? Math.PI / 2 : -Math.PI / 2;
+          for (const off of [3.4, 2.7, 4.3, 5.2]) if (person(cx + side * (off + rng.next() * 0.3), jz, yaw, 0)) break;
+        }
+      }
+      // ash
+      const n = Math.round(room.w * room.h * (quality === 'low' ? 0.06 : quality === 'medium' ? 0.1 : 0.15));
+      for (let k = 0; k < n; k++) {
+        const x = (room.x + 0.5 + rng.next() * (room.w - 1)) * T, z = (room.y + 0.5 + rng.next() * (room.h - 1)) * T;
+        const i = level.idx(Math.floor(x / T), Math.floor(z / T));
+        if (level.roomId[i] !== room.id) continue;
+        ash.add(x, z, Math.min(level.ceil[i] - 0.4, 9), level.floorAt(x, z) + 0.05, 1.2, 1.2, rng.next());
+      }
+    }
+  }
+  const courtMesh = court.build(), ashMesh = ash.build();
+  if (courtMesh) group.add(courtMesh);
+  if (ashMesh) group.add(ashMesh);
+
   // ---------------- water surfaces
   // (each corner carries the way the water runs there, aFlow, from its room: along a channel, or wheeling
   // round a cistern's island; and aFoam, 1 where the corner touches anything that isn't water: the banks,
@@ -897,6 +957,7 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     candles,
     pages,
     wisps,
+    court,
     shafts,
     interactables,
     sky,
@@ -907,6 +968,8 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
       candles.update(time);
       pages.update(time);
       wisps.update(time);
+      court.update(time);
+      ash.update(time);
       if (mats.stainedGlass.uniforms) mats.stainedGlass.uniforms.uTime.value = time;
       for (const d of doors) {
         if (!d.mesh) continue;

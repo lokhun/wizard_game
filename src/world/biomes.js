@@ -121,8 +121,9 @@ export const BIOMES = [
     ceilRoom: [11, 13],
     ceilCorr: 7,
     outdoor: false,
-    fog: { color: 0x0a0610, density: 0.028 },
-    ambient: { sky: 0x40305a, ground: 0x08060a, intensity: 0.6 },
+    // (a violet dusk lighter than the stone, so the colonnades stand dark against it)
+    fog: { color: 0x1a1226, density: 0.024 },
+    ambient: { sky: 0x56447a, ground: 0x0e0a10, intensity: 0.66 },
     torchColor: 0x9a7ac0,
     grade: { lift: [0.008, 0.004, 0.014], gain: [1.02, 0.95, 1.02], saturation: 0.82, exposure: 1.0, bloom: 0.7 },
     rooms: 4,

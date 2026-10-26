@@ -111,6 +111,7 @@ export class Game {
     this.rubble = null; // (and the same in stone: a broken wall's blocks)
     this.hangers = null; // (the Oubliette's swinging cages and chains: world/hangers.js)
     this.flotsam = null; // (wood riding the Sewers' channels: world/flotsam.js)
+    this._courtK = 0; // (the Hollow Throne's dead court fading out while a fight is on: 0..1)
     this._gpD = new Float32Array(8); this._gpA = new Array(8).fill(null); // (_grassPush's nearest foes)
     this._bolt = { a: new THREE.Vector3(), b: new THREE.Vector3(), o: { jag: 7, width: 0.55, life: 0.22, branches: 3, seg: 3.5, color: [2.2, 2.5, 3.4] } };
     this.remotes = new Map();
@@ -276,6 +277,8 @@ export class Game {
     this.hangers?.dispose();
     this.hangers = level.biome.id === 'dungeon' ? new Hangers(this.scene, level, this.built.mats, { quality: this.settings?.quality }) : null;
     this.built.wisps?.setEye(this.renderer.camera.position);
+    this.built.court?.setEye(this.renderer.camera.position);
+    this._courtK = 0;
     this.flotsam?.dispose();
     this.flotsam = level.biome.id === 'sewers' ? new Flotsam(this.scene, level, this.built.mats, { quality: this.settings?.quality }) : null;
     // the hanging lanterns burn and light the middle of their rooms
@@ -792,6 +795,12 @@ export class Game {
     }
     this.lights.update(realDt, this.time, cam.position);
     this.built.update(realDt, this.time);
+    // the dead court flees a hall while a fight is on in it
+    if (this.built.court?.list.length) {
+      let on = 0; for (const r of this.level.rooms) if (r._locked) { on = 1; break; }
+      this._courtK += (on - this._courtK) * Math.min(1, realDt * (on ? 2.5 : 0.6));
+      this.built.court.setFight(this._courtK);
+    }
     this.vfx.update(dt, this.time, realDt);
     this.particles.update(this.time);
     this._viewModel(realDt);
