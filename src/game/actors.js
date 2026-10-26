@@ -150,6 +150,7 @@ export class Actor {
     // sentries placed before the party arrives: idle until they notice someone
     this.dormant = !!opts.dormant;
     this.caged = false; // (a sentry locked in an Oubliette cell: it waits for the door, not for a sight of you)
+    this.falling = null; // (knocked into an oubliette: going down the shaft, see _fall)
     this.homeRoom = opts.homeRoom ?? null;
     // Every field an actor ever gets, declared here in one order. Added as
     // they came up (by state, attack, status, encounter), actors ended up with
@@ -942,6 +943,23 @@ export class ActorManager {
     return out;
   }
 
+  // over the edge: it staggers out over the grate (the bars give: they were never meant to hold), drops down
+  // the shaft, and is gone, a kill for whoever shoved it (host; peers see it fall in the snapshots)
+  _startFall(a, pit) {
+    a.falling = { t: 0, pit, x0: a.pos.x, z0: a.pos.z };
+    a.kb.x = a.kb.z = 0;
+    this._setState(a, 'stagger', 'stagger');
+    this.g.pitFallFx(a, pit, true);
+  }
+  _fall(a, dt) {
+    const F = a.falling;
+    F.t += dt;
+    const k = Math.min(1, F.t / 0.22) * 0.85, drop = Math.max(0, F.t - 0.12);
+    a.pos.x = F.x0 + (F.pit.x - F.x0) * k; a.pos.z = F.z0 + (F.pit.z - F.z0) * k;
+    a.pos.y = F.pit.y - 6 * drop * drop;
+    if (F.t > 0.75) { a.falling = null; a.hp = 0; this.kill(a, a.lastHitBy, 'physical'); }
+  }
+
   // ------------------------------------------------------------- host AI
   _hostUpdate(a, dt) {
     const g = this.g;
@@ -982,6 +1000,7 @@ export class ActorManager {
       a.life -= dt;
       if (a.life <= 0) { this.kill(a, 0, 'necrotic'); return; }
     }
+    if (a.falling) { this._fall(a, dt); return; }
 
     if (hasAffix(a, 'bombardier') && !a.dormant && a.state !== 'spawn') this._bombard(a, dt);
     const mm = moveMult(a);
@@ -990,6 +1009,13 @@ export class ActorManager {
     // knockback integration
     const kbl = Math.hypot(a.kb.x, a.kb.z);
     let mx = 0, mz = 0;
+    // a hard shove over an oubliette's grate sends a foe down it (never a boss, nor anything that flies)
+    if (kbl > 5 && !a.boss && !a.flying && g.level.pits.length) {
+      const L = g.level, ahead = a.radius + 0.35;
+      const i = L.idx(Math.floor((a.pos.x + a.kb.x / kbl * ahead) / 2), Math.floor((a.pos.z + a.kb.z / kbl * ahead) / 2));
+      const pit = L.pits.find((q) => q.i === i);
+      if (pit) { this._startFall(a, pit); return; }
+    }
     if (kbl > 0.05) {
       mx += a.kb.x * dt; mz += a.kb.z * dt;
       const decay = Math.exp(-dt * 6);

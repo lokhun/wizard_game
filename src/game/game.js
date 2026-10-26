@@ -981,6 +981,14 @@ export class Game {
     });
     if (local) this.net?.broadcast({ t: 'cells', r: room.id });
   }
+  // a foe goes down an oubliette: its cry, the grate rattling, and the word over the pit (every peer)
+  pitFallFx(a, pit, local) {
+    this.audio?.play(a.def.sound ?? 'beast_growl', { pos: a.pos, volume: 0.9, pitch: 1.15 });
+    this.audio?.play('cage_rattle', { pos: _splashV.set(pit.x, pit.y, pit.z), volume: 0.8 });
+    this.ui?.floatText(new THREE.Vector3(pit.x, pit.y + 1.6, pit.z), 'FORGOTTEN', '#9ab8c8', true);
+    this.spells.after(0.9, () => this.audio?.play('impact_earth', { pos: _splashV.set(pit.x, pit.y - 3, pit.z), volume: 0.5 }));
+    if (local) this.net?.broadcast({ t: 'pitfall', id: a.id, i: pit.i });
+  }
   // a blast swings the Oubliette's cages and chains overhead, and the one it shoved hardest rattles
   rattleHangers(p, r, k) {
     const h = this.hangers?.push(p, r, k);

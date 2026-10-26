@@ -44,6 +44,7 @@ export function handleGameMessage(game, msg, from) {
     case 'bat': { const a = game.actors.byId.get(msg.id); if (a) { a.brainAttackType = msg.a; a.attackType = msg.a; } break; }
     case 'brk': game.breakProp(msg.i, false); break;
     case 'cells': game.openCells(game.level?.rooms.find((r) => r.id === msg.r), false); break;
+    case 'pitfall': { const a = game.actors.byId.get(msg.id), pit = game.level?.pits.find((q) => q.i === msg.i); if (a && pit) game.pitFallFx(a, pit, false); break; }
     case 'chest': {
       const it = game.interactables.find((i) => i.id === msg.id);
       it?.open?.();
