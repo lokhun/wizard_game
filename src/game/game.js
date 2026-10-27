@@ -178,6 +178,7 @@ export class Game {
   // ======================================================================
   startRun({ seed, localId, name, classId, isHost, net, players = [], floor = 0, abyss = 0 }) {
     this.player?.endChannel();
+    this.runId = (this.runId ?? 0) + 1; // (a fade's callback checks it is still its own run)
     this.abyss = abyss; // the Abyss: how many times the party has descended past the Hollow King
     if (abyss) this.difficulty = abyssLaws(this.difficulty, abyss);
     this.cinematic = null;
@@ -1865,7 +1866,8 @@ export class Game {
     p.spawnAt(ante.cx + sx, ante.cz + sz, Math.PI);
     for (const r of this.remotes.values()) { r.pos.set(ante.cx + sx, 0, ante.cz + sz); r.net.x = ante.cx + sx; r.net.z = ante.cz + sz; }
     p.heal(p.maxHp);
-    setTimeout(() => !this.ended && this.ui?.toast(`Boss Rush · ${index + 1} of ${BIOMES.length} — arm yourself, then face ${BOSS_DEFS[level.biome.boss]?.name ?? 'the guardian'}`, '#ffc060'), 4800);
+    // (only while this realm still stands: quitting to the menu starts the backdrop's own run, so `ended` alone won't do)
+    setTimeout(() => !this.ended && this.level === level && this.ui?.toast(`Boss Rush · ${index + 1} of ${BIOMES.length} — arm yourself, then face ${BOSS_DEFS[level.biome.boss]?.name ?? 'the guardian'}`, '#ffc060'), 4800);
   }
 
   onWave(n, of) {
@@ -2023,7 +2025,9 @@ export class Game {
   }
 
   transitionToFloor(i) {
+    const run = this.runId;
     this.ui?.fadeOut(0.8, () => {
+      if (this.runId !== run) { this.ui?.fadeIn(0.6); return; } // (the party quit to the menu during the fade: its backdrop stays)
       this.loadFloor(i);
       this.transitioning = false;
       this.ui?.fadeIn(1.2);
@@ -2058,15 +2062,18 @@ export class Game {
     const law = lawAt(d);
     this.events.emit('abyss', d);
     this.audio?.play('boss_roar', { volume: 0.6 });
+    const run = this.runId;
     this.ui?.fadeOut(1.4, () => {
+      if (this.runId !== run) { this.ui?.fadeIn(0.6); return; }
       this.loadFloor(0);
       this.transitioning = false;
       const p = this.player;
       if (p.dead || p.downed) p.revive(1);
       p.heal(p.maxHp);
       this.ui?.fadeIn(1.6);
-      setTimeout(() => { if (!this.ended) { this.ui?.banner(`ABYSS ${d} · ${law.name.toUpperCase()}`, law.desc, law.color, 5); this.ui?.toast(`Abyssal law — ${law.name}: ${law.desc}`, law.color); } }, 2600);
-      if (this._curseNote) { const n = this._curseNote; this._curseNote = null; setTimeout(() => !this.ended && this.ui?.toast(n, '#ff5878'), 5200); }
+      const lvl = this.level, here = () => !this.ended && this.level === lvl; // (not on the menu's backdrop if the party quit)
+      setTimeout(() => { if (here()) { this.ui?.banner(`ABYSS ${d} · ${law.name.toUpperCase()}`, law.desc, law.color, 5); this.ui?.toast(`Abyssal law — ${law.name}: ${law.desc}`, law.color); } }, 2600);
+      if (this._curseNote) { const n = this._curseNote; this._curseNote = null; setTimeout(() => here() && this.ui?.toast(n, '#ff5878'), 5200); }
     });
   }
 

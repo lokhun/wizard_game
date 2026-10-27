@@ -566,7 +566,7 @@ export class UI {
       const ex = game.time < a.exposedUntil;
       if (this._bossEx !== ex) { this._bossEx = ex; h.boss.classList.toggle('exposed', ex); }
       if (a.gate) h.bossGateTime.style.transform = `scaleX(${Math.max(0, (a.gate.until - game.time) / a.gate.dur)})`;
-      if (a.dead) { setTimeout(() => h.boss.classList.add('hidden'), 1500); this.bossActor = null; }
+      if (a.dead) { setTimeout(() => { if (!this.bossActor) h.boss.classList.add('hidden'); }, 1500); this.bossActor = null; } // (not a boss come up since)
     }
     // objective
     const room = game.level.roomAt(p.pos.x, p.pos.z);
