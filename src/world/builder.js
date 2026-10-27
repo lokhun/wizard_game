@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { tiledMesh, levelPVS } from '../render/tiles.js';
+// ?nocull=1: the level as one plain mesh per material (A/B tests of the occlusion cull)
+const NOCULL = typeof location !== 'undefined' && /[?&]nocull=1/.test(location.search);
 import { GeoBuilder, tf, worldBox } from '../render/geo.js';
 import { T, SOLID, FLOOR, BLOCK, K_MAIN, K_ALT, K_WATER, K_DAIS, ROOM } from './levelgen.js';
 import { PROPS, PROP_FLAMES, CHANDELIER_FLAMES, cellBars, bookshelf, setPropDetail } from './props.js';
@@ -647,7 +650,8 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     if (!b.count) continue;
     const mat = mats[key];
     if (!mat) continue;
-    const mesh = new THREE.Mesh(b.build(), mat);
+    // (indoors: tiled, so the occlusion cull below can drop what walls hide)
+    const mesh = NOCULL || biome.outdoor ? new THREE.Mesh(b.build(), mat) : tiledMesh(b.build(), mat);
     mesh.name = 'lvl_' + key;
     mesh.matrixAutoUpdate = false;
     mesh.updateMatrix();
@@ -655,6 +659,12 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     group.add(mesh);
     meshes.push(mesh);
   }
+  // indoors (walls to the ceiling) the tiles hidden behind walls are dropped (see levelPVS);
+  // outdoors you see over the walls (towers, the keep), so the courtyard draws whole
+  const tiled = meshes.filter((m) => m.userData.tiled);
+  const t0 = performance.now();
+  const pvs = tiled.length ? levelPVS(level, T, (i) => level.cells[i] !== SOLID) : null;
+  if (pvs) pvs.ms = performance.now() - t0; // (50-120 ms, behind the loading veil)
 
   // ---------------- dressing extras: falling water (scrolling; high quality only)
   if (dressed.streams) {
@@ -961,6 +971,9 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     shafts,
     interactables,
     sky,
+    pvs,
+    // before each render: show only the level tiles that can be seen from the camera's tile
+    cull(camPos) { pvs?.apply(tiled, camPos.x, camPos.z); },
     update(dt, time) {
       mats.water.userData.update?.(time);
       mats.waterFlat.userData.update?.(time);

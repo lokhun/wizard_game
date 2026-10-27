@@ -742,7 +742,7 @@ function loop(now) {
       if (!window.__freeze) game.update(dt);
     }
   }
-  if (!NORENDER) renderer.render(performance.now() / 1000);
+  if (!NORENDER) { game?.built?.cull?.(renderer.camera.position); renderer.render(performance.now() / 1000); }
   input.endFrame();
 }
 
