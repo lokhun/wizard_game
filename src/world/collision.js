@@ -57,8 +57,18 @@ export class Collision {
     const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dz)) / (r * 0.8)));
     const sx = dx / steps, sz = dz / steps;
     for (let s = 0; s < steps; s++) {
+      // a body overlapping a wall cell beside it (a prop's push, a big body squeezed through a
+      // gap) is first eased out of it along its own row or column: the axis checks below assume
+      // it isn't, and read a wall beside it as one ahead (they snapped a slime 1.7 m into a wall)
+      const ccx = Math.floor(x / T), ccz = Math.floor(z / T);
+      if (!this.cellBlocked(ccx, ccz, y)) {
+        if (this.cellBlocked(Math.floor((x + r) / T), ccz, y)) x = Math.min(x, (ccx + 1) * T - r - 0.001);
+        if (this.cellBlocked(Math.floor((x - r) / T), ccz, y)) x = Math.max(x, ccx * T + r + 0.001);
+        if (this.cellBlocked(ccx, Math.floor((z + r) / T), y)) z = Math.min(z, (ccz + 1) * T - r - 0.001);
+        if (this.cellBlocked(ccx, Math.floor((z - r) / T), y)) z = Math.max(z, ccz * T + r + 0.001);
+      }
       const bx = x, bz = z;
-      // X axis
+      // X axis (a wall ahead stops the body at it, never sends it back past where it stood)
       let nx = x + sx;
       if (sx !== 0) {
         const edge = nx + Math.sign(sx) * r;
@@ -66,7 +76,7 @@ export class Collision {
         const z0 = Math.floor((z - r + 0.01) / T), z1 = Math.floor((z + r - 0.01) / T);
         for (let cy = z0; cy <= z1; cy++) {
           if (this.cellBlocked(cx, cy, y)) {
-            nx = sx > 0 ? cx * T - r - 0.001 : (cx + 1) * T + r + 0.001;
+            nx = sx > 0 ? Math.max(x, cx * T - r - 0.001) : Math.min(x, (cx + 1) * T + r + 0.001);
             hit = true;
             break;
           }
@@ -80,7 +90,7 @@ export class Collision {
         const x0 = Math.floor((x - r + 0.01) / T), x1 = Math.floor((x + r - 0.01) / T);
         for (let cx = x0; cx <= x1; cx++) {
           if (this.cellBlocked(cx, cy, y)) {
-            nz = sz > 0 ? cy * T - r - 0.001 : (cy + 1) * T + r + 0.001;
+            nz = sz > 0 ? Math.max(z, cy * T - r - 0.001) : Math.min(z, (cy + 1) * T + r + 0.001);
             hit = true;
             break;
           }
@@ -90,10 +100,19 @@ export class Collision {
       // circle & segment colliders
       const p = this.pushOut(x, z, r);
       if (p) {
-        x = p.x; z = p.z; hit = true;
-        // a prop's push must never shove the body into a wall cell (in a doorway a
-        // pillar or rail could push it back across the cell edge): undo this substep
-        if (this._wallNear(x, z, Math.min(0.2, r * 0.5), y)) { x = bx; z = bz; break; }
+        hit = true;
+        // a prop's push must never shove the body into a wall cell (in a doorway a pillar or rail
+        // could push it back across the cell edge). Keep whichever axis of the push is clear of the
+        // wall, so the body slides along it; only when neither is, undo this substep. (Undoing it
+        // outright froze a wizard wedged between a wall and a prop: every step it tried was undone.)
+        const m = Math.min(0.2, r * 0.5);
+        if (!this._wallNear(p.x, p.z, m, y)) { x = p.x; z = p.z; }
+        else if (!this._wallNear(p.x, z, m, y)) x = p.x;
+        else if (!this._wallNear(x, p.z, m, y)) z = p.z;
+        else { x = bx; z = bz; break; }
+        // a gap between two props narrower than the body: it doesn't squeeze in (but one already
+        // wedged there, as it spawned or was knocked, may still work its way out)
+        if (this._pushOnce(x, z, r - 0.08) && !this._pushOnce(bx, bz, r - 0.08)) { x = bx; z = bz; break; }
       }
     }
     return { x, z, hit };
@@ -105,7 +124,19 @@ export class Collision {
       || this.cellBlocked(Math.floor((x - m) / T), Math.floor((z + m) / T), y) || this.cellBlocked(Math.floor((x + m) / T), Math.floor((z + m) / T), y);
   }
 
+  // push a body of radius r out of the props it overlaps; a few passes, so being pushed out of one
+  // into the next settles (one pass left a wizard 25 cm inside a statue beside a small prop)
   pushOut(x, z, r) {
+    let moved = false;
+    for (let it = 0; it < 3; it++) {
+      const p = this._pushOnce(x, z, r);
+      if (!p) break;
+      x = p.x; z = p.z; moved = true;
+    }
+    return moved ? { x, z } : null;
+  }
+
+  _pushOnce(x, z, r) {
     const cx = Math.floor(x / T), cy = Math.floor(z / T);
     let moved = false;
     for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {

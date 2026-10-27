@@ -1321,7 +1321,12 @@ export function dress(D) {
   }
   if (face.beard && hatFace === 'open') {
     const chestFront = (yh) => { const y = yh + HY; outerR(y, RR); let z = RR.zf; if ((cos.shoulders ?? []).some((q) => q.k === 'mantle' || q.k === 'fur') && y < 1.55) { mantleR(0)(y, RR); z = Math.max(z, RR.zf); } return z; };
-    add(M.plainDS, atHead(beardGeo({ col: C(face.beard.col), len: face.beard.len, fork: face.beard.fork, seed: 4, front: chestFront })), (v) => (v.y < HY - 0.15 ? [[head, 0.7], [neck, 0.3]] : [[head, 1]]));
+    add(M.plainDS, atHead(beardGeo({ col: C(face.beard.col), len: face.beard.len, fork: face.beard.fork, seed: 4, front: chestFront })), (v) => {
+      // the chin's beard follows the jaw; below it, the hanging part rests more and more on the chest
+      // (all on the head, a long beard swung into the chest as the wizard looked down)
+      const k = sstep(HY - 0.07, HY - 0.19, v.y);
+      return k < 0.001 ? [[head, 1]] : k > 0.999 ? [[chest, 1]] : [[head, 1 - k], [chest, k]];
+    });
   }
   // eyes: glints of the class colour (bright pinpricks inside a hood, a faint glow in a bare face's irises)
   const eyeK = Math.min(1, (face.eyes ?? 1) * 0.55);

@@ -50,8 +50,15 @@
             if (a.pos.y < ay - 0.25 && a.state !== 'spawn') note(`${a.type} below the floor`, a.pos.x, a.pos.z, ` ${a.pos.y.toFixed(2)} < ${ay.toFixed(2)}`);
           }
         });
-        // stuck: trying to walk, and in 3 s not 10 cm from where it was
-        if (Math.hypot(p.pos.x - lastX, p.pos.z - lastZ) > 0.1) { lastX = p.pos.x; lastZ = p.pos.z; stuckT = 0; } else if ((stuckT += 0.1) > 3) { note('wizard stuck', p.pos.x, p.pos.z); stuckT = 0; p.yaw += Math.PI; }
+        // stuck: trying to walk, and in 3 s not 10 cm from where it was, though the way it wants to go is
+        // open (walking into a wall or a corner for 3 s is the random walk's doing, not a trap)
+        if (Math.hypot(p.pos.x - lastX, p.pos.z - lastZ) > 0.1) { lastX = p.pos.x; lastZ = p.pos.z; stuckT = 0; } else if ((stuckT += 0.1) > 3) {
+          const f = (inp.down.has('KeyW') ? 1 : 0) - (inp.down.has('KeyS') ? 1 : 0), sd = (inp.down.has('KeyD') ? 1 : 0) - (inp.down.has('KeyA') ? 1 : 0);
+          const wx = -Math.sin(p.yaw) * f + Math.cos(p.yaw) * sd, wz = -Math.cos(p.yaw) * f - Math.sin(p.yaw) * sd, wl = Math.hypot(wx, wz) || 1;
+          const pr = C.move(p.pos.x, p.pos.z, p.pos.y, (wx / wl) * 0.3, (wz / wl) * 0.3, p.radius ?? 0.4);
+          if (Math.hypot(pr.x - p.pos.x, pr.z - p.pos.z) > 0.1) note('wizard stuck', p.pos.x, p.pos.z, ' (its way is open)');
+          stuckT = 0; p.yaw += Math.PI;
+        }
       }
     }
     for (const k of keys) inp.down.delete(k); inp.mouse.left = false;

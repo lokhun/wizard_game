@@ -71,9 +71,12 @@
     inp.mouse.left = false;
   }
   // tight deadline: the realm's clock, then the withering (1% a second), shown under the objective
+  // (the withering itself is counted: the room's max-pact foes and hazards can fell the wizard in those 4 s)
   const D = g.deadline;
-  if (D) { D.t = 0.5; p.hp = p.maxHp; window.__sim(4.5); }
-  const lost = 1 - p.hp / p.maxHp, dlTxt = document.querySelector('.floor-info .deadline')?.textContent;
+  let withered = 0;
+  { const w0 = p.wither.bind(p); p.wither = (n) => { withered += n; return w0(n); }; }
+  if (D) { D.t = 0.5; p.hp = p.maxHp; window.__sim(4.5, 1 / 30, () => { if (p.downed || p.dead) p.revive(1); if (p.hp < p.maxHp * 0.5) p.hp = p.maxHp; }); }
+  const lost = withered / p.maxHp, dlTxt = document.querySelector('.floor-info .deadline')?.textContent;
   ok('deadline', dl0 > 0 && dl0 <= 300 && D.past && lost > 0.025 && lost < 0.06 && /Withering/.test(dlTxt), `clock ${Math.round(dl0)}s, lost ${(lost * 100).toFixed(1)}% in 4 s past it, HUD "${dlTxt}"`);
   ok('volatile', hz.filter((h) => h.el === 'enemyFire' && h.delay === 1.0).length > 5, `${hz.length} hazards`);
   ok('exalted', elites === 0 || twin === elites, `${twin}/${elites} elites with two affixes`);
