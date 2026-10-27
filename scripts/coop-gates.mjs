@@ -36,6 +36,9 @@ const read = () => { const g = window.__game, a = g.actors.list.find((x) => x.bo
 // a gate rises on the host
 await host.evaluate(() => { const B = window.__game.actors.list.find((a) => a.boss).brain, x = B.a.pos.x, z = B.a.pos.z; const gl = [{ x: x + 5, z, p: 0, lit: false }, { x: x - 5, z, p: 0, lit: false }]; B.openGate('ward', 30, { gl, fx: { gl: gl.flatMap((q) => [q.x, q.z]) } }); });
 await client.waitForTimeout(1000);
+// (it rose during the boss's entrance: its line must be under the bar once the name comes up)
+for (const p of [host, client]) await p.waitForFunction(() => !window.__game.cinematic || window.__game.cinematic.done, null, { timeout: 60000 });
+await client.waitForTimeout(300);
 const up = await both(read);
 console.log('gate up   (host, client):', JSON.stringify(up));
 // one glyph burns, then it breaks

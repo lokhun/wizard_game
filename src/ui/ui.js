@@ -1173,6 +1173,10 @@ export class UI {
     h.bossTitle.textContent = a.def.title ?? '';
     const marks = h.boss.querySelector('.phase-marks');
     marks.innerHTML = (a.phaseAts ?? [0.33, 0.66]).map((f) => `<i style="left:${f * 100}%"></i>`).join('');
+    // the line under the bar as this boss stands now: a gate that rose before its name came up (bossGate
+    // only speaks for the boss on the bar) shows, and the last boss's line doesn't linger on this one's
+    this._bossEx = undefined;
+    this.bossGate(a);
     this.banner(a.def.name, a.def.title ?? '', '#ff7050', 4);
   }
 
