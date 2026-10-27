@@ -2681,7 +2681,8 @@ function makeShopStock(game, p) {
   const items = [];
   items.bought = 0;
   // (preview: the from -> to the shop shows; a `tome` is previewed from its stats)
-  items.push({ name: 'Healing Draught', desc: 'Restore 50% health.', icon: 'heart', base: 30 + f * 12, apply: (pl) => { pl.heal(pl.maxHp * 0.5); game.healPulse = 1; },
+  items.push({ name: 'Mending Tonic', desc: 'Drunk at the counter: restore 50% health.', // (not the Healing Draught item, which the merchant may also stock)
+    icon: 'heart', base: 30 + f * 12, apply: (pl) => { pl.heal(pl.maxHp * 0.5); game.healPulse = 1; },
     preview: (pl) => [['Health', `${Math.ceil(pl.hp)}`, `${Math.min(pl.maxHp, Math.ceil(pl.hp + pl.maxHp * 0.5))}`]] });
   const vigor = { def: TOMES.find((t) => t.id === 'vitality'), rarity: 0, mult: 1.25 };
   items.push({ name: 'Elixir of Vigor', desc: '+25 max health.', icon: 'heart', base: 70 + f * 22, tome: vigor, apply: (pl) => { pl.upgrades.push({ ...vigor }); pl.recomputeStats(); } });
