@@ -138,7 +138,7 @@ export function showSummary(ui, S, { party = [], remotes = new Map(), onMenu, on
   const tiles = [
     tile('Time', S.time, 'time', won && !S.abyss ? 'to the throne' : 'survived', rec.fastest, 0),
     tile('Realm', S.floor + 1, 'realm', esc((b?.name ?? '').replace(/^The /, '')), rec.floor, 1),
-    tile('Foes slain', S.kills, 'num', coop ? `party ${fmtNum(S.partyKills)}` : `${fmtNum(S.reactions)} reactions`, rec.kills, 2),
+    tile('Foes slain', S.kills, 'num', coop ? `party ${fmtNum(S.partyKills)}` : `${fmtNum(S.reactions)} reaction${S.reactions === 1 ? '' : 's'}`, rec.kills, 2),
     tile('Damage dealt', S.damage, 'num', `${fmtNum(S.damage / Math.max(1, S.time))} per second`, rec.damage, 3),
     tile('Biggest hit', S.biggest, 'num', S.biggestOn ? 'on ' + esc(S.biggestOn) : '&nbsp;', rec.biggest, 4),
     tile('Damage taken', S.taken, 'num', S.downs ? `downed ${S.downs}×` : 'never downed', false, 5),

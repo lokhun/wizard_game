@@ -616,7 +616,7 @@ export class Encounters {
   _addCurse(n) {
     this.curse += n;
     this._send({ k: 'cursed', r: -1, n: this.curse }, false);
-    this.g.ui?.toast(`Cursed: the next ${this.curse} chambers hold an extra elite`, '#e03a3a');
+    this.g.ui?.toast(`Cursed: ${this.curse === 1 ? 'the next chamber holds' : `the next ${this.curse} chambers hold`} an extra elite`, '#e03a3a');
   }
 
   // ================================================================ secret rooms
@@ -798,7 +798,7 @@ export class Encounters {
       case 'wail': this._wailFx(msg.x, msg.z); break;
       case 'wall': if (room) this.breakWall(room, false); break;
       case 'curse': if (g.isHost) this._addCurse(msg.n ?? 2); break;
-      case 'cursed': if (!g.isHost) { this.curse = msg.n; if (room) room.cursed = true; else g.ui?.toast(`Cursed: the next ${this.curse} chambers hold an extra elite`, '#e03a3a'); } break;
+      case 'cursed': if (!g.isHost) { this.curse = msg.n; if (room) room.cursed = true; else g.ui?.toast(`Cursed: ${this.curse === 1 ? 'the next chamber holds' : `the next ${this.curse} chambers hold`} an extra elite`, '#e03a3a'); } break;
       default: break;
     }
     void from;
