@@ -42,7 +42,9 @@ console.log('host rx', await host.evaluate(() => JSON.stringify(window.__net?.rx
 console.log('fast channel', 'host:', await host.evaluate(() => window.__net?.fast?.size ?? -1), 'client:', await client.evaluate(() => !!window.__net?.fastConn?.open));
 // host walks into a combat room; client follows via teleport
 await host.evaluate(() => { const g = window.__game; const r = g.level.rooms.find((x) => x.type === 'combat'); g.player.pos.set(r.cx, 0, r.cz); });
-await host.waitForTimeout(12000);
+// (the fight, not a fixed wait: on a slow machine 12 s could pass before the host's game had stepped into it)
+await host.waitForFunction(() => window.__game.director.active, null, { timeout: 120000 }).catch(() => {});
+await host.waitForTimeout(4000);
 const hs = await host.evaluate(() => { const g = window.__game; return { actors: g.actors.list.length, remote: [...g.remotes.values()].map((r) => [r.name, r.classId, r.pos.toArray().map((v) => v.toFixed(1))]), active: !!g.director.active }; });
 const cs = await client.evaluate(() => { const g = window.__game; return { actors: g.actors.list.length, me: g.player.pos.toArray().map((v) => v.toFixed(1)), remote: [...g.remotes.values()].map((r) => [r.name, r.classId, r.pos.toArray().map((v) => v.toFixed(1))]), locked: g.level.rooms.some((r) => r.doors.some((d) => g.collision.dyn[g.level.doors[d].cells[0]])) }; });
 console.log('host state', JSON.stringify(hs));
