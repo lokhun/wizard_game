@@ -129,8 +129,8 @@ export function handleGameMessage(game, msg, from) {
     case 'wave': game.ui?.wave(msg.n, msg.of); break;
     case 'boss': {
       const a = game.actors.byId.get(msg.id);
-      if (a) game.onBossSpawn(a);
-      else setTimeout(() => { const b = game.actors.byId.get(msg.id); if (b) game.onBossSpawn(b); }, 300);
+      if (a) game.onBossSpawn(a, !!msg.late);
+      else setTimeout(() => { const b = game.actors.byId.get(msg.id); if (b) game.onBossSpawn(b, !!msg.late); }, 300);
       break;
     }
     case 'bossdead': if (!game.isHost) game.bossDefeated(!!msg.ab); break;

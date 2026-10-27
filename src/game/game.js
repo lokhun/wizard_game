@@ -1924,10 +1924,18 @@ export class Game {
     return msg;
   }
 
-  onBossSpawn(a) {
+  onBossSpawn(a, late = false) {
     // the bar's notches sit where this boss's phases turn (the Wrath pact brings them on sooner)
     const enr = this.difficulty?.bossEnrage ?? 0;
     a.phaseAts = (BOSS_SCRIPTS[a.type]?.phases ?? []).map((p) => p.at + enr).filter((f) => f > 0 && f < 1);
+    // a wizard joining mid-fight has missed the entrance: the fight is on, so no shot of it (it took their
+    // camera for 6 s with the boss already swinging, and staged its rise all over again), just the bar
+    if (late) {
+      this.ui?.bossIntro(a);
+      this.audio?.setMusic(this._mus('boss'));
+      if (this.abyss) this.audio?.setMusicIntensity?.(1);
+      return;
+    }
     // its entrance, staged (game/bossIntro.js): the name comes up as it arrives
     this.cinematic?.end?.();
     this.cinematic = new BossIntro(this, a);
