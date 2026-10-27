@@ -141,7 +141,7 @@ export class SpectralCourt {
         #include <fog_pars_fragment>
         void main() {
           vec3 n = normalize(vN), v = normalize(vV);
-          float rim = pow(1.0 - abs(dot(n, v)), 3.0);
+          float rim = pow(max(1.0 - abs(dot(n, v)), 0.0), 3.0);
           // light running up the body in slow bands, the hem trailing into mist
           float band = 0.6 + 0.4 * sin(vY * 22.0 - uTime * 1.6 + vS * 9.0);
           float hem = smoothstep(0.0, 0.22, vY);

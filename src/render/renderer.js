@@ -97,9 +97,10 @@ const GradeShader = {
   `,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
-    #define SHARP(uv) texture2D(tDiffuse, uv).rgb
+    vec3 sane(vec3 c){ return (c.r >= 0.0 && c.g >= 0.0 && c.b >= 0.0 && c.r < 1e30 && c.g < 1e30 && c.b < 1e30) ? c : vec3(0.0); }
+    #define SHARP(uv) sane(texture2D(tDiffuse, uv).rgb)
     #define BLOOM(uv) vec3(0.0)
-    #define SCENE(uv) texture2D(tDiffuse, uv).rgb
+    #define SCENE(uv) sane(texture2D(tDiffuse, uv).rgb)
     #define FINISH
     ${GRADE_MAIN}
   `,
@@ -123,10 +124,12 @@ const FINAL_FRAG = /* glsl */ `
   uniform sampler2D tBloom;
   #include <tonemapping_pars_fragment>
   #include <colorspace_pars_fragment>
-  vec3 bloomAt(vec2 uv){ return texture2D(tBloom, uv).rgb; }
-  #define SHARP(uv) texture2D(tDiffuse, uv).rgb
+  // (a non-finite pixel stays one dark pixel: never NaN into the grade's sums)
+  vec3 sane(vec3 c){ return (c.r >= 0.0 && c.g >= 0.0 && c.b >= 0.0 && c.r < 1e30 && c.g < 1e30 && c.b < 1e30) ? c : vec3(0.0); }
+  vec3 bloomAt(vec2 uv){ return sane(texture2D(tBloom, uv).rgb); }
+  #define SHARP(uv) sane(texture2D(tDiffuse, uv).rgb)
   #define BLOOM(uv) bloomAt(uv)
-  #define SCENE(uv) (texture2D(tDiffuse, uv).rgb + bloomAt(uv))
+  #define SCENE(uv) (sane(texture2D(tDiffuse, uv).rgb) + bloomAt(uv))
   #define FINISH gl_FragColor.rgb = ACESFilmicToneMapping(gl_FragColor.rgb); gl_FragColor = sRGBTransferOETF(gl_FragColor);
   ${GRADE_MAIN}
 `;
@@ -244,11 +247,16 @@ export class Renderer {
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.45, 0.5, BLOOM_THRESHOLD);
     // A handful of non-finite or absurdly hot pixels (a degenerate sliver of
     // some effect edge-on to the lens) would otherwise be blurred across the
-    // whole frame as a white-out. Bloom's input drops them / caps them at 16.
+    // whole frame: a white-out, or with a NaN in it a black screen. Bloom's
+    // input drops them / caps them at 16. Each channel is tested on its own:
+    // D3D's max() returns the other operand when one is NaN, so a pixel NaN in
+    // one channel slipped past a test of max(r, g, b) on Windows (a black
+    // screen while a frost ray played on the Mother of Filth up close).
     const hp = this.bloom.materialHighPassFilter;
     hp.fragmentShader = hp.fragmentShader.replace('vec4 texel = texture2D( tDiffuse, vUv );', `vec4 texel = texture2D( tDiffuse, vUv );
+			if ( !( texel.r >= 0.0 && texel.g >= 0.0 && texel.b >= 0.0 && texel.r < 1e30 && texel.g < 1e30 && texel.b < 1e30 ) ) texel.rgb = vec3( 0.0 );
 			float hm = max( texel.r, max( texel.g, texel.b ) );
-			if ( !( hm < 16.0 ) ) texel.rgb = hm < 1e30 ? texel.rgb * ( 16.0 / hm ) : vec3( 0.0 );`);
+			if ( hm > 16.0 ) texel.rgb *= 16.0 / hm;`);
     // viewmodel layer: clear depth then render hands/staff on top
     this.viewPass = new ViewModelPass(this.viewScene, this.viewCamera);
     if (fused) {

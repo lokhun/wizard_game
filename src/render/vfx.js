@@ -97,9 +97,9 @@ const ORB_VERT = /* glsl */ `
 varying vec3 vN; varying vec3 vV; varying vec3 vP; varying float vDepth;
 ${SAFE_V}
 void main(){
-  vP = normalize(position);
+  vP = safeV(position);
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  vN = normalize(normalMatrix * normal);
+  vN = safeV(normalMatrix * normal);
   vV = safeV(-mv.xyz);
   vDepth = -mv.z;
   gl_Position = projectionMatrix * mv;
@@ -257,7 +257,7 @@ ${SAFE_V}
 void main(){
   vUv = uv;
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  vN = normalize(normalMatrix * normal);
+  vN = safeV(normalMatrix * normal);
   vAx = (modelViewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz; // the beam's axis (local +Y) in view space
   vV = safeV(-mv.xyz);
   vDepth = -mv.z;
@@ -266,12 +266,13 @@ void main(){
 const BEAM_FRAG = /* glsl */ `
 uniform vec3 uColor; uniform vec3 uCore; uniform float uTime; uniform float uLen; uniform float uAlpha; uniform float uNoise;
 varying vec2 vUv; varying vec3 vN; varying vec3 vV; varying float vDepth; varying vec3 vAx;
+${SAFE_V}
 float h(float x){ return fract(sin(x) * 43758.5453); }
 float n1(float x){ float i = floor(x), f = fract(x); return mix(h(i), h(i + 1.0), smoothstep(0.,1.,f)); }
 void main(){
   // facing measured across the beam, not along it: your own beam runs nearly
   // straight away from the eye, where a plain N.V goes to zero and it vanished
-  vec3 ax = normalize(vAx);
+  vec3 ax = safeV(vAx);
   vec3 vp = vV - ax * dot(vV, ax);
   float facing = dot(vp, vp) > 1e-6 ? abs(dot(vN, normalize(vp))) : 1.0;
   float core = pow(facing, 6.0);
@@ -350,7 +351,7 @@ void main(){
   p.x += sin(y * 3.1 + uTime * 2.3) * uSnake * y;
   p.z += cos(y * 2.7 + uTime * 1.9) * uSnake * y;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
-  vec3 n = normalize(normalMatrix * vec3(cos(a), 0.0, sin(a)));
+  vec3 n = safeV(normalMatrix * vec3(cos(a), 0.0, sin(a)));
   vFacing = abs(dot(n, safeV(-mv.xyz)));
   vDepth = -mv.z;
   gl_Position = projectionMatrix * mv;
@@ -382,7 +383,7 @@ ${SAFE_V}
 void main(){
   vUv = uv;
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  vec3 n = normalize(normalMatrix * normal);
+  vec3 n = safeV(normalMatrix * normal);
   vFacing = abs(dot(n, safeV(-mv.xyz)));
   vDepth = -mv.z;
   gl_Position = projectionMatrix * mv;
@@ -1047,6 +1048,11 @@ export class VFX {
       update: (a, b, w = width) => {
         d.subVectors(b, a);
         const len = d.length();
+        // (a beam with no length - its end inside whatever it starts against, a huge boss up close -
+        // had its mesh scaled to nothing along its axis: a singular matrix, normalize(0) in the shader,
+        // NaN pixels that the bloom smeared over the whole screen as a black frame. Not drawn instead.)
+        if (!(len > 0.04) || !(w > 0)) { m.visible = false; return; }
+        m.visible = true;
         m.position.copy(a);
         m.quaternion.setFromUnitVectors(up, d.normalize());
         m.scale.set(w, len, w);
