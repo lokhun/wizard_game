@@ -213,6 +213,7 @@ export function createAvatar(classId, ctx) {
   // ---------------- hat ----------------
   const hat = withLOD(0.5, () => buildHat(classId, kit, meta, glows, { mantle: false }));
   hat.group.name = 'hat';
+  if (ctx.noHat) hat.group.clear(); // (the model viewer: a look at the head beneath)
   head.add(hat.group);
 
   // ---------------- costume ----------------

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mulberry, fbm3, roundedBox, sphere, torus, lathe, xf, noisify, tubeVar, leaf, feather, gear, crystal } from './shapes.js';
+import { mulberry, fbm3, roundedBox, sphere, torus, xf, noisify, tubeVar, leaf, feather, gear, crystal } from './shapes.js';
 
 // ---------------------------------------------------------------------------
 // Geometry for the third-person wizard bodies. Everything is authored in the
@@ -119,16 +119,18 @@ function gridGeo(pos, uv, col, cols, rows, flip, closedWeld) {
 // average normals of coincident vertices (closes lathe / ring seams)
 export function weldNormals(g) {
   const p = g.getAttribute('position'), n = g.getAttribute('normal');
+  // (a numeric key per half-millimetre cell: string keys cost more than the rest of a garment)
   const m = new Map();
-  const key = (i) => `${Math.round(p.getX(i) * 2e3)},${Math.round(p.getY(i) * 2e3)},${Math.round(p.getZ(i) * 2e3)}`;
+  const ids = new Float64Array(p.count);
   for (let i = 0; i < p.count; i++) {
-    const k = key(i);
-    const a = m.get(k) || [0, 0, 0];
+    const k = ((Math.round(p.getX(i) * 2e3) + 4096) * 8192 + (Math.round(p.getY(i) * 2e3) + 4096)) * 8192 + (Math.round(p.getZ(i) * 2e3) + 4096);
+    ids[i] = k;
+    let a = m.get(k);
+    if (!a) { a = [0, 0, 0]; m.set(k, a); }
     a[0] += n.getX(i); a[1] += n.getY(i); a[2] += n.getZ(i);
-    m.set(k, a);
   }
   for (let i = 0; i < p.count; i++) {
-    const a = m.get(key(i));
+    const a = m.get(ids[i]);
     const l = Math.hypot(a[0], a[1], a[2]) || 1;
     n.setXYZ(i, a[0] / l, a[1] / l, a[2] / l);
   }
@@ -155,6 +157,45 @@ export function garment(o) {
   const R = { rx: 0, zf: 0, zb: 0 };
   const ym = (o.y0 + o.y1) / 2;
   const spanTot = panels.reduce((t, [aS, aE]) => t + (aE(ym) - aS(ym)), 0);
+  // the cloth's offset from its cross-section at (a, y): drape folds and pinches
+  const FO = { f: 0, amp: 0, off: 0 };
+  const foldAt = (a, y, tt) => {
+    let f = 0;
+    let amp = fold.amp(tt, y);
+    if (amp > 0 && o.pipe) {
+      // pipe folds: round ridges hanging from the waist with narrow valleys between, each its
+      // own depth, wandering a little as they fall; a finer ripple and noise over them
+      const u = (a * fold.n) / TAU + 0.18 * Math.sin(y * 3.1 + ph1) + 0.08 * fbm3(a * 3, y * 2, 1.5, o.seed ?? 1, 2);
+      const p = Math.cos(TAU * u);
+      f = 2 * Math.pow((p + 1) / 2, 0.55) - 1;
+      amp *= 0.65 + 0.7 * J[(Math.floor(u + 0.5) % 61 + 61) % 61];
+      f += 0.22 * Math.sin(a * fold.n * 2.6 + ph2 - y * 2.3) * tt + 0.18 * fbm3(a * 2.2, y * 3, 0.5, o.seed ?? 1, 2);
+      f = Math.max(-1, Math.min(1, f));
+    } else if (amp > 0) {
+      // two octaves of vertical waves that drift with height
+      f = 0.62 * Math.sin(a * fold.n + ph1 + y * 1.7) + 0.38 * Math.sin(a * fold.n * 2.17 + ph2 - y * 2.3) + 0.35 * fbm3(a * 2.2, y * 3, 0.5, o.seed ?? 1, 2);
+      f = Math.max(-1, Math.min(1, f));
+    }
+    let off = amp * f;
+    if (o.pinch) for (const pc of o.pinch) {
+      const d = (y - pc.y) / pc.w;
+      off -= pc.k * Math.exp(-d * d);
+      if (pc.ripple) off += pc.ripple * Math.sin(a * 23 + ph1) * Math.exp(-Math.pow((y - pc.y + pc.w * 1.6) / pc.w, 2));
+    }
+    FO.f = f; FO.amp = amp; FO.off = off;
+    return FO;
+  };
+  // a point on the finished cloth (folds and the draped hem included; not tatters), `lift`
+  // metres out from it: for trims and embroidery laid over the garment
+  const R2 = { rx: 0, zf: 0, zb: 0 };
+  const surf = (a, y, lift = 0, out = new THREE.Vector3()) => {
+    const tt = Math.min(1, Math.max(0, (y - o.y0) / (o.y1 - o.y0)));
+    o.R(y, R2);
+    const fo = foldAt(a, y, tt);
+    const [px, pz] = ringPt(R2.rx + fo.off + lift, R2.zf + fo.off + lift, R2.zb + fo.off + lift, a, o.e ?? 0.85);
+    const yy = o.pipe && tt > 0.7 ? y - fo.f * fo.amp * 0.9 * sstep(0.7, 1, tt) : y;
+    return out.set(px, yy, pz);
+  };
   for (const [aS, aE] of panels) {
     const pos = [], uv = [], col = [];
     const cols = Math.max(3, Math.round(o.seg * (aE(ym) - aS(ym)) / Math.max(spanTot, 1e-3)));
@@ -175,19 +216,9 @@ export function garment(o) {
       for (let c = 0; c <= cols; c++) {
         const u = us[c];
         const a = a0 + (a1 - a0) * u;
-        // drape folds: two octaves of vertical waves that drift with height
-        let f = 0;
-        const amp = fold.amp(tt, y);
-        if (amp > 0) {
-          f = 0.62 * Math.sin(a * fold.n + ph1 + y * 1.7) + 0.38 * Math.sin(a * fold.n * 2.17 + ph2 - y * 2.3) + 0.35 * fbm3(a * 2.2, y * 3, 0.5, o.seed ?? 1, 2);
-          f = Math.max(-1, Math.min(1, f));
-        }
-        let off = amp * f;
-        if (o.pinch) for (const pc of o.pinch) {
-          const d = (y - pc.y) / pc.w;
-          off -= pc.k * Math.exp(-d * d);
-          if (pc.ripple) off += pc.ripple * Math.sin(a * 23 + ph1) * Math.exp(-Math.pow((y - pc.y + pc.w * 1.6) / pc.w, 2));
-        }
+        const fo = foldAt(a, y, tt);
+        const f = fo.f, amp = fo.amp;
+        let off = fo.off;
         // hem edge: distance to panel edges in metres
         const rr = (R.rx + R.zf) * 0.5;
         const edgeD = Math.min((a - a0) * rr, (a1 - a) * rr);
@@ -206,6 +237,8 @@ export function garment(o) {
         const [px, pz] = ringPt(R.rx + off, R.zf + off, R.zb + off, a, o.e ?? 0.85);
         // ragged hem
         let yy = y;
+        // a draped hem: the ridges hang a little lower than the valleys
+        if (o.pipe && tt > 0.7) yy -= f * amp * 0.9 * sstep(0.7, 1, tt);
         if (r >= rows - 1 && o.tatter) {
           const j = J[Math.floor(((a % TAU) + TAU) % TAU / TAU * 61) % 61];
           const strip = (c % 3 === 0 ? 1 : c % 3 === 1 ? 0.35 : 0.6);
@@ -220,7 +253,9 @@ export function garment(o) {
     }
     geos.push(gridGeo(pos, uv, col, cols, rows, !!o.flip, o.weld !== false));
   }
-  return geos.length === 1 ? geos[0] : cat(geos);
+  const out = geos.length === 1 ? geos[0] : cat(geos);
+  out.userData.surf = surf;
+  return out;
 }
 
 // Standard cloth painter: base colour, fold occlusion, trims, grime toward
@@ -269,6 +304,13 @@ export function limb(jx, jy, jz, prof, o = {}) {
       const k = 1 + o.folds * (Math.sin(a * 5 + ph + y * 9) * 0.6 + Math.sin(a * 11 - y * 14) * 0.4);
       x *= k; z *= k;
     }
+    // compression creases (a sleeve bunching at the elbow): rings running a little diagonal
+    if (o.creases) for (const c of o.creases) {
+      const d = (y - c.y) / c.w;
+      if (Math.abs(d) > 3) continue;
+      const k = 1 + c.k * Math.exp(-d * d) * (0.5 + 0.5 * Math.sin((y - c.y) * (c.n ?? 160) + Math.sin(a + ph) * 1.6 + a * 0.5));
+      x *= k; z *= k;
+    }
     x *= o.sx ?? 1; z *= o.sz ?? 1;
     if (o.bend) z += o.bend(y);
     p.setXYZ(i, x + jx, y + jy, z + jz);
@@ -284,26 +326,55 @@ export function limb(jx, jy, jz, prof, o = {}) {
 export function bootGeo(side, o) {
   const ax = side * HIP_X, ay = BODY_Y.ankle;
   const leather = o.col, dark = mul(o.col, 0.45);
-  // foot: rounded box with a tapered toe and heel
-  const foot = roundedBox(0.096, 0.085, 0.25, 0.038, 2);
+  // the last: half-width along the foot (tz 0 heel .. 1 toe), narrow heel, broad ball, rounded toe
+  const L = 0.25, z0 = 0.045 - L / 2;
+  const hw = (tz) => 0.047 * (0.8 + 0.2 * sstep(0, 0.35, tz)) * (1 - 0.22 * sstep(0.72, 1, tz)) * (o.pointy ? 1 - 0.25 * sstep(0.6, 1, tz) : 1);
+  const foot = roundedBox(0.096, 0.085, L, 0.038, 4);
   const p = foot.getAttribute('position');
   for (let i = 0; i < p.count; i++) {
     let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-    const tz = (z + 0.125) / 0.25; // 0 heel .. 1 toe
-    x *= 1 - 0.18 * Math.max(0, tz - 0.6) / 0.4 + (tz < 0.2 ? -0.05 : 0);
+    const tz = (z + L / 2) / L;
+    x *= hw(tz) / 0.048;
     if (y > 0) y *= 1 - 0.55 * Math.max(0, tz - 0.45) / 0.55;
     if (o.pointy) z += Math.max(0, tz - 0.8) * 0.06 * (1 - Math.abs(x) / 0.05);
     p.setXYZ(i, x + side * 0.004, y, z);
   }
   foot.computeVertexNormals();
-  xf(foot, { x: ax, y: 0.045, z: 0.045 });
-  paint(foot, (x, y) => (y < 0.012 ? dark : mul(leather, 0.85 + 0.25 * sstep(0.02, 0.09, y))));
-  const sole = paint(xf(roundedBox(0.1, 0.018, 0.26, 0.008, 1), { x: ax + side * 0.004, y: 0.009, z: 0.047 }), mul(dark, 0.7));
-  // shaft up the calf, with a folded cuff
-  const top = o.height ?? 0.3;
-  const shaftProf = [[0.05, top + 0.01], [0.064, top], [0.066, top - 0.045], [0.058, top - 0.05], [0.058, top * 0.55], [0.05, 0.08], [0.052, 0.0]];
-  const shaft = limb(ax, ay, 0, shaftProf.map(([r, y]) => [r, y]), { seg: 12, folds: 0.03, paint: (x, y) => (y > top - 0.05 ? mul(leather, 1.12) : mul(leather, 0.8 + 0.25 * (y / top))) });
+  xf(foot, { x: ax, y: 0.054, z: 0.045 });
+  // a toe cap (its seam a dark line across the vamp, worn paler at the toe), creases over the
+  // instep, a stitched welt above the sole
+  paint(foot, (x, y, z) => {
+    const tz = (z - z0) / L;
+    let k = 0.85 + 0.25 * sstep(0.02, 0.09, y);
+    k *= 1 - 0.45 * Math.exp(-Math.pow((tz - 0.74 - Math.pow((x - ax) / 0.05, 2) * 0.06) / 0.012, 2));
+    k *= 1 + 0.2 * sstep(0.8, 1, tz);
+    k *= 1 - 0.12 * Math.max(0, Math.sin(tz * 70)) * Math.exp(-Math.pow((tz - 0.6) / 0.08, 2)) * sstep(0.04, 0.07, y);
+    if (y < 0.03) k *= Math.sin(z * 260) > 0 ? 1.2 : 0.8;
+    return mul(leather, k);
+  });
+  // sole and heel: extruded from the foot's own outline, so they never stick out past it
+  const outline = (t0, t1, grow) => {
+    const sh = new THREE.Shape();
+    const n = 18;
+    for (let i = 0; i <= n; i++) { const tz = t0 + (t1 - t0) * (i / n); const pt = [hw(tz) + grow, z0 + tz * L]; if (i === 0) sh.moveTo(...pt); else sh.lineTo(...pt); }
+    if (t1 >= 1) for (let i = 1; i < 6; i++) { const a = (i / 6) * Math.PI; sh.lineTo(Math.cos(a) * (hw(1) + grow), z0 + L + Math.sin(a) * 0.012); }
+    for (let i = n; i >= 0; i--) { const tz = t0 + (t1 - t0) * (i / n); sh.lineTo(-hw(tz) - grow, z0 + tz * L); }
+    if (t0 <= 0) for (let i = 1; i < 6; i++) { const a = Math.PI + (i / 6) * Math.PI; sh.lineTo(Math.cos(a) * (hw(0) + grow), z0 + Math.sin(a) * 0.01); }
+    return sh;
+  };
+  const slab = (sh, d, y) => xf(new THREE.ExtrudeGeometry(sh, { depth: d, bevelEnabled: true, bevelThickness: 0.002, bevelSize: 0.002, bevelSegments: 1, curveSegments: 4 }), { rx: Math.PI / 2, x: ax + side * 0.004, y: y + d });
+  const sole = paint(slab(outline(0, 1, 0.004), 0.012, 0.006), (x, y) => mul(dark, y > 0.016 ? 0.9 : 0.6));
+  const heel = paint(slab(outline(0, 0.3, 0.003), 0.008, 0.0), (x, y) => mul(dark, Math.sin(y * 700) > 0.3 ? 0.45 : 0.65));
+  // the shaft up the calf, slouching into creases over the ankle, with a folded cuff (stitched)
+  const shaftProf = [[0.05, top + 0.01], [0.064, top], [0.066, top - 0.045], [0.058, top - 0.05], [0.058, top * 0.55]];
+  for (let k = 1; k <= 8; k++) shaftProf.push([0.058 - 0.007 * (k / 8), top * 0.55 - (top * 0.55 - 0.03) * (k / 8)]);
+  shaftProf.push([0.052, 0.0]);
+  const shaft = limb(ax, ay, 0, shaftProf, { seg: 16, folds: 0.03, creases: [{ y: 0.06, w: 0.04, k: 0.08, n: 120 }], paint: (x, y) => {
+    if (y > top - 0.05) return mul(leather, Math.abs(y - (top - 0.04)) < 0.004 ? (Math.sin(Math.atan2(x, -0.01) * 40) > 0 ? 1.35 : 0.9) : 1.12);
+    return mul(leather, (0.8 + 0.25 * (y / top)) * (1 - 0.18 * Math.exp(-Math.pow((y - 0.06) / 0.03, 2)) * (0.5 + 0.5 * Math.sin(y * 120))));
+  } });
   const parts = [foot, sole, shaft];
+  parts.splice(2, 0, heel);
   if (o.fur) parts.push(paint(xf(noisify(torus(0.07, 0.028, 6, 14), 0.008, 40, side + 3, 2), { rx: Math.PI / 2, x: ax, y: ay + top - 0.01 }), o.fur));
   if (o.strap) {
     parts.push(paint(xf(torus(0.06, 0.007, 3, 10), { rx: Math.PI / 2, x: ax, y: ay + top * 0.45 }), mul(dark, 1.4)));
@@ -314,107 +385,7 @@ export function bootGeo(side, o) {
     for (let i = 0; i <= 12; i++) wp.push([0.058 + (i % 2) * 0.007, 0.26 - i * 0.018]);
     parts.push(limb(ax, ay, 0, wp, { seg: 10, folds: 0.04, paint: (x, y) => mul(o.wrap, 0.8 + 0.25 * Math.sin(y * 170)) }));
   }
-  return { foot: cat([foot, sole]), shaft: cat(parts.slice(2)) };
-}
-
-// ---- head ----------------------------------------------------------------------
-// A cranium with a tapering jaw, plus explicit brow ridge, nose, cheekbones,
-// chin and dark eye sockets (a sphere fine enough to carve a nose would cost
-// far more). Vertex colours darken the sockets and the underside; hooded
-// faces get a deep cowl shadow over the eyes.
-export function headGeo(o = {}) {
-  const skin = o.col ?? lin(0x8a6a5a);
-  const shade = o.shade ?? 1;
-  const tone = (k) => {
-    let c = mul(skin, k * shade);
-    const l = (c[0] + c[1] + c[2]) / 3;
-    return mix(c, [l, l, l], o.desat ?? 0.25);
-  };
-  const hoodK = (y) => (o.hood ? 0.4 + 0.6 * sstep(0.025, -0.08, y) : 1);
-  const g = new THREE.SphereGeometry(0.09, 16, 12);
-  const p = g.getAttribute('position');
-  const cols = [];
-  for (let i = 0; i < p.count; i++) {
-    let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-    x *= 0.86; y *= 1.03;
-    const front = Math.max(0, z / 0.09);
-    if (y < -0.015) {
-      const k = Math.min(1, (-0.015 - y) / 0.075);
-      x *= 1 - 0.34 * k * k;
-      y -= k * 0.012;
-      if (z < 0) z *= 1 - 0.4 * k; else z *= 1 - 0.08 * k;
-    }
-    if (z < -0.02 && y > -0.03) z *= 1.07;
-    // flatten the face plane a little
-    if (z > 0.05) z = 0.05 + (z - 0.05) * 0.75;
-    p.setXYZ(i, x, y, z);
-    let k = (0.55 + 0.45 * sstep(-0.1, 0.02, y)) * (0.6 + 0.4 * Math.pow(front, 0.6));
-    cols.push(...tone(k * hoodK(y)));
-  }
-  g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
-  g.computeVertexNormals();
-  const uv = g.getAttribute('uv');
-  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 3, uv.getY(i) * 3);
-  const part = (geo, k) => paint(geo, (x, y) => tone(k * hoodK(y)));
-  // brow ridge: a flattened arc across the forehead
-  const brow = torus(0.036, 0.009, 4, 12, Math.PI);
-  xf(brow, { rx: Math.PI / 2 });
-  brow.scale(1.25, 0.7, 0.85);
-  xf(brow, { y: 0.017, z: 0.047 });
-  // nose: a sheared wedge, narrow at the bridge and wide at the nostrils
-  const nose = roundedBox(0.02, 0.044, 0.022, 0.007, 1);
-  const np = nose.getAttribute('position');
-  for (let i = 0; i < np.count; i++) {
-    const x = np.getX(i), y = np.getY(i), z = np.getZ(i);
-    const t = (0.022 - y) / 0.044; // 0 bridge .. 1 tip
-    np.setXYZ(i, x * (0.55 + 0.6 * t), y, z * (0.5 + 0.6 * t) + t * 0.008);
-  }
-  nose.computeVertexNormals();
-  xf(nose, { y: -0.018, z: 0.086, rx: 0.12 });
-  const cheeks = cat([sphere(0.017, 6, 5, { x: 0.04, y: -0.02, z: 0.052, sx: 1.3, sy: 0.6, sz: 0.8 }), sphere(0.017, 6, 5, { x: -0.04, y: -0.02, z: 0.052, sx: 1.3, sy: 0.6, sz: 0.8 })]);
-  const chin = sphere(0.022, 7, 5, { y: -0.086, z: 0.045, sx: 1.3, sy: 0.7, sz: 0.85 });
-  const sockets = cat([sphere(0.014, 6, 5, { x: 0.029, y: 0.002, z: 0.064, sz: 0.5 }), sphere(0.014, 6, 5, { x: -0.029, y: 0.002, z: 0.064, sz: 0.5 })]);
-  const mouth = xf(roundedBox(0.03, 0.004, 0.008, 0.002, 1), { y: -0.056, z: 0.072 });
-  return cat([
-    g, part(brow, 0.95), part(nose, 1.05), part(cheeks, 1.0), part(chin, 0.85),
-    paint(sockets, tone(0.22 * (o.hood ? 0.5 : 1))), paint(mouth, tone(0.35)),
-  ]);
-}
-
-// beard: layered fur shell hanging from the jaw. len = how far below the chin
-export function beardGeo(o) {
-  const len = o.len ?? 0.12;
-  const prof = [[0.078, 0.0], [0.086, -0.03], [0.084, -0.06], [0.07, -0.07 - len * 0.3], [0.05, -0.07 - len * 0.65], [0.02, -0.07 - len], [0.0, -0.075 - len]];
-  const g = lathe(prof, 16, -Math.PI * 0.62, Math.PI * 1.24);
-  const p = g.getAttribute('position');
-  const rnd = mulberry(o.seed ?? 4);
-  const J = Array.from({ length: 20 }, () => rnd());
-  for (let i = 0; i < p.count; i++) {
-    let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-    const a = Math.atan2(x, z);
-    z *= 0.92;
-    // mouth gap at the front top, fuller below the chin
-    if (y < -0.075) { const k = Math.min(1, (-0.075 - y) / len); z += 0.02 * (1 - k) + 0.004; }
-    // the long part drapes forward over the chest
-    if (y < -0.08) z += (-0.08 - y) * 0.6;
-    if (o.fork && y < -0.07 - len * 0.6) x += Math.sign(x) * 0.012 * ((-0.07 - len * 0.6 - y) / (len * 0.4));
-    const j = J[Math.floor((a / Math.PI + 1) * 9.5) % 20];
-    y -= j * 0.012 * Math.min(1, Math.max(0, (-0.06 - y) / 0.04));
-    p.setXYZ(i, x * 0.92, y + 0.005, z + 0.016);
-  }
-  g.computeVertexNormals();
-  noisify(g, 0.004, 60, o.seed ?? 4, 2);
-  const u = g.getAttribute('uv');
-  for (let i = 0; i < u.count; i++) u.setXY(i, u.getX(i) * 3, u.getY(i) * 1.5);
-  const col = o.col;
-  paint(g, (x, y) => mul(col, 0.75 + 0.35 * sstep(-0.2, -0.02, y)));
-  // moustache
-  const m = [];
-  for (const s of [-1, 1]) {
-    const pts = [new THREE.Vector3(s * 0.003, -0.044, 0.088), new THREE.Vector3(s * 0.02, -0.049, 0.082), new THREE.Vector3(s * 0.033, -0.062, 0.072), new THREE.Vector3(s * 0.037, -0.08, 0.064)];
-    m.push(paint(tubeVar(pts, (t) => 0.006 * (1 - t * 0.6) + 0.002, 8, 5, true), mul(col, 0.9)));
-  }
-  return cat([g, ...m]);
+  return { foot: cat([foot, sole, heel]), shaft: cat(parts.slice(3)) };
 }
 
 // ---- ribbons (straps, stoles, sashes, sigils) -----------------------------------
@@ -454,19 +425,97 @@ export function ribbon(pts, nrm, w, th, colFn, o = {}) {
   return g;
 }
 
+// ---- embroidered bands ----------------------------------------------------------------
+// A raised band of embroidery laid along a path over a garment: seven threads across (the
+// middle puffed out by `th`), the pattern painted from the arc length s (m) and the position
+// across v (-1..1). pts / nrm: Vector3 arrays.
+export function bandGeo(pts, nrm, w, th, paintFn) {
+  const across = [-0.5, -0.36, -0.18, 0, 0.18, 0.36, 0.5];
+  const m = across.length, n = pts.length;
+  const pos = [], col = [], uv = [], idx = [];
+  const T = new THREE.Vector3(), S = new THREE.Vector3(), N = new THREE.Vector3(), q = new THREE.Vector3();
+  let len = 0;
+  for (let i = 0; i < n; i++) {
+    if (i > 0) len += pts[i].distanceTo(pts[i - 1]);
+    T.subVectors(pts[Math.min(n - 1, i + 1)], pts[Math.max(0, i - 1)]).normalize();
+    N.copy(nrm[i]).normalize();
+    S.crossVectors(N, T).normalize();
+    for (let j = 0; j < m; j++) {
+      const v = across[j] * 2;
+      q.copy(pts[i]).addScaledVector(S, across[j] * w).addScaledVector(N, th * (1 - v * v * 0.8));
+      pos.push(q.x, q.y, q.z);
+      uv.push(j / (m - 1), len * 6);
+      col.push(...paintFn(len, v));
+    }
+  }
+  for (let i = 0; i < n - 1; i++) for (let j = 0; j < m - 1; j++) {
+    const a = i * m + j, b = a + m;
+    idx.push(a, b, a + 1, b, b + 1, a + 1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+// embroidery patterns: (s, v) -> rgb. base: the band's ground, motif: the thread, P: repeat (m)
+export function embroidery(kind, base, motif, P = 0.05) {
+  const fr = (x) => x - Math.floor(x);
+  const h1 = (k) => fr(Math.sin(k * 127.1 + 311.7) * 43758.5453);
+  const edge = (v) => Math.abs(v) > 0.8;
+  return (s, v) => {
+    const u = s / P, q = Math.abs(fr(u) - 0.5) * 2; // 0 mid-repeat .. 1 at its ends
+    let on = edge(v);
+    switch (kind) {
+      case 'vine': { // a winding stem with leaves either side
+        const c = 0.5 * Math.sin(u * TAU);
+        on = on || Math.abs(v - c) < 0.2 || (Math.abs(v + 0.55 * Math.sign(c)) < 0.18 && q < 0.25);
+        break;
+      }
+      case 'diamond': { // a chain of lozenges, a dot in each
+        on = on || Math.abs(Math.abs(v) * 1.15 - (1 - q)) < 0.22 || (q > 0.85 && Math.abs(v) < 0.2);
+        break;
+      }
+      case 'zigzag': { // lightning: a sharp zigzag between the borders
+        const z = (1 - q * 2) * 0.62;
+        on = on || Math.abs(v - z) < 0.22;
+        break;
+      }
+      case 'runes': { // blocky glyphs in cells, bars between
+        const cell = Math.floor(u * 3), g = h1(cell);
+        const x = fr(u * 3);
+        on = on || (x < 0.12) || (x > 0.3 && x < 0.85 && ((g > 0.5 && Math.abs(v) < 0.3) || (g < 0.35 && Math.abs(Math.abs(v) - 0.45) < 0.15) || (g >= 0.35 && g <= 0.5 && Math.abs(v - (x - 0.55) * 2.6) < 0.25)));
+        break;
+      }
+      case 'flame': { // tongues rising from the lower border
+        const hgt = 0.35 + 0.5 * Math.pow(1 - q, 1.5) + 0.15 * Math.sin(u * 17);
+        on = on || (v + 1) / 2 < hgt * (1 - Math.abs(fr(u * 2) - 0.5) * 1.2);
+        break;
+      }
+      default:
+    }
+    return on ? motif : base;
+  };
+}
+
 // ---- belt and accessories ---------------------------------------------------------
 // belt band hugging an elliptic waist (rx, rz) at height y
 export function beltGeo(rx, rz, y, h, col, o = {}) {
-  const prof = [[0.985, -h / 2 - 0.002], [1, -h / 2], [1, h / 2], [0.985, h / 2 + 0.002]];
-  const seg = 36;
+  // rolled edges, and a row of stitches just inside each (lighter dashes on a pressed line)
+  const prof = [[0.985, -h / 2 - 0.002], [1, -h / 2], [1.002, -h * 0.34], [1.002, -h * 0.3], [1.004, 0], [1.002, h * 0.3], [1.002, h * 0.34], [1, h / 2], [0.985, h / 2 + 0.002]];
+  const seg = 96;
   const pos = [], uv = [], cl = [];
+  const last = prof.length - 1;
   for (let r = 0; r < prof.length; r++) for (let c = 0; c <= seg; c++) {
     const a = (c / seg) * TAU;
     const k = prof[r][0];
     pos.push(Math.sin(a) * rx * k, y + prof[r][1], Math.cos(a) * rz * k);
-    uv.push(c / seg * 6, r * 0.1);
-    const st = o.studs && c % 3 === 0 && r === 1 ? 1.2 : 1;
-    cl.push(...mul(col, (r === 0 || r === 3 ? 0.7 : 1) * st));
+    uv.push(c / seg * 6, r * 0.05);
+    const st = o.studs && c % 4 === 0 && r === 4 ? 1.25 : 1;
+    const stitch = (r === 2 || r === 3 || r === 5 || r === 6) ? (c % 2 ? 1.3 : 0.72) : 1;
+    cl.push(...mul(col, (r === 0 || r === last ? 0.6 : r === 1 || r === last - 1 ? 0.85 : 1) * st * stitch));
   }
   return gridGeo(pos, uv, cl, seg, prof.length - 1, false, true);
 }

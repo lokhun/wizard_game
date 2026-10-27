@@ -79,20 +79,6 @@ function mantleGeo(rTop = 0.085, rBot = 0.29, h = 0.19, seed = 1, jag = 0.03) {
   return g;
 }
 
-// skull cap of hair with a hairline: the front edge rises above the brow
-function hairCap(r, thetaLen) {
-  const g = new THREE.SphereGeometry(r, 18, 10, 0, TAU, 0, thetaLen);
-  const p = g.getAttribute('position');
-  for (let i = 0; i < p.count; i++) {
-    const z = p.getZ(i), y = p.getY(i), x = p.getX(i);
-    const front = Math.max(0, z / r - 0.2) / 0.8;
-    const line = r * (0.42 - 0.18 * Math.min(1, Math.abs(x) / (r * 0.7)));
-    if (front > 0 && y < line) p.setY(i, line + (y - line) * (1 - front) * 0.4);
-  }
-  g.computeVertexNormals();
-  return g;
-}
-
 function starGeo(r) {
   const s = new THREE.Shape();
   for (let i = 0; i <= 10; i++) {
@@ -259,8 +245,7 @@ export function buildHat(classId, kit, meta, glows, opts = {}) {
       break;
     }
     case 'chronomancer': {
-      // hair cap + gold circlet + floating clock hands
-      add(G, hairCap(0.103, 1.7), kit.cloth(0x2a2420), { y: 0.005, z: -0.008, sx: 1, sy: 1.02, sz: 1.06 });
+      // gold circlet (the hair is the costume's) + floating clock hands
       add(G, xf(torus(0.104, 0.006, 6, 32), { rx: Math.PI / 2 + 0.18, y: 0.035 }), kit.gold());
       const gm = glows.add(kit.glow(meta.color, 3), 1);
       add(G, new THREE.OctahedronGeometry(0.01), gm, { y: 0.04, z: 0.105 });
@@ -326,8 +311,7 @@ export function buildHat(classId, kit, meta, glows, opts = {}) {
       break;
     }
     case 'druid': {
-      // wooden circlet with antlers and leaves; hair cap
-      add(G, hairCap(0.104, 1.75), kit.cloth(0x2a2016), { y: 0.0, z: -0.01, sz: 1.06 });
+      // wooden circlet with antlers and leaves (the hair is the costume's)
       const wood = kit.wood(0x6a5038, 0.9);
       add(G, xf(torus(0.106, 0.008, 6, 30), { rx: Math.PI / 2 + 0.15, y: 0.04 }), wood);
       const rnd = mulberry(12);

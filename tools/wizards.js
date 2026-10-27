@@ -162,11 +162,15 @@ function setupAvatar(grid) {
 
 function loadAvatar() {
   for (const a of avatars) a.dispose();
-  avatars = [createAvatar(CLASS_IDS[classIdx], { factory })];
+  const t0 = performance.now();
+  avatars = [createAvatar(CLASS_IDS[classIdx], { factory, noHat: P.get('nohat') === '1' })];
+  window.__buildMs = performance.now() - t0;
   scene.add(avatars[0].root);
   if (P.get('stats') === '1') logTris(avatars[0].root);
 }
 window.__avatars = () => avatars;
+// debug: rebuild the avatar and time it (textures are warm by then)
+window.__timeBuild = () => { loadAvatar(); return window.__buildMs; };
 // debug: per-avatar triangles and draw calls (one per visible mesh / sprite)
 window.__avStats = () => avatars.map((a) => {
   let tris = 0, calls = 0;

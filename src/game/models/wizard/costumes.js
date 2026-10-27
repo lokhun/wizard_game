@@ -1,9 +1,10 @@
 import * as THREE from 'three';
-import { V, mulberry, sphere, torus, roundedBox, xf, noisify, tubeVar, leaf, feather, lathe, fbm3, flat } from './shapes.js';
+import { V, mulberry, sphere, torus, roundedBox, xf, noisify, tubeVar, leaf, feather, lathe, fbm3, flat, crystal, gear, helixPts } from './shapes.js';
 import { hoodGeo } from './hats.js';
+import { faceGeo, eyeGeo, earGeo, hairGeo, hairCapGeo, beardGeo, browGeo, neckGeo, mergeColored } from './head.js';
 import {
   TAU, BODY_Y, SHOULDER_X, HIP_X, BELT_Y, SKIRT_TOP, C, cmix, cmul, smoothstep as sstep,
-  bodyR, ringPt, paint, cat, weldNormals, garment, clothPaint, limb, bootGeo, headGeo, beardGeo, ribbon,
+  bodyR, ringPt, paint, cat, weldNormals, garment, clothPaint, limb, bootGeo, ribbon, bandGeo, embroidery,
   beltGeo, beltPt, onBelt, buckleGeo, pouchGeo, vialGeo, bookGeo, scrollCaseGeo, chainGeo, cordGeo, charmGeo,
 } from './garments.js';
 
@@ -36,13 +37,13 @@ const DEFS = {
   pyromancer: (m) => ({
     flare: 0.2, wind: 1,
     inner: { col: 0x3a2e26, hem: 0.1, folds: 0.016 },
-    coat: { col: 0x7a2416, lining: 0x2a120c, trim: 0x2a1810, trimEdge: 0.016, trimHem: 0.0, hem: 0.28, gap: [0.62, 0.36, 0.1, 0.5], tatter: 0.07, scorch: 0.2, grime: 0.45, folds: 0.03, collar: 'fold' },
+    coat: { col: 0x7a2416, lining: 0x2a120c, trim: 0x2a1810, trimEdge: 0.016, trimHem: 0.0, hem: 0.28, gap: [0.62, 0.36, 0.1, 0.5], tatter: 0.07, scorch: 0.2, grime: 0.45, folds: 0.03, collar: 'fold', emb: { pattern: 'flame', col: 0xb0441a, base: 0x2a1810, w: 0.03 } },
     sleeves: { kind: 'fitted', cuff: 0x24140e, cuffKind: 'turn' },
     legs: { col: 0x2a2420 }, boots: { col: 0x3a2a1e, height: 0.3, strap: 0x8a8070 },
     belt: { col: 0x3a2618, buckle: 0x5a5a60, h: 0.05 },
     items: [{ k: 'pouch', a: 1.15, w: 0.08 }, { k: 'pouch', a: -1.9, w: 0.07 }, { k: 'vials', a: -0.62, n: 3, col: m.color }, { k: 'scroll', a: 2.5 }, { k: 'charm', a: 1.75, kind: 'stone', glow: m.color }],
     shoulders: [{ k: 'mantle', col: 0x3a1a12, hem: 1.3, tatter: 0.05, scorch: 0.14, gap: 0.0, seed: 2 }],
-    face: { skin: 0xc89880, shade: 0.8, stubble: 0.4, beard: { col: 0x8a8580, len: 0.13 }, hair: { col: 0x6a6560, len: 0.09 }, eyes: 0.8 },
+    face: { skin: 0xc89880, shade: 0.8, stubble: 0.4, beard: { col: 0x8a8580, len: 0.13 }, hair: { col: 0x6a6560, len: 0.09 }, eyes: 0.8, age: 0.6, nose: 1.1, hook: 0.5, brow: 0.6, iris: 0x8a5a2a },
   }),
   cryomancer: (m) => ({
     flare: 0.17, wind: 0.9,
@@ -58,7 +59,7 @@ const DEFS = {
   stormcaller: (m) => ({
     flare: 0.2, wind: 1.1,
     inner: { col: 0x3a3c44, hem: 0.62, folds: 0.012 },
-    coat: { col: 0x22305a, lining: 0x6a5434, trim: 0x22305a, hem: 0.12, gap: [0.5, 0.26, 0.16, 0.62], vent: { y: 0.82, a: 0.22 }, tatter: 0.03, fade: 0.55, grime: 0.4, folds: 0.03, collar: 'high', buttons: 0xc89048 },
+    coat: { col: 0x22305a, lining: 0x6a5434, trim: 0x22305a, hem: 0.12, gap: [0.5, 0.26, 0.16, 0.62], vent: { y: 0.82, a: 0.22 }, tatter: 0.03, fade: 0.55, grime: 0.4, folds: 0.03, collar: 'high', buttons: 0xc89048, emb: { pattern: 'zigzag', col: 0xc89048, base: 0x1a2440, w: 0.03, P: 0.045 } },
     sleeves: { kind: 'fitted', cuff: 0x1a2440, cuffKind: 'turn' },
     legs: { col: 0x34302c }, boots: { col: 0x4a3420, height: 0.36, strap: 0xc89048 },
     belt: { col: 0x3a2818, buckle: 0xc89048, h: 0.05 },
@@ -69,14 +70,14 @@ const DEFS = {
   arcanist: (m) => ({
     flare: 0.22, wind: 0.9,
     inner: { col: 0x4a2470, hem: 0.05, folds: 0.016, trim: 0xd8b060, trimHem: 0.03 },
-    coat: { col: 0x2c1648, lining: 0x7a4aa0, trim: 0xd0a850, trimEdge: 0.04, trimHem: 0.05, hem: 0.06, gap: [0.6, 0.36, 0.2, 0.62], tatter: 0.0, grime: 0.25, folds: 0.03, collar: 'fold', raise: 0.003 },
+    coat: { col: 0x2c1648, lining: 0x7a4aa0, trim: 0xd0a850, trimEdge: 0.04, trimHem: 0.05, hem: 0.06, gap: [0.6, 0.36, 0.2, 0.62], tatter: 0.0, grime: 0.25, folds: 0.03, collar: 'fold', raise: 0.003, emb: { pattern: 'vine', col: 0x4a1c6a, base: 0xd0a850, w: 0.042, hem: true } },
     sleeves: { kind: 'bell', bell: 0.115, cuff: 0xd0a850, under: 0x4a2470 },
     legs: { col: 0x2a2030 }, boots: { col: 0x3a2a20, height: 0.16, pointy: true },
     belt: { col: 0x3a2030, buckle: 0xd0a850, h: 0.045 },
     items: [{ k: 'tome', a: 0.9 }, { k: 'scroll', a: -2.4 }, { k: 'pouch', a: -1.2, w: 0.065 }, { k: 'quill', a: -0.75 }],
     shoulders: [],
     extras: [{ k: 'stole', col: 0x6a1c34, edge: 0xd0a850 }],
-    face: { skin: 0xd8b8a0, shade: 0.85, beard: { col: 0xdcd8d0, len: 0.27, fork: true }, hair: { col: 0xd0ccc4, len: 0.17 }, eyes: 0.9 },
+    face: { skin: 0xd8b8a0, shade: 0.85, beard: { col: 0xdcd8d0, len: 0.27, fork: true }, hair: { col: 0xd0ccc4, len: 0.17 }, eyes: 0.9, age: 1, gaunt: 0.5, nose: 1.15, hook: 0.7, brow: 0.4, iris: 0x5a4a8a },
   }),
   necromancer: (m) => ({
     flare: 0.2, wind: 1.1,
@@ -93,7 +94,7 @@ const DEFS = {
   bloodmage: (m) => ({
     flare: 0.2, wind: 1,
     inner: { col: 0x1e0c0e, hem: 0.12, folds: 0.016 },
-    coat: { col: 0x6e0c1c, lining: 0x1a0a0a, trim: 0x1a0e0e, trimEdge: 0.02, hem: 0.24, gap: [0.58, 0.3, 0.1, 0.5], tatter: 0.08, grime: 0.4, grimeCol: 0x2a0a08, folds: 0.03, collar: 'fold' },
+    coat: { col: 0x6e0c1c, lining: 0x1a0a0a, trim: 0x1a0e0e, trimEdge: 0.02, hem: 0.24, gap: [0.58, 0.3, 0.1, 0.5], tatter: 0.08, grime: 0.4, grimeCol: 0x2a0a08, folds: 0.03, collar: 'fold', emb: { pattern: 'diamond', col: 0x7a0e1c, base: 0x1a0e0e, w: 0.03 } },
     sleeves: { kind: 'fitted', cuff: 0x1a0e0e, cuffKind: 'turn', straps: true },
     legs: { col: 0x1e1414 }, boots: { col: 0x1e1614, height: 0.38, strap: 0xa8a8b0 },
     belt: { col: 0x1a1210, buckle: 0xa8a8b0, h: 0.05, studs: true },
@@ -105,19 +106,19 @@ const DEFS = {
   chronomancer: (m) => ({
     flare: 0.2, wind: 0.9,
     inner: { col: 0x1a4a46, hem: 0.05, folds: 0.016, trim: 0xd0a850, trimHem: 0.03 },
-    coat: { col: 0x14524c, lining: 0x0a2a28, trim: 0xd0a850, trimEdge: 0.03, trimHem: 0.035, hem: 0.08, gap: [0.6, 0.34, 0.14, 0.55], tatter: 0.0, grime: 0.3, folds: 0.028, collar: 'fold', raise: 0.002 },
+    coat: { col: 0x14524c, lining: 0x0a2a28, trim: 0xd0a850, trimEdge: 0.03, trimHem: 0.035, hem: 0.08, gap: [0.6, 0.34, 0.14, 0.55], tatter: 0.0, grime: 0.3, folds: 0.028, collar: 'fold', raise: 0.002, emb: { pattern: 'runes', col: 0x0e3a36, base: 0xd0a850, w: 0.034, hem: true } },
     sleeves: { kind: 'flare', cuff: 0xd0a850, cuffKind: 'turn' },
     legs: { col: 0x2a2420 }, boots: { col: 0x4a3424, height: 0.2 },
     belt: { col: 0x4a3020, buckle: 0xd0a850, h: 0.045 },
     items: [{ k: 'charm', a: 0.85, kind: 'hourglass', glow: m.color2 }, { k: 'charm', a: -0.9, kind: 'gear' }, { k: 'charm', a: 1.8, kind: 'hourglass', glow: m.color2 }, { k: 'pouch', a: -1.7, w: 0.07 }, { k: 'watch', a: -0.35 }],
     shoulders: [{ k: 'hood', col: 0x14524c, rim: 0xd0a850 }],
     extras: [{ k: 'sash', col: 0x9a7a3a, a: 1.25 }],
-    face: { skin: 0xc8a088, shade: 0.9, stubble: 0.3, beard: { col: 0x3a302a, len: 0.06 }, eyes: 0.8 },
+    face: { skin: 0xc8a088, shade: 0.9, stubble: 0.3, beard: { col: 0x3a302a, len: 0.06 }, hair: { col: 0x2a2420, len: 0.05, full: true, short: true, n: 90 }, eyes: 0.8, age: 0.35, chin: 0.3, iris: 0x2a6a5a },
   }),
   warlock: (m) => ({
     flare: 0.22, wind: 1.1,
     inner: { col: 0x1e1028, hem: 0.06, folds: 0.018 },
-    coat: { col: 0x2a1238, lining: 0x5a1a6a, trim: 0x3a1a4a, trimEdge: 0.025, hem: 0.07, gap: [0.6, 0.32, 0.12, 0.55], tatter: 0.15, grime: 0.45, grimeCol: 0x140a14, folds: 0.032, collar: null },
+    coat: { col: 0x2a1238, lining: 0x5a1a6a, trim: 0x3a1a4a, trimEdge: 0.025, hem: 0.07, gap: [0.6, 0.32, 0.12, 0.55], tatter: 0.15, grime: 0.45, grimeCol: 0x140a14, folds: 0.032, collar: null, emb: { pattern: 'runes', col: 0x7a2a9a, base: 0x2a1238, w: 0.03 } },
     sleeves: { kind: 'bell', bell: 0.085, tatter: true, under: 0x1e1028 },
     legs: { col: 0x1a1420 }, boots: { col: 0x1e1820, height: 0.3, strap: 0x6a6070 },
     belt: { col: 0x1e1418, buckle: 0x6a6070, h: 0.04 },
@@ -130,7 +131,7 @@ const DEFS = {
   lightbinder: (m) => ({
     flare: 0.2, wind: 0.8,
     inner: { col: 0xe4dccc, hem: 0.05, folds: 0.016, trim: 0xc8a040, trimHem: 0.035 },
-    coat: { col: 0xd8d0c0, lining: 0xc8a040, trim: 0xc8a040, trimEdge: 0.045, trimHem: 0.06, hem: 0.1, gap: [0.55, 0.3, 0.14, 0.5], tatter: 0.0, grime: 0.35, grimeCol: 0x8a7a60, folds: 0.028, collar: 'fold', raise: 0.003 },
+    coat: { col: 0xd8d0c0, lining: 0xc8a040, trim: 0xc8a040, trimEdge: 0.045, trimHem: 0.06, hem: 0.1, gap: [0.55, 0.3, 0.14, 0.5], tatter: 0.0, grime: 0.35, grimeCol: 0x8a7a60, folds: 0.028, collar: 'fold', raise: 0.003, emb: { pattern: 'diamond', col: 0xf0e8d0, base: 0xc8a040, w: 0.045, hem: true } },
     sleeves: { kind: 'bell', bell: 0.1, cuff: 0xc8a040, under: 0xe4dccc },
     legs: { col: 0x8a7a64 }, boots: { col: 0x8a6a4a, height: 0.2 },
     belt: { col: 0xd8c8a0, buckle: 0xd8a840, h: 0.04, rope: true },
@@ -143,7 +144,7 @@ const DEFS = {
   geomancer: (m) => ({
     flare: 0.16, wind: 0.8,
     inner: { col: 0x5a4a34, hem: 0.62, folds: 0.012 },
-    coat: { col: 0x5a3e24, lining: 0x3a2a1a, trim: 0x3a2a18, trimEdge: 0.02, trimHem: 0.03, hem: 0.46, gap: [0.5, 0.25, 0.08, 0.35], tatter: 0.05, grime: 0.5, grimeCol: 0x3a3226, folds: 0.022, collar: 'fold', stiff: true },
+    coat: { col: 0x5a3e24, lining: 0x3a2a1a, trim: 0x3a2a18, trimEdge: 0.02, trimHem: 0.03, hem: 0.46, gap: [0.5, 0.25, 0.08, 0.35], tatter: 0.05, grime: 0.5, grimeCol: 0x3a3226, folds: 0.022, collar: 'fold', stiff: true, emb: { pattern: 'diamond', col: 0x9a7a3a, base: 0x3a2a18, w: 0.032, hem: true } },
     sleeves: { kind: 'fitted', cuff: 0x3a2a18, cuffKind: 'bracer' },
     legs: { col: 0x3a3226 }, boots: { col: 0x3e2c1c, height: 0.32, strap: 0x6a6a64 },
     belt: { col: 0x3a2618, buckle: 0x8a8076, h: 0.07, studs: true },
@@ -161,7 +162,7 @@ const DEFS = {
     items: [{ k: 'charm', a: 0.85, kind: 'herbs' }, { k: 'gourd', a: -0.9 }, { k: 'charm', a: 1.8, kind: 'feathers', feather: 0x8a7a60 }, { k: 'charm', a: -1.85, kind: 'bones' }, { k: 'pouch', a: 2.5, w: 0.08 }],
     shoulders: [{ k: 'mantle', col: 0x3a3a1e, hem: 1.32, tatter: 0.1, gap: 0.0, seed: 13, fur: true }, { k: 'leaves' }],
     extras: [{ k: 'vines' }],
-    face: { skin: 0xb08868, shade: 0.85, stubble: 0.2, beard: { col: 0x5a4430, len: 0.11 }, eyes: 0.9 },
+    face: { skin: 0xb08868, shade: 0.85, stubble: 0.2, beard: { col: 0x5a4430, len: 0.11 }, hair: { col: 0x4a3624, len: 0.15, full: true, wild: 1, n: 80 }, eyes: 0.9, age: 0.5, nose: 1.05, iris: 0x4a6a2a },
   }),
   spellblade: (m) => ({
     flare: 0.16, wind: 0.9,
@@ -174,12 +175,12 @@ const DEFS = {
     shoulders: [{ k: 'pauldron', kind: 'plate' }],
     cape: { col: 0x1e2a48, hem: 0.42, tatter: 0.06, half: true },
     extras: [{ k: 'breastplate' }, { k: 'faulds' }, { k: 'vambrace' }, { k: 'kneecops' }],
-    face: { skin: 0xc89880, shade: 0.7, stubble: 0.4, eyes: 1.2 },
+    face: { skin: 0xc89880, shade: 0.7, stubble: 0.4, eyes: 1.2, chin: 0.6, brow: 0.5, iris: 0x4a6a8a },
   }),
   tempest: (m) => ({
     flare: 0.22, wind: 1.8,
     inner: { col: 0x58687a, hem: 0.1, folds: 0.016 },
-    coat: { col: 0x46586c, lining: 0x2a3a48, trim: 0xd0ccc0, trimEdge: 0.02, hem: 0.1, gap: [0.6, 0.34, 0.14, 0.6], vent: { y: 0.8, a: 0.3, sides: true }, tatter: 0.1, grime: 0.3, grimeCol: 0x3a4248, folds: 0.03, collar: null },
+    coat: { col: 0x46586c, lining: 0x2a3a48, trim: 0xd0ccc0, trimEdge: 0.02, hem: 0.1, gap: [0.6, 0.34, 0.14, 0.6], vent: { y: 0.8, a: 0.3, sides: true }, tatter: 0.1, grime: 0.3, grimeCol: 0x3a4248, folds: 0.03, collar: null, emb: { pattern: 'vine', col: 0x46586c, base: 0xd0ccc0, w: 0.03 } },
     sleeves: { kind: 'fitted', cuffKind: 'wrap', cuff: 0xd0ccc0 },
     legs: { col: 0x3a4048 }, boots: { col: 0x5a5048, height: 0.26, wrap: 0xc8c4b8 },
     belt: { col: 0xc8c4b8, h: 0.06, sash: true },
@@ -190,9 +191,17 @@ const DEFS = {
   }),
 };
 
+// signature pieces added to each class's extras
+const SIGNATURE = {
+  pyromancer: [{ k: 'embers' }], cryomancer: [{ k: 'frost' }], stormcaller: [{ k: 'coils' }], arcanist: [{ k: 'stars' }],
+  necromancer: [{ k: 'ribcage' }], bloodmage: [{ k: 'bloodgem' }], chronomancer: [{ k: 'gearbrooch' }], warlock: [{ k: 'eye' }],
+  lightbinder: [{ k: 'halo' }], geomancer: [{ k: 'shards' }], druid: [{ k: 'mushrooms' }], spellblade: [{ k: 'mail' }], tempest: [{ k: 'windrunes' }],
+};
+
 // ---- costume summary for the rig (cloth ring etc.) -------------------------------
 export function getCostume(classId, meta) {
   const d = (DEFS[classId] ?? DEFS.pyromancer)(meta);
+  d.extras = [...(d.extras ?? []), ...(SIGNATURE[classId] ?? [])];
   const outer = d.coat && d.coat.hem < d.inner.hem + 0.05 ? d.coat : d.inner;
   const off = outer === d.coat ? OFF_COAT : OFF_INNER;
   const longest = Math.min(d.inner.hem, d.coat ? d.coat.hem : 9);
@@ -253,13 +262,13 @@ export function dress(D) {
   const innerR = layerR(OFF_INNER, cos.flare * (inner.hem > 0.4 ? 0.8 : 1));
   const innerPaint = clothPaint({ col: innerCol, trim: inner.trim ? C(inner.trim) : null, trimHem: inner.trimHem, grime: 0.35, ao: 0.2, seed: 5 });
   {
-    const torso = garment({ y0: 1.53, y1: SKIRT_TOP, rows: 8, seg: 18, R: innerR, fold: { n: 6, amp: () => 0.002 }, pinch: [{ y: BELT_Y, w: 0.02, k: 0.004 }], paint: (c) => innerPaint({ ...c, t: 0, hem: 9 }), quilt: inner.quilt ? { depth: 0.004 } : null, seed: 5 });
+    const torso = garment({ y0: 1.53, y1: SKIRT_TOP, rows: 8, seg: 18, R: innerR, fold: { n: 6, amp: (t, y) => 0.002 * sstep(SKIRT_TOP, SKIRT_TOP + 0.04, y) }, pinch: [{ y: BELT_Y, w: 0.02, k: 0.004 }], paint: (c) => innerPaint({ ...c, t: 0, hem: 9 }), quilt: inner.quilt ? { depth: 0.004 } : null, seed: 5 });
     const panels = inner.split ? [[() => 0.06, () => Math.PI - 0.06], [() => Math.PI + 0.06, () => TAU - 0.06]] : undefined;
     const splitF = (y) => (inner.split ? 0.02 + 0.3 * sstep(0.85, inner.hem, y) : 0);
     const skirt = garment({
-      y0: SKIRT_TOP, y1: inner.hem, rows: inner.hem > 0.4 ? 6 : 10, seg: inner.quilt ? 30 : 26, R: innerR, seed: 6,
+      y0: SKIRT_TOP, y1: inner.hem, rows: inner.hem > 0.4 ? 7 : 13, seg: inner.quilt ? 30 : 44, R: innerR, seed: 6, pipe: !inner.quilt,
       panels: inner.split ? [[(y) => splitF(y), (y) => Math.PI - splitF(y)], [(y) => Math.PI + splitF(y), (y) => TAU - splitF(y)]] : panels,
-      fold: { n: 7, amp: (t) => 0.003 + (inner.folds ?? 0.016) * t },
+      fold: { n: 9, amp: (t) => (0.003 + (inner.folds ?? 0.016) * 1.15 * Math.pow(t, 0.8)) * Math.min(1, t / 0.06) },
       pinch: [{ y: SKIRT_TOP + 0.02, w: 0.04, k: 0, ripple: 0.003 }],
       tatter: inner.tatter ?? 0.02, quilt: inner.quilt ? { depth: 0.004 } : null,
       paint: (c) => innerPaint({ ...c, t: (SKIRT_TOP - c.y) / (SKIRT_TOP - inner.hem) }),
@@ -272,6 +281,7 @@ export function dress(D) {
   // ---- outer coat -----------------------------------------------------------------
   D.sec = 'coat';
   let coatR = null;
+  let coatSurf = null; // (y, a, lift) on the finished coat: folds included
   if (coat) {
     coatR = layerR(OFF_COAT, cos.flare);
     const coatCol = C(coat.col), lining = C(coat.lining), trim = C(coat.trim);
@@ -289,15 +299,50 @@ export function dress(D) {
     const paintO = clothPaint({ col: coatCol, trim, trimEdge: coat.trimEdge, trimHem: coat.trimHem, grime: coat.grime, grimeCol: coat.grimeCol ? C(coat.grimeCol) : undefined, scorch: coat.scorch, fade: coat.fade, moss: coat.moss, mossCol: coat.mossCol ? C(coat.mossCol) : null, ao: 0.34, seed: 7 });
     const paintL = clothPaint({ col: lining, grime: (coat.grime ?? 0.3) * 0.6, ao: 0.15, seed: 8, scorch: coat.scorch ? coat.scorch * 0.6 : 0 });
     const common = { R: coatR, seed: 9, edgeAt, trim: { edge: coat.trimEdge, hem: coat.trimHem, raise: coat.raise ?? 0 } };
-    const torso = garment({ ...common, trim: { edge: coat.trimEdge, raise: coat.raise ?? 0 }, y0: 1.515, y1: SKIRT_TOP, rows: 10, seg: 24, panels: [[gap, (y) => TAU - gap(y)]], fold: { n: 5, amp: (t, y) => 0.002 + 0.007 * sstep(1.3, 1.1, y) }, pinch: [{ y: BELT_Y, w: 0.022, k: 0.007, ripple: 0.003 }], paint: (c) => paintO({ ...c, t: 0, hem: 9 }) });
-    const skirt = garment({ ...common, y0: SKIRT_TOP, y1: coat.hem, rows: coat.hem > 0.4 ? 8 : 12, seg: 34, panels, fold: { n: 7, amp: (t) => 0.005 + (coat.folds ?? 0.03) * 1.25 * Math.pow(t, 0.75) }, tatter: coat.tatter, paint: (c) => paintO(tp(c)) });
+    const torso = garment({ ...common, trim: { edge: coat.trimEdge, raise: coat.raise ?? 0 }, y0: 1.515, y1: SKIRT_TOP, rows: 10, seg: 24, panels: [[gap, (y) => TAU - gap(y)]], fold: { n: 5, amp: (t, y) => (0.002 + 0.007 * sstep(1.3, 1.1, y)) * sstep(SKIRT_TOP, SKIRT_TOP + 0.04, y) }, pinch: [{ y: BELT_Y, w: 0.022, k: 0.007, ripple: 0.003 }], paint: (c) => paintO({ ...c, t: 0, hem: 9 }) });
+    const skirt = garment({ ...common, y0: SKIRT_TOP, y1: coat.hem, rows: coat.hem > 0.4 ? 9 : 15, seg: 60, panels, pipe: true, fold: { n: 9, amp: (t) => (0.004 + (coat.folds ?? 0.03) * 1.2 * Math.pow(t, 0.75)) * Math.min(1, t / 0.06) }, tatter: coat.tatter, paint: (c) => paintO(tp(c)) });
+    const surfT = torso.userData.surf, surfS = skirt.userData.surf;
+    coatSurf = (y, a, lift) => (y >= SKIRT_TOP ? surfT(a, y, lift, V()) : surfS(a, y, lift, V()));
     const out = cat([torso, skirt]);
     weldNormals(out);
     add(M.cloth, out, skins.skirt);
+    // embroidered bands down the front edges (and round the hem): raised, patterned, over the trim
+    if (coat.emb) {
+      const e = coat.emb, w = e.w ?? 0.034;
+      const pf = embroidery(e.pattern, C(e.base ?? coat.trim), C(e.col), e.P ?? 0.05);
+      const at = (a, y, lift, o) => (y >= SKIRT_TOP ? surfT(a, y, lift, o) : surfS(a, y, lift, o));
+      const bands = [];
+      const yTop = 1.46, yBot = coat.hem + 0.012 + (coat.tatter ?? 0);
+      for (const sd of [1, -1]) {
+        const pts = [], nrm = [];
+        const n = Math.max(24, Math.round((yTop - yBot) / (e.P ?? 0.05) * 3.5));
+        for (let i = 0; i <= n; i++) {
+          const y = yTop + (yBot - yTop) * (i / n);
+          coatR(y, RR);
+          const da = (w * 0.5 + 0.002) / ((RR.rx + RR.zf) * 0.5);
+          const a = sd > 0 ? gap(y) + da : TAU - gap(y) - da;
+          const p = at(a, y, 0.0035, V());
+          pts.push(p); nrm.push(V(p.x, 0, p.z).normalize());
+        }
+        bands.push(bandGeo(pts, nrm, w, 0.0018, pf));
+      }
+      if (e.hem && !(coat.tatter > 0.04)) {
+        const y = coat.hem + w * 0.5 + 0.006;
+        for (const [aS, aE] of panels) {
+          const a0 = aS(y) + 0.004, a1 = aE(y) - 0.004;
+          const pts = [], nrm = [];
+          coatR(y, RR);
+          const n = Math.max(12, Math.round((a1 - a0) * (RR.rx + RR.zf) * 0.5 / (e.P ?? 0.05) * 3.5));
+          for (let i = 0; i <= n; i++) { const p = at(a0 + (a1 - a0) * (i / n), y, 0.0035, V()); pts.push(p); nrm.push(V(p.x, 0, p.z).normalize()); }
+          bands.push(bandGeo(pts, nrm, w * 0.9, 0.0018, pf));
+        }
+      }
+      add(M.cloth, cat(bands), skins.skirt);
+    }
     // lining (inward-facing, slightly inside)
     const linR = layerR(OFF_COAT - 0.005, cos.flare);
     const lt = garment({ R: linR, seed: 9, y0: 1.515, y1: SKIRT_TOP, rows: 5, seg: 12, panels: [[gap, (y) => TAU - gap(y)]], fold: { n: 5, amp: () => 0 }, pinch: [{ y: BELT_Y, w: 0.022, k: 0.007 }], flip: true, paint: (c) => paintL({ ...c, t: 0, hem: 9 }) });
-    const ls = garment({ R: linR, seed: 9, y0: SKIRT_TOP, y1: coat.hem, rows: coat.hem > 0.4 ? 6 : 9, seg: 22, panels, fold: { n: 7, amp: (t) => 0.005 + (coat.folds ?? 0.03) * 1.25 * Math.pow(t, 0.75) }, tatter: coat.tatter, flip: true, paint: (c) => paintL(tp(c)) });
+    const ls = garment({ R: linR, seed: 9, y0: SKIRT_TOP, y1: coat.hem, rows: coat.hem > 0.4 ? 6 : 9, seg: 30, panels, pipe: true, fold: { n: 9, amp: (t) => (0.004 + (coat.folds ?? 0.03) * 1.2 * Math.pow(t, 0.75)) * Math.min(1, t / 0.06) }, tatter: coat.tatter, flip: true, paint: (c) => paintL(tp(c)) });
     add(M.cloth, cat([lt, ls]), skins.skirt);
     // collar
     if (coat.collar === 'high') {
@@ -358,7 +403,10 @@ export function dress(D) {
   for (const A of [armL, armR]) {
     const s = A.s;
     const jx = s * SHOULDER_X, jy = BODY_Y.shoulder, jz = -0.01;
-    const up = limb(jx + A.s * 0.008, jy - 0.012, jz, [[0.012, 0.03], [0.044, 0.024], [0.06, 0.006], [0.063, -0.03], [0.06, -0.14], [0.056, -0.25], [0.055, -0.29]], { seg: 12, folds: 0.03, paint: (x, y) => cmul(sleeveCol, 0.78 + 0.25 * sstep(-0.3, 0.05, y)) });
+    // (the profile is sampled finely toward the elbow, where the sleeve bunches up in creases)
+    const upProf = [[0.012, 0.03], [0.044, 0.024], [0.06, 0.006], [0.063, -0.03], [0.061, -0.1], [0.06, -0.14]];
+    for (let k = 1; k <= 12; k++) { const y = -0.14 - k * 0.0125; upProf.push([0.058 - 0.003 * (k / 12), y]); }
+    const up = limb(jx + A.s * 0.008, jy - 0.012, jz, upProf, { seg: 14, folds: 0.03, creases: [{ y: -0.255, w: 0.04, k: 0.07 }], paint: (x, y, z) => cmul(sleeveCol, (0.78 + 0.25 * sstep(-0.3, 0.05, y)) * (1 - 0.25 * Math.exp(-Math.pow((y + 0.255) / 0.04, 2)) * (0.5 - 0.5 * Math.sin((y + 0.255) * 160 + Math.atan2(x, z) * 0.5)))) });
     add(M.cloth, up, A.shoulder);
     const ey = jy - 0.28;
     add(M.cloth, paint(sphere(0.056, 8, 6, { x: jx, y: ey, z: jz }), cmul(sleeveCol, 0.8)), A.elbow);
@@ -377,8 +425,10 @@ export function dress(D) {
       add(M.cloth, limb(jx, ey, jz, [[0.05, 0.0], [0.046, -0.12], [0.04, -0.24]], { seg: 10, col: cmul(C(sl.under ?? inner.col), 0.8) }), A.elbow);
     } else {
       const flare = sl.kind === 'flare' ? 0.07 : 0.052;
-      const prof = [[0.056, 0.03], [0.055, -0.06], [0.05, -0.15], [flare * 0.95, -0.22], [flare, -0.245]];
-      add(M.cloth, limb(jx, ey, jz, prof, { seg: 12, folds: 0.035, paint: (x, y) => cmul(sleeveCol, 0.75 + 0.3 * sstep(-0.25, 0, y)) }), A.elbow);
+      const prof = [[0.056, 0.03]];
+      for (let k = 1; k <= 8; k++) prof.push([0.056 - 0.001 * k / 8, 0.03 - k * 0.011]);
+      prof.push([0.05, -0.15], [flare * 0.95, -0.22], [flare, -0.245]);
+      add(M.cloth, limb(jx, ey, jz, prof, { seg: 14, folds: 0.035, creases: [{ y: 0.0, w: 0.035, k: 0.06 }], paint: (x, y) => cmul(sleeveCol, (0.75 + 0.3 * sstep(-0.25, 0, y)) * (1 - 0.2 * Math.exp(-Math.pow(y / 0.035, 2)))) }), A.elbow);
       if (sl.cuffKind === 'turn') add(M.cloth, limb(jx, ey, jz, [[0.054, -0.16], [0.062, -0.17], [0.064, -0.24], [0.058, -0.25]], { seg: 12, col: cuffC }), A.elbow);
       else if (sl.cuffKind === 'fur') {
         const fc = noisify(torus(0.054, 0.02, 6, 14), 0.006, 40, s + 7, 2);
@@ -391,6 +441,16 @@ export function dress(D) {
         for (let i = 0; i <= 10; i++) prof.push([0.05 + (i % 2) * 0.007, -0.1 - i * 0.014]);
         add(M.cloth, limb(jx, ey, jz, prof, { seg: 10, folds: 0.04, paint: (x, y) => cmul(cuffC, 0.85 + 0.2 * Math.sin(y * 220)) }), A.elbow);
       }
+    }
+    // an embroidered band round the cuff, in the coat's pattern
+    const cEmb = coat?.emb;
+    if (cEmb && sl.kind !== 'quilt') {
+      const bell = sl.kind === 'bell';
+      const cy = ey + (bell ? -0.235 : sl.cuffKind === 'turn' ? -0.205 : -0.225);
+      const r = bell ? (sl.bell ?? 0.1) * 0.99 + 0.004 : sl.cuffKind === 'turn' ? 0.068 : (sl.kind === 'flare' ? 0.07 : 0.052) * 0.98 + 0.004;
+      const pts = [], nrm = [];
+      for (let i = 0; i <= 40; i++) { const a = (i / 40) * TAU; pts.push(V(jx + Math.sin(a) * r, cy, jz + Math.cos(a) * r)); nrm.push(V(Math.sin(a), 0, Math.cos(a))); }
+      add(M.cloth, bandGeo(pts, nrm, bell ? 0.03 : 0.026, 0.0015, embroidery(cEmb.pattern, C(cEmb.base ?? coat.trim), C(cEmb.col), 0.04)), A.elbow);
     }
     if (sl.straps) {
       const w = [];
@@ -564,11 +624,22 @@ export function dress(D) {
         const p = clothPaint({ col, grime: 0.3, ao: 0.25, seed: sh.seed ?? 2, scorch: sh.scorch });
         const hem = sh.hem ?? 1.3;
         const g = garment({
-          y0: 1.55, y1: hem, rows: 7, seg: 40, R: mantleR(0.0), seed: sh.seed ?? 2,
-          fold: { n: 9, amp: (t) => 0.002 + 0.016 * t },
+          y0: 1.55, y1: hem, rows: 8, seg: 56, R: mantleR(0.0), seed: sh.seed ?? 2, pipe: true,
+          fold: { n: 13, amp: (t) => 0.002 + 0.014 * Math.pow(t, 0.8) },
           tatter: sh.tatter ?? 0.04, rowCurve: (t) => t,
           paint: (c) => p({ ...c, t: (1.55 - c.y) / (1.55 - hem) }),
         });
+        // a scooped neckline at the front, so the chin (and a beard) sits over the mantle, not in it
+        {
+          const depth = D.hat.face === 'open' ? 0.05 : 0.022, band = 0.09, pp = g.getAttribute('position');
+          for (let i = 0; i < pp.count; i++) {
+            const x = pp.getX(i), y = pp.getY(i), z = pp.getZ(i);
+            if (y < 1.55 - band) continue;
+            const w = Math.exp(-Math.pow(Math.atan2(x, z) / 0.75, 2)) * (1 - (1.55 - y) / band);
+            pp.setY(i, y - depth * w);
+          }
+          g.computeVertexNormals();
+        }
         if (sh.asym) {
           const pp = g.getAttribute('position');
           for (let i = 0; i < pp.count; i++) if (pp.getY(i) < 1.42 && pp.getX(i) < 0) pp.setY(i, pp.getY(i) - sh.asym * sstep(1.42, hem, pp.getY(i)) * sstep(0, -0.2, pp.getX(i)));
@@ -806,6 +877,14 @@ export function dress(D) {
   D.sec = 'extras';
   const onSurf = (y, a, off) => { outerR(y, RR); const [x, z] = ringPt(RR.rx + off, RR.zf + off, RR.zb + off, a); return V(x, y, z); };
   const surfN = (y, a) => { outerR(y, RR); return V(Math.sin(a) / RR.rx, 0, Math.cos(a) / (Math.cos(a) > 0 ? RR.zf : RR.zb)).normalize(); };
+  // on the outermost layer at the chest: over a mantle where one hangs that low
+  const mantleHem = Math.min(9, ...(cos.shoulders ?? []).filter((q) => q.k === 'mantle').map((q) => q.hem ?? 1.3));
+  const onTop = (y, a, off) => {
+    if (y <= mantleHem + 0.01) return onSurf(y, a, off);
+    mantleR(0)(y, RR);
+    const [x, z] = ringPt(RR.rx + off + 0.004, RR.zf + off + 0.004, RR.zb + off + 0.004, a);
+    return V(x, y, z);
+  };
   for (const ex of cos.extras ?? []) {
     switch (ex.k) {
       case 'stole': {
@@ -979,6 +1058,201 @@ export function dress(D) {
         }
         break;
       }
+      // ---- class signatures ----
+      case 'embers': {
+        // smouldering flecks caught in the singed hem (they pulse with the class glow)
+        const fl = [];
+        const r6 = mulberry(71);
+        for (let i = 0; i < 70; i++) {
+          const a = r6() * TAU;
+          const hem = coat ? coat.hem : inner.hem;
+          const y = hem + 0.01 + Math.pow(r6(), 2.2) * 0.32;
+          if (coat && Math.min(a, TAU - a) < coat.gap[3] * 0.8 && y < 0.6) continue;
+          const p = coatSurf ? coatSurf(y, a, 0.0025) : onSurf(y, a, 0.004);
+          const d = new THREE.CircleGeometry(0.0025 + r6() * 0.005, 5);
+          d.lookAt(V(p.x, 0, p.z));
+          d.translate(p.x, p.y, p.z);
+          const k = 0.5 + r6() * 0.9;
+          fl.push(paint(d, [k, k * (0.6 + 0.3 * r6()), k * 0.5]));
+        }
+        add(glowMat, cat(fl), skins.skirt);
+        break;
+      }
+      case 'frost': {
+        // clusters of ice on the shoulders and at the throat: pale crystal, a few glowing from within
+        const ice = [], lit = [];
+        const r6 = mulberry(73);
+        const cluster = (c, up, n, sc) => {
+          for (let i = 0; i < n; i++) {
+            const g = crystal((0.04 + r6() * 0.05) * sc, (0.007 + r6() * 0.006) * sc, 6, 80 + i);
+            const d = up.clone().add(V((r6() - 0.5) * 0.9, (r6() - 0.3) * 0.5, (r6() - 0.5) * 0.9)).normalize();
+            g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), d));
+            g.translate(c.x + (r6() - 0.5) * 0.04 * sc, c.y + (r6() - 0.5) * 0.015, c.z + (r6() - 0.5) * 0.04 * sc);
+            (i % 3 === 0 ? lit : ice).push(i % 3 === 0 ? paint(g, [0.7, 0.7, 0.7]) : paint(g, cmix(C(0xc8e4f4), C(0x6a9ab8), r6() * 0.6)));
+          }
+        };
+        for (const s2 of [1, -1]) cluster(V(s2 * 0.17, 1.5, -0.02), V(s2 * 0.6, 1, -0.1).normalize(), 7, 1);
+        cluster(V(0, 1.45, 0.13), V(0, 0.4, 1).normalize(), 4, 0.7);
+        add(M.plain, cat(ice), skins.mantle);
+        add(glowMat, cat(lit), skins.mantle);
+        break;
+      }
+      case 'coils': {
+        // copper wire wound round each forearm, a brass ring either end
+        for (const A of [armL, armR]) {
+          const jx = A.s * SHOULDER_X, ey = BODY_Y.shoulder - 0.28;
+          const w = tubeVar(helixPts(0.059, ey - 0.06, ey - 0.19, 9, 120).map((p) => p.add(V(jx, 0, -0.01))), 0.0028, 120, 4, false);
+          const rings = cat([xf(torus(0.06, 0.004, 4, 18), { rx: Math.PI / 2, x: jx, y: ey - 0.055, z: -0.01 }), xf(torus(0.06, 0.004, 4, 18), { rx: Math.PI / 2, x: jx, y: ey - 0.195, z: -0.01 })]);
+          add(M.metal, cat([paint(w, C(0xc87040)), paint(rings, C(0xd8a050))]), A.elbow);
+          add(glowMat, paint(xf(torus(0.061, 0.0016, 3, 18), { rx: Math.PI / 2, x: jx, y: ey - 0.125, z: -0.01 }), [0.8, 0.8, 0.8]), A.elbow);
+        }
+        break;
+      }
+      case 'stars': {
+        // a constellation stitched in glowing thread over the coat skirt
+        const st = [];
+        const r6 = mulberry(75);
+        const star = (r) => { const sh = new THREE.Shape(); for (let i = 0; i <= 8; i++) { const a = (i / 8) * TAU; const rr = i % 2 ? r * 0.3 : r; const px = Math.sin(a) * rr, py = Math.cos(a) * rr; if (i) sh.lineTo(px, py); else sh.moveTo(px, py); } return new THREE.ShapeGeometry(sh); };
+        for (let i = 0; i < 34; i++) {
+          const a = 0.9 + r6() * (TAU - 1.8);
+          const y = 0.15 + r6() * 0.75;
+          const p = coatSurf ? coatSurf(y, a, 0.003) : onSurf(y, a, 0.004);
+          const g = star(0.006 + r6() * 0.008);
+          g.lookAt(V(p.x, 0, p.z)); g.translate(p.x, p.y, p.z);
+          const k = 0.5 + r6() * 0.7;
+          st.push(paint(g, [k, k, k]));
+        }
+        add(glow2, cat(st), skins.skirt);
+        break;
+      }
+      case 'ribcage': {
+        // a cage of ribs strapped over the chest, a sternum down the middle
+        const bones = [];
+        for (let i = 0; i < 5; i++) {
+          const y0 = 1.39 - i * 0.048;
+          for (const s2 of [1, -1]) {
+            const pts = [];
+            for (let k = 0; k <= 8; k++) { const t = k / 8; const a = 0.08 + t * 1.15; pts.push(onTop(y0 - t * (0.05 + i * 0.006) - t * t * 0.02, s2 > 0 ? a : TAU - a, 0.012 + 0.006 * Math.sin(t * Math.PI))); }
+            bones.push(tubeVar(pts, (t) => 0.0075 * (1 - 0.45 * t) + 0.002, 16, 5, true));
+          }
+        }
+        const sp = [];
+        for (let k = 0; k <= 8; k++) sp.push(onTop(1.42 - k * 0.03, 0, 0.016));
+        bones.push(tubeVar(sp, 0.01, 16, 6, true));
+        for (let k = 0; k < 6; k++) bones.push(sphere(0.012, 6, 4, { ...(() => { const p = onTop(1.41 - k * 0.045, 0, 0.02); return { x: p.x, y: p.y, z: p.z }; })(), sz: 0.6 }));
+        add(M.bone, paint(cat(bones), C(0xd8d0bc)), skins.torso);
+        break;
+      }
+      case 'gearbrooch': {
+        // a clockwork brooch at the breast: two meshing gears round a glowing arbor
+        const p = onSurf(1.33, 0.32, 0.014), n = surfN(1.33, 0.32);
+        const q = new THREE.Quaternion().setFromUnitVectors(V(0, 0, 1), n);
+        const g1 = gear(14, 0.03, 0.037, 0.007, 0.01), g2 = gear(9, 0.017, 0.023, 0.006, 0.005);
+        g2.translate(0.036, -0.026, 0.004);
+        const rim = torus(0.022, 0.003, 4, 20);
+        for (const g of [g1, g2, rim]) { g.applyQuaternion(q); g.translate(p.x, p.y, p.z); }
+        add(M.metal, cat([paint(g1, C(0xd0a850)), paint(g2, C(0xb88a40)), paint(rim, C(0xe0c070))]), skins.torso);
+        add(glowMat, paint(sphere(0.008, 8, 6, { x: p.x + n.x * 0.006, y: p.y, z: p.z + n.z * 0.006 }), [1, 1, 1]), skins.torso);
+        break;
+      }
+      case 'eye': {
+        // an amulet: a lidded eye in black iron, its iris lit
+        const p = onTop(1.3, 0, 0.022);
+        const frame = torus(0.026, 0.005, 5, 24);
+        frame.scale(1.35, 0.7, 1);
+        frame.translate(p.x, p.y, p.z);
+        const spikes = [];
+        for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI + Math.PI / 12; spikes.push(xf(new THREE.ConeGeometry(0.004, 0.022, 4), { rz: a - Math.PI / 2, x: p.x + Math.cos(a) * 0.04, y: p.y + Math.sin(a) * 0.024, z: p.z })); }
+        add(M.metal, paint(cat([frame, ...spikes]), C(0x2a2630)), skins.torso);
+        add(glowMat, paint(sphere(0.012, 10, 8, { x: p.x, y: p.y, z: p.z, sz: 0.5 }), [1.2, 1.2, 1.2]), skins.torso);
+        add(M.metal, cat([cordGeo(onTop(1.5, 0.55, 0.004), p.clone().add(V(0.03, 0.01, 0)), C(0x2a2630), 0.003), cordGeo(onTop(1.5, TAU - 0.55, 0.004), p.clone().add(V(-0.03, 0.01, 0)), C(0x2a2630), 0.003)]), skins.torso);
+        break;
+      }
+      case 'halo': {
+        // a ring of light standing behind the head
+        const hy = BODY_Y.head + 0.02;
+        const ring = torus(0.15, 0.0035, 4, 48);
+        const rays = [];
+        for (let i = 0; i < 24; i++) { const a = (i / 24) * TAU; const l = i % 2 ? 0.022 : 0.04; rays.push(xf(new THREE.PlaneGeometry(0.003, l), { rz: a, x: -Math.sin(a) * (0.165 + l / 2), y: Math.cos(a) * (0.165 + l / 2) })); }
+        const g = cat([paint(ring, [1, 1, 1]), paint(cat(rays), [0.6, 0.6, 0.6])]);
+        xf(g, { rx: -0.15, y: hy, z: -0.14 });
+        add(glowMat, g, head);
+        break;
+      }
+      case 'shards': {
+        // crystals breaking out of the stone pauldrons
+        for (const A of [armL, armR]) {
+          const s2 = A.s, jx = s2 * SHOULDER_X, jy = BODY_Y.shoulder;
+          const sh = [];
+          for (let i = 0; i < 4; i++) {
+            const g = crystal(0.05 + i * 0.012, 0.011 - i * 0.001, 6, 90 + i + (s2 > 0 ? 0 : 10));
+            const d = V(s2 * (0.25 + i * 0.12), 1, -0.15 + i * 0.12).normalize();
+            g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), d));
+            g.translate(jx + s2 * (0.03 + i * 0.012), jy + 0.055, -0.04 + i * 0.022);
+            sh.push(g);
+          }
+          add(glowMat, paint(cat(sh), [0.8, 0.8, 0.8]), A.shoulder);
+        }
+        break;
+      }
+      case 'mushrooms': {
+        // little caps sprouting from the mossy mantle
+        const caps = [], stems = [];
+        const r6 = mulberry(79);
+        for (const s2 of [1, -1]) for (let i = 0; i < 5; i++) {
+          const a = s2 * (0.9 + r6() * 0.9), y = 1.36 + r6() * 0.12;
+          mantleR(0.0)(y, RR);
+          const [x, z] = ringPt(RR.rx, RR.zf, RR.zb, (a + TAU) % TAU);
+          const h = 0.014 + r6() * 0.016, r = 0.008 + r6() * 0.01;
+          stems.push(xf(new THREE.CylinderGeometry(r * 0.3, r * 0.4, h, 5), { x, y: y + h / 2, z }));
+          const cap = new THREE.SphereGeometry(r, 8, 4, 0, TAU, 0, Math.PI / 2);
+          cap.scale(1, 0.6, 1);
+          caps.push(xf(cap, { x, y: y + h, z }));
+        }
+        add(M.plain, cat([paint(cat(stems), C(0xd8ccb0)), paint(cat(caps), C(0x9a4a2a))]), skins.mantle);
+        break;
+      }
+      case 'mail': {
+        // a skirt of mail under the faulds: rings in rows, catching the light every other one
+        const R5 = layerR(0.034, 0.32);
+        // (rows of rings, alternately catching the light: a finer weave would only alias)
+        const g = garment({ y0: 1.0, y1: 0.6, rows: 26, seg: 110, R: R5, fold: { n: 7, amp: (t) => 0.004 * t }, tatter: 0, seed: 21,
+          paint: (c) => { const r = Math.round(c.t * 26); return cmul(C(0x8a929c), (r % 2 ? 0.82 : 1.12) * (0.75 + 0.25 * (1 - c.t))); } });
+        add(M.armor, g, skins.skirt);
+        break;
+      }
+      case 'bloodgem': {
+        // a garnet set where the harness straps cross, and a briar wound round the left forearm
+        const p = onSurf(1.27, 0, 0.02);
+        add(glowMat, paint(xf(crystal(0.03, 0.012, 6, 5), { rx: Math.PI / 2, x: p.x, y: p.y, z: p.z - 0.012 }), [1, 1, 1]), skins.torso);
+        const A = armL, jx = A.s * SHOULDER_X, ey = BODY_Y.shoulder - 0.28;
+        const pts = helixPts(0.062, ey - 0.02, ey - 0.2, 3.5, 60).map((q) => q.add(V(jx, 0, -0.01)));
+        const thorns = [];
+        for (let i = 2; i < pts.length - 2; i += 4) {
+          const q = pts[i], d = V(q.x - jx, 0, q.z + 0.01).normalize();
+          const c = new THREE.ConeGeometry(0.003, 0.014, 4);
+          c.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), d.add(V(0, 0.3, 0)).normalize()));
+          c.translate(q.x, q.y, q.z);
+          thorns.push(c);
+        }
+        add(M.wood, cat([paint(tubeVar(pts, 0.004, 60, 4, true), C(0x2a1a14)), paint(cat(thorns), C(0x4a2a1e))]), A.elbow);
+        break;
+      }
+      case 'windrunes': {
+        // spiralling wind-runes stitched in light across the chest wraps
+        const st = [];
+        for (const s2 of [1, -1]) {
+          const path = [], nrm = [];
+          for (let i = 0; i <= 30; i++) {
+            const t = i / 30, ang = t * TAU * 1.6, r = 0.045 * (1 - t * 0.8);
+            const y = 1.3 + Math.sin(ang) * r, a = s2 * 0.45 + (Math.cos(ang) * r) / 0.2;
+            path.push(onSurf(y, (a + TAU) % TAU, 0.013)); nrm.push(surfN(y, (a + TAU) % TAU));
+          }
+          st.push(ribbon(path, nrm, 0.004, 0.001, () => [1, 1, 1]));
+        }
+        add(glowMat, cat(st), skins.torso);
+        break;
+      }
       case 'vines': {
         const wood = [], lv = [];
         const r4 = mulberry(61);
@@ -1012,47 +1286,61 @@ export function dress(D) {
     }
   }
 
-  // ---- neck, face, eyes, beard -------------------------------------------------------------
+  // ---- neck, face, eyes, ears, hair, beard ----------------------------------------------------
   D.sec = 'face';
   const face = cos.face ?? {};
   const hatFace = D.hat.face;
-  const kind = face.kind ?? (hatFace === 'open' ? 'open' : 'hood');
+  const kind = face.kind ?? (hatFace === 'open' ? 'open' : hatFace === 'helm' ? 'helm' : 'hood');
   const hooded = kind === 'hood';
+  const bare = kind === 'open' || kind === 'helm'; // a lit, human face: real eyes, ears, brows
   const skinCol = C(face.skin ?? 0xc89880);
-  add(M.skin, limb(0, BODY_Y.neck - 0.04, 0.0, [[0.05, 0.16], [0.048, 0.1], [0.052, 0.03], [0.06, 0.0]], { seg: 10, paint: (x, y) => cmul(skinCol, (hooded ? 0.35 : 0.65) * (0.7 + 0.3 * sstep(0, 0.12, y))) }), (v) => (v.y > BODY_Y.neck + 0.06 ? [[head, 0.6], [neck, 0.4]] : [[neck, 1]]));
+  const HY = BODY_Y.head;
+  const atHead = (g) => { g.translate(0, HY, 0); return g; };
+  const neckShade = hooded ? 0.35 : 0.65;
+  add(M.skin, xf(neckGeo({ adam: face.beard == null, paint: (y) => cmul(skinCol, neckShade * (0.7 + 0.3 * sstep(0, 0.12, y))) }), { y: BODY_Y.neck - 0.04 }), (v) => (v.y > BODY_Y.neck + 0.06 ? [[head, 0.6], [neck, 0.4]] : [[neck, 1]]));
+  const hairCol = face.hair ? C(face.hair.col) : face.beard ? C(face.beard.col) : null;
   if (kind !== 'mask' && hatFace !== 'mask') {
-    const hg = headGeo({ col: kind === 'void' ? C(0x0a080c) : skinCol, shade: kind === 'void' ? 1 : hooded ? (face.shade ?? 0.6) * 0.6 : face.shade ?? 0.9, stubble: face.stubble, hood: hooded, desat: hooded ? 0.5 : 0.35 });
-    hg.translate(0, BODY_Y.head, 0);
-    add(M.skin, hg, head);
+    const fo = {
+      col: kind === 'void' ? C(0x0a080c) : skinCol,
+      shade: kind === 'void' ? 1 : hooded ? (face.shade ?? 0.6) * 0.6 : face.shade ?? 0.9,
+      desat: hooded ? 0.5 : 0.3, hood: hooded,
+      detail: bare ? 1 : kind === 'void' ? 0.5 : 0.7,
+      stubble: face.stubble, stubbleCol: face.beard ? cmul(C(face.beard.col), 0.7) : undefined,
+      browCol: bare ? cmul(hairCol ?? C(0x3a2a22), 0.8) : null,
+      age: face.age, nose: face.nose, hook: face.hook, chin: face.chin, gaunt: face.gaunt, brow: face.brow,
+      lipCol: face.lips ? C(face.lips) : undefined,
+    };
+    add(M.skin, atHead(faceGeo(fo)), head);
+    if (bare) {
+      add(M.skin, atHead(mergeColored([earGeo(1, { col: cmul(skinCol, fo.shade * 0.95) }), earGeo(-1, { col: cmul(skinCol, fo.shade * 0.95) })])), head);
+      const ey = eyeGeo({ iris: C(face.iris ?? 0x5a4a3a), lidCol: cmul(skinCol, fo.shade * 0.9) });
+      add(M.plain, atHead(mergeColored(ey.balls)), head);
+      add(M.skin, atHead(mergeColored(ey.lids)), head);
+      if (hairCol) add(M.plainDS, atHead(browGeo({ col: cmul(hairCol, 0.85), stern: face.brow ?? 0 })), head);
+    }
   }
   if (face.beard && hatFace === 'open') {
-    const bg = beardGeo({ col: C(face.beard.col), len: face.beard.len, fork: face.beard.fork, seed: 4 });
-    bg.translate(0, BODY_Y.head, 0);
-    add(M.fur, bg, head);
+    const chestFront = (yh) => { const y = yh + HY; outerR(y, RR); let z = RR.zf; if ((cos.shoulders ?? []).some((q) => q.k === 'mantle' || q.k === 'fur') && y < 1.55) { mantleR(0)(y, RR); z = Math.max(z, RR.zf); } return z; };
+    add(M.plainDS, atHead(beardGeo({ col: C(face.beard.col), len: face.beard.len, fork: face.beard.fork, seed: 4, front: chestFront })), (v) => (v.y < HY - 0.15 ? [[head, 0.7], [neck, 0.3]] : [[head, 1]]));
   }
-  // eyes: subtle glints of the class colour (bright pinpricks inside a void hood)
+  // eyes: glints of the class colour (bright pinpricks inside a hood, a faint glow in a bare face's irises)
   const eyeK = Math.min(1, (face.eyes ?? 1) * 0.55);
   const eyeMat = glowMat;
-  const eyePos = D.hat.eyePos ?? [V(0.031, 0.006, 0.083), V(-0.031, 0.006, 0.083)];
-  const eg = [];
-  for (const p of eyePos) eg.push(sphere(kind === 'open' ? 0.0075 : 0.009, 8, 6, { x: p.x, y: p.y + BODY_Y.head, z: p.z + (kind === 'open' ? 0.004 : 0), sy: 0.6 }));
-  add(eyeMat, paint(cat(eg), [eyeK, eyeK, eyeK]), head);
-  // hair under hats that leave the back of the head bare
+  if (bare && kind !== 'mask' && hatFace !== 'mask') {
+    add(eyeMat, paint(atHead(mergeColored(eyeGeo({}).irises)), [eyeK * 0.4, eyeK * 0.4, eyeK * 0.4]), head);
+  } else {
+    const eyePos = D.hat.eyePos ?? [V(0.031, 0.006, 0.083), V(-0.031, 0.006, 0.083)];
+    const eg = [];
+    for (const p of eyePos) eg.push(sphere(0.009, 8, 6, { x: p.x, y: p.y + HY, z: p.z, sy: 0.6 }));
+    add(eyeMat, paint(cat(eg), [eyeK, eyeK, eyeK]), head);
+  }
+  // hair: strands over a darker cap (under a hat, only the back and sides)
   if (face.hair) {
-    const hg = new THREE.SphereGeometry(0.103, 16, 10, Math.PI - 0.55, Math.PI + 1.1, 0.15, Math.PI * 0.6);
-    const hp = hg.getAttribute('position');
-    const r5 = mulberry(9);
-    const J = Array.from({ length: 17 }, () => r5());
-    for (let i = 0; i < hp.count; i++) {
-      let x = hp.getX(i) * 0.9, y = hp.getY(i), z = hp.getZ(i);
-      const back = Math.max(0, -z / 0.1);
-      if (y < -0.01) { const k = (-0.01 - y) / 0.05; y -= k * face.hair.len * (0.35 + 0.65 * back) * (0.8 + 0.4 * J[i % 17]); z -= k * 0.02 * back; x *= 1 + k * 0.08; }
-      hp.setXYZ(i, x, y + BODY_Y.head, z - 0.004);
-    }
-    hg.computeVertexNormals();
-    const uvh = hg.getAttribute('uv');
-    for (let i = 0; i < uvh.count; i++) uvh.setXY(i, uvh.getX(i) * 4, uvh.getY(i) * 2);
-    add(M.fur, paint(hg, (x, y) => cmul(C(face.hair.col), 0.7 + 0.35 * sstep(BODY_Y.head - 0.15, BODY_Y.head, y))), (v) => (v.y < BODY_Y.neck + 0.02 ? [[head, 0.5], [neck, 0.5]] : [[head, 1]]));
+    const hc = C(face.hair.col);
+    const full = !!face.hair.full;
+    const hairSkin = (v) => (v.y < BODY_Y.neck + 0.02 ? [[head, 0.5], [neck, 0.5]] : [[head, 1]]);
+    add(M.plainDS, atHead(hairCapGeo({ col: hc, theta: full ? 1.95 : 2.05, fringe: false })), head);
+    add(M.plainDS, atHead(hairGeo({ col: hc, len: face.hair.len, back: !full, top: full, short: face.hair.short, wild: face.hair.wild, n: face.hair.n, seed: 9 })), hairSkin);
   }
 
   return { eyeMat, update: null };
