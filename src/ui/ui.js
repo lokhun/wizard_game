@@ -572,11 +572,12 @@ export class UI {
     const room = game.level.roomAt(p.pos.x, p.pos.z);
     let obj = '';
     const fightRoom = game.director.active?.room ?? room;
-    const foes = game.actors.list.reduce((n, a) => n + (fightsHere(a, fightRoom) ? 1 : 0), 0);
+    // (once its doors are shut, the objective also counts the room's sentries still standing dormant: they're there, and they will fight)
+    const foes = game.actors.list.reduce((n, a) => n + (fightsHere(a, fightRoom) || (fightRoom?._locked && a.dormant && a.faction === 'enemy' && !a.dead && !a.def.hoarder && a.homeRoom === fightRoom) ? 1 : 0), 0);
     const locked = game.director.active || (room && !room.cleared && foes > 0);
     const tr = fightRoom?.type === ROOM.TRIAL && fightRoom.trialWon === null && fightRoom.trialEnd ? Math.max(0, Math.ceil(fightRoom.trialEnd - game.time)) : null;
-    if (locked && tr !== null) obj = `Trial — ${tr}s left · ${foes} foe${foes === 1 ? '' : 's'} remain`;
-    else if (locked) obj = game.actors.list.some((a) => a.boss && !a.dead) ? 'Defeat the guardian' : `Survive the ambush — ${foes} foe${foes === 1 ? '' : 's'} remain`;
+    if (locked && tr !== null) obj = `Trial — ${tr}s left · ${foes === 1 ? '1 foe remains' : `${foes} foes remain`}`;
+    else if (locked) obj = game.actors.list.some((a) => a.boss && !a.dead) ? 'Defeat the guardian' : `Survive the ambush — ${foes === 0 ? 'more are coming' : foes === 1 ? '1 foe remains' : `${foes} foes remain`}`;
     else if (room?.type === ROOM.BOSS && room.cleared) obj = game.interactables.some((i) => i.kind === 'abyssPortal') ? 'Claim your victory, or descend into the Abyss' : 'Step through the portal to ascend';
     else obj = 'Find the way to the guardian\'s lair';
     if (obj !== this._obj) { this._obj = obj; h.obj.textContent = obj; }
