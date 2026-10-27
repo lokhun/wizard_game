@@ -331,7 +331,7 @@ One visual language for everything on screen: smoky slabs, bronze rings and rule
 - **Cards** (tomes, relics, blessings, the merchant's wares): a bronze double frame in the rarity colour, a crown gem, engraved corners, the sigil in a ringed medallion; epic and legendary gems pulse and a legendary's frame breathes gold.
 
 ## Boss fights
-- **Every boss makes an entrance** (`game/bossIntro.js`, from the boss's spawn on every peer). The camera leaves the wizard's eyes for a low shot in front of the boss (clear of walls and pillars, nearer if it must), pushes in slowly and glides back; the boss's name comes up on a title card at the moment it arrives (outside the HUD, which the letterbox dims). Each of the five is staged:
+- **Every boss makes an entrance** (`game/bossIntro.js`, from the boss's spawn on every peer). The camera leaves the wizard's eyes for a low shot in front of the boss (clear of walls and pillars, with nothing standing between it and the boss, nearer if it must), pushes in slowly and glides back; the boss's name comes up on a title card at the moment it arrives (outside the HUD, which the letterbox dims). Each of the five is staged:
   - *The Mother of Filth*: the cistern bubbles and heaves, the water rings; she bursts up out of the filth in a geyser of bile.
   - *The Executioner*: the room's torches gutter out; three heavy steps out of the dark with the axe sparking along the flags; it comes down, the room shakes, grit falls from the vault, the cages swing, and the torches flare back blood red before settling.
   - *The Stone Wyvern*: lightning; it dives out of the storm and pulls up over the yard, its downdraft blasting dust and rain off the stones.

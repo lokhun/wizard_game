@@ -62,11 +62,22 @@ export class BossIntro {
       const i = L.idx(cx, cz);
       return L.cells[i] === 1 && L.floorAt(x, z) < y - 0.6 && (L.ceil[i] ?? 99) > y + 0.3 && !L.colliders.some((c) => Math.hypot(c.x - x, c.z - z) < (c.r ?? 0.5) + 0.6);
     };
+    // and nothing standing between it and the boss (a pillar on the line hid the whole entrance)
+    const C = this.g.collision;
+    const sees = (x, z) => {
+      const dx = a.pos.x - x, dz = a.pos.z - z, len = Math.hypot(dx, dz), n = Math.ceil(len / 0.5);
+      for (let k = 1; k < n; k++) {
+        if (len * (1 - k / n) < a.radius + 0.5) break;
+        const px = x + (dx * k) / n, pz = z + (dz * k) / n;
+        if (C.cellOpaque(Math.floor(px / T), Math.floor(pz / T)) || C.pushOut(px, pz, 0.3)) return false;
+      }
+      return true;
+    };
     const dist = S.dist ?? H * 2.6 + 3, side = S.side ?? 0.35, up = S.camY ?? 1.3;
-    for (const sd of [1, -1]) for (let d = dist; d >= 3.5; d -= 0.75) {
+    for (const clear of [true, false]) for (const sd of [1, -1]) for (let d = dist; d >= 3.5; d -= 0.75) {
       const x = a.pos.x + fx * d + sx * d * side * sd, z = a.pos.z + fz * d + sz * d * side * sd;
       const y = L.floorAt(x, z) + up;
-      if (open(x, z, y)) return { x, y, z, d };
+      if (open(x, z, y) && (!clear || sees(x, z))) return { x, y, z, d };
     }
     return { x: a.pos.x + fx * 4, y: a.pos.y + up, z: a.pos.z + fz * 4, d: 4 };
   }

@@ -662,7 +662,7 @@ function decorateRoom(level, room, rng) {
       // raised dais with the throne at the north end
       setRect(level, Math.floor(cx) - 4, y + 1, 8, 4, (i) => { level.kind[i] = K_DAIS; level.hgt[i] = 0.6; });
       setRect(level, Math.floor(cx) - 3, y + 1, 6, 2, (i) => { level.hgt[i] = 1.2; });
-      P('throne', cx * T, (y + 2) * T, { rot: 0, y: 1.2 });
+      P('throne', cx * T, (y + 2) * T, { rot: 0 }); // (on the dais: the builder stands props on the floor's height, 1.2 m here)
       room.layout = 'throne';
       for (let i = 0; i < 4; i++) {
         const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
