@@ -215,6 +215,8 @@ async function setupHand() {
     const h = buildHand({ style, glove: kit.glove(0x6a4a34), skin: kit.skin(0xe0b8a0), nail: kit.plain(0xd8b0a8, 0.4), claws: P.get('claws') === '1', armor: kit.steel() });
     const pose = poseName === 'grip' ? gripPose(0.0175).pose : POSES[poseName];
     h.setPose(pose);
+    // (painted parts shown as the bake shows them: their vertex colours over the material's)
+    h.group.traverse((o) => { if (o.isMesh && o.geometry.getAttribute('color')) { o.material = o.material.clone(); o.material.vertexColors = true; } });
     const g = new THREE.Group(); g.add(h.group); h.group.position.set(0, 0, 0.06);
     g.rotation.set(...r);
     g.position.set((i % 2 ? 0.13 : -0.13), (i < 2 ? 0.1 : -0.1), 0);

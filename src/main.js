@@ -727,7 +727,7 @@ function loop(now) {
       const cam = renderer.camera;
       for (const f of game.built.flames) {
         const dx = f.x - cam.position.x, dz = f.z - cam.position.z;
-        if (dx * dx + dz * dz < 1300) game.vfx.flame(f, dt);
+        if (dx * dx + dz * dz < 1300 && f.gpu === undefined) game.vfx.flame(f, dt); // (candles burn on the GPU)
       }
       game.selfLight.intensity = 0;
       game.lights.update(dt, game.time, cam.position);

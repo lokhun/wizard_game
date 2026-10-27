@@ -8,6 +8,7 @@ import { Storm } from '../render/storm.js';
 import { Debris } from '../render/debris.js';
 import { Hangers } from '../world/hangers.js';
 import { Flotsam } from '../world/flotsam.js';
+import { BossIntro } from './bossIntro.js';
 import { waterRipple } from '../world/materials.js';
 import { generateLevel, ROOM, T, K_ALT, K_WATER, WATER_Y } from '../world/levelgen.js';
 import { keyOf } from '../core/input.js';
@@ -279,6 +280,7 @@ export class Game {
     this.built.wisps?.setEye(this.renderer.camera.position);
     this.built.court?.setEye(this.renderer.camera.position);
     this._courtK = 0;
+    if (this.cinematic) { this.cinematic.end?.(); this.cinematic = null; }
     this.flotsam?.dispose();
     this.flotsam = level.biome.id === 'sewers' ? new Flotsam(this.scene, level, this.built.mats, { quality: this.settings?.quality }) : null;
     // the hanging lanterns burn and light the middle of their rooms
@@ -939,21 +941,9 @@ export class Game {
     this.ui?.prompt(`Spectating ${r.name} — you return when the chamber is cleared · [Space] next`);
   }
 
-  // boss intro: pull the camera's gaze to the boss for a moment
+  // a boss's entrance has the camera (game/bossIntro.js)
   _cinematicCam(cam, dt) {
-    const c = this.cinematic;
-    c.t += dt;
-    const a = c.target;
-    if (!a || a.dead || c.t >= c.dur) { this.cinematic = null; this.ui?.letterbox(false); return; }
-    const k = c.t < 0.5 ? c.t / 0.5 : c.t > c.dur - 0.5 ? (c.dur - c.t) / 0.5 : 1;
-    const e = k * k * (3 - 2 * k);
-    const look = new THREE.Vector3(a.pos.x, a.pos.y + a.height * 0.65, a.pos.z);
-    const m = new THREE.Matrix4().lookAt(cam.position, look, new THREE.Vector3(0, 1, 0));
-    const q = new THREE.Quaternion().setFromRotationMatrix(m);
-    cam.quaternion.slerp(q, e);
-    cam.fov = this.renderer.baseFov - 18 * e;
-    cam.updateProjectionMatrix();
-    if (c.t > 0.9 && !c.roared) { c.roared = true; this.vfx.addShake(0.5); this.audio?.play('boss_roar', { pos: a.pos }); }
+    if (!this.cinematic.update(cam, dt)) this.cinematic = null;
   }
 
   groundY(x, z) { return this.level ? this.level.floorAt(x, z) : 0; }
@@ -1936,9 +1926,10 @@ export class Game {
     // the bar's notches sit where this boss's phases turn (the Wrath pact brings them on sooner)
     const enr = this.difficulty?.bossEnrage ?? 0;
     a.phaseAts = (BOSS_SCRIPTS[a.type]?.phases ?? []).map((p) => p.at + enr).filter((f) => f > 0 && f < 1);
-    this.cinematic = { target: a, t: 0, dur: 2.6 };
+    // its entrance, staged (game/bossIntro.js): the name comes up as it arrives
+    this.cinematic?.end?.();
+    this.cinematic = new BossIntro(this, a);
     this.ui?.letterbox(true);
-    this.ui?.bossIntro(a);
     this.audio?.play('boss_intro');
     this.audio?.setMusic(this._mus('boss'));
     // in the Abyss a boss's theme starts a step harder

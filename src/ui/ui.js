@@ -1367,6 +1367,28 @@ export class UI {
     this.fadeEl.style.opacity = 0;
   }
 
+  // a boss's name as it makes its entrance: a title card over the letterboxed shot (outside the HUD, which
+  // is dimmed through the cinematic), a rule drawn out under it, gone after a few seconds
+  cineTitle(name, title, color = '#ff7050', life = 3.2) {
+    if (!this._ct) {
+      const d = this._ct = document.createElement('div');
+      d.style.cssText = 'position:fixed;left:0;right:0;bottom:calc(11vh + 3vh);z-index:16;text-align:center;pointer-events:none;opacity:0;transition:opacity 0.6s';
+      d.innerHTML = '<div class="ct-n" style="font-family:\'Cinzel Decorative\',var(--serif);font-size:clamp(28px,5.2vw,64px);letter-spacing:0.12em;text-shadow:0 0 28px rgba(0,0,0,0.9),0 0 18px currentColor,0 3px 0 #000;transform:scale(1.08);transition:transform 3.4s cubic-bezier(.2,.7,.2,1)"></div>'
+        + '<div class="ct-r" style="margin:6px auto 8px;height:2px;width:0;transition:width 1.1s cubic-bezier(.2,.8,.2,1) .15s;background:linear-gradient(90deg,transparent,currentColor,transparent)"></div>'
+        + '<div class="ct-t" style="font-family:var(--serif);font-size:clamp(11px,1.4vw,17px);letter-spacing:0.42em;text-transform:uppercase;color:#d8c8b0;text-shadow:0 2px 6px #000;opacity:0;transition:opacity 0.8s .45s"></div>';
+      document.body.appendChild(d);
+    }
+    const d = this._ct, n = d.querySelector('.ct-n'), r = d.querySelector('.ct-r'), t = d.querySelector('.ct-t');
+    clearTimeout(this._ctT);
+    n.textContent = name; t.textContent = title ?? '';
+    d.style.color = color;
+    n.style.transition = 'none'; n.style.transform = 'scale(1.1)'; r.style.width = '0'; t.style.opacity = '0';
+    void d.offsetWidth;
+    n.style.transition = 'transform 3.4s cubic-bezier(.2,.7,.2,1)';
+    d.style.opacity = '1'; n.style.transform = 'scale(1)'; r.style.width = 'min(520px,60vw)'; t.style.opacity = '1';
+    this._ctT = setTimeout(() => { d.style.opacity = '0'; }, life * 1000);
+  }
+
   letterbox(on) {
     if (!this._lb) {
       this._lb = document.createElement('div');

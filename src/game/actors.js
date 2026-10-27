@@ -151,6 +151,9 @@ export class Actor {
     this.dormant = !!opts.dormant;
     this.caged = false; // (a sentry locked in an Oubliette cell: it waits for the door, not for a sight of you)
     this.falling = null; // (knocked into an oubliette: going down the shaft, see _fall)
+    // a boss's entrance (game/bossIntro.js): the host holds it still this long; the model is drawn this far
+    // from where the body is (rising out of the floor, dropping from the sky: every peer's own)
+    this.introHold = 0; this.stageX = 0; this.stageY = 0; this.stageZ = 0;
     this.homeRoom = opts.homeRoom ?? null;
     // Every field an actor ever gets, declared here in one order. Added as
     // they came up (by state, attack, status, encounter), actors ended up with
@@ -726,6 +729,7 @@ export class ActorManager {
       if (a.model) {
         const m = a.model;
         m.root.position.copy(a.pos);
+        if (a.boss) { m.root.position.x += a.stageX; m.root.position.y += a.stageY; m.root.position.z += a.stageZ; }
         if (a.airDur > 0) {
           a.airT += dt;
           const u = a.airT / a.airDur;
@@ -1022,7 +1026,11 @@ export class ActorManager {
       a.kb.x *= decay; a.kb.z *= decay;
     }
 
-    if (a.brain) {
+    if (a.introHold > 0) {
+      // making its entrance: the intro drives its anims; not a target, not acting, until it ends
+      a.introHold -= dt;
+      a.state = 'spawn';
+    } else if (a.brain) {
       const r = a.brain.update(dt, mm, am);
       if (r) { mx += r.x; mz += r.z; }
     } else {
@@ -1071,7 +1079,7 @@ export class ActorManager {
     // frames: scripts/collide.js), down one eased, a short hop off the edge
     const gy = g.groundY(a.pos.x, a.pos.z);
     a.pos.y += (gy - a.pos.y) * Math.min(1, dt * (gy > a.pos.y ? 40 : 12));
-    a.progress = this._progress(a);
+    if (!(a.introHold > 0)) a.progress = this._progress(a); // (an entrance drives its own)
   }
 
   // Bombardier champions call a barrage down every few seconds: blasts

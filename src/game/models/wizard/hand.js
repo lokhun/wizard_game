@@ -95,6 +95,45 @@ function solveThumb(targets, init = [0.6, -0.4, -0.9, 0.3, 0.3]) {
 }
 
 const v3 = (a) => new THREE.Vector3(a[0], a[1], a[2]);
+
+// a flat vertex colour over a whole part (it multiplies the material's colour)
+function paint(geo, [r, g, b]) {
+  const n = geo.getAttribute('position').count, c = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { c[i * 3] = r; c[i * 3 + 1] = g; c[i * 3 + 2] = b; }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
+  return geo;
+}
+
+// A fingernail on the back of a last segment (L long, r at its tip): a curved plate following the flattened
+// finger, from its middle to just past the end, with a pale half-moon at its root, the pink of the nail bed,
+// darker folds at its sides and a pale free edge (vertex colours over the nail material)
+const nailCache = new Map();
+function nailGeo(L, r, rad) {
+  const key = `${L.toFixed(4)}:${r.toFixed(4)}:${rad}`;
+  if (nailCache.has(key)) return nailCache.get(key);
+  const len = L * 0.6, arc = 1.6, hs = rad >= 8 ? 6 : 2;
+  const g = new THREE.CylinderGeometry(r * 1.06, r * 1.04, len, rad >= 8 ? 10 : 5, hs, true, -arc / 2, arc);
+  const p = g.getAttribute('position');
+  const col = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const u = 0.5 - y / len; // 0 root .. 1 free edge
+    const side = Math.abs(Math.atan2(x, z)) / (arc / 2);
+    // (the plate dips toward the tip, following the rounded end; flatter than round, like the finger)
+    p.setXYZ(i, x * 1.04, y, z * 0.74 - Math.max(0, u - 0.7) * r * 0.5);
+    const lun = Math.exp(-Math.pow(u / 0.16, 2)) * (1 - side * side);
+    const edge = Math.max(0, (u - 0.86) / 0.14);
+    let c = 0.88 + 0.14 * lun + 0.22 * edge - 0.2 * Math.pow(side, 4);
+    col[i * 3] = c; col[i * 3 + 1] = c * (1 - 0.03 * (1 - lun - edge)); col[i * 3 + 2] = c * (1 - 0.02 * (1 - lun - edge));
+  }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.rotateX(-Math.PI / 2); // (axis +Y -> -Z; the plate's middle, +Z, now on the back of the finger, +Y)
+  g.translate(0, 0.0004, -(L * 0.92 + r * 0.45 - len / 2));
+  g.computeVertexNormals();
+  g.userData.shared = true;
+  nailCache.set(key, g);
+  return g;
+}
 export const POSES = {};
 for (const [name, bp] of Object.entries(BASE_POSES)) {
   let targets;
@@ -188,6 +227,8 @@ export function buildHand(opts) {
     return glove;
   };
   const palmMat = style === 'bare' ? skin : glove;
+  // which vertex paint a segment gets: by its material (cloth wraps and custom materials: none)
+  const segPaint = (mat) => (segMats ? null : mat === skin ? 'skin' : mat === glove && style !== 'wrapped' ? 'glove' : null);
   const meshes = [];
   const add = (parent, geo, mat) => {
     const m = new THREE.Mesh(geo, mat);
@@ -198,30 +239,73 @@ export function buildHand(opts) {
   // --- palm ---------------------------------------------------------------
   // palm: superellipsoid slab, tapered toward the wrist, arched back,
   // with soft thenar / hypothenar pads merged in
-  const palm = new THREE.SphereGeometry(1, detail >= 1 ? 24 : detail > 0.3 ? 14 : 10, detail >= 1 ? 16 : detail > 0.3 ? 10 : 8);
+  // (the sphere's poles turned to the knuckles and the wrist, where they're covered: at the middle of the
+  // palm and the back of the hand they had pinched the skin's texture into a star)
+  const palm = new THREE.SphereGeometry(1, detail >= 1 ? 40 : detail > 0.3 ? 14 : 10, detail >= 1 ? 36 : detail > 0.3 ? 10 : 8).rotateX(Math.PI / 2);
   const pp = palm.getAttribute('position');
   const se = (v, e) => Math.sign(v) * Math.pow(Math.abs(v), e);
+  // vertex paint (it multiplies the material's colour, and survives the bake): on skin, veins on the back
+  // of the hand, knuckles a little red, the palm's lines; on a glove, the stitched "points" down the back
+  // and dark creases across the palm
+  const paintPalm = style === 'bare' ? 'skin' : style === 'glove' || style === 'fingerless' || style === 'gauntlet' ? 'glove' : null;
+  const pcol = paintPalm ? new Float32Array(pp.count * 3) : null;
+  const g2 = (d, w) => Math.exp(-(d * d) / (w * w));
   for (let i = 0; i < pp.count; i++) {
     const nx = pp.getX(i), ny = pp.getY(i), nz = pp.getZ(i);
     let x = se(nx, 0.66) * 0.041, y = se(ny, 0.8) * 0.0145, z = se(nz, 0.6) * 0.05;
     const t = (z + 0.05) / 0.1; // 0 knuckles .. 1 wrist
     x *= 1 - t * 0.22;
+    let r = 1, gg = 1, b = 1;
     if (y > 0) {
       y = y * (1 - t * 0.15) + 0.004 * Math.cos((x / 0.042) * Math.PI * 0.5) * y / 0.0145;
+      const top = y / 0.0185;
       // extensor tendons fanning from the wrist to each knuckle
       let ten = 0;
       for (const fx of [-0.029, -0.0095, 0.0105, 0.0285]) { const cx = fx * (1 - t * 0.55); ten += Math.exp(-Math.pow((x - cx) / 0.0042, 2)); }
-      y += 0.0011 * ten * Math.sin(Math.PI * Math.min(1, t * 1.25)) * (y / 0.0145);
+      y += 0.0011 * ten * Math.sin(Math.PI * Math.min(1, t * 1.25)) * top;
+      if (paintPalm === 'skin') {
+        // two veins winding up from the wrist, raised a hair and blue under the skin
+        const fade = Math.min(1, Math.max(0, (t - 0.22) / 0.25));
+        const v = g2(x - (-0.014 + 0.007 * Math.sin(t * 5.2 + 0.4)), 0.0024) + g2(x - (0.013 - 0.006 * Math.sin(t * 4.1 + 1.3)), 0.002) * 0.8
+          + g2(x - (-0.002 + 0.012 * (t - 0.55)), 0.0016) * (t > 0.45 && t < 0.8 ? 0.6 : 0);
+        y += 0.00075 * v * fade * top;
+        r -= 0.1 * v * fade; gg -= 0.06 * v * fade; b += 0.02 * v * fade;
+        // the knuckles: warmer
+        const kn = g2(t, 0.12) * top;
+        gg -= 0.08 * kn; b -= 0.09 * kn;
+      } else if (paintPalm === 'glove') {
+        // three stitched lines ("points") from between the knuckles toward the wrist
+        let st = 0;
+        for (const cx of [-0.019, 0.0005, 0.02]) st += g2(x - cx * (1 - t * 0.3), 0.0011) * (t > 0.14 && t < 0.62 ? 1 : 0);
+        const dash = 0.5 + 0.5 * Math.sign(Math.sin(t * 160));
+        r -= 0.35 * st - 0.12 * st * dash; gg -= 0.35 * st - 0.1 * st * dash; b -= 0.35 * st - 0.06 * st * dash;
+        // worn paler over the knuckles
+        const kn = g2(t, 0.1) * top * 0.12; r += kn; gg += kn; b += kn;
+      }
     }
     else {
       y *= 1 + 0.25 * Math.exp(-Math.pow((x + 0.02) / 0.016, 2)) * Math.exp(-Math.pow((t - 0.62) / 0.3, 2)); // thenar pad
       y *= 1 + 0.15 * Math.exp(-Math.pow((x - 0.028) / 0.012, 2)) * (t > 0.3 ? 1 : t / 0.3); // hypothenar
       y += 0.002 * (1 - Math.cos((x / 0.042) * Math.PI * 0.5));
+      if (paintPalm) {
+        // the palm's lines: heart, head and life, pressed in a little and darker
+        const u = x / 0.041;
+        const heart = g2(t - (0.2 + 0.05 * u + 0.05 * u * u), 0.022) * (u > -0.55 ? 1 : 0);
+        const head = g2(t - (0.36 - 0.07 * u), 0.02) * (u > -0.9 && u < 0.55 ? 1 : 0);
+        const life = g2(Math.hypot((u + 0.62) / 0.55, (t - 0.78) / 0.5) - 1, 0.05) * (t > 0.3 ? 1 : 0) * (u < -0.05 ? 1 : 0);
+        const cr = Math.min(1, heart + head + life);
+        y += 0.0005 * cr * (-y / 0.0145);
+        const k = paintPalm === 'skin' ? 0.16 : 0.24;
+        r -= k * cr; gg -= k * 1.15 * cr; b -= k * 1.1 * cr;
+        if (paintPalm === 'skin') { const pk = g2(u, 0.6) * g2(t - 0.5, 0.35) * 0.06; gg -= pk; b -= pk; }
+      }
     }
     // knuckle line: pinky side shorter
     if (t < 0.2) z += Math.max(0, x) * 0.18 * (1 - t / 0.2);
     pp.setXYZ(i, x, y, z - 0.047);
+    if (pcol) { pcol[i * 3] = r; pcol[i * 3 + 1] = gg; pcol[i * 3 + 2] = b; }
   }
+  if (pcol) palm.setAttribute('color', new THREE.Float32BufferAttribute(pcol, 3));
   palm.computeVertexNormals();
   const palmParts = [palm,
     // fleshy thumb base (thenar) blended into the palm side
@@ -233,7 +317,12 @@ export function buildHand(opts) {
   wr.scale(1, 0.66, 1);
   palmParts.push(wr);
   if (style !== 'gauntlet') {
-    for (const f of FINGERS) palmParts.push(sphere(f.r[0] * 1.05, 10, 8, { x: f.x, y: 0.0078 + f.y, z: f.z + 0.003, sx: 1.05, sy: 0.62, sz: 1.1 }));
+    // the knuckles: low and broad (they had stood out like beads)
+    for (const f of FINGERS) {
+      const k = sphere(f.r[0] * 0.98, 12, 8, { x: f.x, y: 0.0068 + f.y, z: f.z + 0.004, sx: 1.08, sy: 0.5, sz: 1.05 });
+      if (paintPalm) paint(k, paintPalm === 'skin' ? [1, 0.9, 0.88] : [1.1, 1.1, 1.1]);
+      palmParts.push(k);
+    }
   }
   add(group, mergeGeos(palmParts), palmMat);
 
@@ -280,7 +369,7 @@ export function buildHand(opts) {
       j.position.set(px, py, pz);
       parent.add(j);
       const mat = matFor(fi, s);
-      add(j, fingerSeg(f.L[s], f.r[s], f.r[s + 1], rad, 0.85, s === 2), mat);
+      add(j, fingerSeg(f.L[s], f.r[s], f.r[s + 1], rad, 0.85, s === 2, segPaint(mat), s > 0), mat);
       if (style === 'gauntlet' && armor) {
         const pl = lathe([[f.r[s] * 1.32, 0], [f.r[s + 1] * 1.3, f.L[s] * 0.85]], 8, Math.PI * 0.5 + 0.35, Math.PI - 0.7);
         xf(pl, { rx: -Math.PI / 2, z: -0.002 });
@@ -291,7 +380,7 @@ export function buildHand(opts) {
         if (nail && (style !== 'glove' && style !== 'gauntlet')) {
           const ng = claws
             ? xf(new THREE.ConeGeometry(f.r[3] * 0.85, 0.022, 6), { rx: -Math.PI / 2 - 0.35, y: -0.002, z: -f.L[2] - 0.006, sy: 1, sx: 0.8 })
-            : sphere(f.r[3] * 0.8, 8, 4, { y: f.r[3] * 0.62, z: -f.L[2] + f.r[3] * 0.3, sx: 1, sy: 0.3, sz: 1.3 });
+            : nailGeo(f.L[2], f.r[3], rad);
           add(j, ng, nail);
         }
         const tip = new THREE.Object3D();
@@ -323,7 +412,7 @@ export function buildHand(opts) {
       j.position.set(px, py, pz);
       parent.add(j);
       const mat = s === 0 ? palmMat : matFor(0, s);
-      add(j, fingerSeg(THUMB.L[s], THUMB.r[s], THUMB.r[s + 1], rad, s === 0 ? 0.8 : 0.85, s === 2), mat);
+      add(j, fingerSeg(THUMB.L[s], THUMB.r[s], THUMB.r[s + 1], rad, s === 0 ? 0.8 : 0.85, s === 2, segPaint(mat), s > 0), mat);
       if (style === 'gauntlet' && armor && s > 0) {
         const pl = lathe([[THUMB.r[s] * 1.3, 0], [THUMB.r[s + 1] * 1.28, THUMB.L[s] * 0.85]], 8, Math.PI * 0.5 + 0.35, Math.PI - 0.7);
         xf(pl, { rx: -Math.PI / 2 });
@@ -333,7 +422,7 @@ export function buildHand(opts) {
         if (nail && style !== 'glove' && style !== 'gauntlet') {
           const ng = claws
             ? xf(new THREE.ConeGeometry(THUMB.r[3] * 0.85, 0.022, 6), { rx: -Math.PI / 2 - 0.35, z: -THUMB.L[2] - 0.006, sx: 0.8 })
-            : sphere(THUMB.r[3] * 0.8, 8, 4, { y: THUMB.r[3] * 0.62, z: -THUMB.L[2] + THUMB.r[3] * 0.3, sx: 1, sy: 0.3, sz: 1.3 });
+            : nailGeo(THUMB.L[2], THUMB.r[3] * 1.05, rad);
           add(j, ng, nail);
         }
         const tip = new THREE.Object3D();
