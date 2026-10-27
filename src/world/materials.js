@@ -191,6 +191,7 @@ export function getSharedMaterials(factory) {
   m.canvas = S('cloth', { size: 512, vertexColors: true });
   m.bone = S('bone', { size: 512 });
   m.leather = S('leather', { size: 512, vertexColors: true });
+  m.bookRow = S('bookRow', { size: 512, vertexColors: true });
   m.rock = S('rock', { size: 512 });
   m.stone = S('castleWall', { size: 512, color: 0xa8a49c });
   m.roof = S('roof', { size: 512 });

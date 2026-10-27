@@ -369,12 +369,19 @@ function bookshelf(len) {
   const rngL = mulberry(Math.floor(len * 1000));
   const colors = [0x5a1a14, 0x1d2c44, 0x2a3a1e, 0x4a3218, 0x3c1838, 0x6a5a3a].map((c) => new THREE.Color(c));
   // every book is one shared unit box stretched by its matrix, all merged into a single part
-  const books = new GeoBuilder();
+  const books = new GeoBuilder(), rows = new GeoBuilder();
   const book = (w, bh, x, y, z, rz) => {
     _bq.setFromAxisAngle(_bz, rz);
     _bm.compose(_bp.set(x, y, z), _bq, _bs.set(w, bh, 0.5));
     const c = colors[Math.floor(rngL() * colors.length)];
     books.addGeometry(unitBook(), _bm, [c.r, c.g, c.b]);
+  };
+  // (lower detail: a run of books is one block whose texture draws its spines; leather stretched over a
+  // whole run read as a wall of cobbles)
+  const run = (w, bh, x, y, z) => {
+    _bm.compose(_bp.set(x, y, z), _bq.identity(), _bs.set(w, bh, 0.5));
+    const k = 0.82 + rngL() * 0.18;
+    rows.addGeometry(unitRow(), _bm, [k, k * (0.94 + rngL() * 0.06), k * (0.9 + rngL() * 0.1)]);
   };
   for (let shelf = 0; shelf < 5; shelf++) {
     const y = 0.1 + shelf * 0.62;
@@ -385,7 +392,7 @@ function bookshelf(len) {
         if (leanProps) {
           // runs of books drawn as a few wider blocks
           const w = Math.min(len / 2 - 0.08 - x, 0.35 + rngL() * 0.45), bh = 0.36 + rngL() * 0.12;
-          book(w, bh, x + w / 2, y + bh / 2 + 0.03, side * 0.45, 0);
+          run(w, bh, x + w / 2, y + bh / 2 + 0.03, side * 0.45);
           x += w + 0.01;
           continue;
         }
@@ -397,12 +404,14 @@ function bookshelf(len) {
       }
     }
   }
-  parts.push(['leather', books.build()]);
+  if (leanProps) parts.push(['bookRow', rows.build()]); else parts.push(['leather', books.build()]);
   return parts;
 }
 const _bm = new THREE.Matrix4(), _bq = new THREE.Quaternion(), _bp = new THREE.Vector3(), _bs = new THREE.Vector3(), _bz = new THREE.Vector3(0, 0, 1);
 let _unitBook = null;
 const unitBook = () => (_unitBook ??= worldBox(1, 1, 1, 0.12));
+let _unitRow = null;
+const unitRow = () => (_unitRow ??= new THREE.BoxGeometry(1, 1, 1)); // (each face one tile: five spines a block)
 function mulberry(a) { return function () { let t = (a += 0x6d2b79f5); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 
 function bookPile(rng) {

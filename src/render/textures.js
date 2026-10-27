@@ -475,6 +475,30 @@ const SURFS = {
     ao = 1. - pores * 0.3;
   }`,
 
+  // A row of book spines (a shelf's books drawn as a few wide blocks at lower detail): five spines
+  // across a tile, each its own colour, width of shadow and height (a dark gap above the shorter
+  // ones), most with gilt bands near the head and foot
+  bookRow: /* glsl */ `
+  void surf(vec2 uv, out vec3 col, out float h, out float rough, out float metal, out float ao){
+    float s = uv.x * 5.;
+    float id = floor(s), f = fract(s);
+    float r = hash12(vec2(id, 7.)), r2 = hash12(vec2(id, 13.)), r3 = hash12(vec2(id, 3.));
+    float top = 0.8 + 0.18 * r2;
+    float edge = smoothstep(0.0, 0.07, f) * smoothstep(1.0, 0.93, f);
+    vec3 c = r < 0.17 ? vec3(0.36, 0.10, 0.08) : r < 0.34 ? vec3(0.11, 0.17, 0.28) : r < 0.5 ? vec3(0.16, 0.23, 0.12)
+      : r < 0.67 ? vec3(0.30, 0.20, 0.10) : r < 0.84 ? vec3(0.25, 0.10, 0.22) : vec3(0.44, 0.37, 0.24);
+    float n = fbm(uv, 8., 4);
+    float gilt = r3 > 0.3 ? max(smoothstep(0.014, 0.0, abs(uv.y - 0.1)), smoothstep(0.014, 0.0, abs(uv.y - (top - 0.09)))) : 0.;
+    float above = step(top, uv.y);
+    vec3 b = c * (0.72 + 0.4 * n) * (0.5 + 0.5 * edge);
+    b = mix(b, vec3(0.78, 0.6, 0.26), gilt * 0.85);
+    col = srgb(mix(b, vec3(0.03, 0.025, 0.02), above));
+    h = mix(0.45 + 0.3 * edge + gilt * 0.08, 0.05, above);
+    rough = mix(0.62 - gilt * 0.3, 1., above);
+    metal = gilt * 0.7 * (1. - above);
+    ao = mix(0.65 + 0.35 * edge, 0.35, above);
+  }`,
+
   // Leather (straps, books)
   leather: /* glsl */ `
   void surf(vec2 uv, out vec3 col, out float h, out float rough, out float metal, out float ao){
@@ -501,7 +525,7 @@ function fragFor(name, normalStrength) {
 const NORMAL_STRENGTH = {
   dungeonWall: 1.6, sewerWall: 1.4, castleWall: 1.3, flagstone: 1.4, cobble: 1.6, wood: 1.0,
   iron: 0.6, marble: 0.6, carpet: 0.5, grass: 0.8, dirt: 0.9, roof: 1.4, rock: 1.8, plaster: 1.0,
-  gold: 0.5, cloth: 0.5, bone: 0.6, leather: 0.6,
+  gold: 0.5, cloth: 0.5, bone: 0.6, leather: 0.6, bookRow: 0.7,
 };
 
 export class TextureFactory {
