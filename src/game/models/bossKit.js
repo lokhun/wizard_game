@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { clamp } from './core.js';
+import { bandGeo, embroidery } from './wizard/garments.js';
 
 // ---------------------------------------------------------------------------
 // Boss kit: tools the five boss models share on top of the rig system.
@@ -438,4 +439,35 @@ export function polyParam(pts) {
     }
     return best;
   };
+}
+
+// ------------------------------------------------------------ embroidery ----
+// Embroidered bands laid over a robe() built with a surface (every robe has userData.surf):
+// round it at t (0 top .. 1 hem) between angles a0 and a1, or down it at angle a from t0 to
+// t1. pf: embroidery(kind, base, motif, P) from the wizards' garments (linear rgb). Returns
+// { geo, vcol } for rig.add(bone, 'cloth', geo, t, { vcol }).
+const lin3 = (c) => (Array.isArray(c) ? c : (() => { const k = new THREE.Color(c); return [k.r, k.g, k.b]; })());
+export function embroideryOf(kind, base, motif, P) { return embroidery(kind, lin3(base), lin3(motif), P); }
+function banded(g) { return { geo: g, vcol: g.getAttribute('color').array }; }
+export function robeRing(robeGeo, t, w, pf, { a0 = -Math.PI, a1 = Math.PI, lift = 0.004, n = 0 } = {}) {
+  const surf = robeGeo.userData.surf, pts = [], nrm = [];
+  const N = n || Math.max(24, Math.round((a1 - a0) * 30));
+  for (let i = 0; i <= N; i++) { const q = surf(a0 + (a1 - a0) * (i / N), t, lift); pts.push(q); nrm.push(new THREE.Vector3(q.x, 0, q.z).normalize()); }
+  return banded(bandGeo(pts, nrm, w, w * 0.06, pf));
+}
+export function robeEdge(robeGeo, a, t0, t1, w, pf, { lift = 0.004, n = 40 } = {}) {
+  const surf = robeGeo.userData.surf, pts = [], nrm = [];
+  for (let i = 0; i <= n; i++) { const q = surf(a, t0 + (t1 - t0) * (i / n), lift); pts.push(q); nrm.push(new THREE.Vector3(q.x, 0, q.z).normalize()); }
+  return banded(bandGeo(pts, nrm, w, w * 0.06, pf));
+}
+// a band over a panel() along a path of (u, t) points (its surface's +z side)
+export function panelBand(panelGeo, path, w, pf, { lift = 0.004 } = {}) {
+  const surf = panelGeo.userData.surf, pts = [], nrm = [];
+  const e = 0.01;
+  for (const [u, t] of path) {
+    const q = surf(u, t, lift);
+    const du = surf(u + e, t).sub(surf(u - e, t)), dt = surf(u, t + e).sub(surf(u, t - e));
+    pts.push(q); nrm.push(new THREE.Vector3().crossVectors(du, dt).normalize().multiplyScalar(-1));
+  }
+  return banded(bandGeo(pts, nrm, w, w * 0.06, pf));
 }

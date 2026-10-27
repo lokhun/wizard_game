@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { G, xf, taper, lathe, shell, tube, extrude, deform, bumpy, robe, panel, mergeRaw, spikeRing, chainSkin, rng, vnoise, lerp, clamp, smooth, TAU } from './core.js';
+import { panelBand, embroideryOf } from './bossKit.js';
 
 // ---------------------------------------------------------------------------
 // Reusable model parts. Functions named add* attach parts to rig bones.
@@ -351,9 +352,9 @@ export function addFleshHand(rig, bone, side, o = {}) {
 
 // -------------------------------------------------------------- armor ----
 // dome pauldron sitting on an arm bone
-export function pauldron(r = 0.12, layers = 3) {
-  const parts = [shell([[r, -0.02], [r * 0.97, 0.03], [r * 0.75, 0.08], [r * 0.4, 0.11], [0.001, 0.115]], 0.008, 12)];
-  for (let i = 1; i < layers; i++) parts.push(shell([[r * (1.04 + i * 0.07), -0.025 - i * 0.04], [r * (1.0 + i * 0.06), 0.025 - i * 0.04]], 0.008, 12));
+export function pauldron(r = 0.12, layers = 3, seg = 12) {
+  const parts = [shell(seg > 12 ? [[r, -0.02], [r * 0.99, 0.01], [r * 0.95, 0.04], [r * 0.86, 0.065], [r * 0.72, 0.085], [r * 0.55, 0.1], [r * 0.32, 0.112], [0.001, 0.116]] : [[r, -0.02], [r * 0.97, 0.03], [r * 0.75, 0.08], [r * 0.4, 0.11], [0.001, 0.115]], 0.008, seg)];
+  for (let i = 1; i < layers; i++) parts.push(shell([[r * (1.04 + i * 0.07), -0.025 - i * 0.04], [r * (1.0 + i * 0.06), 0.025 - i * 0.04]], 0.008, seg));
   return mergeRaw(parts);
 }
 export function rivets(points, r = 0.008) {
@@ -363,10 +364,15 @@ export function rivets(points, r = 0.008) {
 export function cuirass(D, o = {}) {
   const W = D.shoulderW * (o.w ?? 1);
   const h = D.chest + D.spine * (o.low ?? 0.6);
-  const g = lathe([[W * 0.75, -D.spine * (o.low ?? 0.6)], [W * 0.85, -D.spine * 0.2], [W * 0.95, h * 0.45 - D.spine * 0.3], [W * 0.95, D.chest * 0.8], [W * 0.55, D.chest + 0.02], [W * 0.3, D.chest + 0.03]], 16);
+  const prof = [[W * 0.75, -D.spine * (o.low ?? 0.6)], [W * 0.85, -D.spine * 0.2], [W * 0.95, h * 0.45 - D.spine * 0.3], [W * 0.95, D.chest * 0.8], [W * 0.55, D.chest + 0.02], [W * 0.3, D.chest + 0.03]];
+  // (fine: a boss's, its profile resampled smooth and turned in 40 segments, the ridge sharper)
+  const fine = o.fine ? [] : prof;
+  if (o.fine) for (let i = 0; i < prof.length - 1; i++) for (let k = 0; k < 4; k++) { const t = k / 4, a = prof[Math.max(0, i - 1)], b = prof[i], c = prof[i + 1], d = prof[Math.min(prof.length - 1, i + 2)]; const cr = (p0, p1, p2, p3) => 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t); fine.push([cr(a[0], b[0], c[0], d[0]), cr(a[1], b[1], c[1], d[1])]); }
+  if (o.fine) fine.push(prof[prof.length - 1]);
+  const g = lathe(fine, o.fine ? 40 : 16);
   deform(g, (v) => {
     v.z *= 0.72 * (o.depth ?? 1);
-    if (v.z > 0) v.z += Math.max(0, 1 - Math.abs(v.x) / W) * 0.035; // central ridge
+    if (v.z > 0) v.z += Math.max(0, 1 - Math.abs(v.x) / W) ** (o.fine ? 2 : 1) * 0.035; // central ridge
   });
   return g;
 }
@@ -566,11 +572,16 @@ export function twoSided(geo) {
   return o;
 }
 // tube-shaped limb plate (rerebrace / vambrace / cuisse / greave) hanging from y=0
-export function limbPlate(r1, r2, len, flare = 0.01) {
+export function limbPlate(r1, r2, len, flare = 0.01, seg = 12) {
+  // (seg > 12: a boss's, its edges rolled over and a ridge down the front)
+  if (seg > 12) {
+    const g = shell([[r2 + flare, -len], [r2 + flare * 0.9, -len + 0.008], [r2, -len + 0.022], [(r1 + r2) / 2 * 1.03, -len / 2], [r1, -0.022], [r1 + flare * 0.9, -0.008], [r1 + flare, 0]], 0.008, seg);
+    return deform(g, (v) => { const a = Math.atan2(v.x, v.z); const k = 1 + 0.06 * Math.exp(-(a * a) / 0.08); v.x *= k; v.z *= k; });
+  }
   return shell([[r2 + flare, -len], [r2, -len + 0.02], [r1, -0.02], [r1 + flare, 0]], 0.008, 12);
 }
-export function couter(r = 0.05) {
-  return mergeRaw([xf(G.sph(r, 10, 8, 0, TAU, 0, Math.PI * 0.6), { rx: -Math.PI / 2 - 0.3, z: -0.01 }), xf(G.cone(r * 0.9, r * 1.4, 6), { z: -r * 0.9, rx: -Math.PI / 2, sx: 1.4, sy: 0.4 })]);
+export function couter(r = 0.05, fine = false) {
+  return mergeRaw([xf(G.sph(r, fine ? 24 : 10, fine ? 16 : 8, 0, TAU, 0, Math.PI * 0.6), { rx: -Math.PI / 2 - 0.3, z: -0.01 }), xf(G.cone(r * 0.9, r * 1.4, fine ? 12 : 6), { z: -r * 0.9, rx: -Math.PI / 2, sx: 1.4, sy: 0.4 })]);
 }
 export function addPlate(rig, D, o = {}) {
   const mat = o.mat ?? 'steel', c = o.c ?? BLACKSTEEL, tc = o.trimC ?? GOLDTRIM, trimMat = o.trimMat ?? 'gold';
@@ -578,27 +589,37 @@ export function addPlate(rig, D, o = {}) {
   const W = D.shoulderW;
   const PC = { c, cfn: o.cfn }; // o.cfn: optional per-vertex colour (wear, rust) on the plates
   // cuirass + backplate
-  rig.add('chest', mat, cuirass(D, { w: 1.08 * b, depth: 1.15 * b, low: 0.75 }), {}, PC);
+  // o.fine: a boss's plate, turned smoother with rolled edges (regular knights keep their counts)
+  const F = o.fine ? 2.5 : 1, sg = (n) => Math.round(n * F);
+  rig.add('chest', mat, cuirass(D, { w: 1.08 * b, depth: 1.15 * b, low: 0.75, fine: o.fine }), {}, PC);
   if (o.trim) rig.add('chest', trimMat, mergeRaw([xf(G.tor(W * 0.55, 0.012, 4, 18), { rx: Math.PI / 2, y: D.chest - 0.01, sz: 0.8 }), xf(G.tor(W * 0.8 * b, 0.012, 4, 20), { rx: Math.PI / 2, y: -D.spine * 0.7, sz: 0.75 })]), {}, { c: tc });
   // gorget
-  rig.add('neck', mat, lathe([[0.09 * b, -0.04], [0.085 * b, 0.02], [0.07 * b, 0.07]], 12), { y: -0.0 }, PC);
+  rig.add('neck', mat, lathe([[0.09 * b, -0.04], [0.085 * b, 0.02], [0.07 * b, 0.07]], sg(12)), { y: -0.0 }, PC);
   // faulds: 3 overlapping hoops on the hips
-  for (let i = 0; i < 3; i++) rig.add('hips', mat, shell([[W * (0.84 + i * 0.05) * b, -0.06 - i * 0.06], [W * (0.8 + i * 0.05) * b, -0.0 - i * 0.06]], 0.008, 16), { sz: 0.78 }, PC);
+  for (let i = 0; i < 3; i++) rig.add('hips', mat, shell([[W * (0.84 + i * 0.05) * b, -0.06 - i * 0.06], [W * (0.8 + i * 0.05) * b, -0.0 - i * 0.06]], 0.008, sg(16)), { sz: 0.78 }, PC);
   // tassets
   rig.pair('hips', 'hips', mat, mergeRaw([xf(G.box(0.16, 0.2, 0.012), { y: -0.1 }), xf(G.box(0.16, 0.012, 0.02), { y: -0.2 })]), { x: W * 0.42 * b, y: -0.16, z: W * 0.62 * b, rx: 0.12, ry: 0.35 }, PC);
   for (const S of ['L', 'R']) {
     const sx = S === 'L' ? 1 : -1;
     const pr = (o.pauldron ?? 0.12) * b;
-    rig.add('arm' + S, mat, pauldron(pr, 3), { x: sx * 0.02, y: 0.0, rz: sx * 0.45, sy: 0.85 }, PC);
+    rig.add('arm' + S, mat, pauldron(pr, 3, sg(12)), { x: sx * 0.02, y: 0.0, rz: sx * 0.45, sy: 0.85 }, PC);
     if (o.trim) rig.add('arm' + S, trimMat, xf(G.tor(pr * 1.17, 0.009, 4, 16), { rx: Math.PI / 2 }), { x: sx * 0.02, y: -0.1, rz: sx * 0.45, sy: 0.85 }, { c: tc });
-    rig.add('arm' + S, mat, limbPlate(0.062 * b, 0.055 * b, D.upper * 0.6), { y: -D.upper * 0.28 }, PC);
-    rig.add('fore' + S, mat, couter(0.055 * b), { y: 0.0, z: -0.0 }, PC);
-    rig.add('fore' + S, mat, limbPlate(0.056 * b, 0.048 * b, D.fore * 0.75), { y: -D.fore * 0.15 }, PC);
-    // gauntlet with flared cuff
-    rig.add('hand' + S, mat, mergeRaw([lathe([[0.065 * b, 0.04], [0.05 * b, -0.02]], 10), xf(G.box(0.085 * b, 0.09, 0.05 * b), { y: -0.06 }), xf(G.box(0.08 * b, 0.05, 0.05 * b), { y: -0.12, z: 0.02, rx: -0.9 })]), {}, PC);
-    rig.add('thigh' + S, mat, limbPlate(0.092 * b, 0.075 * b, D.thigh * 0.75), { y: -D.thigh * 0.12 }, PC);
-    rig.add('shin' + S, mat, mergeRaw([xf(G.sph(0.06 * b, 10, 8, 0, TAU, 0, Math.PI * 0.55), { rx: Math.PI / 2 + 0.2, z: 0.02 }), xf(G.cone(0.05 * b, 0.07, 6), { z: 0.03, x: sx * 0.05, rz: -sx * Math.PI / 2, sy: 0.5 })]), { y: 0.0 }, PC);
-    rig.add('shin' + S, mat, limbPlate(0.07 * b, 0.055 * b, D.shin * 0.85), { y: -D.shin * 0.1 }, PC);
+    rig.add('arm' + S, mat, limbPlate(0.062 * b, 0.055 * b, D.upper * 0.6, 0.01, sg(12)), { y: -D.upper * 0.28 }, PC);
+    rig.add('fore' + S, mat, couter(0.055 * b, !!o.fine), { y: 0.0, z: -0.0 }, PC);
+    rig.add('fore' + S, mat, limbPlate(0.056 * b, 0.048 * b, D.fore * 0.75, 0.01, sg(12)), { y: -D.fore * 0.15 }, PC);
+    // gauntlet with flared cuff (a boss's: articulated finger lames)
+    rig.add('hand' + S, mat, mergeRaw([lathe([[0.065 * b, 0.04], [0.05 * b, -0.02]], sg(10)), xf(G.box(0.085 * b, 0.09, 0.05 * b), { y: -0.06 }), ...(o.fine ? [0, 1, 2].map((k) => xf(G.box(0.082 * b, 0.018, 0.052 * b), { y: -0.108 - k * 0.016, z: 0.012 + k * 0.006, rx: -0.3 - k * 0.3 })) : [xf(G.box(0.08 * b, 0.05, 0.05 * b), { y: -0.12, z: 0.02, rx: -0.9 })])]), {}, PC);
+    rig.add('thigh' + S, mat, limbPlate(0.092 * b, 0.075 * b, D.thigh * 0.75, 0.01, sg(12)), { y: -D.thigh * 0.12 }, PC);
+    rig.add('shin' + S, mat, mergeRaw([xf(G.sph(0.06 * b, sg(10), sg(8), 0, TAU, 0, Math.PI * 0.55), { rx: Math.PI / 2 + 0.2, z: 0.02 }), xf(G.cone(0.05 * b, 0.07, sg(6)), { z: 0.03, x: sx * 0.05, rz: -sx * Math.PI / 2, sy: 0.5 })]), { y: 0.0 }, PC);
+    rig.add('shin' + S, mat, limbPlate(0.07 * b, 0.055 * b, D.shin * 0.85, 0.01, sg(12)), { y: -D.shin * 0.1 }, PC);
+    // rolled gilt edges at the ends of each plate
+    if (o.fine && o.trim) {
+      const ring = (r, y, bone) => rig.add(bone, trimMat, xf(G.tor(r, 0.006, 4, 32), { rx: Math.PI / 2, y }), {}, { c: tc });
+      ring(0.056 * b + 0.012, -D.upper * 0.28 - D.upper * 0.6, 'arm' + S);
+      ring(0.048 * b + 0.012, -D.fore * 0.15 - D.fore * 0.75, 'fore' + S);
+      ring(0.075 * b + 0.012, -D.thigh * 0.12 - D.thigh * 0.75, 'thigh' + S);
+      ring(0.055 * b + 0.012, -D.shin * 0.1 - D.shin * 0.85, 'shin' + S);
+    }
     rig.add('foot' + S, mat, mergeRaw([xf(G.sph(0.06, 10, 6, 0, TAU, 0, Math.PI / 2), { sx: 1.15, sy: 0.9, sz: 2.0, y: -0.075, z: 0.05 }), xf(G.box(0.12, 0.02, 0.24), { y: -0.075, z: 0.05 })]), { s: b }, PC);
   }
   if (o.mail !== false) {
@@ -615,12 +636,19 @@ export function addTabard(rig, D, o = {}) {
   const top = o.top ?? D.chest * 0.85;
   const flutter0 = o.top === undefined ? D.chest * 0.6 : len * 0.15; // panel-local: the still part under the hanger
   for (const [z, ry, sd] of [[1, 0, 2], [-1, Math.PI, 5]]) {
-    const pg = panel(W * (o.w ?? 0.95), len, { ws: 5, hs: 8, tatter: o.tatter ?? 0.25, seed: sd + (o.seed ?? 0), curve: 0.06 });
-    rig.add('chest', 'cloth', pg, { y: top, z: z * W * 0.62 * (o.depth ?? 1), ry, rx: z * 0.05 }, {
-      c: o.cfn ? undefined : c, cfn: o.cfn,
-      anim: (v) => clamp((-v.y - flutter0) / len) * 1.2,
-      skin: chainSkin([['hips', -D.spine - 0.4], ['spine', -D.spine * 0.5], ['chest', 0.0]], (v) => v.y),
-    });
+    // (detail: a boss's tabard, finer and folded, with a border of gold-worked lozenges)
+    const pg = panel(W * (o.w ?? 0.95), len, o.detail
+      ? { ws: 22, hs: 26, tatter: o.tatter ?? 0.25, seed: sd + (o.seed ?? 0), curve: 0.06, folds: 4, foldAmp: 0.025 }
+      : { ws: 5, hs: 8, tatter: o.tatter ?? 0.25, seed: sd + (o.seed ?? 0), curve: 0.06 });
+    const tt = { y: top, z: z * W * 0.62 * (o.depth ?? 1), ry, rx: z * 0.05 };
+    const to = { anim: (v) => clamp((-v.y - flutter0) / len) * 1.2, skin: chainSkin([['hips', -D.spine - 0.4], ['spine', -D.spine * 0.5], ['chest', 0.0]], (v) => v.y) };
+    if (o.detail) {
+      const pf = embroideryOf('diamond', GOLDTRIM, c.map((k) => k * 0.6), 0.06);
+      const path = [[-0.88, 0.0], ...Array.from({ length: 30 }, (_, i) => [-0.88, (i + 1) / 30 * 0.8]), ...Array.from({ length: 22 }, (_, i) => [-0.88 + (i + 1) / 22 * 1.76, 0.8]), ...Array.from({ length: 30 }, (_, i) => [0.88, 0.8 - (i + 1) / 30 * 0.8])];
+      const b = panelBand(pg, path, 0.04, pf);
+      rig.add('chest', 'cloth', b.geo, tt, { ...to, vcol: b.vcol });
+    }
+    rig.add('chest', 'cloth', pg, tt, { ...to, c: o.cfn ? undefined : c, cfn: o.cfn });
   }
   if (o.emblem) rig.add('chest', o.emblemMat ?? 'gold', o.emblem, { y: o.top === undefined ? D.chest * 0.45 : top - 0.16, z: W * 0.62 * (o.depth ?? 1) + 0.025 }, { c: o.emblemC ?? GOLDTRIM });
 }

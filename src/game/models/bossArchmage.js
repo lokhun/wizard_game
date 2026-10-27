@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { G, xf, lathe, tube, deform, robe, panel, mergeRaw, chainSkin, rng, vnoise, fbm3, clamp, lerp, smooth, bump, easeOut, easeIn, easeInOut, TAU } from './core.js';
 import { humanSkeleton, humanoidPose, act2 } from './humanoid.js';
 import { addSkull, addBoneHand, addCrystalStaff, pauldron, hood, twoSided, HDR, GOLDTRIM } from './parts.js';
-import { addFx, fxOf, fxSet, fxRot, paint, softRing, softDisc, Rope, aimChain, boneWorld, glowLevel } from './bossKit.js';
+import { addFx, fxOf, fxSet, fxRot, paint, softRing, softDisc, Rope, aimChain, boneWorld, glowLevel, robeRing, robeEdge, embroideryOf } from './bossKit.js';
 
 // ============================================================ Archmage Veyrin ==
 // The Court Archmage, long since a lich: a towering archivist in layered violet and
@@ -53,17 +53,29 @@ export const courtArchmage = {
     rig.bone('cen0', 'hips', -0.17, -0.05, 0.08);
     for (let i = 1; i < CEN_N; i++) rig.bone('cen' + i, 'cen' + (i - 1), 0, -CEN_L, 0);
     const VIOL = [0.18, 0.06, 0.3], GOLDC = [0.9, 0.75, 0.45], BLK = [0.06, 0.035, 0.09];
-    const embroid = (v, base) => { const a = Math.atan2(v.x, v.z), b = Math.sin(a * 14 + v.y * 22) * Math.sin(v.y * 38); return b > 0.86 ? GOLDTRIM : base; };
-    // ---- three robe layers, the hems fraying into ghost wisps
-    rig.add('hips', 'cloth', robe(0.19, 0.31, D.hipH + 0.12, { seg: 26, rows: 7, folds: 9, foldAmp: 0.06, tatter: 0.18, seed: 3 }), { y: 0.04 }, { anim: (v) => clamp(-v.y / 1.0), cfn: (v) => (v.y < -(D.hipH - 0.02) ? GOLDTRIM : embroid(v, [0.5, 0.46, 0.42])) });
-    const mid = new THREE.CylinderGeometry(0.21, 0.42, D.hipH + 0.12, 26, 7, true, 0.5, TAU - 1.0);
-    xf(mid, { y: -(D.hipH + 0.12) / 2 });
-    deform(mid, (v) => { const a = Math.atan2(v.x, v.z); const k = 1 + Math.sin(a * 9) * 0.05 * (-v.y); v.x *= k; v.z *= k; });
-    rig.add('hips', 'cloth', mid, { y: 0.1 }, { anim: (v) => clamp(-v.y / 1.0) * 1.2, cfn: (v) => { const a = Math.atan2(v.x, v.z); return (Math.abs(Math.abs(a) - 0.5) < 0.05 || v.y < -(D.hipH + 0.04)) ? GOLDTRIM : embroid(v, VIOL); } });
-    const outer = new THREE.CylinderGeometry(0.24, 0.6, D.hipH + 0.3, 26, 7, true, 1.4, TAU - 2.8);
-    xf(outer, { y: -(D.hipH + 0.3) / 2 });
-    deform(outer, (v) => { const a = Math.atan2(v.x, v.z); const t = -v.y / (D.hipH + 0.3); v.y -= Math.max(0, vnoise(a * 3, 1, 2, 5) - 0.45) * 0.25 * t * t; const k = 1 + Math.sin(a * 7 + 1) * 0.05 * t; v.x *= k; v.z *= k; });
-    rig.add('chest', 'cloth', twoSided(outer), { y: -D.spine + 0.15, z: -0.03 }, { c: BLK, anim: (v) => clamp(-v.y / 1.2) * 1.5, cfn: (v) => (v.y < -(D.hipH + 0.2) ? [0.5, 0.38, 0.22] : embroid(v, BLK)), skin: chainSkin([['hips', -1.2], ['chest', -0.1]], (v) => v.y) });
+    // brocade: a faint lattice of gold thread through the cloth, sharper where the mesh is fine
+    const embroid = (v, base) => { const a = Math.atan2(v.x, v.z), b = Math.sin(a * 28 + v.y * 30) * Math.sin(a * 28 - v.y * 30); const k = Math.max(0, b - 0.7) / 0.3; return [base[0] + (GOLDTRIM[0] * 0.55 - base[0]) * k, base[1] + (GOLDTRIM[1] * 0.55 - base[1]) * k, base[2] + (GOLDTRIM[2] * 0.55 - base[2]) * k]; };
+    // ---- three robe layers in deep pipe folds, the hems fraying into ghost wisps; gold-worked
+    // bands down every opening and round every hem (vine, lozenge, rune), the cloth brocaded
+    const L1 = D.hipH + 0.12, L2 = D.hipH + 0.12, L3 = D.hipH + 0.3;
+    const inner = robe(0.19, 0.31, L1, { seg: 84, rows: 24, folds: 12, foldAmp: 0.08, tatter: 0.14, seed: 3, pipe: true });
+    rig.add('hips', 'cloth', inner, { y: 0.04 }, { anim: (v) => clamp(-v.y / 1.0), cfn: (v) => embroid(v, [0.5, 0.46, 0.42]) });
+    const vineV = embroideryOf('vine', GOLDTRIM, [0.16, 0.05, 0.26], 0.06);
+    const b1 = robeRing(inner, 0.86, 0.075, vineV);
+    rig.add('hips', 'cloth', b1.geo, { y: 0.04 }, { anim: (v) => clamp(-v.y / 1.0), vcol: b1.vcol });
+    const mid = robe(0.21, 0.42, L2, { seg: 72, rows: 24, folds: 10, foldAmp: 0.08, tatter: 0, seed: 5, pipe: true, thetaStart: 0.5, thetaLength: TAU - 1.0 });
+    rig.add('hips', 'cloth', mid, { y: 0.1 }, { anim: (v) => clamp(-v.y / 1.0) * 1.2, cfn: (v) => embroid(v, VIOL) });
+    const loz = embroideryOf('diamond', GOLDTRIM, [0.1, 0.03, 0.16], 0.07);
+    for (const b of [robeEdge(mid, 0.5 + 0.11, 0.02, 0.985, 0.075, loz), robeEdge(mid, -0.5 - 0.11, 0.02, 0.985, 0.075, loz), robeRing(mid, 0.955, 0.07, loz, { a0: 0.62, a1: TAU - 0.62 })])
+      rig.add('hips', 'cloth', b.geo, { y: 0.1 }, { anim: (v) => clamp(-v.y / 1.0) * 1.2, vcol: b.vcol });
+    const outer = robe(0.24, 0.6, L3, { seg: 72, rows: 24, folds: 9, foldAmp: 0.1, tatter: 0, seed: 7, pipe: true, thetaStart: 1.4, thetaLength: TAU - 2.8 });
+    // (a hem worn ragged and lifting at the back)
+    deform(outer, (v) => { const a = Math.atan2(v.x, v.z); const t = -v.y / L3; v.y -= Math.max(0, vnoise(a * 3, 1, 2, 5) - 0.45) * 0.25 * t * t; });
+    const outerT = { y: -D.spine + 0.15, z: -0.03 }, outerO = { anim: (v) => clamp(-v.y / 1.2) * 1.5, skin: chainSkin([['hips', -1.2], ['chest', -0.1]], (v) => v.y) };
+    rig.add('chest', 'cloth', twoSided(outer), outerT, { ...outerO, c: BLK, cfn: (v) => (v.y < -(L3 - 0.1) ? [0.5, 0.38, 0.22] : embroid(v, BLK)) });
+    const runes = embroideryOf('runes', [0.42, 0.3, 0.16], [0.75, 0.55, 0.95], 0.05);
+    for (const b of [robeEdge(outer, 1.4 + 0.09, 0.03, 0.9, 0.06, runes, { lift: 0.006 }), robeEdge(outer, -1.4 - 0.09, 0.03, 0.9, 0.06, runes, { lift: 0.006 })])
+      rig.add('chest', 'cloth', b.geo, outerT, { ...outerO, vcol: b.vcol });
     // ghostly wisps trailing below the hem
     const wisp = robe(0.31, 0.5, 0.5, { seg: 22, rows: 4, folds: 11, foldAmp: 0.25, tatter: 0.8, seed: 17 });
     rig.add('hips', 'spirit', wisp, { y: -D.hipH + 0.02 }, { cfn: (v) => { const t = clamp(-v.y / 0.5); return HDR(ARC, 0.35 * (1 - t) ** 1.5); }, anim: (v) => 0.6 + clamp(-v.y / 0.5) * 2.0 });
@@ -74,7 +86,10 @@ export const courtArchmage = {
     rig.add('hips', 'leather', xf(G.cyl(0.215, 0.215, 0.05, 20, true), { sz: 0.85 }), { y: 0.06 }, { c: [0.25, 0.14, 0.1] });
     rig.add('hips', 'gold', mergeRaw([xf(G.box(0.07, 0.06, 0.015), { y: 0.06, z: 0.185 }), ...[0.5, 1.2, -0.5, -1.2].map((a) => xf(G.tor(0.022, 0.006, 4, 8), { x: Math.sin(a) * 0.2, y: 0.03, z: Math.cos(a) * 0.17 }))]), {}, { c: GOLDC });
     // mantle w/ spiked shoulder pieces + tall collar
-    rig.add('chest', 'cloth', robe(0.13, 0.34, 0.3, { seg: 20, rows: 2, folds: 7, foldAmp: 0.08, tatter: 0.1, seed: 6 }), { y: D.chest + 0.06, sz: 0.85 }, { c: VIOL, cfn: (v) => (v.y < -0.26 ? GOLDTRIM : embroid(v, VIOL)) });
+    const mantle = robe(0.13, 0.34, 0.3, { seg: 64, rows: 10, folds: 13, foldAmp: 0.08, tatter: 0.08, seed: 6, pipe: true });
+    rig.add('chest', 'cloth', mantle, { y: D.chest + 0.06, sz: 0.85 }, { c: VIOL, cfn: (v) => embroid(v, VIOL) });
+    const mb = robeRing(mantle, 0.84, 0.05, vineV);
+    rig.add('chest', 'cloth', mb.geo, { y: D.chest + 0.06, sz: 0.85 }, { vcol: mb.vcol });
     rig.pair('chest', 'chest', 'gold', mergeRaw([pauldron(0.1, 3), xf(G.cone(0.025, 0.2, 4), { y: 0.16, rz: -0.4 }), xf(G.cone(0.02, 0.15, 4), { y: 0.12, x: 0.06, rz: -0.9 }), xf(G.cone(0.018, 0.12, 4), { y: 0.09, x: 0.1, rz: -1.3 })]), { x: 0.2, y: D.chest - 0.02, rz: 0.4 }, { c: GOLDC });
     const collar = new THREE.CylinderGeometry(0.28, 0.12, 0.46, 20, 2, true, Math.PI * 0.55, Math.PI * 0.9);
     rig.add('chest', 'cloth', twoSided(xf(collar, { y: 0.23 })), { y: D.chest + 0.03, z: -0.03 }, { c: [0.12, 0.05, 0.22] });
@@ -110,8 +125,11 @@ export const courtArchmage = {
     // ---- sleeves and skeletal hands
     for (const S of ['L', 'R']) {
       const sx = S === 'L' ? 1 : -1;
-      rig.add('arm' + S, 'cloth', robe(0.065, 0.085, D.upper + 0.02, { seg: 10, rows: 2, folds: 4, tatter: 0, seed: 2 }), { y: 0.02 }, { c: VIOL });
-      rig.add('fore' + S, 'cloth', twoSided(robe(0.075, 0.19, D.fore * 0.95, { seg: 14, rows: 2, folds: 6, foldAmp: 0.12, tatter: 0.3, seed: 5 + sx })), {}, { c: VIOL, anim: (v) => clamp(-v.y * 3) * 0.7, cfn: (v) => (v.y < -D.fore * 0.85 ? GOLDTRIM : VIOL) });
+      rig.add('arm' + S, 'cloth', robe(0.065, 0.085, D.upper + 0.02, { seg: 28, rows: 6, folds: 6, foldAmp: 0.05, tatter: 0, seed: 2, pipe: true }), { y: 0.02 }, { c: VIOL, cfn: (v) => embroid(v, VIOL) });
+      const sleeve = robe(0.075, 0.19, D.fore * 0.95, { seg: 44, rows: 10, folds: 8, foldAmp: 0.12, tatter: 0.2, seed: 5 + sx, pipe: true });
+      rig.add('fore' + S, 'cloth', twoSided(sleeve), {}, { c: VIOL, anim: (v) => clamp(-v.y * 3) * 0.7, cfn: (v) => embroid(v, VIOL) });
+      const cb = robeRing(sleeve, 0.82, 0.045, loz, { lift: 0.005 });
+      rig.add('fore' + S, 'cloth', cb.geo, {}, { anim: (v) => clamp(-v.y * 3) * 0.7, vcol: cb.vcol });
       rig.add('fore' + S, 'bone', G.cyl(0.014, 0.018, D.fore * 0.5, 6), { y: -D.fore * 0.78 }, { c: [0.78, 0.72, 0.6] });
       addBoneHand(rig, 'hand' + S, sx, { c: [0.78, 0.72, 0.6], s: 1.3, grip: S === 'R', fingerLen: 1.25 });
       rig.add('hand' + S, 'gold', mergeRaw([xf(G.tor(0.011, 0.004, 3, 6), { x: 0.0, y: -0.075, z: 0.01, rx: Math.PI / 2 })]), {}, { c: GOLDTRIM });

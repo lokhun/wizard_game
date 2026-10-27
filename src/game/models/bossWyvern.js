@@ -491,12 +491,15 @@ function buildWing(rig, S, sd) {
   const R = rng(sd > 0 ? 41 : 43);
   // membrane: inner panel lofted from the arm (S-E-W) to the trailing edge (flank -> finger 3),
   // then two fans between the fingers; scalloped trailing edges, torn holes near the edge
-  const pos = [], wts = [], idx = [];
-  const push = (p, ws) => { pos.push(p.x, p.y, p.z); wts.push(ws); return pos.length / 3 - 1; };
+  const pos = [], wts = [], idx = [], vk = [];
+  // vk: a vertex's vein strength (0..1) and thinness, for its colour below
+  const push = (p, ws, vein = 0, thin = 0) => { pos.push(p.x, p.y, p.z); wts.push(ws); vk.push(vein, thin); return pos.length / 3 - 1; };
+  // veins: raised ribs where the membrane is stretched along (every so often across it)
+  const ribAt = (q, n) => { const f = Math.abs(((q * n) % 1 + 1) % 1 - 0.5) * 2; return Math.pow(f, 10); };
   const lerpV = (a, b, t) => a.clone().lerp(b, t);
   const armAt = (u) => (u < 0.4 ? lerpV(s0, e0, u / 0.4) : lerpV(e0, w0, (u - 0.4) / 0.6));
   const armW = (u) => (u < 0.4 ? [[B.wu, 1]] : u < 0.55 ? [[B.wu, 1 - (u - 0.4) / 0.15], [B.wf, (u - 0.4) / 0.15]] : u < 0.92 ? [[B.wf, 1]] : [[B.wf, 1 - (u - 0.92) / 0.08], [B.wh, (u - 0.92) / 0.08]]);
-  const NU = 14, NV = 6;
+  const NU = 44, NV = 16;
   const inner = [];
   for (let i = 0; i <= NU; i++) {
     const u = i / NU, a = armAt(u);
@@ -507,13 +510,16 @@ function buildWing(rig, S, sd) {
     for (let j = 0; j <= NV; j++) {
       const v = j / NV, p = lerpV(a, te, v);
       p.y -= Math.sin(v * Math.PI) * 0.12 * Math.sin(u * Math.PI);
-      row.push(push(p, mixW(armW(u), teW, v)));
+      // the hide wrinkles across its stretch, and ribs run from the arm to the trailing edge
+      const rib = ribAt(u, 7) * Math.sin(Math.min(1, v * 1.4) * Math.PI * 0.5) * (1 - v * 0.6);
+      p.y += 0.022 * rib + 0.007 * Math.sin(v * 40 + u * 9) * Math.sin(v * Math.PI);
+      row.push(push(p, mixW(armW(u), teW, v), rib, Math.sin(v * Math.PI) * Math.sin(u * Math.PI)));
     }
     inner.push(row);
   }
   for (let i = 0; i < NU; i++) for (let j = 0; j < NV; j++) { const a = inner[i][j], b = inner[i + 1][j], c = inner[i][j + 1], d = inner[i + 1][j + 1]; idx.push(a, c, b, b, c, d); }
   const fan = (ta, tb, ba, bb) => {
-    const NA = 7, NR = 6, rows = [];
+    const NA = 20, NR = 16, rows = [];
     for (let i = 0; i <= NA; i++) {
       const a = i / NA, edge = lerpV(ta, tb, a);
       edge.lerp(w0, 0.16 * Math.sin(a * Math.PI)); // scallop
@@ -521,7 +527,9 @@ function buildWing(rig, S, sd) {
       for (let k = 0; k <= NR; k++) {
         const r = k / NR, p = lerpV(w0, edge, r);
         p.y -= Math.sin(r * Math.PI) * Math.sin(a * Math.PI) * 0.08;
-        row.push(push(p, mixW([[B.wh, 1]], [[ba, 1 - a], [bb, a]], Math.min(1, r * 1.3))));
+        const rib = ribAt(a + 0.5 / 3, 3) * (1 - r * 0.5);
+        p.y += 0.018 * rib + 0.005 * Math.sin(r * 34 + a * 7) * Math.sin(a * Math.PI);
+        row.push(push(p, mixW([[B.wh, 1]], [[ba, 1 - a], [bb, a]], Math.min(1, r * 1.3)), rib, Math.sin(r * Math.PI) * Math.sin(a * Math.PI)));
       }
       rows.push(row);
     }
@@ -550,9 +558,12 @@ function buildWing(rig, S, sd) {
   for (let i = 0; i < pos.length / 3; i++) lookup.set(key(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]), i);
   let miss = 0;
   const memSkin = (v) => { const i = lookup.get(key(v.x, v.y, v.z)); if (i === undefined) miss++; return wts[i ?? 0]; };
+  const memVK = (v) => lookup.get(key(v.x, v.y, v.z)) ?? 0;
   rig.add('chest', 'stone', mem, {}, {
     skin: memSkin,
-    cfn: (v) => { const n = fbm3(v.x * 2, v.y * 2, v.z * 2, 3, 3), vein = Math.abs(vnoise(v.x * 3, v.y * 3, v.z * 3, 7) - 0.5) < 0.03 ? 0.6 : 1; const k = (0.3 + n * 0.2) * vein; return [k, k * 0.95, k * 0.9]; },
+    // stone hide, paler and warmer where it is stretched thin, darker along the ribs, with a
+    // fine web of cracks
+    cfn: (v) => { const i = memVK(v), rib = vk[i * 2], thin = vk[i * 2 + 1]; const n = fbm3(v.x * 2, v.y * 2, v.z * 2, 3, 3), crack = Math.abs(vnoise(v.x * 6, v.y * 6, v.z * 6, 7) - 0.5) < 0.025 ? 0.55 : 1; const k = (0.3 + n * 0.2) * crack * (1 - 0.45 * rib) * (1 + 0.25 * thin); return [k * (1 + 0.12 * thin), k * 0.95, k * (0.9 - 0.08 * thin)]; },
     anim: (v) => clamp(v.distanceTo(w0) / 3) * 0.6 * clamp(Math.abs(v.x) - 0.6),
   });
   // arm struts and fingers

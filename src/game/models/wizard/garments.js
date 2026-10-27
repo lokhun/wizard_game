@@ -365,6 +365,7 @@ export function bootGeo(side, o) {
   const slab = (sh, d, y) => xf(new THREE.ExtrudeGeometry(sh, { depth: d, bevelEnabled: true, bevelThickness: 0.002, bevelSize: 0.002, bevelSegments: 1, curveSegments: 4 }), { rx: Math.PI / 2, x: ax + side * 0.004, y: y + d });
   const sole = paint(slab(outline(0, 1, 0.004), 0.012, 0.006), (x, y) => mul(dark, y > 0.016 ? 0.9 : 0.6));
   const heel = paint(slab(outline(0, 0.3, 0.003), 0.008, 0.0), (x, y) => mul(dark, Math.sin(y * 700) > 0.3 ? 0.45 : 0.65));
+  const top = o.height ?? 0.3;
   // the shaft up the calf, slouching into creases over the ankle, with a folded cuff (stitched)
   const shaftProf = [[0.05, top + 0.01], [0.064, top], [0.066, top - 0.045], [0.058, top - 0.05], [0.058, top * 0.55]];
   for (let k = 1; k <= 8; k++) shaftProf.push([0.058 - 0.007 * (k / 8), top * 0.55 - (top * 0.55 - 0.03) * (k / 8)]);
@@ -487,6 +488,11 @@ export function embroidery(kind, base, motif, P = 0.05) {
         const cell = Math.floor(u * 3), g = h1(cell);
         const x = fr(u * 3);
         on = on || (x < 0.12) || (x > 0.3 && x < 0.85 && ((g > 0.5 && Math.abs(v) < 0.3) || (g < 0.35 && Math.abs(Math.abs(v) - 0.45) < 0.15) || (g >= 0.35 && g <= 0.5 && Math.abs(v - (x - 0.55) * 2.6) < 0.25)));
+        break;
+      }
+      case 'stitch': { // a welted leather edge: a row of stitches along each side
+        const x = fr(u * 6);
+        on = (Math.abs(Math.abs(v) - 0.62) < 0.13 && x < 0.55) || Math.abs(v) > 0.9;
         break;
       }
       case 'flame': { // tongues rising from the lower border

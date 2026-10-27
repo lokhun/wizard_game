@@ -203,24 +203,45 @@ export function shaggy(g, len, freq = 14, seed = 3, dir = [0, 0, -1], comb = 0.6
   return g;
 }
 // Robe / skirt: open cone with folds and a tattered hem. y from 0 (top) to -len.
-export function robe(rTop, rBot, len, { seg = 18, rows = 6, folds = 7, foldAmp = 0.06, tatter = 0.12, seed = 1, flareZ = 0, open = 0 } = {}) {
-  const g = new THREE.CylinderGeometry(rTop, rBot, len, seg, rows, true);
+export function robe(rTop, rBot, len, { seg = 18, rows = 6, folds = 7, foldAmp = 0.06, tatter = 0.12, seed = 1, flareZ = 0, open = 0, pipe = false, thetaStart, thetaLength } = {}) {
+  const g = thetaLength !== undefined ? new THREE.CylinderGeometry(rTop, rBot, len, seg, rows, true, thetaStart, thetaLength) : new THREE.CylinderGeometry(rTop, rBot, len, seg, rows, true);
   g.translate(0, -len / 2, 0);
   const R = rng(seed);
   const cut = [];
   for (let j = 0; j <= seg; j++) cut.push(R());
   cut[seg] = cut[0];
+  const J = Array.from({ length: 61 }, () => R());
+  // the cloth's radius factor and hem drop at (a, t): sine folds, or (pipe) round ridges hanging
+  // from the top with narrow valleys, each its own depth, wandering a little as they fall
+  const FO = { k: 1, dy: 0 };
+  const foldAt = (a, t) => {
+    t = clamp(t); // (the top row can sit a hair above 0: a power of a negative is NaN)
+    if (pipe) {
+      const u = (a * folds) / TAU + 0.18 * Math.sin(t * 3.1 + seed) + 0.08 * (fbm3(a * 3, t * 2, 1.5, seed, 2) - 0.5);
+      const c = Math.cos(TAU * u);
+      let f = 2 * Math.pow((c + 1) / 2, 0.55) - 1;
+      const amp = foldAmp * (0.65 + 0.7 * J[(Math.floor(u + 0.5) % 61 + 61) % 61]);
+      f += 0.22 * Math.sin(a * folds * 2.6 + seed * 3 - t * 2.3) * t + 0.3 * (vnoise(a * 2 + 5, t * 3, seed, 9) - 0.5);
+      f = clamp(f, -1, 1);
+      const w = Math.pow(t, 0.8) * Math.min(1, t / 0.08);
+      FO.k = 1 + f * amp * w;
+      FO.dy = t > 0.7 ? -f * amp * w * 0.9 * smooth(0.7, 1, t) : 0;
+    } else {
+      FO.k = 1 + Math.sin(a * folds + seed) * foldAmp * t + (vnoise(a * 2 + 5, t * 3, seed, 9) - 0.5) * foldAmp * t;
+      FO.dy = 0;
+    }
+    return FO;
+  };
   const p = g.getAttribute('position');
   for (let i = 0; i < p.count; i++) {
     let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
     const t = -y / len; // 0 top .. 1 bottom
     const a = Math.atan2(x, z);
     const rr = Math.hypot(x, z);
-    const fold = 1 + Math.sin(a * folds + seed) * foldAmp * t + (vnoise(a * 2 + 5, t * 3, seed, 9) - 0.5) * foldAmp * t;
-    let nr = rr * fold;
+    const fo = foldAt(a, t);
+    const nr = rr * fo.k;
     x = Math.sin(a) * nr; z = Math.cos(a) * nr + flareZ * t * t;
-    // front opening gap
-    if (open > 0 && Math.abs(a) < open) { x *= 1; }
+    y += fo.dy * rr;
     if (t > 0.999 && tatter > 0) {
       const j = Math.round(((a + Math.PI) / TAU) * seg) % (seg + 1);
       const c = cut[j];
@@ -229,21 +250,45 @@ export function robe(rTop, rBot, len, { seg = 18, rows = 6, folds = 7, foldAmp =
     p.setXYZ(i, x, y, z);
   }
   g.computeVertexNormals();
+  // a point on the finished cloth at angle a (0 = front), t down its length, `lift` metres out:
+  // for embroidery and trims laid over it
+  g.userData.surf = (a, t, lift = 0, out = new THREE.Vector3()) => {
+    const r0 = rTop + (rBot - rTop) * t, fo = foldAt(a, t), nr = r0 * fo.k + lift;
+    return out.set(Math.sin(a) * nr, -t * len + fo.dy * r0, Math.cos(a) * nr + flareZ * t * t);
+  };
   return g;
 }
 // Flat cloth panel (cape / tabard / loincloth) hanging from y=0 to -h, in XY plane, z bulge.
-export function panel(w, h, { ws = 6, hs = 6, tatter = 0.15, seed = 2, curve = 0.08, taperBot = 1 } = {}) {
+export function panel(w, h, { ws = 6, hs = 6, tatter = 0.15, seed = 2, curve = 0.08, taperBot = 1, folds = 0, foldAmp = 0.04 } = {}) {
   const g = new THREE.PlaneGeometry(w, h, ws, hs);
   g.translate(0, -h / 2, 0);
   const R = rng(seed);
   const cut = []; for (let j = 0; j <= ws; j++) cut.push(R());
+  const J = Array.from({ length: 31 }, () => R());
+  // folds > 0: pipe folds hanging from the top edge (round ridges, narrow valleys, each its own
+  // depth), growing toward the hem, the hem dropping under the ridges
+  const zAt = (u, t) => {
+    t = clamp(t);
+    const us = u * lerp(1, taperBot, t); // (the taper widens the panel: the curve follows the cloth)
+    let z = -(us * us) * curve + Math.sin(t * 7 + us * 3 + seed) * 0.015;
+    let dy = 0;
+    if (folds > 0) {
+      const q = (u + 1) * 0.5 * folds + 0.15 * Math.sin(t * 3 + seed);
+      let f = 2 * Math.pow((Math.cos(TAU * q) + 1) / 2, 0.55) - 1;
+      f += 0.25 * (vnoise(q * 1.7, t * 3, seed, 7) - 0.5);
+      const amp = foldAmp * (0.6 + 0.8 * J[Math.floor(q + 0.5) % 31]) * Math.pow(t, 0.7) * Math.min(1, t / 0.06);
+      z += f * amp;
+      if (t > 0.75) dy = -f * amp * 0.8 * smooth(0.75, 1, t);
+    }
+    return [z, dy];
+  };
   const p = g.getAttribute('position');
   for (let i = 0; i < p.count; i++) {
     let x = p.getX(i), y = p.getY(i);
     const t = -y / h;
+    const [z, dy] = zAt(x / (w / 2), t);
     x *= lerp(1, taperBot, t);
-    const u = x / (w / 2);
-    let z = -(u * u) * curve + Math.sin(t * 7 + u * 3 + seed) * 0.015;
+    y += dy;
     if (t > 0.999) {
       const j = Math.round((p.getX(i) / w + 0.5) * ws);
       y += cut[j] * tatter * h * (j % 2 ? 1 : 0.4);
@@ -251,6 +296,11 @@ export function panel(w, h, { ws = 6, hs = 6, tatter = 0.15, seed = 2, curve = 0
     p.setXYZ(i, x, y, z);
   }
   g.computeVertexNormals();
+  // a point on the panel at u (-1..1 across) and t (0 top .. 1 hem), lifted along +z by `lift`
+  g.userData.surf = (u, t, lift = 0, out = new THREE.Vector3()) => {
+    const [z, dy] = zAt(u, t);
+    return out.set(u * (w / 2) * lerp(1, taperBot, t), -t * h + dy, z + lift);
+  };
   return g;
 }
 // Spiked / jagged ring of cones, e.g. crowns, collars

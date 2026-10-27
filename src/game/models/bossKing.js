@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { G, xf, lathe, shell, tube, extrude, deform, bumpy, mergeRaw, chainSkin, panel, spikeRing, rng, vnoise, fbm3, clamp, lerp, smooth, bump, easeOut, easeIn, easeInOut, TAU } from './core.js';
 import { humanSkeleton, humanoidPose, act2 } from './humanoid.js';
 import { addPlate, addTabard, hood, pauldron, twoSided, HDR, GOLDTRIM } from './parts.js';
-import { addFx, fxOf, fxSet, fxPos, fxRot, paint, softRing, softDisc, softColumn, Rope, aimChain, boneWorld, boneModel, snapRot, setBone, springTo, glowLevel, wield, swingTrailGeo, aimTrail } from './bossKit.js';
+import { addFx, fxOf, fxSet, fxPos, fxRot, paint, softRing, softDisc, softColumn, Rope, aimChain, boneWorld, boneModel, snapRot, setBone, springTo, glowLevel, wield, swingTrailGeo, aimTrail, panelBand, embroideryOf } from './bossKit.js';
 
 // ================================================================= The Hollow King ==
 // The last lord of the Ashen Keep: a towering suit of blackened, gold-chased plate with
@@ -93,11 +93,11 @@ export const hollowKing = {
     rig.add('hips', 'cloth', tors, {}, { c: [0.05, 0.04, 0.05], skin: chainSkin([['hips', 0.0], ['spine', 0.05 + D.spine * 0.45], ['chest', 0.05 + D.spine + D.chest * 0.25]], (v) => v.y) });
     for (const S of ['L', 'R']) { rig.add('arm' + S, 'cloth', G.cyl(0.05, 0.04, D.upper, 8), { y: -D.upper / 2 }, { c: [0.05, 0.04, 0.05] }); rig.add('thigh' + S, 'cloth', G.cyl(0.08, 0.06, D.thigh, 8), { y: -D.thigh / 2 }, { c: [0.05, 0.04, 0.05] }); }
     const BK = [0.3, 0.29, 0.34];
-    addPlate(rig, D, { mat: 'steel', c: BK, bulk: 1.2, pauldron: 0.18, trim: true, mailC: [0.35, 0.35, 0.4] });
+    addPlate(rig, D, { mat: 'steel', c: BK, bulk: 1.2, pauldron: 0.18, trim: true, fine: true, mailC: [0.35, 0.35, 0.4] });
     // great layered pauldrons with gold edges and a crest of spikes
     for (const S of ['L', 'R']) {
       const sx = S === 'L' ? 1 : -1;
-      rig.add('arm' + S, 'steel', pauldron(0.25, 4), { x: sx * 0.03, y: 0.02, rz: sx * 0.5, sy: 0.8 }, { c: BK });
+      rig.add('arm' + S, 'steel', pauldron(0.25, 4, 32), { x: sx * 0.03, y: 0.02, rz: sx * 0.5, sy: 0.8 }, { c: BK });
       rig.add('arm' + S, 'gold', mergeRaw([0, 1, 2, 3].map((i) => xf(G.tor(0.25 * (1.04 + i * 0.07), 0.008, 3, 20), { rx: Math.PI / 2, y: -0.025 - i * 0.04 }))), { x: sx * 0.03, y: 0.02, rz: sx * 0.5, sy: 0.8 }, { c: GOLDTRIM });
       rig.add('arm' + S, 'gold', mergeRaw([0, 1, 2, 3, 4].map((i) => xf(G.cone(0.028, 0.26 - Math.abs(i - 2) * 0.05, 4), { x: sx * (0.0 + i * 0.045), y: 0.2 - Math.abs(i - 2) * 0.02, z: (i - 2) * 0.05, rz: -sx * (0.15 + i * 0.18) }))), {}, { c: GOLDTRIM });
     }
@@ -115,16 +115,34 @@ export const hollowKing = {
       ...[-1, 0, 1].map((i) => onPlate(G.cone(0.022, i === 0 ? 0.11 : 0.08, 4), i * 0.06, HY + 0.06)),
       onPlate(G.tor(0.05, 0.008, 4, 14), 0, D.chest * 0.33),
     ]), {}, { c: GOLDTRIM });
+    // gold filigree: mirrored scrolls curling out from a stem down the breastplate's middle
+    const fil = [];
+    const onP = (x, y) => [x, y, plateZ(x, y) + 0.005];
+    for (const sx of [1, -1]) for (const [cy, sc] of [[HY - 0.11, 1], [HY - 0.27, 0.8], [HY - 0.42, 0.65]]) {
+      const pts = [];
+      for (let k = 0; k <= 26; k++) { const th = k / 26 * 3.4 * Math.PI; const r = 0.06 * sc * Math.exp(-0.16 * th); pts.push(onP(sx * (0.012 + 0.06 * sc - Math.cos(th) * r), cy + Math.sin(th) * r * 0.9)); }
+      fil.push(tube(pts, (u) => 0.0045 * (1 - u * 0.5), 40, 4));
+      for (let k = 1; k < 4; k++) { const th = k * 0.9 + 0.4; const r = 0.06 * sc * Math.exp(-0.16 * th); const x0 = sx * (0.012 + 0.06 * sc - Math.cos(th) * r), y0 = cy + Math.sin(th) * r * 0.9; fil.push(tube([onP(x0, y0), onP(x0 + sx * 0.012, y0 + 0.016), onP(x0 + sx * 0.026, y0 + 0.014)], (u) => 0.003 * (1 - u * 0.6), 8, 3)); }
+    }
+    fil.push(tube(Array.from({ length: 12 }, (_, k) => onP(0, HY - 0.06 - k * 0.04)), 0.005, 24, 4));
+    rig.add('chest', 'gold', mergeRaw(fil), {}, { c: GOLDTRIM });
     const cracks = [];
     const RC = rng(12);
     for (let i = 0; i < 5; i++) { let x = (RC() - 0.5) * 0.2, y = D.chest * (0.15 + RC() * 0.6); for (let k = 0; k < 4; k++) { const nx = x + (RC() - 0.5) * 0.06, ny = y - 0.03 - RC() * 0.04; const d = Math.hypot(nx - x, ny - y); cracks.push(onPlate(G.box(0.006, d, 0.004), (x + nx) / 2, (y + ny) / 2, { rz: Math.atan2(-(nx - x), ny - y) })); x = nx; y = ny; } }
     rig.add('chest', 'glow', mergeRaw(cracks), {}, { c: HDR(HOLLOW, 4.5) });
     // cold light in the joints of the empty armour
     for (const S of ['L', 'R']) { rig.add('fore' + S, 'glow', xf(G.tor(0.045, 0.006, 3, 12), { rx: Math.PI / 2 }), { y: 0.0 }, { c: HDR(HOLLOW, 2.2) }); rig.add('shin' + S, 'glow', xf(G.tor(0.06, 0.006, 3, 12), { rx: Math.PI / 2 }), { y: 0.02 }, { c: HDR(HOLLOW, 2.2) }); }
-    addTabard(rig, D, { c: [0.2, 0.03, 0.1], tatter: 0.35, seed: 9, top: -D.spine * 0.62, depth: plateZ(0, -D.spine * 0.62) / (W * 0.62) + 0.06, len: 0.95, w: 0.75, emblem: mergeRaw([xf(G.box(0.16, 0.035, 0.01), {}), ...[-1, 0, 1].map((i) => xf(G.cone(0.025, i === 0 ? 0.1 : 0.07, 4), { x: i * 0.055, y: 0.05 }))]) });
+    addTabard(rig, D, { detail: true, c: [0.2, 0.03, 0.1], tatter: 0.35, seed: 9, top: -D.spine * 0.62, depth: plateZ(0, -D.spine * 0.62) / (W * 0.62) + 0.06, len: 0.95, w: 0.75, emblem: mergeRaw([xf(G.box(0.16, 0.035, 0.01), {}), ...[-1, 0, 1].map((i) => xf(G.cone(0.025, i === 0 ? 0.1 : 0.07, 4), { x: i * 0.055, y: 0.05 }))]) });
     // ---- the cape: hung from three ropes, it drags on the floor behind him
-    const capeG = panel(0.95, CAPE_L * CAPE_N, { ws: 10, hs: 16, tatter: 0.35, seed: 13, curve: 0.18, taperBot: 1.5 });
-    xf(capeG, { y: D.chest - 0.01, z: -0.2, ry: Math.PI, rx: 0.06 });
+    // (heavy velvet in deep pipe folds, a border of gold-worked crowns and lozenges down both
+    // edges and above the ragged hem)
+    const capeG = panel(0.95, CAPE_L * CAPE_N, { ws: 46, hs: 50, tatter: 0.35, seed: 13, curve: 0.18, taperBot: 1.5, folds: 8, foldAmp: 0.055 });
+    const capeXf = { y: D.chest - 0.01, z: -0.2, ry: Math.PI, rx: 0.06 };
+    const royal = embroideryOf('diamond', GOLDTRIM, [0.3, 0.02, 0.08], 0.09);
+    const capeBands = [];
+    for (const su of [-1, 1]) capeBands.push(panelBand(capeG, Array.from({ length: 41 }, (_, i) => [su * 0.93, 0.01 + (i / 40) * 0.8]), 0.07, royal));
+    capeBands.push(panelBand(capeG, Array.from({ length: 49 }, (_, i) => [-0.93 + (i / 48) * 1.86, 0.8]), 0.07, royal));
+    xf(capeG, capeXf);
     const capeSkin = (v) => {
       const d = clamp((D.chest - 0.01 - v.y) / CAPE_L, 0, CAPE_N - 1.001);
       const i0 = Math.floor(d), f = d - i0;
@@ -132,6 +150,7 @@ export const hollowKing = {
       return [[`cape${c0}_${i0}`, (1 - f) * (1 - g)], [`cape${c0}_${i0 + 1}`, f * (1 - g)], [`cape${c0 + 1}_${i0}`, (1 - f) * g], [`cape${c0 + 1}_${i0 + 1}`, f * g]];
     };
     rig.add('chest', 'cloth', capeG, {}, { cfn: (v) => { const n = vnoise(v.x * 8, v.y * 3, 1, 4); const k = 0.7 + n * 0.4; const hem = smooth(0.9, 1.6, D.chest - v.y); return [0.24 * k * (1 - hem * 0.5), 0.02 * k, 0.07 * k]; }, anim: (v) => clamp((D.chest - v.y) / 2) * 0.6, skin: capeSkin });
+    for (const cb of capeBands) rig.add('chest', 'cloth', xf(cb.geo, capeXf), {}, { vcol: cb.vcol, anim: (v) => clamp((D.chest - v.y) / 2) * 0.6, skin: capeSkin });
     rig.add('chest', 'fur', bumpy(xf(G.tor(0.27, 0.085, 8, 24), { rx: Math.PI / 2, sz: 0.8 }), 0.014, 14, 7), { y: D.chest + 0.03 }, { cfn: (v) => (vnoise(v.x * 30, v.y * 30, v.z * 30, 3) > 0.82 ? [0.04, 0.04, 0.04] : [0.9, 0.88, 0.82]) });
     rig.add('chest', 'gold', mergeRaw([xf(G.tor(0.035, 0.01, 4, 12), { x: 0.18, y: D.chest + 0.02, z: 0.16 }), xf(G.tor(0.035, 0.01, 4, 12), { x: -0.18, y: D.chest + 0.02, z: 0.16 }), xf(G.cyl(0.006, 0.006, 0.36, 4), { y: D.chest + 0.0, z: 0.19, rz: Math.PI / 2 })]), {}, { c: GOLDTRIM });
     // ---- the hollow helm: a void with two cold eyes, soul-light seeping from the gorget

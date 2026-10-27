@@ -4,7 +4,7 @@ import { humanoidPose, act2, ACT } from './humanoid.js';
 import { twoSided, HDR, RUSTY, DARKSTEEL } from './parts.js';
 import { buildHeadsman, HEADSMAN_ANIM } from './dungeon.js';
 import { skullGeo } from '../../world/props.js';
-import { addFx, fxOf, fxSet, fxPos, aimTrail, swingTrailGeo, paint, softRing, softDisc, Rope, aimChain, boneWorld, boneModel, snapRot, setBone, gripIK, springTo, glowLevel, haftBasis } from './bossKit.js';
+import { addFx, fxOf, fxSet, fxPos, aimTrail, swingTrailGeo, paint, softRing, softDisc, Rope, aimChain, boneWorld, boneModel, snapRot, setBone, gripIK, springTo, glowLevel, haftBasis, panelBand, embroideryOf } from './bossKit.js';
 
 // ================================================================ The Executioner ==
 // The Headsman of the Oubliette: a hulking hooded brute with a crescent greataxe.
@@ -101,7 +101,15 @@ export const executioner = {
     rig.socket('muzzle', 'axe', 0, HEAD_Y, 0.5);
 
     // ---- more brute: butcher's apron, hangman's noose, wrist manacles, a string of skulls
-    const apron = panel(0.5, 0.95, { ws: 6, hs: 9, tatter: 0.18, seed: 21, curve: 0.1, taperBot: 1.1 });
+    const apron = panel(0.5, 0.95, { ws: 26, hs: 32, tatter: 0.18, seed: 21, curve: 0.1, taperBot: 1.1, folds: 3, foldAmp: 0.022 });
+    const apronSkin = (v) => { const t = clamp((-v.y - 0.08) / 0.7) * 0.75, l = clamp(0.5 + v.x * 3); return [['hips', 1 - t], ['thighL', t * l], ['thighR', t * (1 - l)]]; };
+    // a welted, stitched border round the apron (in the panel's own space, before it is placed)
+    {
+      const st = embroideryOf('stitch', [0.3, 0.22, 0.16], [0.62, 0.52, 0.38], 0.04);
+      const path = [...Array.from({ length: 24 }, (_, i) => [-0.9, (i / 23) * 0.86]), ...Array.from({ length: 18 }, (_, i) => [-0.9 + ((i + 1) / 18) * 1.8, 0.86]), ...Array.from({ length: 24 }, (_, i) => [0.9, 0.86 - ((i + 1) / 24) * 0.86])];
+      const b = panelBand(apron, path, 0.03, st, { lift: 0.003 });
+      rig.add('hips', 'leather', b.geo, { y: 0.06, z: 0.255, rx: -0.05 }, { vcol: b.vcol, anim: (v) => clamp(-v.y / 0.95) * 0.8, skin: apronSkin });
+    }
     rig.add('hips', 'leather', apron, { y: 0.06, z: 0.255, rx: -0.05 }, {
       cfn: (v) => { const n = fbm3(v.x * 5, v.y * 4, 2, 31, 3), d = 0.8 + 0.3 * vnoise(v.x * 30, v.y * 30, 1, 5); const bl = smooth(0.5, 0.68, n + smooth(-0.3, -0.85, v.y) * 0.25); return [lerp(0.62, 0.3, bl) * d, lerp(0.5, 0.02, bl) * d, lerp(0.38, 0.02, bl) * d]; },
       anim: (v) => clamp(-v.y / 0.95) * 0.8,
