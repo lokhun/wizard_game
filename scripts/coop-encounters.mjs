@@ -55,10 +55,13 @@ if (!secret.every(([b, d]) => b && !d)) fails.push('secret');
 console.log('secret broken (host, client):', JSON.stringify(await both(() => { const g = window.__game, r = g.level.rooms.find((x) => x.secret); return [r._secret.broken, g.collision.dyn[r.secret.cell]]; })));
 // 2. the client opens the mimic; the host fights it
 await both(() => { const g = window.__game, r = g.level.rooms.find((x) => x.mimicAt); g.player.pos.set(r.cx, g.groundY(r.cx, r.cz + 3), r.cz + 3); });
-await host.waitForTimeout(3000);
+// (the host wakes the sleeping mimic once a wizard is in its vault: wait for it, a slow machine takes a while)
+await host.waitForFunction(() => !!window.__game.level.rooms.find((x) => x.mimicAt)._mimic.actor, null, { timeout: 60000 }).catch(() => {});
 await client.evaluate(() => { const g = window.__game; g.interact(g.interactables.find((i) => i.kind === 'mimic')); });
-await host.waitForTimeout(3000);
-console.log('mimic sprung (host, client):', JSON.stringify(await both(() => { const g = window.__game, r = g.level.rooms.find((x) => x.mimicAt), m = g.actors.list.find((a) => a.type === 'mimic'); return [r._mimic.sprung, !!m, m?.dormant, r._locked]; })));
+await host.waitForFunction(() => window.__game.level.rooms.find((x) => x.mimicAt)._mimic.sprung, null, { timeout: 30000 }).catch(() => {});
+await host.waitForTimeout(1500);
+const sprung = await both(() => { const g = window.__game, r = g.level.rooms.find((x) => x.mimicAt), m = g.actors.list.find((a) => a.type === 'mimic'); return [r._mimic.sprung, !!m, m?.dormant, r._locked]; });
+console.log('mimic sprung (host, client):', JSON.stringify(sprung));
 await host.evaluate(() => {
   const g = window.__game;
   window.__aimT = setInterval(() => {
@@ -72,6 +75,7 @@ await host.waitForFunction(() => !window.__game.director.active, null, { timeout
 await host.evaluate(() => clearInterval(window.__aimT));
 await host.waitForTimeout(3000);
 const mim = await both(() => { const g = window.__game, r = g.level.rooms.find((x) => x.mimicAt); return [r.cleared, g.interactables.filter((i) => i.kind === 'chest').length, g.interactables.filter((i) => i.kind === 'pedestal').length]; });
+if (!sprung.every((x) => x[0])) fails.push('mimic spring');
 if (!mim.every((m) => m[0]) || JSON.stringify(mim[0]) !== JSON.stringify(mim[1])) fails.push('mimic');
 console.log('mimic dead, hoard chests (host, client):', JSON.stringify(mim));
 // 3. the client takes the altar's curse: the host's next fight gains an elite

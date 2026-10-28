@@ -38,8 +38,12 @@ const st = (p) => p.evaluate(() => { const q = window.__game.player; return { do
 // the host walks into a fight (the client is drawn in); the foes are made harmless, the wizards mortal
 await host.evaluate(() => { const g = window.__game; const r = g.level.rooms.filter((x) => x.type === 'combat').sort((a, b) => b.w * b.h - a.w * a.h)[0]; g.player.pos.set(r.cx, g.groundY(r.cx, r.cz), r.cz); });
 await host.waitForFunction(() => window.__game.director.active, null, { timeout: 120000 });
+// (the foes made harmless as they come, and the host whole: on a slow machine they could otherwise down the
+// host before the test begins, and a party with no one standing has lost)
+const harmless = () => host.evaluate(() => { const g = window.__game; for (const a of g.actors.list) if (a.faction === 'enemy') { a.dmgMult = 0; a.stunT = 999; } if (g.player.downed) g.player.revive(1); g.player.hp = g.player.maxHp; });
+await harmless();
 await host.waitForTimeout(3000);
-await host.evaluate(() => { for (const a of window.__game.actors.list) if (a.faction === 'enemy') { a.dmgMult = 0; a.stunT = 999; } });
+await harmless();
 // 1. the client falls; the host sees it, walks over and holds interact
 await client.evaluate(() => { const p = window.__game.player; p.invuln = 0; p.takeDamage(99999, 'physical', null, { cause: 'a test' }); });
 await host.waitForFunction(() => [...window.__game.remotes.values()][0]?.downed, null, { timeout: 30000 }).catch(() => {});

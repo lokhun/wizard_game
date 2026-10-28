@@ -27,7 +27,7 @@ export function handleGameMessage(game, msg, from) {
       break;
     }
     case 'summon': {
-      if (!game.isHost) return;
+      if (!game.isHost || !game.onFloor(msg)) return;
       game.requestSummon(msg.ty, new THREE.Vector3(msg.x, 0, msg.z), msg.l, msg.o ?? from);
       break;
     }
@@ -42,7 +42,7 @@ export function handleGameMessage(game, msg, from) {
     // ------------------------------------------------ shared events
     case 'pick': game.removeDrop(msg.id); break;
     case 'bat': { const a = game.actors.byId.get(msg.id); if (a) { a.brainAttackType = msg.a; a.attackType = msg.a; } break; }
-    case 'brk': game.breakProp(msg.i, false); break;
+    case 'brk': if (game.onFloor(msg)) game.breakProp(msg.i, false); break;
     case 'cells': game.openCells(game.level?.rooms.find((r) => r.id === msg.r), false); break;
     case 'pitfall': { const a = game.actors.byId.get(msg.id), pit = game.level?.pits.find((q) => q.i === msg.i); if (a && pit) game.pitFallFx(a, pit, false); break; }
     case 'chest': {
@@ -93,7 +93,7 @@ export function handleGameMessage(game, msg, from) {
         a.dead = true; a.deadT = 0; a.anim = 'death'; a.animT = 0; a.mask = 0; a.deathYaw = msg.fy ?? null;
         game.actors._rebuildLists();
         game.actors.deathFx(a, msg.el);
-        game.stats.kills++;
+        if (a.faction === 'enemy') game.stats.kills++; // (a summon's end isn't a kill, as on the host)
       }
       break;
     }

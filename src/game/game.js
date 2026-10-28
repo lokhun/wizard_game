@@ -228,6 +228,9 @@ export class Game {
     this.relics?.onPeerJoin();
     this.ui?.toast(`${p.name} joined as ${CLASS_META[p.classId].name}`);
   }
+  // which floor a peer's message was sent on (a prop index or a spot means nothing on the next one)
+  floorTag() { return { f: this.floorIndex, ab: this.abyss ?? 0 }; }
+  onFloor(msg) { return msg.f === undefined || (msg.f === this.floorIndex && (msg.ab ?? 0) === (this.abyss ?? 0) && !this.loadingFloor); }
   removeRemote(id) {
     const r = this.remotes.get(id);
     if (!r) return;
@@ -610,7 +613,7 @@ export class Game {
     if (b.type === 'barrel' && Math.random() < 0.5) this.vfx.burst(c, { count: 16, speed: 3, life: 0.8, size: 0.06, sprite: SPR.DROP, solid: true, color: [0.25, 0.12, 0.05], gravity: 12, upward: 1 });
     if (b.type === 'keg') this.spells.after(0.18, () => this._kegBlast(b, c, local));
     this.audio?.play('impact_earth', { pos: c, volume: 0.7 });
-    if (local) this.net?.broadcastOrSend({ t: 'brk', i });
+    if (local) this.net?.broadcastOrSend({ t: 'brk', i, ...this.floorTag() });
     if (this.isHost && Math.random() < 0.35) this.spawnDrop(Math.random() < 0.2 ? 'health' : 'gold', c, Math.random() < 0.2 ? 15 : 3 + this.floorIndex * 2);
   }
 
@@ -1694,7 +1697,7 @@ export class Game {
     def.use(this, p, itemK(this), at);
     this.spells.slot = null;
     def.show(this, id === 'flask' ? at : { x: p.pos.x, y: p.pos.y, z: p.pos.z });
-    this.net?.broadcast({ t: 'itemfx', i: id, ...(id === 'flask' ? at : { x: p.pos.x, y: p.pos.y, z: p.pos.z }) });
+    this.net?.broadcastOrSend({ t: 'itemfx', i: id, ...(id === 'flask' ? at : { x: p.pos.x, y: p.pos.y, z: p.pos.z }) });
     this.vfx.addFovKick?.(2);
     this.events.emit('itemUsed', id);
   }
@@ -1759,7 +1762,7 @@ export class Game {
       const a = def.spawn(type, pos.x, pos.z, { life, owner, hp: undefined, faction: 'ally', yaw: this.player.yaw + Math.PI });
       a.maxHp *= 1 + this.floorIndex * 0.5; a.hp = a.maxHp;
       a.dmg *= 1 + this.floorIndex * 0.45;
-    } else this.net?.send({ t: 'summon', ty: type, x: pos.x, z: pos.z, l: life, o: owner });
+    } else this.net?.send({ t: 'summon', ty: type, x: pos.x, z: pos.z, l: life, o: owner, ...this.floorTag() });
   }
 
   requestTeleport(pid, x, z) {

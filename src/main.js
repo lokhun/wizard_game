@@ -405,6 +405,7 @@ function beginRun(opts) {
   avatarGen++;
   dropMenuAvatar();
   nextAvatar?.av.dispose?.(); nextAvatar = null;
+  heldMsgs = [];
   ui.fadeOut(0.6, () => {
     game.menuMode = false;
     game.backdrop = null;
@@ -415,6 +416,8 @@ function beginRun(opts) {
     game.startRun({ ...opts, name: settings.name || 'Wizard', classId: selectedClass, floor: opts.floor ?? (+q.get('floor') || 0), abyss: opts.abyss ?? (+q.get('abyss') || 0) });
     if (opts.late) applyLateState(opts.late);
     if (opts.late && net && !net.isHost) net.send({ t: 'started' });
+    const held = heldMsgs ?? []; heldMsgs = null;
+    for (const [m, from] of held) handleGameMessage(game, m, from);
     ui.fadeIn(1.4);
     input.lock();
   });
@@ -455,7 +458,7 @@ async function doHost() {
     net.on(onLobbyMessage);
     net.on(onChatMessage);
     chat.setActive(true);
-    net.on((msg, from) => { if (mode === 'run' && game && !game.menuMode) handleGameMessage(game, msg, from); });
+    net.on(onGameMessage);
     net.onPeerLeft = (pid) => {
       lobby.players = lobby.players.filter((p) => p.id !== pid);
       pushRoster();
@@ -468,6 +471,16 @@ async function doHost() {
     alert('Could not open a co-op session: ' + (e.message ?? e.type ?? e) + '\nYou can still play solo.');
     showMenu();
   }
+}
+
+// The run's messages. Those that come while this peer is still fading into a run it just began (the
+// party may already be stepping through a portal, or a late joiner's floor changing under it) wait,
+// and are played once the run is up, in order.
+let heldMsgs = null;
+function onGameMessage(msg, from) {
+  if (mode !== 'run' || !game) return;
+  if (game.menuMode) { if (heldMsgs && heldMsgs.length < 4000) heldMsgs.push([msg, from]); return; }
+  handleGameMessage(game, msg, from);
 }
 
 let joinGen = 0;
@@ -487,7 +500,7 @@ async function doJoin(code, api) {
     net.on(onLobbyMessage);
     net.on(onChatMessage);
     chat.setActive(true);
-    net.on((msg, from) => { if (mode === 'run' && game && !game.menuMode) handleGameMessage(game, msg, from); });
+    net.on(onGameMessage);
     net.onDisconnect = () => {
       if (net !== myNet) return;
       if (mode === 'run') ui.banner('CONNECTION LOST', 'The host has left the party', '#c04030', 6);
@@ -523,11 +536,15 @@ function onLobbyMessage(msg, from) {
       net.sendTo(from, { t: 'welcome', id: from });
       pushRoster();
       audio?.play('ui_click');
-      if (mode === 'run' && game && !game.menuMode && !game.ended) {
-        // late join: bring them into the current floor; actors follow once they report 'started'
+      // late join: bring them into the current floor; actors follow once they report 'started'. Not in the
+      // middle of a floor change or of the host's own way into the run: it waits for the floor to settle.
+      const lateStart = () => {
+        if (mode !== 'run' || !game || game.ended || !lobby.players.includes(p)) return;
+        if (game.menuMode || game.transitioning || game.loadingFloor) { setTimeout(lateStart, 300); return; }
         net.sendTo(from, { t: 'start', seed: game.seed, players: lobby.players, floor: game.floorIndex, ab: game.abyss ?? 0, late: lateState(), pk: game.difficulty?.pacts ?? {} });
         game.addRemote(p);
-      }
+      };
+      if (mode === 'run' && game && !game.ended) lateStart();
     } else if (msg.t === 'started') {
       if (mode !== 'run' || !game || game.menuMode) return;
       for (const a of game.actors.list) {
