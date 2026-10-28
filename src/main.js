@@ -674,6 +674,22 @@ window.addEventListener('mousedown', () => {
 // main loop
 // ---------------------------------------------------------------------------
 let last = performance.now();
+// A hidden tab gets no animation frames: a co-op run's world would stop for the whole party while the host
+// looked away (and a client would go quiet). While hidden, a timer steps the game unrendered instead.
+let rafAt = 0, hiddenAt = 0, hiddenTimer = null;
+document.addEventListener('visibilitychange', () => {
+  clearInterval(hiddenTimer); hiddenTimer = null;
+  if (!document.hidden) return;
+  hiddenAt = performance.now();
+  hiddenTimer = setInterval(() => {
+    const now = performance.now();
+    let dt = Math.min(1, (now - hiddenAt) / 1000);
+    hiddenAt = now;
+    if (now - rafAt < 250 || mode !== 'run' || !game || game.isSolo || game.menuMode || game.loadingFloor || game.ended || window.__freeze) return;
+    for (; dt > 0.001; dt -= 0.05) game.update(Math.min(0.05, dt));
+    input.endFrame();
+  }, 50);
+});
 const perf = { frames: 0, t: 0, warned: false, fps: 60 };
 const fpsEl = document.createElement('div');
 fpsEl.style.cssText = 'position:fixed;right:8px;top:4px;z-index:60;font:12px monospace;color:#9a8;pointer-events:none;text-shadow:0 1px 2px #000';
@@ -714,6 +730,7 @@ function loop(now) {
   requestAnimationFrame(loop);
   let dt = (now - last) / 1000;
   last = now;
+  rafAt = performance.now();
   perf.frames++; perf.t += dt;
   if (perf.t >= 1) {
     perf.fps = perf.frames / perf.t;
