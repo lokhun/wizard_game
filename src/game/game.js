@@ -268,6 +268,7 @@ export class Game {
     for (const h of this.hazards) h.wall?.end();
     this.hazards = [];
     this.pools = [];
+    this.pings = []; // (a ping marks a spot in the realm it was made in)
 
     this.floorIndex = index;
     // (each descent into the Abyss lays the realms out anew)
@@ -1908,7 +1909,7 @@ export class Game {
     const a = aim.actor;
     if (a && a.faction === 'enemy' && !a.dead) {
       msg.k = 'foe'; msg.a = a.id;
-      msg.l = (a.boss || a.champion ? a.def.name : (a.elite ? 'Champion ' : '') + (a.def.name ?? a.type));
+      msg.l = (a.boss || a.champion ? a.def.name : (a.elite ? 'Elite ' : '') + (a.def.name ?? a.type)); // (an elite isn't a champion: those are named)
       return msg;
     }
     // the thing nearest the aim ray, short of whatever the ray struck (a little
