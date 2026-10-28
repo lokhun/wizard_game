@@ -533,6 +533,9 @@ export class LocalPlayer {
       this.buffs[i].t -= dt;
       if (this.buffs[i].t <= 0) { this.buffs.splice(i, 1); buffsChanged = true; }
     }
+    // stats that hang on the moment: the Tempest's airborne bonus, the Blood Mage's frenzy under 40% health
+    const air = !!this.stats.airDmg && !this.grounded, frz = !!this.stats.frenzy && this.hp / this.maxHp < 0.4;
+    if (air !== this._airOn || frz !== this._frzOn) { this._airOn = air; this._frzOn = frz; buffsChanged = true; }
     if (buffsChanged) this.recomputeStats();
     // cooldowns
     const cdRate = st.cdRate;
@@ -540,6 +543,7 @@ export class LocalPlayer {
       if (s === 'ultimate') continue;
       const sp = this.cls.spells[s];
       const maxCh = sp.charges ?? 1;
+      if (this.channel?.slot === s) continue; // (a channel's cooldown starts when it ends: endChannel sets it)
       if (this.chargesLeft[s] < maxCh) {
         this.cds[s] -= dt * cdRate;
         if (this.cds[s] <= 0) {
@@ -641,7 +645,8 @@ export class LocalPlayer {
     this.dashRecharge -= dt;
     if (this.dashCharges < st.dashCharges && this.dashRecharge <= 0) {
       this.dashCharges++;
-      this.dashRecharge = st.dashCd * (this.game.difficulty?.dashCd ?? 1);
+      // (the next only once one is spent: a timer left running while full shortened the next recharge)
+      this.dashRecharge = this.dashCharges < st.dashCharges ? st.dashCd * (this.game.difficulty?.dashCd ?? 1) : 0;
     }
     if (allowMove && input.was('dash') && this.dashCharges > 0 && this.dashT <= 0) {
       const dir = wish.lengthSq() > 0.01 ? target.clone().normalize() : f.clone();

@@ -258,6 +258,7 @@ export class Game {
 
   loadFloor(index) {
     this.player?.endChannel();
+    if (this.player) this.player.downsThisRoom = 0; // (falls in the boss's chamber don't shorten the next realm's bleed-out)
     // tear down
     if (this.built) { this.scene.remove(this.built.group); this.built.dispose(); }
     if (this.storm) { this.storm.dispose(); this.storm = null; }
@@ -1088,7 +1089,6 @@ export class Game {
     if (res.crit && st.critHeal) p.heal(st.critHeal, true);
     // statuses: scale by status power and add class/tome extras
     let stPayload = H.st;
-    if (stPayload && stPayload.poison && st.poisonBonus && H.tag !== 'dot') stPayload = { ...stPayload, poison: [stPayload.poison[0], stPayload.poison[1]] };
     // relic procs (lightning strikes, glyphs, overkill arcs...) and the statuses they add
     if (this.relics) {
       const sl = this.spells.slot; this.spells.slot = 'other'; // (a relic's proc, and its timers, are the relic's damage)

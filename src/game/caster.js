@@ -185,7 +185,11 @@ export function makeCtx(game, caster, o) {
       const zone = { ...z, pos: z.pos.clone(), local };
       const userVisual = z.visual;
       zone.visual = (zz, dt) => {
-        if (zz.follow) zz.pos.copy(caster.pos);
+        if (zz.follow) {
+          zz.pos.copy(caster.pos);
+          // (a storm or a ring of blades around its caster ends when they fall: it fades in a moment)
+          if ((caster.downed || caster.dead) && zz.age < zz.life - 0.3) zz.age = zz.life - 0.3;
+        }
         if (zz.flames) burningGround(game, zz, dt);
         userVisual?.(zz, dt);
       };

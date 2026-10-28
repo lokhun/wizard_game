@@ -1146,7 +1146,7 @@ export const CLASSES = {
         },
       },
       ability1: {
-        name: 'Blood Pact', icon: 'pact', desc: 'Sacrifice 20% of current HP to gain +40% damage and attack speed for 6s.', cd: 14, style: 'snap', hand: 'left',
+        name: 'Blood Pact', icon: 'pact', desc: 'Sacrifice 20% of current HP to gain +40% damage and +25% attack speed for 6s.', cd: 14, style: 'snap', hand: 'left',
         cast(ctx) {
           const paid = ctx.hp() * 0.2;
           ctx.payHp(paid);
@@ -1315,7 +1315,7 @@ export const CLASSES = {
         },
       },
       secondary: {
-        name: 'Time Bomb', icon: 'bomb', desc: 'Lob a sticky bomb that detonates after 1.5s. 3 charges.', cd: 3.5, charges: 3, style: 'throw', hand: 'left',
+        name: 'Time Bomb', icon: 'bomb', desc: 'Lob a sticky bomb that clings to the first foe it hits and detonates 1.8s after the throw. 3 charges.', cd: 3.5, charges: 3, style: 'throw', hand: 'left',
         cast(ctx) {
           ctx.sound('cast_time');
           ctx.proj({ el: 'time', vel: ctx.dir.clone().multiplyScalar(22).add(v3(0, 4, 0)), gravity: 18, radius: 0.25, life: 1.8, core: 0.8, mesh: 'orb', light: 8, trail: 0.6, sticky: true,
@@ -2031,7 +2031,7 @@ export const CLASSES = {
           ctx.vfx.ring(c, R, fxOf('poison').core, 0.5, 0.12);
           ctx.vfx.dustWave(c, R * 0.8, { color: [0.16, 0.15, 0.08], alpha: 0.4, count: 18, glow: [0.5, 0.9, 0.15] });
           for (let i = 0; i < 16; i++) { const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R; ctx.thorn(v3(c.x + Math.cos(a) * r, c.y, c.z + Math.sin(a) * r)); }
-          ctx.area(v3(c.x, c.y + 1, c.z), R, { dmg: 16, el: 'poison', st: { root: 2.5, poison: [2, 2.5] } });
+          ctx.area(v3(c.x, c.y + 1, c.z), R, { dmg: 16, el: 'poison', st: { root: 2.5, poison: [2 + (ctx.stats.poisonBonus ?? 0), 2.5] } });
           // augment: the roots stay as a briar thicket
           if (aug(ctx, 'druid_entangle')) {
             const m = augM(ctx, 'druid_entangle');
@@ -2086,7 +2086,7 @@ export const CLASSES = {
               ctx.vfx.ring(p, R, fxOf('poison').core, 0.5, 0.12);
               ctx.vfx.dustWave(p, R, { color: [0.12, 0.16, 0.06], alpha: 0.4, count: 18 + w * 8 });
               for (let i = 0; i < 18; i++) { const a = (i / 18) * Math.PI * 2 + w; ctx.thorn(v3(p.x + Math.cos(a) * R, p.y, p.z + Math.sin(a) * R)); }
-              ctx.area(v3(p.x, p.y + 1, p.z), R, { dmg: 38, el: 'poison', st: { poison: [3, 3], root: 1.2 }, kb: 5 });
+              ctx.area(v3(p.x, p.y + 1, p.z), R, { dmg: 38, el: 'poison', st: { poison: [3 + (ctx.stats.poisonBonus ?? 0), 3], root: 1.2 }, kb: 5 });
               ctx.sound('cast_earth_big', 0.7);
               ctx.kick(0.2, 2);
             });

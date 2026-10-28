@@ -571,6 +571,7 @@ export class SpellRuntime {
             g.hitActor(a, { ...p.hit, src: p.owner, kbDir: [p.vel.x / vlen, p.vel.z / vlen], weak, dmg: p.hit.dmg * (weak ? WEAK_MULT : 1) }, hp);
           }
           p.onHit?.(p, a, hp);
+          if (p.stuck) break; // (a sticky one clings to the foe and goes off when its time is up: Time Bomb)
           if (!p.aoe || p.pierce > 0) g.vfx.impact(hp, p.el, 0.7);
           if (p.pierce > 0) { p.pierce--; continue; }
           this.kill(p, hp, a);
@@ -748,6 +749,8 @@ export class SpellRuntime {
     }
     for (const z of this.zones) { z.local = false; z.dmg = 0; z.healAllies = 0; try { z.onEnd?.(z); } catch { /* ignore */ } }
     this.zones.length = 0;
+    // (an end callback above may have spawned a parting shot: Singularity's collapsing star; it goes too)
+    for (let i = this.projectiles.length - 1; i >= 0; i--) this._remove(i);
     this.timers.length = 0;
   }
 
