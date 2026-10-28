@@ -412,8 +412,10 @@ export class Director {
     if (!wave) return;
     const room = A.room;
     // stagger spawns for drama
+    A.pending = (A.pending ?? 0) + wave.length;
     wave.forEach((s, i) => {
       this.g.spells.after(i * 0.12 + Math.random() * 0.2, () => {
+        A.pending--;
         if (this.active !== A) return;
         const p = this._spawnPoint(room, s.role);
         const a = this.spawnEnemy(s.type, p.x, p.z, { elite: s.elite, affix: s.affix, affix2: s.affix2 });
@@ -449,7 +451,8 @@ export class Director {
     const g = this.g;
     A.t += dt;
     const R = A.room;
-    if (R.type === ROOM.TRIAL && R.trialWon === null && g.time > R.trialEnd) {
+    // (not once the last foe has fallen: the room is only declared clear 0.6 s later)
+    if (R.type === ROOM.TRIAL && R.trialWon === null && g.time > R.trialEnd && !(A.clearT > 0)) {
       R.trialWon = false;
       g.net?.broadcast({ t: 'trial', r: R.id, won: 0 });
       g.onTrialResult?.(R, false);
@@ -495,10 +498,11 @@ export class Director {
     const stall = A.t - (A.progT ?? 0);
     if (alive > 0 && stall > 20 && A.t - (A.pullT ?? -99) > 20) { A.pullT = A.t; this._pullStragglers(A); }
     if (alive > 0 && !A.boss && stall > 65) { A.progT = A.t; this._banish(A); }
-    if (alive === 0 && A.t > 2) {
+    // (clear only with no foe standing for 0.6 s together, and none of the last wave still to appear)
+    if (alive === 0 && !A.pending && A.t > 2) {
       A.clearT += dt;
       if (A.clearT > 0.6) this.clearRoom();
-    }
+    } else A.clearT = 0;
   }
 
   // a fight room's trap vents erupt by turns (half at a time, every 4.5 s, after a

@@ -135,7 +135,7 @@ export function handleGameMessage(game, msg, from) {
     }
     case 'bossdead': if (!game.isHost) game.bossDefeated(!!msg.ab); break;
     case 'abyss': if (!game.isHost) game.enterAbyss(+msg.d || 1, typeof msg.c === 'string' ? msg.c : null); break;
-    case 'claimVictory': if (game.isHost && game.floorIndex >= 4 && game.interactables.some((i) => i.kind === 'victoryPortal')) game.victory(); break;
+    case 'claimVictory': if (game.isHost && !game.transitioning && !game.ended && game.floorIndex >= 4 && game.interactables.some((i) => i.kind === 'victoryPortal')) game.victory(); break;
     case 'descend': if (game.isHost && game.interactables.some((i) => i.kind === 'abyssPortal')) game.descendAbyss(); break;
     case 'banner': game.ui?.banner(msg.a, msg.b, msg.c); break;
     case 'shake': game.vfx.addShake(msg.k); break;

@@ -294,7 +294,7 @@ export class Encounters {
     if (room.champ && room.type === ROOM.ELITE) {
       const at = this._freeSpot(room.cx, room.cz + 2.8, room);
       this._hoard(at.x, at.z, 0);
-      return { rarity: 2, gold: 2, banner: ['CHAMPION SLAIN', 'An epic tome and a relic hoard await', '#ffb060'] };
+      return { tome: 2, gold: 2, banner: ['CHAMPION SLAIN', 'An epic tome and a relic hoard await', '#ffb060'] };
     }
     if (room.mimicAt) return { rarity: 1, gold: 1.5 };
     if (room.mod === 'darkness' || room.mod === 'haunted') return { rarity: 1, gold: 1 };
@@ -447,7 +447,7 @@ export class Encounters {
       }
       return;
     }
-    if (a.dead) return;
+    if (a.dead) { if (!M.sprung) this._slainAsleep(room); return; }
     // it loses patience with anyone who stands over it too long
     const close = g.allPlayers().some((p) => p.alive && !p.dead && Math.hypot(p.pos.x - a.pos.x, p.pos.z - a.pos.z) < 1.9);
     M.near = close ? M.near + dt : 0;
@@ -460,6 +460,7 @@ export class Encounters {
     const g = this.g, M = room._mimic, a = M.actor;
     if (M.sprung || !a) return;
     if (a.dormant) g.actors.wake(a, false);
+    if (g.director.active) return; // (another fight holds the director: awake, it springs when that one ends)
     M.sprung = true;
     room.cleared = false;
     room.sentriesPlaced = true;
@@ -467,6 +468,17 @@ export class Encounters {
     room.sentryIds = [a.id];
     g.director.startEncounter(room);
     this._send({ k: 'sprung', r: room.id, id: a.id }, true);
+  }
+
+  // host: it died before it ever sprang (a burst of blows in one frame): its hoard came with its death
+  // (onKilled); the vault counts as won, and no second mimic takes its place
+  _slainAsleep(room) {
+    const g = this.g, M = room._mimic;
+    M.sprung = true;
+    this._send({ k: 'sprung', r: room.id, id: M.actor?.id ?? -1 }, false);
+    room.cleared = true;
+    g.net?.broadcast({ t: 'lock', r: room.id, on: 0, clear: 1 });
+    g.onRoomCleared(room);
   }
 
   _sprungFx(room, id) {

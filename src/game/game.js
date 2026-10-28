@@ -730,8 +730,9 @@ export class Game {
       if (u >= 1) this.slow = null;
       else dt *= this.slow.k + (1 - this.slow.k) * u * u;
     }
-    this.time += dt;
-    if (!this.paused || !this.isSolo) this.stats.time += realDt; // a paused solo run isn't run time
+    // a paused solo run's clock stands still: a trial's limit, a boss's gate and exposed window, a buff's
+    // end are all moments on it (and it isn't run time)
+    if (!this.paused || !this.isSolo) { this.time += dt; this.stats.time += realDt; }
     const input = this.input;
     const p = this.player;
 
@@ -1824,6 +1825,7 @@ export class Game {
     this.player.downsThisRoom = 0;
     // elite chambers offer a relic instead of a tome (a gold-ringed lectern)
     this.spawnPedestal(room, Math.max(enc?.rarity ?? 0, room.type === ROOM.TRIAL ? (room.trialWon ? 2 : 0) : room.type === ROOM.ELITE ? 3 : 0), room.type === ROOM.ELITE);
+    if (enc?.tome != null) this.spawnPedestal(room, enc.tome, false, 2.4, 0); // (a champion's epic tome, beside the elite's relic)
     if (this._ctxTips?.sigil) { this._tipQ?.unshift(this._ctxTips.sigil); this._ctxTips.sigil = null; }
     if (this.isHost) {
       const gold = Math.round((10 + this.floorIndex * 6) * (room.type === ROOM.ELITE ? 2.5 : room.type === ROOM.TRIAL && room.trialWon ? 3 : 1) * (enc?.gold ?? 1));
@@ -1849,7 +1851,8 @@ export class Game {
     const ante = main[0] ?? level.startRoom;
     for (const r of level.rooms) if (r !== boss) { r.cleared = true; r.visited = true; }
     this.interactables = this.interactables.filter((it) => {
-      const side = it.kind === 'chest' || it.kind === 'shrine' || it.kind === 'shop' || it.kind === 'altar' || it.kind === 'gambler';
+      const side = it.kind === 'chest' || it.kind === 'shrine' || it.kind === 'shop' || it.kind === 'altar' || it.kind === 'gambler' || it.kind === 'mimic';
+      if (it.kind === 'mimic' && it.room?._mimic) it.room._mimic.sprung = true; // (a vault's mimic sleeps on, unseen: no hoard in a rush)
       if (side) it.dispose?.();
       return !side;
     });
@@ -2090,7 +2093,7 @@ export class Game {
   }
 
   victory() {
-    if (this.ended) return;
+    if (this.ended || (this.isHost && this.transitioning)) return; // (the party is already on its way down into the Abyss)
     this.ended = true;
     this.net?.broadcast({ t: 'victory' });
     this.audio?.setMusic('victory');
