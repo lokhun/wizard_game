@@ -4,7 +4,8 @@
 import { chromium } from 'playwright-core';
 const PORT = process.env.PORT ?? 5190, PEER = process.env.PEER ?? 9000;
 const enc = 'mimic,secret,altar,champion';
-const peerQ = `peerHost=127.0.0.1&peerPort=${PEER}&peerPath=/wizard&peerSecure=0&quality=low&test=1&norender=1&floor=1&enc=${enc}`;
+// (a fixed seed: its layout has room for every forced encounter; a tight one drops a side room)
+const peerQ = `peerHost=127.0.0.1&peerPort=${PEER}&peerPath=/wizard&peerSecure=0&quality=low&test=1&norender=1&floor=1&seed=4242&enc=${enc}`;
 // (a browser each: two pages of one browser are one tab in front and one behind, and the one behind gets no
 // animation frames, so its game barely moves)
 const browsers = [];

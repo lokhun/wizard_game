@@ -38,9 +38,9 @@ const st = (p) => p.evaluate(() => { const q = window.__game.player; return { do
 // the host walks into a fight (the client is drawn in); the foes are made harmless, the wizards mortal
 await host.evaluate(() => { const g = window.__game; const r = g.level.rooms.filter((x) => x.type === 'combat').sort((a, b) => b.w * b.h - a.w * a.h)[0]; g.player.pos.set(r.cx, g.groundY(r.cx, r.cz), r.cz); });
 await host.waitForFunction(() => window.__game.director.active, null, { timeout: 120000 });
-// (the foes made harmless as they come, and the host whole: on a slow machine they could otherwise down the
-// host before the test begins, and a party with no one standing has lost)
-const harmless = () => host.evaluate(() => { const g = window.__game; for (const a of g.actors.list) if (a.faction === 'enemy') { a.dmgMult = 0; a.stunT = 999; } if (g.player.downed) g.player.revive(1); g.player.hp = g.player.maxHp; });
+// (the foes made harmless and the host untouchable until the last step: on a slow machine the host's world
+// runs many times longer than the client's, new waves and traps come, and a party with no one standing has lost)
+const harmless = () => host.evaluate(() => { const g = window.__game; g.godMode = true; for (const a of g.actors.list) if (a.faction === 'enemy') { a.dmgMult = 0; a.stunT = 999; } if (g.player.downed) g.player.revive(1); g.player.hp = g.player.maxHp; });
 await harmless();
 await host.waitForTimeout(3000);
 await harmless();
@@ -68,6 +68,7 @@ await client.waitForFunction(() => !window.__game.player.dead && !window.__game.
 const r2 = await st(client);
 ok('back when the chamber was cleared', !r2.dead && !r2.down && r2.hp > 0, JSON.stringify(r2));
 // 3. both fall: defeat on both, with the summary
+await host.evaluate(() => { window.__game.godMode = false; });
 for (const p of [client, host]) await p.evaluate(() => { const q = window.__game.player; q.invuln = 0; q.selfRevives = 0; q.takeDamage(99999, 'physical', null, { cause: 'a test' }); });
 for (const p of [host, client]) await p.waitForFunction(() => window.__game.ended, null, { timeout: 30000 }).catch(() => {});
 await host.waitForTimeout(2500);

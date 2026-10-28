@@ -588,7 +588,7 @@ function onLobbyMessage(msg, from) {
 }
 
 function hostStart() {
-  const seed = Math.floor(Math.random() * 1e9);
+  const seed = +new URLSearchParams(location.search).get('seed') || Math.floor(Math.random() * 1e9); // (?seed=: a test hook, as solo)
   const me = lobby.players.find((p) => p.host);
   me.classId = selectedClass;
   const pk = currentPacts();
