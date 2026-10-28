@@ -2,6 +2,7 @@ import { loadProfile, saveProfile, classRec } from './profile.js';
 import { checkFeats } from './feats.js';
 import { riteScore, prevDay } from './pacts.js';
 import { BOSS_DEFS } from '../game/enemyDefs.js';
+import { CLASS_META } from '../game/classMeta.js';
 
 // ---------------------------------------------------------------------------
 // The run tracker listens to the game's event bus and keeps this machine's
@@ -362,7 +363,27 @@ export class RunTracker {
   remoteSummary(msg) {
     const s = msg?.s;
     if (!s || typeof s !== 'object' || !s.pid || s.pid === this.g.player?.id) return;
-    this.remote.set(s.pid, s);
-    this.hooks.onRemote?.(s);
+    const c = cleanSummary(s);
+    this.remote.set(c.pid, c);
+    this.hooks.onRemote?.(c);
   }
+}
+
+// A teammate's summary comes off the wire and is drawn into the run summary's markup: keep only the fields it
+// shows, each as the type it should be (numbers finite, text a string of sane length, lists of the right shape)
+function cleanSummary(s) {
+  const num = (v) => (Number.isFinite(+v) ? +v : 0);
+  const str = (v, n = 40) => (v == null ? '' : String(v).slice(0, n));
+  const arr = (v, n) => (Array.isArray(v) ? v.slice(0, n) : []);
+  return {
+    pid: str(s.pid, 24), name: str(s.name, 16) || 'Wizard', classId: CLASS_META[s.classId] ? s.classId : 'pyromancer',
+    kills: num(s.kills), damage: num(s.damage), biggest: num(s.biggest), reactions: num(s.reactions), taken: num(s.taken), downs: num(s.downs),
+    dodges: s.dodges === undefined ? undefined : num(s.dodges), interrupts: num(s.interrupts),
+    killer: s.killer ? str(s.killer, 60) : null,
+    recap: arr(s.recap, 8).filter((h) => h && typeof h === 'object').map((h) => ({ name: str(h.name), move: h.move ? str(h.move) : '', n: num(h.n), dmg: num(h.dmg) })),
+    dmgBy: arr(s.dmgBy, 12).filter(Array.isArray).map((x) => [str(x[0]), str(x[1], 24), num(x[2])]),
+    tomes: arr(s.tomes, 120).filter(Array.isArray).map((x) => [str(x[0]), num(x[1]), num(x[2])]),
+    relics: arr(s.relics, 60).map((x) => str(x)),
+    feats: arr(s.feats, 60).map((x) => str(x)),
+  };
 }
