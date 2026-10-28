@@ -58,6 +58,7 @@ export const ITEMS = {
     desc: 'Drink: hasted for 8 s, and every spell on cooldown comes back 4 s sooner.',
     use(g, p) {
       p.hasteT = Math.max(p.hasteT ?? 0, 8);
+      p.recomputeStats(); // (the haste lives in the stats)
       for (const s in p.cds) p.cds[s] = Math.max(0, p.cds[s] - 4);
     },
     show(g, at) {

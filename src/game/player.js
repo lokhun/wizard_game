@@ -162,8 +162,8 @@ export class LocalPlayer {
       if (r.stars) applyAscended(r.def.apply, s, this, ascendK(r.stars));
       else r.def.apply?.(s, this);
     }
-    for (const r of this.relics) r.def.after?.(s, this);
     applyRelicSets(s, this);
+    for (const r of this.relics) r.def.after?.(s, this); // (last: a curse's "no longer" outranks a set's bonus)
     for (const b of this.buffs) {
       for (const k in b.mods) {
         if (k === 'cdRate') s.cdRate += b.mods[k];

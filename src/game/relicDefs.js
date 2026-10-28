@@ -31,8 +31,8 @@ export const NEW_RELICS = [
   { id: 'conductor', set: 'storm', name: "Conductor's Rod", icon: 'bolt', desc: 'Overkill damage arcs on to the nearest foe as lightning.' },
   // ---------------- Grave
   { id: 'soullantern', set: 'grave', name: 'Lantern of Lost Souls', icon: 'lantern', desc: 'Kills release a soul wisp that hunts the nearest foe for 30 necrotic damage.' },
-  { id: 'plaguecenser', set: 'grave', name: 'Plague Censer', icon: 'censer', desc: 'Foes that die Burning, Poisoned, Chilled, Shocked, Bleeding or Hexed pass those afflictions to every foe within 5m.' },
-  { id: 'gravebell', set: 'grave', name: 'Grave Bell', icon: 'bell', desc: 'Slaying 3 foes within 2.5s tolls the bell: a necrotic shockwave deals 40 damage within 7m and Slows.' },
+  { id: 'plaguecenser', set: 'grave', name: 'Plague Censer', icon: 'censer', desc: 'Foes that die Burning, Poisoned, Chilled, Shocked, Bleeding or Hexed pass those afflictions to up to 6 foes within 5m.' },
+  { id: 'gravebell', set: 'grave', name: 'Grave Bell', icon: 'bell', desc: 'Slaying 3 foes within 2.5s tolls the bell: a necrotic shockwave deals up to 40 damage within 7m (most at its heart) and Slows.' },
   // ---------------- Tide
   { id: 'rimewake', set: 'tide', name: 'Rimewake Boots', icon: 'mine', desc: 'Dashing scatters 3 frost mines. Each bursts when a foe comes near, for 30 damage and a heavy Chill.' },
   { id: 'stillwater', set: 'tide', name: 'Stillwater Idol', icon: 'idol', desc: 'Hold still for a moment and a frost sentinel rises at your side, loosing ice bolts at your foes until you move.' },
