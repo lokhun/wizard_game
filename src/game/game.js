@@ -2120,6 +2120,7 @@ export class Game {
     this.ui?.recap(this.meta?.recap?.());
   }
   onLocalDied() {
+    this._specPos = null; // (the spectator's camera starts behind the teammate, not where it was the last time)
     this.ui?.banner('SLAIN', this.isSolo ? '' : 'You will return when the chamber is cleared', '#801010');
   }
 

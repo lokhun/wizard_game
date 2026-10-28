@@ -3,12 +3,16 @@
 import { chromium } from 'playwright-core';
 const PORT = process.env.PORT ?? 5190;
 const peerQ = `peerHost=127.0.0.1&peerPort=${process.env.PEER ?? 9000}&peerPath=/wizard&peerSecure=0&quality=low&test=1&norender=1`;
-const browser = await chromium.launch({
+// (a browser each: two pages of one browser are a tab in front and one behind, and the one behind gets
+// no animation frames, so its game barely moves)
+const browsers = [];
+const launchOne = async () => { const b = await chromium.launch({
   executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
   args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--disable-renderer-backgrounding', '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows'],
-});
+}); browsers.push(b); return b; };
+const browser = { close: () => Promise.all(browsers.map((b) => b.close())) };
 const mk = async (tag) => {
-  const p = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  const p = await (await launchOne()).newPage({ viewport: { width: 1280, height: 720 } });
   p.on('pageerror', (e) => console.log(`[${tag} pageerror]`, e.message));
   p.on('console', (m) => { if (m.type() === 'error') console.log(`[${tag} err]`, m.text().slice(0, 300)); });
   return p;

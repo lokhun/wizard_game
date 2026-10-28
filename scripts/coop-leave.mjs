@@ -5,13 +5,17 @@
 import { chromium } from 'playwright-core';
 const PORT = process.env.PORT ?? 5190, PEER = process.env.PEER ?? 9000;
 const peerQ = `peerHost=127.0.0.1&peerPort=${PEER}&peerPath=/wizard&peerSecure=0&quality=low&test=1&norender=1&floor=1`;
-const browser = await chromium.launch({
+// (a browser each: two pages of one browser are a tab in front and one behind, and the one behind gets
+// no animation frames, so its game barely moves)
+const browsers = [];
+const launchOne = async () => { const b = await chromium.launch({
   executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
   args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--disable-renderer-backgrounding', '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows'],
-});
+}); browsers.push(b); return b; };
+const browser = { close: () => Promise.all(browsers.map((b) => b.close())) };
 const errors = [];
 const mk = async (tag) => {
-  const p = await browser.newPage({ viewport: { width: 960, height: 540 } });
+  const p = await (await launchOne()).newPage({ viewport: { width: 960, height: 540 } });
   p.on('pageerror', (e) => { errors.push(tag + ': ' + e.message); console.log(`[${tag} pageerror]`, e.message); });
   return p;
 };
@@ -38,9 +42,9 @@ await client.close();
 await host.waitForFunction(() => window.__game.remotes.size === 0, null, { timeout: 60000 }).catch(() => {});
 const h1 = await host.evaluate(() => { const g = window.__game; return { remotes: g.remotes.size, solo: g.isSolo, ended: g.ended, active: !!g.director.active }; });
 ok('host plays on alone, solo again', h1.remotes === 0 && h1.solo && !h1.ended, JSON.stringify(h1));
-const t0 = await host.evaluate(() => window.__game.time);
-await host.waitForTimeout(3000);
-ok('its world still runs', (await host.evaluate(() => window.__game.time)) > t0 + 0.5);
+// (stepped, not waited on: a headless page that draws nothing (norender) may be left without frames for a while)
+const w = await host.evaluate(() => { const g = window.__game, t0 = g.time; window.__sim(0.5); return { paused: g.paused, dt: g.time - t0 }; });
+ok('its world still runs', !w.paused && w.dt > 0.4, JSON.stringify(w));
 // 2. a new wizard joins mid-run, a tome choice open on its screen; then the host leaves
 const c2 = await mk('client2');
 await c2.goto(`http://localhost:${PORT}/?${peerQ}&join=${code}`, { timeout: 180000 });
