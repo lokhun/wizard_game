@@ -580,6 +580,9 @@ function applyLateState(s) {
   for (const i of s.broken ?? []) game.breakProp(i, false);
 }
 
+// a closing tab says goodbye: its party sees it go at once, not when WebRTC notices (if ever)
+addEventListener('pagehide', (e) => { if (!e.persisted) net?.close(); });
+
 function leaveNet() {
   if (net) { net.close(); net = null; }
   lobby = null;

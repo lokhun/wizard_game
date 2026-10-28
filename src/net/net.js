@@ -80,6 +80,39 @@ export class Net {
     this.snapT = 0;
     this.closed = false;
     this.rx = {};
+    this.heard = new Map(); // host: playerId -> when last heard from (performance.now)
+    this.hostHeard = 0;     // client: when the host was last heard from
+    this._hb = null;
+  }
+
+  // A tab that just closes may never close its WebRTC channels (the browser can take minutes, or forever,
+  // to notice): every side says something every 2 s, and one not heard from in 45 s is taken to have left
+  // (loads and alt-tabs stay well inside that). A page that goes away closes its peer at once (main.js).
+  _startBeat() {
+    clearInterval(this._hb);
+    this._hb = setInterval(() => {
+      if (this.closed) return;
+      const now = performance.now();
+      if (this.isHost) {
+        for (const [pid, c] of this.conns) {
+          if (c.open) c.send({ t: 'hb' });
+          if (now - (this.heard.get(pid) ?? now) > HB_TIMEOUT) this._drop(pid);
+        }
+      } else {
+        if (this.hostConn?.open) this.hostConn.send({ t: 'hb' });
+        if (this.hostHeard && now - this.hostHeard > HB_TIMEOUT) this._lost();
+      }
+    }, 2000);
+  }
+  _lost() { if (this._gone) return; this._gone = true; this.hostHeard = 0; this.onDisconnect?.(); } // (client: once)
+  _drop(pid) {
+    const c = this.conns.get(pid);
+    this.conns.delete(pid);
+    this.heard.delete(pid);
+    try { c?.close(); } catch { /* ignore */ }
+    try { this.fast.get(pid)?.close(); } catch { /* ignore */ }
+    this.fast.delete(pid);
+    this.onPeerLeft?.(pid);
   }
 
   on(fn) { this.handlers.add(fn); return () => this.handlers.delete(fn); }
@@ -108,6 +141,7 @@ export class Net {
           this.isHost = true;
           this.code = code;
           this.id = 'host';
+          this._startBeat();
           resolve(code);
         });
         peer.on('error', (err) => {
@@ -128,6 +162,8 @@ export class Net {
     const pid = 'p' + conn.peer.slice(-6);
     const onData = (msg) => {
       if (!msg || typeof msg !== 'object') return;
+      this.heard.set(pid, performance.now());
+      if (msg.t === 'hb') return;
       // routing: targeted messages from clients
       if (msg.to && msg.to !== 'host') {
         const c = this.conns.get(msg.to);
@@ -151,11 +187,14 @@ export class Net {
     }
     conn.on('open', () => {
       this.conns.set(pid, conn);
+      this.heard.set(pid, performance.now());
       conn.pid = pid;
     });
     conn.on('data', onData);
     conn.on('close', () => {
+      if (this.conns.get(pid) !== conn) return; // (already dropped as silent)
       this.conns.delete(pid);
+      this.heard.delete(pid);
       this.onPeerLeft?.(pid);
     });
     conn.on('error', (e) => console.warn('conn error', e));
@@ -177,11 +216,18 @@ export class Net {
           this.hostConn = conn;
           this.code = code.toUpperCase();
           this.id = 'p' + peer.id.slice(-6);
+          this.hostHeard = performance.now();
+          this._startBeat();
           resolve();
         });
-        const onData = (msg) => { if (msg && typeof msg === 'object' && !this._stale(msg, msg.from ?? 'host')) this._emit(msg, msg.from ?? 'host'); };
+        const onData = (msg) => {
+          if (!msg || typeof msg !== 'object') return;
+          if (this.hostHeard) this.hostHeard = performance.now();
+          if (msg.t === 'hb' || this._stale(msg, msg.from ?? 'host')) return;
+          this._emit(msg, msg.from ?? 'host');
+        };
         conn.on('data', onData);
-        conn.on('close', () => { if (!this.closed) this.onDisconnect?.(); });
+        conn.on('close', () => { if (!this.closed) this._lost(); });
         conn.on('error', (e) => console.warn('conn error', e));
         // the unordered state channel; until (unless) it opens, state goes over the reliable one
         const fast = peer.connect(PREFIX + code.toUpperCase(), { reliable: false, serialization: 'json', metadata: { fast: 1 } });
@@ -269,6 +315,7 @@ export class Net {
 
   close() {
     this.closed = true;
+    clearInterval(this._hb);
     try { this.peer?.destroy(); } catch { /* ignore */ }
     this.conns.clear();
     this.fast.clear();
@@ -277,5 +324,6 @@ export class Net {
   }
 }
 
+const HB_TIMEOUT = 45000;
 const r2 = (x) => Math.round(x * 100) / 100;
 const r3 = (x) => Math.round(x * 1000) / 1000;

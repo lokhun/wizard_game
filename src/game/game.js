@@ -234,6 +234,9 @@ export class Game {
     r.dispose();
     this.remotes.delete(id);
     this._partyGen = (this._partyGen ?? 0) + 1;
+    // the last teammate gone: solo again (pause, a second wind...); a new one joining makes it a party again
+    // (the run's record keeps that it was played in co-op)
+    if (!this.remotes.size) this.isSolo = true;
     if (this.isHost) this.director?.rescaleBosses();
     this.ui?.toast(`${r.name} left the party`);
   }

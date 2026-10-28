@@ -181,7 +181,8 @@ export function generateLevel(seed, floorIndex, force = null, opts = {}) {
   const sides = sideTypes.slice(0, biome.branches);
   // and on most floors a bargain: a blood altar or a gambler
   const bargain = F('altar') ? ROOM.ALTAR : F('gambler') ? ROOM.GAMBLER : biome.branches && er.chance(0.7) ? er.pick([ROOM.ALTAR, ROOM.GAMBLER]) : null;
-  if (bargain) sides.push(bargain);
+  // (side rooms the layout has no spot for are dropped from the end: a forced one (?enc=) goes first)
+  if (bargain) { if (F('altar') || F('gambler')) sides.unshift(bargain); else sides.push(bargain); }
   let branches = sides.length;
   const candidates = rng.shuffle(mainRooms.slice(1, -2));
   for (const host of candidates) {

@@ -121,6 +121,7 @@ function magmaTexture() {
 }
 
 const _hp = { x: 0, z: 0 };
+const _wp = new THREE.Vector3();
 // Arrows that miss stay where they land: stuck in the wall or the floor, quivering a moment, gone after a
 // few seconds. A pool of 24 in one instanced mesh of the arrow (count kept at one zero-sized arrow, so its
 // program compiles with the level's).
@@ -800,6 +801,15 @@ export class SpellRuntime {
       if (bp) out.push({ actor: a, t: best, point: new THREE.Vector3(bp[0], bp[1], bp[2]) });
     }
     out.sort((a, b) => a.t - b.t);
+    // a local wizard's bolt or beam that stops on a wall cracks a secret wall there, as a spell striking it does
+    if (this.localCast) {
+      const end = out.length ? out[0].t : wall;
+      if (wall < maxDist && end > wall - 0.05) this.g.encounters?.smash(_wp.set(origin.x + dir.x * wall, origin.y + dir.y * wall, origin.z + dir.z * wall), 0.4);
+      // and the barrels and crates it passes through on its way
+      for (let t = 0.5; t < Math.min(end, maxDist); t += 0.5) {
+        for (const b of this.g.breakablesNear(_wp.set(origin.x + dir.x * t, origin.y + dir.y * t, origin.z + dir.z * t), 0.25)) this.g.breakProp(b.i, true);
+      }
+    }
     return { hits: out, wall };
   }
 
@@ -852,6 +862,16 @@ export class SpellRuntime {
     const cosA = Math.cos(halfAngle);
     const hl = Math.hypot(dir.x, dir.z) || 1;
     const fx = dir.x / hl, fz = dir.z / hl;
+    // a local wizard's blade (a short arc) that reaches a wall cracks a secret wall there
+    if (this.localCast && range <= 6) {
+      const w = this.g.collision.raycast(origin.x, origin.y, origin.z, fx, 0, fz, range, 0.2);
+      if (w < range) this.g.encounters?.smash(_wp.set(origin.x + fx * w, origin.y, origin.z + fz * w), 0.5);
+      // and the barrels and crates in its arc
+      for (const b of this.g.breakablesNear(_wp.set(origin.x + fx * range * 0.5, origin.y, origin.z + fz * range * 0.5), range * 0.6)) {
+        const dx = b.x - origin.x, dz = b.z - origin.z, d = Math.hypot(dx, dz) || 1;
+        if (d - b.r <= range && (dx * fx + dz * fz) / d >= cosA) this.g.breakProp(b.i, true);
+      }
+    }
     for (const a of this.g.actors.hostiles()) {
       const c = hitPoint(a, origin.x, origin.z, _hp);
       const dx = c.x - origin.x, dz = c.z - origin.z;

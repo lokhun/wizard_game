@@ -469,15 +469,13 @@ export class LocalPlayer {
     if (sp.mode === 'channel') {
       const S = {};
       this.channel = { slot, S, ctx, t: 0, max: sp.channel.max ?? 3 };
-      const sl = this.game.spells.slot; this.game.spells.slot = slot;
-      sp.channel.start(ctx, S);
-      this.game.spells.slot = sl;
+      const sl = this.game.spells.slot; this.game.spells.slot = slot; this.game.spells.localCast = true;
+      try { sp.channel.start(ctx, S); } finally { this.game.spells.slot = sl; this.game.spells.localCast = false; }
       this.game.net?.sendCast({ pid: this.id, slot, o: origin, d: dir, ap: aim.point, chan: 1, au: this.stats.augSlot?.[slot] });
     } else {
       const edgeBefore = this.edge;
-      const sl = this.game.spells.slot; this.game.spells.slot = slot;
-      sp.cast(ctx);
-      this.game.spells.slot = sl;
+      const sl = this.game.spells.slot; this.game.spells.slot = slot; this.game.spells.localCast = true;
+      try { sp.cast(ctx); } finally { this.game.spells.slot = sl; this.game.spells.localCast = false; }
       this.game.net?.sendCast({ pid: this.id, slot, o: origin, d: dir, ap: aim.point, ch: edgeBefore, au: this.stats.augSlot?.[slot] });
     }
     this.game.onLocalCast?.(slot);
@@ -777,7 +775,8 @@ export class LocalPlayer {
         ch.ctx.aimPoint.copy(aim.point);
         ch.ctx.stats = this.stats;
         const sl = this.game.spells.slot; this.game.spells.slot = ch.slot;
-        sp.channel.update(ch.ctx, ch.S, dt);
+        this.game.spells.localCast = true;
+        try { sp.channel.update(ch.ctx, ch.S, dt); } finally { this.game.spells.localCast = false; }
         this.game.spells.slot = sl;
         if (this.castAnim) this.castAnim.t = Math.min(this.castAnim.t, 0.2);
       }

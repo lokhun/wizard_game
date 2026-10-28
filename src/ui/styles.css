@@ -154,6 +154,7 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .pmain { flex: 1; min-width: 0; }
 .hp-name { font-family: var(--serif); font-size: 14px; letter-spacing: 0.12em; color: #f0e2c4; margin-bottom: 5px; display: flex; justify-content: space-between; align-items: baseline; text-shadow: 0 1px 2px #000; }
 .hp-name .cls { color: color-mix(in srgb, var(--pc) 70%, #9a8f7c); font-size: 11px; letter-spacing: 0.25em; text-transform: uppercase; }
+.hp-name { gap: 10px; } .hp-name > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .hp-name .cls { flex: none; } /* (a long name gives way to the class, not the plate's edge) */
 .pfoot { display: flex; align-items: center; gap: 12px; margin-top: 7px; min-height: 12px; }
 .pfoot .resource { margin-top: 0; }
 .hp-wrap.low .medal { animation: lowhp 0.9s ease-in-out infinite; }
