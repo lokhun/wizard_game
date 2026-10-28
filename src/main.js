@@ -680,6 +680,7 @@ let rafAt = 0, hiddenAt = 0, hiddenTimer = null;
 document.addEventListener('visibilitychange', () => {
   clearInterval(hiddenTimer); hiddenTimer = null;
   if (!document.hidden) return;
+  input.down.clear(); input.mouse.left = input.mouse.right = false; // (no key is held in a tab no one is looking at)
   hiddenAt = performance.now();
   hiddenTimer = setInterval(() => {
     const now = performance.now();
