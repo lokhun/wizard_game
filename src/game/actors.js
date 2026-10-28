@@ -451,6 +451,7 @@ export class ActorManager {
     const g = this.g;
     if (!a.alive) return 0;
     if (a.state === 'spawn' && a.stateT < 0.3 && !a.boss) return 0;
+    if (a.introHold > 0) return 0; // (a boss still making its entrance isn't a target: a client's view of it may say otherwise)
     let dmg = H.dmg ?? 0;
     const def = a.def;
     if (a.dormant) {
@@ -1218,7 +1219,8 @@ export class ActorManager {
     const speed = def.speed * mm * (hasAffix(a, 'hasted') ? 1.4 : hasAffix(a, 'frenzied') ? 1.12 : 1) * a.speedMult * (a.mask & ST.empower ? 1.15 : 1);
 
     if (a.state === 'windup') {
-      a.yaw = angleDamp(a.yaw, faceYaw, a.attack.kind === 'charge' ? 2 : 8, dt);
+      // (a charge holds the line it marked when the wind-up began: that lane is where it runs and where it hurts)
+      if (a.attack.kind !== 'charge') a.yaw = angleDamp(a.yaw, faceYaw, 8, dt);
       if (a.attack.laser) this._laser(a);
       if (a.stateT >= a.attack.windup) this._strike(a, tgt, dist);
       return out;
@@ -1234,7 +1236,7 @@ export class ActorManager {
         }
       }
       // (a charge runs its whole marked lane and a leap lands before the foe recovers)
-      if (a.stateT > 0.35 && !(a.leapT > 0)) this._setState(a, 'recover', 'idle');
+      if (a.stateT > 0.35 && !(a.leapT > 0)) { a.recoverT = a.attack?.recover ?? 0.6; this._setState(a, 'recover', 'idle'); } // (its authored recovery: the state change clears the attack)
       return out;
     }
     if (a.state === 'recover') {
@@ -1244,7 +1246,7 @@ export class ActorManager {
         a._combo = null;
         if (at && this._canUse(a, at, dist, tRad, true)) { this._beginAttack(a, at, tgt); return out; }
       }
-      if (a.stateT > (a.attack?.recover ?? 0.6) * (hasAffix(a, 'frenzied') ? 0.5 : 1) * (a.faction === 'enemy' ? g.difficulty?.aiRecover ?? 1 : 1)) this._setState(a, 'chase', 'idle', null);
+      if (a.stateT > (a.recoverT ?? 0.6) * (hasAffix(a, 'frenzied') ? 0.5 : 1) * (a.faction === 'enemy' ? g.difficulty?.aiRecover ?? 1 : 1)) this._setState(a, 'chase', 'idle', null);
       return out;
     }
 

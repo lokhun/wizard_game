@@ -83,7 +83,7 @@ export function handleGameMessage(game, msg, from) {
       if (game.isHost || game.actors.byId.has(msg.id)) return;
       const a = game.actors.spawn(msg.ty, msg.x, msg.z, { id: msg.id, yaw: msg.yaw, elite: !!msg.e, hp: msg.hp, faction: msg.f ? 'ally' : 'enemy', affix: msg.af, affix2: msg.af2 ?? null, life: msg.life, silent: true, spawnFx: msg.nf ? false : undefined, dormant: !!msg.dm, homeRoom: msg.hr >= 0 ? game.level.rooms[msg.hr] : null });
       a.net.x = msg.x; a.net.z = msg.z; a.net.yaw = msg.yaw;
-      if (msg.fly) a.model?.setFlying?.(true);
+      if (msg.fly !== undefined) a.model?.setFlying?.(!!msg.fly); // (a late joiner's Gravemaw may have landed: its init says it flies)
       break;
     }
     case 'die': {

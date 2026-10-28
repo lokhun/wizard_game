@@ -20,7 +20,8 @@
     if (!boss) { log.push(`F${f}: FAIL no boss`); continue; }
     const B = boss.brain, at = AT[boss.type];
     if (!at) { log.push(`F${f} ${boss.type}: no gate (its own thresholds)`); boss.hp = 0; g.actors.kill(boss, 0, 'physical'); window.__sim(1); continue; }
-    window.__sim(3, 1 / 30, keep); // (the intro)
+    window.__sim(3, 1 / 30, keep); // (the intro: a boss making its entrance takes no blows)
+    for (let i = 0; i < 150 && boss.introHold > 0; i++) window.__sim(0.1, 1 / 30, keep);
     // walk it through the earlier phases to just over the gate's threshold, then cross it
     const cross = () => { boss.hp = boss.maxHp * (at + 0.02 + (g.difficulty?.bossEnrage ?? 0)); window.__sim(0.5, 1 / 30, keep); g.actors.damage(boss, { dmg: boss.maxHp * 0.05, src: p.id }); };
     if (boss.type === 'courtArchmage') { boss.hp = boss.maxHp * 0.62; window.__sim(3, 1 / 30, keep); for (const a of g.actors.list) if (!a.boss && a.faction === 'enemy') { a.hp = 0; g.actors.kill(a, 0, 'holy'); } }
@@ -44,7 +45,7 @@
       if (kind === 'brood') { for (const id of B.gate.ids) { const m = g.actors.byId.get(id); if (m && !m.dead) { m.hp = 0; g.actors.kill(m, 0, 'holy'); break; } } }
       if (kind === 'stone') { const bx = Math.sin(boss.yaw), bz = Math.cos(boss.yaw); p.pos.set(boss.pos.x - bx * 4, boss.pos.y, boss.pos.z - bz * 4); B.invuln = 0; g.actors.damage(boss, { dmg: boss.maxHp * 0.008, src: p.id, kbDir: [bx, bz] }); }
       if (kind === 'ward') { const q = B.gate.gl.find((q) => !q.lit); if (q) p.pos.set(q.x, g.groundY(q.x, q.z), q.z); }
-      if (kind === 'judgment' && i % 12 === 6) g.events.emit('perfectDodge');
+      if (kind === 'judgment' && i % 12 === 6) g.events.emit('perfectDodge', boss); // (a dodge of his blow)
       window.__sim(0.1, 1 / 30, keep);
     }
     const broke = !B.gate, took = (g.time - t0).toFixed(1), exposed = B.exposed > 0;

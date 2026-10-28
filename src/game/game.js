@@ -152,7 +152,7 @@ export class Game {
     this._aimT = 0; // (the crosshair's weak-point probe: next run)
     this._learned = null; this._dashN = 0; // (once-ever tips: learn())
     this.events.on('dashJump', () => this.learn('dashjump'));
-    this.events.on('perfectDodge', () => { if (this.isHost) this._bossDodge(); else this.net?.send?.({ t: 'pdodge' }); });
+    this.events.on('perfectDodge', (from) => { if (!from?.boss) return; if (this.isHost) this._bossDodge(); else this.net?.send?.({ t: 'pdodge' }); });
     // (Nightmare) a chamber you leave untouched earns a Dread Mark: watch what the local player takes per fight
     this.events.on('roomLock', (room, on) => { if (on) { this._fightRoom = room; this._fightHurt = 0; } });
     this.events.on('hurt', (dmg) => { if (this._fightRoom) this._fightHurt += dmg; });
@@ -1390,7 +1390,11 @@ export class Game {
       const fx = Math.sin(h.rot), fz = Math.cos(h.rot);
       const t = Math.max(0, Math.min(h.len, (to.x - h.x) * fx + (to.z - h.z) * fz));
       ox = h.x + fx * t; oz = h.z + fz * t;
-      if (!this.collision.los(h.x, gy + 1.0, h.z, ox, gy + 1.0, oz)) return false; // (the lane itself runs into the wall)
+      // (the lane itself runs into the wall) - traced from where it first leaves the stone: a lane laid
+      // across a whole arena (Ward Surge, Gallows Blades) starts past its walls
+      let sx = h.x, sz = h.z;
+      for (let d = 0; d < t && this.collision.cellBlocked(Math.floor(sx / T), Math.floor(sz / T), gy + 0.5); d += 0.5) { sx = h.x + fx * d; sz = h.z + fz * d; }
+      if (!this.collision.los(sx, gy + 1.0, sz, ox, gy + 1.0, oz)) return false;
     }
     return this.collision.los(ox, gy + 1.0, oz, to.x, to.y + 1.0, to.z);
   }

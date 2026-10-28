@@ -549,7 +549,7 @@ function onLobbyMessage(msg, from) {
       if (mode !== 'run' || !game || game.menuMode) return;
       for (const a of game.actors.list) {
         if (a.dead) continue;
-        net.sendTo(from, { t: 'spawn', id: a.id, ty: a.type, x: a.pos.x, z: a.pos.z, yaw: a.yaw, e: a.elite ? 1 : 0, hp: a.maxHp, f: a.faction === 'ally' ? 1 : 0, af: a.affix, af2: a.affix2, fly: a.brain?.data?.fly ? 1 : 0 });
+        net.sendTo(from, { t: 'spawn', id: a.id, ty: a.type, x: a.pos.x, z: a.pos.z, yaw: a.yaw, e: a.elite ? 1 : 0, hp: a.maxHp, f: a.faction === 'ally' ? 1 : 0, af: a.affix, af2: a.affix2, fly: a.brain?.data?.fly ? 1 : 0, dm: a.dormant ? 1 : 0 });
         if (a.boss) net.sendTo(from, { t: 'boss', id: a.id, late: 1 }); // (mid-fight: no entrance for them)
       }
       const act = game.director.active;

@@ -155,6 +155,7 @@ export class BossBrain {
         const ang = Math.random() * Math.PI * 2;
         const x = a.pos.x + Math.cos(ang) * radius, z = a.pos.z + Math.sin(ang) * radius;
         if (g.collision.cellBlocked(Math.floor(x / 2), Math.floor(z / 2), a.pos.y + 0.5)) continue;
+        if (this.data.room && g.level.roomAt(x, z) !== this.data.room) continue; // (not through a door, outside the arena)
         const m = g.director.spawnEnemy(type, x, z, { noCredit: true });
         if (m) out.push(m);
         break;
@@ -263,6 +264,8 @@ export class BossBrain {
     while (this.phase < phases.length - 1 && (this.hpf <= phases[this.phase + 1].at || (phases[this.phase + 1].after && this.fightT >= phases[this.phase + 1].after))) {
       this.phase++;
       this.events.length = 0;
+      // (a phase that turns while she's under the bile wipes her surfacing: she surfaces where she is)
+      if (this.a.hiddenT) this.fx('emerge');
       if (this.gate) this.closeGate(false); // (one gate at a time: a new phase brings its own)
       this.moveVel = null;
       this.spinT = 0;
