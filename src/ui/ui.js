@@ -1163,6 +1163,8 @@ export class UI {
     h.boss.style.setProperty('--gc', L.color);
     setText(h.bossGateName, L.name);
     setText(h.bossGateLeft, L.left(G.n));
+    // (a narrow screen puts what it asks under its name: the banner then sits a line lower)
+    h.boss.classList.toggle('gwrap', h.bossGateLeft.offsetTop > h.bossGateName.offsetTop + 4);
   }
 
   bossIntro(a) {
