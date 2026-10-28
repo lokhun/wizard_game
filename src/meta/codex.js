@@ -127,7 +127,7 @@ function recordsPage(p) {
     ${t('Deepest Abyss', p.records.deepestAbyss ? `depth ${p.records.deepestAbyss}` : '—')}
     ${t('Co-op victories', fmtNum(p.coopWins))}
     ${t('Nemesis', nemesis ? esc((ENEMY_DEFS[nemesis[0]] ?? BOSS_DEFS[nemesis[0]])?.name ?? nemesis[0]) : '—', nemesis ? `ended ${nemesis[1]} run${nemesis[1] > 1 ? 's' : ''}` : '')}
-    ${t('Daily Rite streak', d.streak ? `${d.streak} day${d.streak > 1 ? 's' : ''}` : '—', `best ${d.bestStreak} · ${d.runs} rite${d.runs === 1 ? '' : 's'}`)}
+    ${t('Daily Rite streak', d.streak && (d.last === utcDay() || d.last === prevKey()) ? `${d.streak} day${d.streak > 1 ? 's' : ''}` : '—', `best ${d.bestStreak} · ${d.runs} rite${d.runs === 1 ? '' : 's'}`)}
   </div>`;
 }
 

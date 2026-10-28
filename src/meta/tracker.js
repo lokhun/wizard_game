@@ -171,7 +171,7 @@ export class RunTracker {
     const r = this.run;
     if (!FIGHT.has(room.type) || r.cur?.id === room.id) return;
     if (r.cur) this._closeRoom(false);
-    r.cur = { id: room.id, f: this.g.floorIndex, type: room.type, t0: this.g.stats.time, t: 0, dmg: 0, dashes: 0, kills: 0, done: false, trial: null };
+    r.cur = { id: room.id, f: this.g.floorIndex, ab: this.g.abyss ?? 0, type: room.type, t0: this.g.stats.time, t: 0, dmg: 0, dashes: 0, kills: 0, done: false, trial: null };
   }
 
   _closeRoom(done) {
@@ -247,7 +247,7 @@ export class RunTracker {
       dmgBy: Object.entries(p.dmgBy ?? {}).filter(([, v]) => v >= 1).sort((a, b) => b[1] - a[1]).slice(0, 7)
         .map(([k, v]) => [p.cls?.spells?.[k]?.name ?? SOURCE[k]?.[0] ?? k, p.cls?.spells?.[k]?.icon ?? SOURCE[k]?.[1] ?? 'star', Math.round(v)]),
       tomes: [...tomes.values()], relics: p.relics.map((x) => x.def?.id).filter(Boolean),
-      rooms: r.rooms.map((c) => [c.f, c.type, Math.round(c.t), Math.round(c.dmg), (c.done ? 1 : 0) | (c.trial ? 2 : 0), c.kills]),
+      rooms: r.rooms.map((c) => [c.f, c.type, Math.round(c.t), Math.round(c.dmg), (c.done ? 1 : 0) | (c.trial ? 2 : 0), c.kills, c.ab ?? 0]),
     };
   }
 
@@ -279,6 +279,8 @@ export class RunTracker {
     r.ended = true; r.abandoned = true;
     r.time = this.g.stats.time;
     r.winTime ||= r.time;
+    // a run left in the Abyss was already won: its victory's feats are earned as on any other ending
+    if (r.won) { r.coop ||= !this.g.isSolo; if (r.cur) this._closeRoom(false); this.fire('end'); }
     this.record();
   }
 
@@ -351,7 +353,7 @@ export class RunTracker {
       if (d.last !== r.daily) { d.streak = d.last === prevDay(r.daily) ? d.streak + 1 : 1; d.last = r.daily; }
       d.bestStreak = Math.max(d.bestStreak, d.streak);
       d.runs++;
-      const res = { date: r.daily, floor: realm, won: r.won, time: Math.round(r.time), kills: r.kills };
+      const res = { date: r.daily, floor: realm, won: r.won, time: Math.round(r.won ? r.winTime : r.time), kills: r.kills }; // (a won rite is timed to its throne: the Abyss after it is no slower win)
       res.score = riteScore(res);
       if (!d.best || d.best.date !== r.daily || res.score > d.best.score) { if (d.best?.date === r.daily) rec.daily = true; d.best = res; }
     }

@@ -504,7 +504,7 @@ async function doJoin(code, api) {
     net.onDisconnect = () => {
       if (net !== myNet) return;
       if (mode === 'run') ui.banner('CONNECTION LOST', 'The host has left the party', '#c04030', 6);
-      setTimeout(() => { if (net !== myNet) return; leaveNet(); game.ended = true; startBackdrop(); showMenu(); }, mode === 'run' ? 4000 : 0);
+      setTimeout(() => { if (net !== myNet) return; if (mode === 'run' && game && !game.ended && !game.menuMode) game.events.emit('abandon'); leaveNet(); game.ended = true; startBackdrop(); showMenu(); }, mode === 'run' ? 4000 : 0); // (the run so far is kept, as one left)
     };
     net.send({ t: 'hello', name: settings.name || 'Wizard', cls: selectedClass, v: BUILD });
     showSelect({ isHost: false, code: net.code });

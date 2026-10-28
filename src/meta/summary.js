@@ -49,13 +49,14 @@ function chronicle(S) {
   if (!rooms.length) return '<div class="rs-empty">No chamber was fought.</div>';
   const maxDmg = Math.max(1, ...rooms.map((r) => r[3]));
   const floors = new Map();
-  for (const r of rooms) { if (!floors.has(r[0])) floors.set(r[0], []); floors.get(r[0]).push(r); }
+  // (by realm and by depth: in the Abyss the realms come round again)
+  for (const r of rooms) { const key = (r[6] ?? 0) * 10 + r[0]; if (!floors.has(key)) floors.set(key, []); floors.get(key).push(r); }
   let html = '', k = 0;
-  for (const [f, list] of floors) {
-    const b = BIOMES[f];
+  for (const [key, list] of floors) {
+    const f = key % 10, ab = Math.floor(key / 10), b = BIOMES[f];
     const fc = (REALM_COL[b?.id] ?? DAWN)[0];
     const tt = list.reduce((s, r) => s + r[2], 0), dd = list.reduce((s, r) => s + r[3], 0);
-    html += `<div class="rs-floor" style="--fc:${fc};animation-delay:${0.25 + k++ * 0.08}s"><div class="fl"><b>${ROMAN[f] ?? f + 1} · ${esc((b?.name ?? '').replace(/^The /, ''))}</b><span>${fmtTime(tt)} · ${fmtNum(dd)} taken</span></div>`;
+    html += `<div class="rs-floor" style="--fc:${fc};animation-delay:${0.25 + k++ * 0.08}s"><div class="fl"><b>${ROMAN[f] ?? f + 1} · ${esc((b?.name ?? '').replace(/^The /, ''))}${ab ? ` · Abyss ${ab}` : ''}</b><span>${fmtTime(tt)} · ${fmtNum(dd)} taken</span></div>`;
     for (const [, type, t, dmg, flags, kills] of list) {
       const [ic, col, label] = ROOM_GLYPH[type] ?? ROOM_GLYPH.combat;
       const done = flags & 1, fell = !done;
