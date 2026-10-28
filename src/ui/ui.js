@@ -1306,7 +1306,7 @@ export class UI {
         <div class="subtitle" style="margin-bottom:6px">Your build</div>
         <div>${tomes || '<span style="color:var(--text-dim)">No tomes bound yet.</span>'}</div>
         ${relics ? `<div class="relic-pause">${relics}</div>` : ''}
-        <div style="margin-top:8px;color:var(--text-dim);font-size:13px">Damage ×${st.dmgMult.toFixed(2)} · Crit ${Math.round(st.critChance * 100)}% (×${st.critMult.toFixed(2)}) · Cooldowns −${Math.round(st.cdr * 100)}% · Armor ${Math.round(st.armor * 100)}% · Speed ${st.moveSpeed.toFixed(1)}</div>
+        <div style="margin-top:8px;color:var(--text-dim);font-size:13px">Damage ×${st.dmgMult.toFixed(2)} · Crit ${Math.round(st.critChance * 100)}% (×${st.critMult.toFixed(2)}) · Cooldowns ${((c) => (c > 0 ? '−' : c < 0 ? '+' : '') + Math.abs(c))(Math.round(st.cdr * 100))}% · Armor ${Math.round(st.armor * 100)}% · Speed ${st.moveSpeed.toFixed(1)}</div>
       </div>`;
     }
     const m = this._modal(`
