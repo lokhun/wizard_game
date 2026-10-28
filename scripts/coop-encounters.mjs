@@ -85,7 +85,8 @@ const curse = await both(() => window.__game.encounters.curse);
 if (!(curse[0] > 0) || curse[0] !== curse[1]) fails.push('curse');
 console.log('curse (host, client):', JSON.stringify(curse));
 // 4. the champion: both see its name and bar
-await both(() => { const g = window.__game, r = g.level.rooms.find((x) => x.type === 'elite'); g.player.pos.set(r.cx, g.groundY(r.cx, r.cz), r.cz); });
+// (the secret step marks the secret's host room won: when that was the elite room, it must fight again)
+await both(() => { const g = window.__game, r = g.level.rooms.find((x) => x.type === 'elite'); r.cleared = false; g.player.pos.set(r.cx, g.groundY(r.cx, r.cz), r.cz); });
 await host.evaluate(() => {
   const g = window.__game;
   window.__aimT = setInterval(() => {

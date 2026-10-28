@@ -36,6 +36,15 @@ let saved = null;
 try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null'); settings = { ...defaults, ...(saved ?? {}) }; } catch { /* ignore */ }
 // First visit: start at a quality the GPU can carry. Integrated / mobile GPUs
 // begin on Medium, software renderers on Low; dynamic resolution handles the rest.
+// stored settings are taken on trust nowhere: a value of the wrong kind falls back to its default and the sliders'
+// values to their range (a stray fov of -5 had the world through a 5-degree slit)
+for (const k of Object.keys(defaults)) {
+  const d = defaults[k], v = settings[k];
+  if (typeof v !== typeof d || (typeof d === 'number' && !Number.isFinite(v)) || (k === 'keys' && (!v || Array.isArray(v)))) settings[k] = d;
+}
+for (const [k, lo, hi] of [['master', 0, 1], ['music', 0, 1], ['sfx', 0, 1], ['sensitivity', 0.2, 3], ['fov', 65, 105], ['shake', 0, 1.5], ['hudScale', 0.75, 1.3]]) settings[k] = Math.min(hi, Math.max(lo, settings[k]));
+settings.name = settings.name.slice(0, 16);
+if (!['low', 'medium', 'high', 'ultra'].includes(settings.quality)) delete saved?.quality;
 if (!saved?.quality) settings.quality = guessQuality();
 function guessQuality() {
   try {
