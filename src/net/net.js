@@ -300,7 +300,7 @@ export class Net {
     if (this.stateT >= 1 / 20 && p) {
       this.stateT = 0;
       const s = { t: 'ps', id: p.id, p: [r2(p.pos.x), r2(p.pos.y), r2(p.pos.z)], y: r3(p.yaw), pi: r3(p.pitch), hp: Math.ceil(p.hp), mh: p.maxHp, sh: Math.ceil(p.shield),
-        dn: p.downed ? 1 : 0, dd: p.dead ? 1 : 0, u: Math.floor(p.ult), g: Math.floor(p.gold), lv: game.floorIndex };
+        dn: p.downed ? 1 : 0, dd: p.dead ? 1 : 0, u: Math.floor(p.ult), g: Math.floor(p.gold), lv: game.floorIndex, dm: Math.round(p.damageDealt), k: p.kills };
       this.sendState(s);
     }
     if (this.isHost) {

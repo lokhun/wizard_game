@@ -8,7 +8,7 @@ import '@fontsource/im-fell-english/400-italic.css';
 import './ui/styles.css';
 import * as THREE from 'three';
 import { Renderer } from './render/renderer.js';
-import { Input, applyBindings } from './core/input.js';
+import { Input, applyBindings, KEYS } from './core/input.js';
 import { UI } from './ui/ui.js';
 import { Chat } from './ui/chat.js';
 import { BUILD, newerBuild } from './core/version.js';
@@ -659,6 +659,11 @@ input.onLockChange = (locked) => {
     game.paused = false;
   }
 };
+// P (pause's other key; Escape is the browser's own: it releases the mouse) lets the mouse go too, which pauses
+window.addEventListener('keydown', (e) => {
+  if (e.repeat || e.code === 'Escape' || !KEYS.pause.includes(e.code) || e.target?.closest?.('input, textarea, [contenteditable]')) return;
+  if (mode === 'run' && game && !game.ended && input.locked) input.unlock();
+});
 // any click during a run takes the mouse back when nothing is asking for it
 // (not just one on the bare canvas: the HUD covers much of it)
 window.addEventListener('mousedown', () => {

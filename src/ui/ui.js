@@ -285,8 +285,8 @@ export class UI {
           <div><span class="k">${esc(keyOf('ability1'))} / ${esc(keyOf('ability2'))}</span> abilities</div><div><span class="k">${esc(keyOf('ultimate'))}</span> ultimate (charges as you deal damage)</div>
           <div><span class="k">${esc(keyOf('dash'))}</span> dash (brief invulnerability)</div><div><span class="k">${esc(keyOf('jump'))}</span> jump — leap over shockwaves</div>
           <div><span class="k">${esc(keyOf('interact'))}</span> interact / revive allies</div><div><span class="k">${esc(BINDS.map.map(keyLabel).join(' / '))}</span> map</div>
-          <div><span class="k">Esc</span> pause & settings</div><div><span class="k">${esc(keyOf('ping'))}</span> ping a foe, item or spot</div>
-          <div><span class="k">${esc(keyOf('item'))}</span> use your item</div><div></div>
+          <div><span class="k">Esc / P</span> pause & settings</div><div><span class="k">${esc(keyOf('ping'))}</span> ping a foe, item or spot</div>
+          <div><span class="k">${esc(keyOf('item'))}</span> use your item</div><div><span class="k">${esc(keyOf('scores'))}</span> party scores (hold)</div>
         </div>
         <p><b style="color:var(--bronze-hi)">Skill pays:</b> dash through a blow at the last moment for a <i>perfect dodge</i> (+25% damage for a few seconds); jump during a dash (or just after) for a <i>dash-jump</i>, a long bound that keeps half its speed; aim for the head (the front of a beast; the crosshair turns gold over one) and a direct hit strikes a <i>weak point</i> for +35%, marked in gold; stagger or kill a foe as it winds up and you <i>interrupt</i> the blow (+5% ultimate). Enemy shots only bend toward you early in their flight: a late sidestep always beats them. The run summary scores your mastery against your best. <i>Items</i> (a fire flask, a frost phial, a rallying bell...) drop from elites and bosses, wait in chests and sit on the merchant's table: you carry one at a time, so spend it. A boss that lands a leap, ends a whirl or a charge is <i>EXPOSED</i> for a moment (+30% damage): dodge the blow, then punish it. When you fall, <i>What hit you</i> shows the blows that did it.</p>
         <p><b style="color:var(--bronze-hi)">For a harder fight:</b> <i>Nightmare</i> (on the wizard select) makes foes smarter and relentless and gives every boss a new move; chambers cleared without a scratch earn Dread Marks (+5% damage each). <i>Boss Rush</i> pits you against the five bosses back to back. After your first victory, <i>Pacts</i> raise the heat for finer rewards, and the Hollow King's fall opens the endless <i>Abyss</i>.</p>
@@ -398,6 +398,7 @@ export class UI {
       <div class="boss-bar hidden"><div class="bname"></div><div class="btitle"></div><div class="bframe"><i class="cap l"></i><div class="bar"><div class="lag"></div><div class="fill"></div><div class="sheen"></div><div class="phase-marks"></div></div><i class="cap r"></i></div><div class="bgate hidden"><span class="gname"></span><span class="gleft"></span><div class="gtime"><div></div></div></div></div>
       <div class="wave-ind"></div>
       <div class="team"></div>
+      <div class="scores hidden"></div>
       <div class="hp-wrap" style="--pc:${col}">
         <div class="buffs"></div>
         <div class="pframe">
@@ -427,7 +428,7 @@ export class UI {
       dash: q('.dash-pips'), res: q('.resource'), buffs: q('.buffs'),
       slots: Object.fromEntries(SLOTS.map((s) => [s, q(`.slot[data-slot="${s}"]`)])),
       gold: q('#goldTxt'), goldBox: q('.gold-box'), dread: q('#dreadTxt'), dreadBox: q('.gold-box .dread'), prompt: q('.prompt'), toasts: q('.toasts'), banner: q('.banner'),
-      hit: q('.hitmarker'), team: q('.team'), boss: q('.boss-bar'), bossFill: q('.boss-bar .fill'), bossLag: q('.boss-bar .lag'),
+      hit: q('.hitmarker'), team: q('.team'), scores: q('.scores'), boss: q('.boss-bar'), bossFill: q('.boss-bar .fill'), bossLag: q('.boss-bar .lag'),
       bossName: q('.boss-bar .bname'), bossGate: q('.boss-bar .bgate'), bossGateName: q('.boss-bar .gname'), bossGateLeft: q('.boss-bar .gleft'), bossGateTime: q('.boss-bar .gtime div'), bossTitle: q('.boss-bar .btitle'), minimap: q('.minimap'), fname: q('.fname'), fsub: q('.fsub'),
       obj: q('.objective'), deadline: q('.floor-info .deadline'), wave: q('.wave-ind'), dmgDir: q('.damage-dir'), clickHint: q('.click-hint'),
     };
@@ -557,6 +558,7 @@ export class UI {
         <div class="tm ${r.downed || r.dead ? 'down' : ''}" style="--pc:${hex(r.meta.color)}"><div class="row"><span class="tmedal">${classEmblem(r.classId, hex(r.meta.color), 18)}</span><span class="tname">${esc(r.name)}</span><span class="thp">${r.dead ? 'SLAIN' : r.downed ? 'DOWN' : Math.ceil(r.hp)}</span></div>
         <div class="bar small ally"><div class="fill" style="width:${Math.max(0, r.hp / r.maxHp) * 100}%;--hpc:${r.downed || r.dead ? '#8a8a8a' : allyHpColor(r.hp / r.maxHp)}"></div></div></div>`).join('');
     }
+    this._scores(dt, game);
     // boss
     if (this.bossActor) {
       const a = this.bossActor;
@@ -599,6 +601,20 @@ export class UI {
     h.clickHint.classList.toggle('hidden', this.input.locked || this.modalOpen || game.ended || !!this.pauseEl);
     this._minimap(game);
     this._draw2d(dt, game);
+  }
+
+  // party scores: while the key is held, each wizard's damage, kills and gold, the most damage first
+  // (the teammates' come with their state messages)
+  _scores(dt, game) {
+    const el = this.h.scores, on = this.input.is('scores') && !this.modalOpen && !this.pauseEl;
+    if (this._scOn !== on) { this._scOn = on; el.classList.toggle('hidden', !on); this._scT = 0; }
+    if (!on || (this._scT -= dt) > 0) return;
+    this._scT = 0.25;
+    const all = [game.player, ...game.remotes.values()].sort((a, b) => (b.damageDealt ?? 0) - (a.damageDealt ?? 0));
+    const num = (n) => Math.round(n ?? 0).toLocaleString('en-US');
+    el.innerHTML = `<div class="sc-title">${all.length > 1 ? 'The party' : 'Your run'}</div>
+      <div class="sc-row sc-head"><span></span><span>Wizard</span><span>Damage</span><span>Kills</span><span>Gold</span></div>`
+      + all.map((w) => `<div class="sc-row${w === game.player ? ' me' : ''}" style="--pc:${hex(w.meta.color)}"><span class="tmedal">${classEmblem(w.classId, hex(w.meta.color), 16)}</span><span class="sc-name">${esc(w.name)}<i>${w.meta.name}</i></span><span>${num(w.damageDealt)}</span><span>${num(w.kills)}</span><span>${num(w.gold)}</span></div>`).join('');
   }
 
   // ---------------------------------------------------------------- minimap

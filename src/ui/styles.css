@@ -242,6 +242,16 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 .team .tm.down .row, .team .tm.down .thp { color: #ff5050; }
 .team .tm.down { border-left-color: #ff5050; animation: lowhpT 0.8s ease-in-out infinite; }
 @keyframes lowhpT { 50% { background: linear-gradient(90deg, rgba(90,10,8,0.7), rgba(10,8,7,0)); } }
+.scores { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -60%); z-index: 5; min-width: 440px; padding: 14px 18px 12px; font-family: var(--serif); color: var(--text); text-shadow: 0 1px 2px #000; background: rgba(10,8,7,0.88); box-shadow: 0 0 0 1px var(--bronze-lo), 0 0 30px rgba(0,0,0,0.7); pointer-events: none; }
+.scores.hidden { display: none; }
+.scores .sc-title { font-family: 'Cinzel', var(--serif); font-size: 15px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--bronze-hi); text-align: center; margin-bottom: 8px; }
+.scores .sc-row { display: grid; grid-template-columns: 26px minmax(140px, 1fr) 90px 56px 64px; align-items: center; gap: 8px; padding: 5px 4px; font-size: 14px; border-top: 1px solid rgba(160,120,70,0.18); }
+.scores .sc-row > span:nth-child(n+3) { text-align: right; font-variant-numeric: tabular-nums; }
+.scores .sc-head { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim); border-top: 0; }
+.scores .sc-row.me { background: linear-gradient(90deg, color-mix(in srgb, var(--pc) 22%, transparent), transparent); }
+.scores .tmedal { width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: #0a0807; box-shadow: 0 0 0 1px var(--pc, var(--bronze-lo)); }
+.scores .sc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #f0e2c4; }
+.scores .sc-name i { font-style: normal; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim); margin-left: 8px; }
 
 .floor-info { position: absolute; left: 28px; top: 24px; }
 .floor-info .fname { font-family: 'Cinzel', var(--serif); font-weight: 600; font-size: 20px; color: var(--bronze-hi); text-shadow: 0 0 14px rgba(255,170,70,0.25), 0 2px 4px #000; letter-spacing: 0.06em; }
@@ -472,7 +482,7 @@ input.field:focus { border-color: var(--bronze); box-shadow: 0 0 12px rgba(226,1
 
 /* Settings: HUD scale. Each corner group is zoomed in place (the full-screen layers are not, so
    centring and the 2D overlay are unaffected) */
-.hp-wrap, .abilities, .gold-box, .minimap, .mm-frame, .boss-bar, .floor-info, .team, .toasts { zoom: var(--hud-scale, 1); }
+.hp-wrap, .abilities, .gold-box, .minimap, .mm-frame, .boss-bar, .floor-info, .team, .toasts, .scores { zoom: var(--hud-scale, 1); }
 
 /* the item slot: a round flask-bay at the left of the spell bar, in the item's colour */
 .slot.itemslot { width: 50px; height: 50px; border-radius: 50%; margin-right: 6px; align-self: center; --ic: #5a4426;

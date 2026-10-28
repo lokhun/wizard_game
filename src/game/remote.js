@@ -53,6 +53,7 @@ export class RemotePlayer {
     this.reviveProgress = s.rp ?? 0;
     this.ult = s.u ?? 0;
     this.gold = s.g ?? this.gold;
+    this.damageDealt = s.dm ?? this.damageDealt ?? 0; this.kills = s.k ?? this.kills ?? 0; // (the party scores)
     this.level = s.lv;
   }
 
