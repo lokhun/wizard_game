@@ -1138,6 +1138,7 @@ export class EnemyInstance {
     return true;
   }
   get ragdolling() { return !!this._rag && !this._rag.done; }
+  blast(c, R, k) { return !!this._rag?.blast(c, R, k); }
   update(dt, s = {}) {
     dt = Math.min(dt, 0.1);
     this.time += dt;

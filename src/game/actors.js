@@ -418,6 +418,15 @@ export class ActorManager {
     if (ok) { a.kb.x = a.kb.z = 0; a.deathYaw = null; }
     return ok;
   }
+  // a blast tosses the limp bodies lying in reach (visual only, on each peer: explosions play everywhere)
+  blastCorpses(c, radius) {
+    const R = radius * 1.3 + 0.8, k = 2.5 + radius * 1.1;
+    for (const a of this.list) {
+      if (!a.dead || !a._rag || (a.sinkT ?? 0) > 0) continue;
+      if ((a.pos.x - c.x) ** 2 + (a.pos.z - c.z) ** 2 > (R + a.height) ** 2) continue;
+      a.model?.blast(c, R, k);
+    }
+  }
   _fallYaw(a) {
     if (a.boss || a._kbT < 0 || this.g.time - a._kbT > 1) return null;
     const st = a.model?.spec?.anim?.death ?? 'fall';

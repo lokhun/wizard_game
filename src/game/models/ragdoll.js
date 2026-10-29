@@ -135,6 +135,24 @@ export class Ragdoll {
     this.t = 0; this.still = 0; this.done = false; this.acc = 0;
   }
 
+  // a blast nearby (centre, reach, strength in m/s at its heart): every point within reach is thrown off it
+  // and a little up, harder the nearer; a body at rest wakes for another couple of seconds
+  blast(c, R, k) {
+    let hit = false;
+    for (const n in this.pts) {
+      const pt = this.pts[n];
+      _v.subVectors(pt.p, c);
+      const d = _v.length();
+      if (d > R) continue;
+      const f = k * (1 - d / R);
+      _v.multiplyScalar(f / Math.max(0.3, d)); _v.y += f * 0.9;
+      pt.q.addScaledVector(_v, -STEP);
+      hit = true;
+    }
+    if (hit) { this.done = false; this.still = 0; this.t = Math.min(this.t, 1.5); }
+    return hit;
+  }
+
   step(dt, floor, wall) {
     if (this.done) return;
     this.t += dt;

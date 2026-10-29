@@ -1373,6 +1373,7 @@ export class VFX {
   }
 
   explosion(pos, element, radius = 3, o = {}) {
+    this.onBlast?.(pos, radius); // (the bodies lying in it are thrown: Actors.blastCorpses)
     const fx = fxOf(element);
     const s = radius / 3;
     // Dim the glow by how much of the screen the blast covers: a blast that

@@ -102,6 +102,7 @@ export class Game {
     this.contact = new ContactShadows(this.scene);
     this.spells = new SpellRuntime(this);
     this.actors = new ActorManager(this);
+    this.vfx.onBlast = (c, r) => this.actors.blastCorpses(c, r);
     this.director = new Director(this);
     this.encounters = new Encounters(this);
     this.relics = new RelicRuntime(this);
