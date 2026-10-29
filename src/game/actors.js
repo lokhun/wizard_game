@@ -199,6 +199,7 @@ export class ActorManager {
     this.list = [];
     this.byId = new Map();
     this._floor = (x, z) => game.groundY(x, z); // (the floor under each foot: see EnemyInstance._ground)
+    this._wall = (x, z, y) => game.collision.cellBlocked(Math.floor(x / 2), Math.floor(z / 2), y); // (a limp body's walls: ragdoll.js)
     this.nextId = 1;
     this._hostiles = [];
     this._allies = [];
@@ -400,6 +401,23 @@ export class ActorManager {
   // The way a body should face to fall along the killing blow's push (a face-down fall faces the push, a fall
   // onto the back faces against it), or null to fall as it stands: no push in the last second, a boss, or a
   // death that isn't a topple (crumbling, flying apart, dissipating, a type's own).
+  // the push a dying body is flung with (host: the last blow's direction and knockback; a client may only
+  // know the way it falls, from the die message), and its own run carried on
+  _goLimp(a) {
+    const g = this.g;
+    if (a._prevAnim === 'spawn') return false; // (still rising out of the floor: it sinks back the old way)
+    let dx = 0, dz = 0;
+    if (a._kbT >= 0 && g.time - a._kbT < 1) { dx = a._kbx; dz = a._kby; }
+    else if (a.deathYaw != null) { dx = Math.sin(a.deathYaw); dz = Math.cos(a.deathYaw); }
+    else { const r = Math.random() * Math.PI * 2; dx = Math.cos(r) * 0.3; dz = Math.sin(r) * 0.3; }
+    const kb = Math.hypot(a.kb.x, a.kb.z);
+    const sp = Math.min(8, 1.6 + kb * 0.45) * Math.min(1, 1.3 / (1 + (a.def.poise ?? 20) / 60)); // (a heavy body is flung less)
+    const run = (a.moveSpeed ?? 0) > 0.5 && a.moveYaw != null ? Math.min(a.moveSpeed, 6) * 0.55 : 0;
+    const ok = a.model.ragdoll({ vx: dx * sp, vz: dz * sp, up: 0.5 + sp * 0.22, spin: (Math.random() - 0.5) * 3,
+      carry: { x: run ? Math.sin(a.moveYaw) * run : 0, z: run ? Math.cos(a.moveYaw) * run : 0 }, floor: this._floor });
+    if (ok) { a.kb.x = a.kb.z = 0; a.deathYaw = null; }
+    return ok;
+  }
   _fallYaw(a) {
     if (a.boss || a._kbT < 0 || this.g.time - a._kbT > 1) return null;
     const st = a.model?.spec?.anim?.death ?? 'fall';
@@ -681,8 +699,11 @@ export class ActorManager {
         a.deadT += dt;
         a.animT += dt;
         a.progress = Math.min(1, a.deadT / 1.1);
+        // a human-shaped body goes limp at the killing blow and falls under its own weight (ragdoll.js):
+        // flung the way the blow pushed it, harder for a heavier push, carried on by its own run
+        if (a._rag === undefined && a.model && !a.boss && !a.collapsed) a._rag = this._goLimp(a);
         // it turns as it buckles, to fall the way the killing blow pushed it (see _fallYaw)
-        if (a.deathYaw != null && a.deadT < 0.5 && a.model) { a.yaw = angleDamp(a.yaw, a.deathYaw, 9, dt); a.model.root.rotation.y = a.yaw; }
+        if (a.deathYaw != null && a.deadT < 0.5 && a.model && !a._rag) { a.yaw = angleDamp(a.yaw, a.deathYaw, 9, dt); a.model.root.rotation.y = a.yaw; }
         // the killing blow carries the body for a moment
         const kbl = Math.hypot(a.kb.x, a.kb.z);
         if (kbl > 0.1 && !a.boss) {
@@ -696,8 +717,8 @@ export class ActorManager {
         const sinkAt = a.boss ? 9 : a.deadT > this._sinkOlder ? 1.8 : CORPSE_LINGER;
         if (a.model) {
           // bosses get a longer death performance (visual only: the model keeps animating past progress 1)
-          const posed = a.deadT < (a.boss ? 4.5 : 1.8);
-          if (posed) a.model.update(dt, { anim: 'death', t: a.animT, speed: 0, progress: a.progress, attackType: '' });
+          const posed = a._rag ? a.model.ragdolling : a.deadT < (a.boss ? 4.5 : 1.8);
+          if (posed) a.model.update(dt, { anim: 'death', t: a.animT, speed: 0, progress: a.progress, attackType: '', floor: this._floor, wall: this._wall });
           if (a.deadT > sinkAt) {
             a.sinkT = (a.sinkT ?? 0) + dt;
             // the body burns away from the feet up behind a ragged ember front (core.js setDissolve); a body
@@ -718,7 +739,7 @@ export class ActorManager {
             }
           }
         }
-        if (a.model) this._settle(a, a.deadT < (a.boss ? 4.5 : 1.8));
+        if (a.model) this._settle(a, a._rag ? a.model.ragdolling : a.deadT < (a.boss ? 4.5 : 1.8));
         if (a.model && a.casters) this._castShadow(a);
         if ((a.sinkT ?? 0) > 1.6 || (!a.model && a.deadT > 2.6)) { this.remove(a); listDirty = false; }
         continue;

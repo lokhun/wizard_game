@@ -5,6 +5,7 @@ import { makeSurfaceMaterial } from '../../render/textures.js';
 import { arrayTargets } from '../../render/bake.js';
 import { creatureSurface, creatureLayer } from './surfaces.js';
 import { setRotXYZ } from '../../render/rot.js';
+import { Ragdoll, canRagdoll } from './ragdoll.js';
 
 // ---------------------------------------------------------------------------
 // Enemy model core: material library, geometry kit, rig builder and the
@@ -1130,10 +1131,25 @@ export class EnemyInstance {
       m.opacity = o;
     }
   }
+  // the killing blow: go limp (see ragdoll.js); false if this body falls the old way (o: the push)
+  ragdoll(o) {
+    if (this._rag || !canRagdoll(this)) return false;
+    this._rag = new Ragdoll(this, o);
+    return true;
+  }
+  get ragdolling() { return !!this._rag && !this._rag.done; }
   update(dt, s = {}) {
     dt = Math.min(dt, 0.1);
     this.time += dt;
     this.U.uTime.value = this.time;
+    if (this._rag && s.anim === 'death') {
+      this._rag.step(dt, s.floor, s.wall);
+      this._orbTarget = 0;
+      this._updateOrb(dt);
+      if (this._flash > 0) { this._flash = Math.max(0, this._flash - dt * 8); this._dirty = true; }
+      if (this._dirty) { this._applyMats(); this._dirty = this._flash > 0; }
+      return;
+    }
     const st = this.state;
     const anim = s.anim ?? 'idle';
     if (anim !== st.lastAnim) { st.prevAnim = st.lastAnim; st.lastAnim = anim; st.animStart = this.time; }
