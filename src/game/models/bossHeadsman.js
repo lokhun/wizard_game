@@ -4,6 +4,7 @@ import { humanoidPose, act2, ACT } from './humanoid.js';
 import { twoSided, HDR, RUSTY, DARKSTEEL } from './parts.js';
 import { buildHeadsman, HEADSMAN_ANIM } from './dungeon.js';
 import { skullGeo } from '../../world/props.js';
+import { wounds } from './bossKit.js';
 import { addFx, fxOf, fxSet, fxPos, aimTrail, swingTrailGeo, paint, softRing, softDisc, Rope, aimChain, boneWorld, boneModel, snapRot, setBone, gripIK, springTo, glowLevel, haftBasis, panelBand, embroideryOf } from './bossKit.js';
 
 // ================================================================ The Executioner ==
@@ -213,6 +214,7 @@ export const executioner = {
     if (an === 'idle' && age < 2.6) mixAx(tgt, AX.rest, AX.roar, bump(0.35, 0.95, age / 2.4));
     const ax = st.ax ?? (st.ax = { ...AX.rest });
     if (!dead) springTo(ax, tgt, AXK, dt, om, ze);
+    wounds(m, s, P, dt, { hunch: [['spine', 0.16], ['chest', 0.07], ['neck', 0.1], ['head', 0.06]], breath: [['chest', 0.05], ['spine', 0.02]], shoulders: ['armL', 'armR'], spasm: ['chest', 'head'] }); // (near his end: bossKit.wounds)
     P.damp(dt, rate);
     weapon(m, s, dt, ax, wR, dead);
     secondary(m, s, dt);

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { G, xf, lathe, tube, deform, robe, panel, mergeRaw, chainSkin, rng, vnoise, fbm3, clamp, lerp, smooth, bump, easeOut, easeIn, easeInOut, TAU } from './core.js';
 import { humanSkeleton, humanoidPose, act2 } from './humanoid.js';
 import { addSkull, addBoneHand, addCrystalStaff, pauldron, hood, twoSided, HDR, GOLDTRIM } from './parts.js';
+import { wounds } from './bossKit.js';
 import { addFx, fxOf, fxSet, fxRot, paint, softRing, softDisc, Rope, aimChain, boneWorld, glowLevel, robeRing, robeEdge, embroideryOf } from './bossKit.js';
 
 // ============================================================ Archmage Veyrin ==
@@ -167,6 +168,12 @@ export const courtArchmage = {
     if (st.born === undefined) st.born = m.time;
     // the game drives his blink as a short 'cast'; everything else is in anim.actions / extra
     const r = humanoidPose(m, s, P, dt);
+    // struck: he reels back from the blow a moment, head snapping away (as the other bosses do)
+    if (m._flash > (st.lastFlash ?? 0) + 0.2) st.hitT = m.time;
+    st.lastFlash = m._flash;
+    const hit = st.hitT !== undefined && m.time - st.hitT < 0.6 ? Math.exp(-(m.time - st.hitT) * 7) : 0;
+    if (hit) { P.r('spine', -0.06 * hit); P.r('chest', -0.12 * hit, 0.1 * hit); P.r('head', -0.2 * hit, -0.08 * hit); }
+    wounds(m, s, P, dt, { hunch: [['spine', 0.16], ['chest', 0.07], ['neck', 0.1], ['head', 0.06]], breath: [['chest', 0.05], ['spine', 0.02]], shoulders: ['armL', 'armR'], spasm: ['chest', 'head'] }); // (near his end: bossKit.wounds)
     archSecondary(m, s, dt);
     return r;
   },

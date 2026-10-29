@@ -1156,7 +1156,7 @@ export class EnemyInstance {
     const st = this.state;
     const anim = s.anim ?? 'idle';
     if (anim !== st.lastAnim) { st.prevAnim = st.lastAnim; st.lastAnim = anim; st.animStart = this.time; }
-    const S = { anim, t: s.t ?? this.time - st.animStart, speed: s.speed ?? 0, dir: s.dir ?? 0, progress: clamp(s.progress ?? 0), attackType: s.attackType || this.spec.defaultAttack };
+    const S = { anim, t: s.t ?? this.time - st.animStart, speed: s.speed ?? 0, dir: s.dir ?? 0, progress: clamp(s.progress ?? 0), attackType: s.attackType || this.spec.defaultAttack, hpf: s.hpf ?? 1 };
     this.P.reset();
     this._orbTarget = 0;
     this._opTarget = 1;

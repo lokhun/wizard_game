@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { G, xf, taper, lathe, tube, deform, bumpy, shaggy, robe, mergeRaw, chainSkin, spikeRing, rng, vnoise, fbm3, clamp, lerp, smooth, bump, easeOut, easeIn, easeInOut, TAU } from './core.js';
 import { twoSided, HDR, RUSTY } from './parts.js';
 import { skullGeo } from '../../world/props.js';
+import { wounds } from './bossKit.js';
 import { addFx, fxOf, fxSet, fxPos, softRing, softDisc, softColumn, Rope, aimChain, boneWorld, setBone, glowLevel, polyParam } from './bossKit.js';
 
 // ============================================================ Mother of Filth ==
@@ -507,6 +508,7 @@ export const motherOfFilth = {
     st.glowK = glowK;
     st.fxv = st.fxv ?? { aura: 0, ring: 0, ringR: 1, ringX: 0, ringZ: 0, gey: 0, geyS: 1 };
     const fv = st.fxv; fv.aura = aura; fv.ring = ring; fv.ringR = ringR; fv.ringX = ringX; fv.ringZ = ringZ; fv.gey = gey; fv.geyS = geyS;
+    wounds(m, s, P, dt, { hunch: [['mass', 0.06], ['neck0', 0.12], ['neck1', 0.06], ['head', 0.1]], breath: [['mass', 0.04], ['neck0', 0.03]], spasm: ['mass', 'head'] }); // (near her end: bossKit.wounds)
     P.damp(dt, rate);
     secondary(m, s, dt);
     return 0;

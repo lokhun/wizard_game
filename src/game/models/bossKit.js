@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp } from './core.js';
+import { clamp, smooth, bump } from './core.js';
 import { bandGeo, embroidery } from './wizard/garments.js';
 
 // ---------------------------------------------------------------------------
@@ -470,4 +470,28 @@ export function panelBand(panelGeo, path, w, pf, { lift = 0.004 } = {}) {
     pts.push(q); nrm.push(new THREE.Vector3().crossVectors(du, dt).normalize().multiplyScalar(-1));
   }
   return banded(bandGeo(pts, nrm, w, w * 0.06, pf));
+}
+
+// A boss near its end shows it (the shared layer each boss's pose calls before its pose is eased): below ~40%
+// of its health it sinks into a hunch and heaves for breath - slower, deeper, the shoulders riding each
+// breath - and now and then a spasm of pain jerks the body and head; under ~20% a tremor runs through it.
+// o: { hunch: [[bone, rx]...], breath: [[bone, rx]...], shoulders: [boneL, boneR], spasm: [body, head] }
+// (bones a rig lacks are skipped by the pose buffer). Grows in over a second or two, never in a pop.
+export function wounds(m, s, P, dt, o) {
+  const st = m.state, T = m.time;
+  const want = s.anim === 'death' || s.anim === 'spawn' ? 0 : smooth(0.42, 0.1, s.hpf ?? 1);
+  st.woundK = (st.woundK ?? 0) + (want - (st.woundK ?? 0)) * Math.min(1, dt * 0.8);
+  const k = st.woundK;
+  if (k < 0.01) return;
+  const br = Math.sin(T * 1.55 + 1.3), heave = 0.5 + 0.5 * br;
+  for (const [b, rx] of o.hunch ?? []) P.r(b, rx * k);
+  for (const [b, rx] of o.breath ?? []) P.r(b, -br * rx * k);
+  if (o.shoulders) { P.r(o.shoulders[0], 0, 0, heave * 0.05 * k); P.r(o.shoulders[1], 0, 0, -heave * 0.05 * k); }
+  // a spasm every few seconds: a quick hunch and a jerk of the head, gone in a third of a second
+  if (st.spasmNext === undefined || T > st.spasmNext + 5) st.spasmNext = T + 2 + Math.random() * 3;
+  if (T >= st.spasmNext) { st.spasmAt = T; st.spasmNext = T + 2.5 + Math.random() * 3.5; st.spasmS = Math.random() < 0.5 ? -1 : 1; }
+  const sp = st.spasmAt !== undefined ? bump(0, 0.35, T - st.spasmAt) * k : 0;
+  if (sp > 0 && o.spasm) { P.r(o.spasm[0], 0.12 * sp, 0.05 * sp * st.spasmS, 0.06 * sp * st.spasmS); P.r(o.spasm[1], -0.16 * sp, 0.12 * sp * st.spasmS, 0); }
+  const tr = smooth(0.2, 0.08, s.hpf ?? 1) * k;
+  if (tr > 0 && o.spasm) P.r(o.spasm[0], Math.sin(T * 23) * 0.008 * tr, 0, Math.sin(T * 19 + 1) * 0.008 * tr);
 }

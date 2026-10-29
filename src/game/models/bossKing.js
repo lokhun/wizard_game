@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { G, xf, lathe, shell, tube, extrude, deform, bumpy, mergeRaw, chainSkin, panel, spikeRing, rng, vnoise, fbm3, clamp, lerp, smooth, bump, easeOut, easeIn, easeInOut, TAU } from './core.js';
 import { humanSkeleton, humanoidPose, act2 } from './humanoid.js';
 import { addPlate, addTabard, hood, pauldron, twoSided, HDR, GOLDTRIM } from './parts.js';
+import { wounds } from './bossKit.js';
 import { addFx, fxOf, fxSet, fxPos, fxRot, paint, softRing, softDisc, softColumn, Rope, aimChain, boneWorld, boneModel, snapRot, setBone, springTo, glowLevel, wield, swingTrailGeo, aimTrail, panelBand, embroideryOf } from './bossKit.js';
 
 // ================================================================= The Hollow King ==
@@ -242,6 +243,7 @@ export const hollowKing = {
     if (rising) { mixAx(tgt, AX.seat, AX.roar, smooth(0.35, 0.65, rt)); om = 7; }
     const ax = st.ax ?? (st.ax = setAx({}, AX.seat));
     if (!dead) springTo(ax, tgt, AXK, dt, om, ze);
+    wounds(m, s, P, dt, { hunch: [['spine', 0.16], ['chest', 0.07], ['neck', 0.1], ['head', 0.06]], breath: [['chest', 0.05], ['spine', 0.02]], shoulders: ['armL', 'armR'], spasm: ['chest', 'head'] }); // (near his end: bossKit.wounds)
     P.damp(dt, rate);
     if (dead) kingDeathSword(m, s, ax);
     else {

@@ -819,7 +819,7 @@ export class ActorManager {
         }
         const posed = every === 1 || (this._frame + a.id) % every === 0 || a.anim !== a._posedAnim;
         if (posed) {
-          m.update(a._poseDt, { anim: a.anim, t: a.animT, speed: a.moveSpeed ?? 0, dir: a.moveYaw != null ? a.moveYaw - a.yaw : 0, progress: a.progress, attackType: a.attackType, look: this._lookAt(a), floor: this._floor });
+          m.update(a._poseDt, { anim: a.anim, t: a.animT, speed: a.moveSpeed ?? 0, dir: a.moveYaw != null ? a.moveYaw - a.yaw : 0, progress: a.progress, attackType: a.attackType, look: this._lookAt(a), floor: this._floor, hpf: a.boss ? Math.max(0, a.hp / a.maxHp) : 1 });
           a._poseDt = 0; a._posedAnim = a.anim;
         }
         // heavy feet raise a little dust where they land (dry ground, near the camera)
@@ -830,6 +830,11 @@ export class ActorManager {
             const r = (a.radius ?? 0.5) * 0.55 * side, big = Math.min(2, a.height / 1.9);
             _v.set(a.pos.x + Math.cos(a.yaw) * r, a.pos.y + 0.05, a.pos.z - Math.sin(a.yaw) * r);
             g.vfx.smoke(_v, { count: a.boss ? 4 : 2, color: g.biome?.dust ?? [0.13, 0.11, 0.09], alpha: 0.28, size: 0.32 * big, speed: 0.55 * big, rise: 0.25, life: 0.85, spread: 0.12 * big });
+          }
+          // a boss's tread is felt underfoot: a small jolt, nearer and bigger the heavier (not a floating one)
+          if (a.boss && m.spec?.anim?.gait !== 'float') {
+            const pl = g.player, d = Math.hypot(pl.pos.x - a.pos.x, pl.pos.z - a.pos.z);
+            if (d < 20 && !pl.dead) g.vfx.addShake(0.06 * (1 - d / 20) * Math.min(1.6, a.height / 3));
           }
         }
         this._settle(a, posed);

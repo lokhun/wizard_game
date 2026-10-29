@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { G, xf, tube, deform, bumpy, mergeRaw, chainSkin, rng, vnoise, fbm3, clamp, lerp, smooth, bump, easeOut, easeIn, easeInOut, TAU } from './core.js';
 import { twoSided, HDR } from './parts.js';
+import { wounds } from './bossKit.js';
 import { addFx, fxOf, fxSet, fxPos, fxRot, paint, softRing, softDisc, boneWorld, boneModel, glowLevel, polyParam } from './bossKit.js';
 
 // ==================================================== Gravemaw, the Stone Wyvern ==
@@ -406,6 +407,7 @@ export const stoneWyvern = {
     fxSet(F, 'core', st.heatW * (0.25 + 0.15 * Math.sin(T * 3.3)) + (anim === 'windup' && at === 'breath' ? p * 0.3 : 0), 1 + Math.sin(T * 3.3) * 0.05);
     fxRot(F, 'trail', 0, m.bones.base.rotation.y, 0);
     fxSet(F, 'trail', trail * 0.8);
+    if (!fly) wounds(m, s, P, dt, { hunch: [['chest', 0.08], ['neck0', 0.1], ['neck1', 0.05], ['head', 0.06]], breath: [['chest', 0.05], ['body', 0.02]], spasm: ['chest', 'head'] }); // (near its end, grounded: bossKit.wounds)
     return rate;
   },
 };
