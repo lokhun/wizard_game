@@ -190,7 +190,20 @@ export function humanoidPose(m, s, P, dt) {
   const legLen = D.legLen;
   const ampL = Math.min(A.stride ?? 0.55, 0.18 + spd * (A.strideK ?? 0.16) / sc);
   const step = Math.max(0.12, 2 * legLen * Math.sin(ampL));
-  if (spd > 0.01) st.phase += (Math.PI * spd * dt) / step;
+  // which way it travels against where it faces (an archer strafing, a caster backing off): the legs and
+  // hips turn toward the way of travel, up to ~60 degrees, and the spine turns the chest back to its foe;
+  // going backward the stride runs in reverse. (Feet no longer skate sideways under a forward walk.)
+  let rel = s.dir ?? 0;
+  rel -= Math.round(rel / TAU) * TAU;
+  const back = spd > 0.3 && Math.abs(rel) > 1.95;
+  const twistTgt = spd > 0.3 ? clamp(back ? rel - Math.sign(rel) * Math.PI : rel, -1.05, 1.05) : 0;
+  st.twist = (st.twist ?? 0) + (twistTgt - (st.twist ?? 0)) * (1 - Math.exp(-9 * dt));
+  if (spd > 0.01) st.phase += ((back ? -1 : 1) * Math.PI * spd * dt) / step;
+  // weight: a body pitches into its push as it sets off and rocks back against its brake as it stops
+  // (eased, so a frame's jostle from a crowd doesn't show), the way it travels
+  const acc = dt > 1e-4 && st.prevSpd != null ? (spd - st.prevSpd) / dt : 0;
+  st.prevSpd = spd;
+  st.lean = (st.lean ?? 0) + (clamp(acc * 0.022 * (back ? -1 : 1) / sc, -0.2, 0.2) - (st.lean ?? 0)) * (1 - Math.exp(-5 * dt));
   const moveTgt = smooth(0.05, 0.6, spd);
   st.moveW = (st.moveW ?? 0) + (moveTgt - (st.moveW ?? 0)) * (1 - Math.exp(-8 * dt));
   const w = st.moveW;
@@ -240,6 +253,10 @@ export function humanoidPose(m, s, P, dt) {
     // banking: a body on the move leans into its turn (harder the faster it runs) and keeps its head level
     const bank = st.turnS * w * (0.35 + run * 0.65) * (A.bank ?? 1);
     P.r('hips', 0, 0, -bank * 0.1); P.r('spine', 0, 0, -bank * 0.1); P.r('chest', 0, 0, -bank * 0.05); P.r('head', 0, 0, bank * 0.16);
+    if (Math.abs(st.lean) > 1e-3) { P.r('hips', st.lean * 0.35, 0, 0); P.r('spine', st.lean * 0.65, 0, 0); P.r('head', -st.lean * 0.5, 0, 0); }
+    // (the turn toward the way of travel: hips round, the spine and chest back, the head held on its foe)
+    const tw = st.twist * w * (A.twist ?? 1);
+    if (Math.abs(tw) > 1e-3) { P.r('hips', 0, tw, 0); P.r('spine', 0, -tw * 0.55, 0); P.r('chest', 0, -tw * 0.45, 0); }
     const armA = (A.armSwing ?? 0.45) * (1 + run * 0.5);
     if (!action) {
       P.r('armL', sn * armA * w); P.r('armR', -sn * armA * w);

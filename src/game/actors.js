@@ -789,7 +789,7 @@ export class ActorManager {
         }
         const posed = every === 1 || (this._frame + a.id) % every === 0 || a.anim !== a._posedAnim;
         if (posed) {
-          m.update(a._poseDt, { anim: a.anim, t: a.animT, speed: a.moveSpeed ?? 0, progress: a.progress, attackType: a.attackType, look: this._lookAt(a), floor: this._floor });
+          m.update(a._poseDt, { anim: a.anim, t: a.animT, speed: a.moveSpeed ?? 0, dir: a.moveYaw != null ? a.moveYaw - a.yaw : 0, progress: a.progress, attackType: a.attackType, look: this._lookAt(a), floor: this._floor });
           a._poseDt = 0; a._posedAnim = a.anim;
         }
         // heavy feet raise a little dust where they land (dry ground, near the camera)
@@ -903,6 +903,7 @@ export class ActorManager {
     a.pos.y += (n.y - a.pos.y) * k;
     a.yaw = angleDamp(a.yaw, n.yaw, 12, dt);
     a.moveSpeed = Math.hypot(dx, dz) * 12 * 0.9;
+    if (a.moveSpeed > 0.3) a.moveYaw = Math.atan2(dx, dz);
     if (a.anim === 'windup' || a.anim === 'attack' || a.anim === 'cast') a.progress = Math.min(1, a.progress + dt / Math.max(0.2, a.netDur ?? 0.6));
     else if (a.anim === 'spawn') a.progress = Math.min(1, a.progress + dt / 0.9);
     // archer laser
@@ -1074,6 +1075,7 @@ export class ActorManager {
       // sentries are leashed to their room, so doors never lock them out of their own fight
       if (a.homeRoom && g.level.roomAt(r.x, r.z) !== a.homeRoom) r = { x: a.pos.x, z: a.pos.z };
       a.moveSpeed = Math.hypot(r.x - a.pos.x, r.z - a.pos.z) / dt;
+      if (a.moveSpeed > 0.3) a.moveYaw = Math.atan2(r.x - a.pos.x, r.z - a.pos.z); // (which way the feet carry it: see humanoidPose)
       a.pos.x = r.x; a.pos.z = r.z;
     } else a.moveSpeed = 0;
     // up a step at once (eased up, the feet sank 36 cm into a tier's edge or a channel's lip for the first
