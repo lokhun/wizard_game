@@ -78,6 +78,7 @@ const POLES = [[1, -0.6, -0.5], [-1, -0.6, -0.5]];
 
 export const hollowKing = {
   lookAt: 0, recoil: 0, // (its own rig: the head turns on other axes; see EnemyInstance._layers)
+  look: { bones: [['neck', 0.35], ['head', 0.65]], yaw: 1.0, pitch: 0.5 }, // (his eyes on his foe: EnemyInstance._lookWorld)
   id: 'hollowKing', height: 5.3, radius: 1.3, boss: true, eyeColor: HOLLOW, magicColor: HOLLOW, defaultAttack: 'slam', attackTypes: ['seated', 'slam', 'sweep', 'thrust', 'summon', 'roar', 'beam', 'leap'], flutter: 0.03, orbSize: 0.14,
   build(rig) {
     rig.scale = 2.15;

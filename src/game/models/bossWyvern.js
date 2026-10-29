@@ -33,6 +33,7 @@ function stoneC(v, seed = 1, base = 1) {
 
 export const stoneWyvern = {
   lookAt: 0, recoil: 0, // (its own rig: the head turns on other axes; see EnemyInstance._layers)
+  look: { bones: [['neck0', 0.1], ['neck1', 0.12], ['neck2', 0.12], ['neck3', 0.13], ['neck4', 0.13], ['head', 0.4]], yaw: 1.15, pitch: 0.6, offAt: ['breath', 'sweep'] }, // (its eyes on its foe: EnemyInstance._lookWorld)
   id: 'stoneWyvern', height: 3.6, radius: 1.6, length: 6.5, boss: true, eyeColor: 0xffa020, magicColor: 0xff6a18, defaultAttack: 'breath', attackTypes: ['breath', 'slam', 'sweep', 'fly', 'roar'], crackColor: MAGMA, crackIntensity: 4.5, orbSize: 0.22, flutter: 0.05, soles: ['toesL', 'toesR'],
   build(rig) {
     rig.bone('base', null);

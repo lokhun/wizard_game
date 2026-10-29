@@ -79,6 +79,7 @@ function setAx(out, a) { for (const k of AXK) out[k] = a[k]; return out; }
 
 export const executioner = {
   lookAt: 0, recoil: 0, // (its own rig: the head turns on other axes; see EnemyInstance._layers)
+  look: { bones: [['neck', 0.35], ['head', 0.65]], yaw: 1.0, pitch: 0.5, offAt: ['whirl'] }, // (his eyes on his foe: EnemyInstance._lookWorld)
   id: 'executioner', height: 4.6, radius: 1.2, boss: true, eyeColor: EYE, magicColor: 0xff5020, defaultAttack: 'slam', attackTypes: ['slam', 'sweep', 'charge', 'roar', 'leap', 'whirl'], orbSize: 0.16,
   build(rig) {
     rig.scale = 1.8;

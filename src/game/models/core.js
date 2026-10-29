@@ -971,6 +971,8 @@ function shadowProxyMaterial(side, map) {
 }
 
 // ------------------------------------------------------------ instance ----
+const _lw = new THREE.Vector3(), _lr = new THREE.Vector3(), _lu = new THREE.Vector3(0, 1, 0);
+const _lq = new THREE.Quaternion(), _lq2 = new THREE.Quaternion(), _lpw = new THREE.Quaternion();
 const _white = new THREE.Color(1, 1, 1);
 const orbGeoCache = new Map();
 function orbGeo() {
@@ -1166,6 +1168,7 @@ export class EnemyInstance {
     this.P.damp(dt, rate);
     // (off in death and flight; a body rising out of the floor takes it up over the end of the rise, not in a pop)
     if (this._soles) this._ground(dt, S.anim === 'death' || this._flying ? 0 : S.anim === 'spawn' ? smooth(0.7, 1, S.progress) : 1, s.floor);
+    if (this.spec.look) this._lookWorld(dt, S, s.look);
     if (Math.abs(this._opTarget - this._opacity) > 1e-3) { this._opacity = this._opTarget; this._dirty = true; }
     this._updateOrb(dt);
     if (this._flash > 0) { this._flash = Math.max(0, this._flash - dt * 8); this._dirty = true; }
@@ -1217,6 +1220,45 @@ export class EnemyInstance {
       P.r('front', f * 0.12, 0, -sd * 0.1); P.r('neck', f * 0.1, 0, -sd * 0.08);
       P.r('head', f * 0.22, -sd * 0.15, -sd * 0.16);
       K.k *= Math.exp(-dt * 10);
+    }
+  }
+  // A boss's eyes on its foe (spec.look: { bones: [[name, share]...], yaw, pitch, off: [anims] }): the
+  // heads of the big rigs turn on axes of their own (a wyvern's neck runs along z, the Mother's is a stalk),
+  // so the turn is worked out in the world - a yaw about the world's up and a pitch about the body's own
+  // right - shared down the neck, each part's share taken into its own frame through its parent's. Laid
+  // over the finished pose (the next frame's pose writes the bones afresh, so it never adds up); eased in
+  // and out, within the neck's reach, off when the foe is behind it and in the anims a spec names.
+  _lookWorld(dt, S, look) {
+    const L = this.spec.look, st = this._lk ??= { y: 0, x: 0 };
+    const root = this.root;
+    let ty = 0, tx = 0;
+    const on = look && S.anim !== 'death' && S.anim !== 'spawn' && !(L.off && L.off.includes(S.anim)) && !(L.offAt && L.offAt.includes(S.attackType));
+    const head = this.bones[L.bones[L.bones.length - 1][0]];
+    if (on && head) {
+      head.getWorldPosition(_lw);
+      const dx = look.x - root.position.x, dz = look.z - root.position.z;
+      let rel = Math.atan2(dx, dz) - root.rotation.y;
+      rel -= Math.round(rel / TAU) * TAU;
+      if (Math.abs(rel) < 2.2) {
+        ty = clamp(rel, -(L.yaw ?? 1), L.yaw ?? 1);
+        tx = clamp(Math.atan2(look.y - _lw.y, Math.hypot(look.x - _lw.x, look.z - _lw.z)), -(L.pitch ?? 0.5), L.pitch ?? 0.5);
+      }
+    }
+    const e = 1 - Math.exp(-(L.rate ?? 5) * dt);
+    st.y += (ty - st.y) * e; st.x += (tx - st.x) * e;
+    if (Math.abs(st.y) + Math.abs(st.x) < 1e-3) return;
+    const yaw = root.rotation.y, fx = Math.sin(yaw), fz = Math.cos(yaw);
+    _lr.set(-fz, 0, fx); // (the body's right: forward x up)
+    for (const [name, k] of L.bones) {
+      const b = this.bones[name];
+      if (!b) continue;
+      // the world turn R for this share, then q' = Pw^-1 R Pw q (the bone's own frame)
+      _lq.setFromAxisAngle(_lu, st.y * k).multiply(_lq2.setFromAxisAngle(_lr, st.x * k));
+      b.parent.updateWorldMatrix(true, false);
+      b.parent.getWorldQuaternion(_lpw);
+      _lq2.copy(_lpw).invert().multiply(_lq).multiply(_lpw);
+      b.quaternion.premultiply(_lq2);
+      b.updateMatrix();
     }
   }
   // lift the body so no sole sits below the floor (y = 0 in the top bone's parent space): the leg's
