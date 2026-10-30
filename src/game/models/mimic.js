@@ -150,7 +150,8 @@ export const mimic = {
     } else if (anim === 'death') {
       // its legs give, it rolls onto its side and the lid falls open, tongue lolling
       const k = easeOut(smooth(0, 0.7, p));
-      lift = lerp(lift, -0.02, k); legs = 1 + 0.8 * k; open = lerp(open, 1.6, k) + bump(0.55, 0.8, p) * 0.2;
+      // (on its side the chest stands as tall as it is wide: lifted so its corner does not dig into the floor)
+      lift = lerp(lift, 0.3, k); legs = 1 + 0.8 * k; open = lerp(open, 1.6, k) + bump(0.55, 0.8, p) * 0.2;
       bodyR = (m.seed > 0.5 ? 1 : -1) * 1.25 * k; bodyP = -0.15 * k;
       tongue = 1; P.r('tg1', 0.5 * k); P.r('tg2', 0.6 * k); P.r('tg3', 0.4 * k);
       glow = 1 - 0.9 * smooth(0.1, 0.6, p);
