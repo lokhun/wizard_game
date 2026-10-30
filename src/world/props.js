@@ -265,6 +265,18 @@ function grate() {
   parts.push(['decalDark', tf(new THREE.PlaneGeometry(1.1, 1.1), { y: 0.025, rx: -Math.PI / 2 })]);
   return parts;
 }
+// the oubliette's mouth: a heavy iron grate over a 2 m shaft in the floor (a frame, bars both ways, a
+// hasp and a padlock on one side, a ring to haul it by on the other)
+function pitGrate() {
+  const parts = [];
+  for (const [x, z, sx, sz] of [[0, -0.97, 2.08, 0.14], [0, 0.97, 2.08, 0.14], [-0.97, 0, 0.14, 2.08], [0.97, 0, 0.14, 2.08]]) parts.push(['iron', tf(box(sx, 0.1, sz), { x, y: 0.05, z })]);
+  for (let i = -3; i <= 3; i++) parts.push(['iron', tf(box(0.055, 0.07, 1.9), { x: i * 0.26, y: 0.06 })]);
+  for (const z of [-0.5, 0, 0.5]) parts.push(['iron', tf(box(1.9, 0.05, 0.05), { z, y: 0.09 })]);
+  parts.push(['iron', tf(box(0.16, 0.14, 0.06), { x: 1.06, y: 0.07, z: 0.3 })]);
+  parts.push(['iron', tf(new THREE.TorusGeometry(0.06, 0.014, 4, 8), { x: 1.1, y: 0.13, z: 0.3 })]);
+  parts.push(['iron', tf(new THREE.TorusGeometry(0.11, 0.02, 4, 10), { x: -1.08, y: 0.03, z: 0, rx: -Math.PI / 2 })]);
+  return parts;
+}
 function mushrooms(rng, glow = false) {
   const parts = [];
   const n = 3 + Math.floor(rng() * 5);
@@ -330,9 +342,11 @@ export const CHANDELIER_FLAMES = Array.from({ length: 10 }, (_, i) => [Math.cos(
 
 function candles(rng) {
   const parts = [];
+  parts.flames = []; // (each one's wick: lit by the level's candle flames)
   for (let i = 0; i < 5; i++) {
-    const h = 0.1 + rng() * 0.3;
-    parts.push(['candle', tf(cyl(0.035, 0.04, h, 7), { x: (rng() - 0.5) * 0.5, y: h / 2, z: (rng() - 0.5) * 0.4 })]);
+    const h = 0.1 + rng() * 0.3, x = (rng() - 0.5) * 0.5, z = (rng() - 0.5) * 0.4;
+    parts.push(['candle', tf(cyl(0.035, 0.04, h, 7), { x, y: h / 2, z })]);
+    parts.flames.push([x, h + 0.005, z]);
   }
   return parts;
 }
@@ -355,12 +369,19 @@ function bookshelf(len) {
   const rngL = mulberry(Math.floor(len * 1000));
   const colors = [0x5a1a14, 0x1d2c44, 0x2a3a1e, 0x4a3218, 0x3c1838, 0x6a5a3a].map((c) => new THREE.Color(c));
   // every book is one shared unit box stretched by its matrix, all merged into a single part
-  const books = new GeoBuilder();
+  const books = new GeoBuilder(), rows = new GeoBuilder();
   const book = (w, bh, x, y, z, rz) => {
     _bq.setFromAxisAngle(_bz, rz);
     _bm.compose(_bp.set(x, y, z), _bq, _bs.set(w, bh, 0.5));
     const c = colors[Math.floor(rngL() * colors.length)];
     books.addGeometry(unitBook(), _bm, [c.r, c.g, c.b]);
+  };
+  // (lower detail: a run of books is one block whose texture draws its spines; leather stretched over a
+  // whole run read as a wall of cobbles)
+  const run = (w, bh, x, y, z) => {
+    _bm.compose(_bp.set(x, y, z), _bq.identity(), _bs.set(w, bh, 0.5));
+    const k = 0.82 + rngL() * 0.18;
+    rows.addGeometry(unitRow(), _bm, [k, k * (0.94 + rngL() * 0.06), k * (0.9 + rngL() * 0.1)]);
   };
   for (let shelf = 0; shelf < 5; shelf++) {
     const y = 0.1 + shelf * 0.62;
@@ -371,7 +392,7 @@ function bookshelf(len) {
         if (leanProps) {
           // runs of books drawn as a few wider blocks
           const w = Math.min(len / 2 - 0.08 - x, 0.35 + rngL() * 0.45), bh = 0.36 + rngL() * 0.12;
-          book(w, bh, x + w / 2, y + bh / 2 + 0.03, side * 0.45, 0);
+          run(w, bh, x + w / 2, y + bh / 2 + 0.03, side * 0.45);
           x += w + 0.01;
           continue;
         }
@@ -383,12 +404,14 @@ function bookshelf(len) {
       }
     }
   }
-  parts.push(['leather', books.build()]);
+  if (leanProps) parts.push(['bookRow', rows.build()]); else parts.push(['leather', books.build()]);
   return parts;
 }
 const _bm = new THREE.Matrix4(), _bq = new THREE.Quaternion(), _bp = new THREE.Vector3(), _bs = new THREE.Vector3(), _bz = new THREE.Vector3(0, 0, 1);
 let _unitBook = null;
 const unitBook = () => (_unitBook ??= worldBox(1, 1, 1, 0.12));
+let _unitRow = null;
+const unitRow = () => (_unitRow ??= new THREE.BoxGeometry(1, 1, 1)); // (each face one tile: five spines a block)
 function mulberry(a) { return function () { let t = (a += 0x6d2b79f5); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 
 function bookPile(rng) {
@@ -760,7 +783,7 @@ function glowshrooms(rng) { return mushrooms(rng, true); }
 
 export const PROPS = {
   barrel, keg, crate, rubble, bones, pillarSquare, pillarRound, pillarGrand, chains, sack, table, longTable, stool,
-  bucket, hay, rack, cage, skeletonSit, bloodstain, puddle, grate, mushrooms, glowshrooms, pipe, sconce, brazier: () => brazier(false),
+  bucket, hay, rack, cage, skeletonSit, bloodstain, puddle, grate, pitGrate, mushrooms, glowshrooms, pipe, sconce, brazier: () => brazier(false),
   brazierTall: () => brazier(true), brazierFloor, chandelier, candles, candelabra, bookPile, scrolls, armorStand, weaponRack, banner,
   painting, chest, statue, statueSmall: (r) => statue(r, true), well, fountain, tree, deadTree: (r) => tree(r, true), grave, hayCart, cart,
   ruinPillar, gallows, throne, stainedGlass, shrine, merchant: merchantStall, ladder, stairsDown, brokenWagon, trainingDummy, hayBales,

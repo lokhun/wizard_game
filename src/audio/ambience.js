@@ -13,6 +13,17 @@ const chainClank = (v) => {
   v.noise({ buf: 'chain', dur: rnd(0.4, 0.9), a: 0.02, peak: 0.5, rate: rnd(0.6, 0.9), filt: { type: 'bp', f: 1800, q: 0.8 } });
   v.bell({ f: rnd(500, 750), dur: 0.8, peak: 0.05, partials: [[1, 1, 1], [2.33, 0.6, 0.6], [3.9, 0.3, 0.4]] });
 };
+// somewhere off in the cells an iron door swings shut: a latch, the slam, the bars ringing on in the stone
+const cellDoor = (v) => {
+  v.noise({ buf: 'chain', dur: 0.25, a: 0.01, peak: 0.25, rate: 1.3, filt: { type: 'bp', f: 2400, q: 1.2 } });
+  v.thump({ t: 0.32, f: 95, f2: 50, dur: 0.4, peak: 0.55 });
+  v.bell({ t: 0.32, f: rnd(170, 230), dur: 2.4, peak: 0.12, partials: [[1, 1, 1], [2.7, 0.5, 0.7], [4.3, 0.3, 0.5], [6.1, 0.15, 0.3]] });
+};
+// rats in the walls
+const squeak = (v) => {
+  const n = 1 + ((Math.random() * 3) | 0), f = rnd(2600, 3600);
+  for (let i = 0; i < n; i++) v.osc({ type: 'triangle', t: i * rnd(0.09, 0.16), f, f2: f * rnd(1.1, 1.35), ft: 0.05, dur: 0.07, a: 0.005, peak: 0.12, vib: { rate: 35, depth: 0.05 } });
+};
 const moan = (v) => {
   const f = rnd(100, 150);
   v.osc({ type: 'sawtooth', f, f2: f * rnd(1.1, 1.3), ft: 1.0, f3: f * 0.75, dur: rnd(2.2, 3.2), a: 0.8, peak: 0.2, lin: true,
@@ -45,17 +56,19 @@ const gust = (v) => {
   v.noise({ buf: 'pink', dur: d, a: d * 0.45, peak: 0.45, lin: true, filt: { type: 'bp', f: 300, f2: rnd(800, 1300), ft: d * 0.5, f3: 350, q: 1.2 } });
   v.noise({ buf: 'white', dur: d, a: d * 0.5, peak: 0.04, lin: true, filt: { type: 'bp', f: rnd(1800, 2600), q: 15, lfo: { rate: 0.4, depth: 300 } } });
 };
-const cricket = (v) => {
-  const f = rnd(4200, 4800), n = 2 + ((Math.random() * 3) | 0);
-  for (let i = 0; i < n; i++) v.osc({ t: i * 0.22, f, dur: 0.14, a: 0.01, hold: 0.08, peak: 0.07, trem: { rate: rnd(26, 34), depth: 1, type: 'square' } });
+// a fat drop smacking a stone, or a run of them off the battlements
+// a page turning somewhere in the stacks (a dry flick, then the leaf settling)
+const pageTurn = (v) => {
+  v.noise({ buf: 'white', dur: rnd(0.12, 0.2), a: 0.01, peak: 0.3, filt: [{ type: 'bp', f: rnd(2800, 4200), q: 1.4 }, { type: 'hp', f: 1500 }] });
+  v.noise({ buf: 'pink', t: rnd(0.12, 0.2), dur: rnd(0.25, 0.4), a: 0.04, peak: 0.12, lin: true, filt: { type: 'bp', f: rnd(1800, 2600), q: 1.2 } });
+};
+const patter = (v) => {
+  const n = 1 + ((Math.random() * 3) | 0);
+  for (let i = 0; i < n; i++) v.noise({ buf: 'white', t: i * rnd(0.03, 0.09), dur: 0.035, a: 0.001, peak: rnd(0.15, 0.35), filt: { type: 'bp', f: rnd(2200, 5200), q: 2.2 } });
 };
 const crow = (v) => {
   const n = 2 + ((Math.random() * 2) | 0), f = rnd(480, 560);
   for (let i = 0; i < n; i++) v.osc({ type: 'sawtooth', t: i * 0.34, f, f2: f * 0.8, dur: 0.24, a: 0.02, peak: 0.2, filt: [{ type: 'bp', f: 1150, q: 2, fixed: true }, { type: 'lp', f: 2500, fixed: true }], drive: 3, vib: { rate: 40, depth: 0.04 } });
-};
-const owl = (v) => {
-  const f = rnd(360, 400);
-  [[0, 0.35], [0.55, 0.18], [0.78, 0.4]].forEach(([t, d]) => v.osc({ t, f, f2: f * 0.9, dur: d, a: 0.06, peak: 0.16, filt: { type: 'lp', f: 900 } }));
 };
 const choirSwell = (v) => {
   const ch = pick([[73.4, 110, 146.8, 174.6], [69.3, 103.8, 138.6, 164.8], [65.4, 98, 130.8, 155.6], [58.3, 87.3, 116.5, 146.8]]);
@@ -89,21 +102,25 @@ export const AMBIENCE = {
       { every: [10, 22], fn: moan, vol: 0.35, verb: 0.9, pan: 0.9 },
       { every: [3, 8], fn: drip, vol: 0.25, verb: 0.8, pan: 0.9 },
       { every: [15, 30], fn: thudFar, vol: 0.4, verb: 0.8, pan: 0.6 },
+      { every: [18, 40], fn: cellDoor, vol: 0.4, verb: 0.95, pan: 0.9 },
+      { every: [7, 16], fn: squeak, vol: 0.18, verb: 0.4, pan: 1 },
     ],
   },
+  // the bailey under its storm: steady rain (a hiss over a softer roar), the wind gusting through it, drops
+  // smacking the stones close by and water running off the eaves (no crickets in this weather)
   courtyard: {
     gain: 1.8,
     bed(v) {
-      v.noise({ buf: 'pink', a: 2, peak: 0.4, filt: { type: 'bp', f: 500, q: 0.8, lfo: { rate: 0.09, depth: 250 } }, trem: { rate: 0.13, depth: 0.6 } });
-      v.noise({ buf: 'white', a: 2, peak: 0.05, filt: { type: 'hp', f: 4000, lfo: { rate: 0.07, depth: 1500 } }, trem: { rate: 0.17, depth: 0.7 } });
+      v.noise({ buf: 'pink', a: 3, peak: 0.32, filt: { type: 'bp', f: 950, q: 0.6, lfo: { rate: 0.05, depth: 200 } }, trem: { rate: 0.09, depth: 0.3 } });
+      v.noise({ buf: 'white', a: 3, peak: 0.08, filt: { type: 'bp', f: 3400, q: 0.6, lfo: { rate: 0.07, depth: 900 } }, trem: { rate: 0.13, depth: 0.25 } });
+      v.noise({ buf: 'pink', a: 3, peak: 0.22, filt: { type: 'bp', f: 420, q: 0.9, lfo: { rate: 0.06, depth: 220 } }, trem: { rate: 0.08, depth: 0.7 } });
       v.noise({ buf: 'brown', a: 2, peak: 0.25, filt: { type: 'lp', f: 120 } });
     },
     details: [
-      { every: [0.4, 1.6], fn: cricket, vol: 0.35, verb: 0.2, pan: 1 },
-      { every: [1.0, 2.5], fn: cricket, vol: 0.18, verb: 0.4, pan: 1 },
-      { every: [5, 12], fn: gust, vol: 0.8, verb: 0.15, pan: 0.6 },
-      { every: [14, 30], fn: crow, vol: 0.3, verb: 0.6, pan: 1 },
-      { every: [18, 36], fn: owl, vol: 0.3, verb: 0.6, pan: 1 },
+      { every: [0.08, 0.35], fn: patter, vol: 0.3, verb: 0.15, pan: 1 },
+      { every: [4, 9], fn: gust, vol: 0.9, verb: 0.15, pan: 0.6 },
+      { every: [1.5, 4], fn: drip, vol: 0.25, verb: 0.35, pan: 1 },
+      { every: [20, 40], fn: crow, vol: 0.18, verb: 0.7, pan: 1 },
     ],
   },
   keep: {
@@ -119,6 +136,7 @@ export const AMBIENCE = {
       { every: [16, 30], fn: clock, vol: 0.2, verb: 0.6, pan: 0.7 },
       { every: [9, 18], fn: whispers, vol: 0.25, verb: 0.8, pan: 1 },
       { every: [14, 26], fn: thudFar, vol: 0.3, verb: 0.9, pan: 0.6 },
+      { every: [6, 14], fn: pageTurn, vol: 0.16, verb: 0.6, pan: 1 },
     ],
   },
   throne: {

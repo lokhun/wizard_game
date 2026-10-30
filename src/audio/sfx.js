@@ -293,6 +293,19 @@ def('explosion_big', 'boom', 0.45, (v) => {
   crackle(v, { t: 0.08, dur: 1.6, peak: 0.45, rate: 0.7, hp: 900 });
   pebbles(v, 8, 1.5, 0.3, 0.25);
 }, { cap: 4 });
+// a hanging cage or chains knocked swinging: iron rattling on its chain, a clank, the hook creaking
+def('cage_rattle', 'impact', 0.2, (v) => {
+  v.noise({ buf: 'chain', dur: rnd(0.6, 1.0), a: 0.01, peak: 0.6, rate: rnd(0.7, 1.0), filt: { type: 'bp', f: 1700, q: 0.8 } });
+  v.bell({ f: rnd(380, 520), dur: 0.9, peak: 0.08, partials: [[1, 1, 1], [2.4, 0.6, 0.6], [4.1, 0.3, 0.4]] });
+  v.osc({ type: 'sawtooth', t: 0.15, f: rnd(220, 300), f2: rnd(330, 420), ft: 0.5, dur: 0.6, a: 0.1, peak: 0.05, filt: { type: 'bp', f: 900, q: 6, fixed: true } });
+}, { cap: 2, pv: 0.12 });
+// far-off thunder over the bailey: a crack softened by distance, then a long roll that comes and goes
+def('thunder', 'boom', 0.6, (v) => {
+  burst(v, { dur: 0.25, f: 900, peak: 0.35, drive: 1 });
+  rumble(v, { t: 0.05, dur: 1.4, a: 0.05, f: 240, f2: 90, peak: 1, drive: 2 });
+  rumble(v, { t: 0.6, dur: 2.2, a: 0.3, f: 160, f2: 60, peak: 0.8 });
+  rumble(v, { t: 1.4, dur: 2.6, a: 0.5, f: 120, f2: 45, peak: 0.55 });
+}, { cap: 2 });
 def('shockwave', 'impact', 0.3, (v) => {
   v.thump({ f: 180, f2: 38, dur: 0.5, peak: 0.85 });
   v.noise({ buf: 'pink', dur: 0.6, a: 0.005, peak: 0.8, filt: { type: 'bp', f: 3000, f2: 200, ft: 0.45, q: 1.5 } });
@@ -477,6 +490,13 @@ def('door_close', 'impact', 0.4, (v) => {
   metal(v, { t, f: 180, dur: 1.4, peak: 0.12, partials: [[1, 1, 1], [2.33, 0.7, 0.7], [3.83, 0.5, 0.5], [5.2, 0.3, 0.35]] });
   v.noise({ buf: 'chain', t: t + 0.05, dur: 0.6, a: 0.005, peak: 0.45, rate: 0.8, filt: { type: 'hp', f: 1200 } });
 }, { cap: 2, pv: 0.04 });
+// a cell door thrown open: the bolt shot, the hinge's squeal, the bars banging into the wall and ringing
+def('cell_open', 'impact', 0.3, (v) => {
+  v.noise({ buf: 'chain', dur: 0.2, a: 0.005, peak: 0.5, rate: 1.4, filt: { type: 'bp', f: 2600, q: 1.5 } });
+  v.osc({ type: 'sawtooth', t: 0.08, f: rnd(180, 240), f2: rnd(320, 420), ft: 0.3, dur: 0.4, a: 0.05, peak: 0.06, filt: { type: 'bp', f: 800, q: 5, fixed: true } });
+  v.thump({ t: 0.42, f: 95, f2: 45, dur: 0.3, peak: 0.55 });
+  metal(v, { t: 0.42, f: rnd(150, 210), dur: 1.3, peak: 0.12, partials: [[1, 1, 1], [2.4, 0.6, 0.6], [4.1, 0.35, 0.4]] });
+}, { cap: 3, pv: 0.08 });
 def('door_open', 'sting', 0.35, (v) => {
   v.noise({ buf: 'chain', dur: 1.5, a: 0.4, hold: 0.7, peak: 0.55, rate: 0.6, rate2: 1.2, filt: { type: 'hp', f: 700, f2: 2000 } });
   v.noise({ buf: 'brown', dur: 1.5, a: 0.3, hold: 0.8, peak: 0.6, filt: { type: 'bp', f: 200, f2: 450, q: 2 }, trem: { rate: 9, depth: 0.5 } });

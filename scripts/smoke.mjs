@@ -4,7 +4,7 @@ import fs from 'fs';
 const [query = '', out = 'test-output/smoke.png', wait = '8000', scriptFile] = process.argv.slice(2);
 const browser = await chromium.launch({
   executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
-  args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'],
+  args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required', '--disable-renderer-backgrounding', '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows'],
 });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const errors = [];

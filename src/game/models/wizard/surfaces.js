@@ -96,12 +96,12 @@ const SURFS = {
     float crease = smoothstep(0.75, 0.9, fbm2(uv + 2., vec2(4., 30.), 4));
     float blot = fbm(uv + 5., 3., 4);
     float flush = smoothstep(0.45, 0.8, fbm(uv + 9., 4., 4));
-    h = 0.5 + n * 0.15 - pores * 0.14 - crease * 0.26;
+    h = 0.5 + n * 0.15 - pores * 0.06 - crease * 0.2;
     // living skin: warm base with ruddy patches, darker creases, no plastic white
     vec3 c = mix(vec3(0.86, 0.78, 0.74), vec3(0.84, 0.66, 0.62), blot);
     c = mix(c, vec3(0.82, 0.56, 0.52), flush * 0.45);
     c *= 0.9 + 0.14 * n;
-    c *= 1. - crease * 0.24 - pores * 0.08;
+    c *= 1. - crease * 0.2 - pores * 0.03;
     col = srgb(c);
     rough = 0.55 + pores * 0.2 + crease * 0.1;
     metal = 0.;

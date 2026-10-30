@@ -8,7 +8,9 @@
 // (median of `reps` runs), frame-time percentiles, particles drawn vs alive and
 // the heap growth per simulated second (noisy: GC runs whenever it likes).
 // &reps=N (default 3), &sec=S simulated seconds per run (default 8), &fine=1 also
-// times per-actor calls (AI, LOS, collision; adds overhead).
+// times per-actor calls (AI, LOS, collision; adds overhead). &render=1 (without
+// norender) also draws every simulated frame and times the renderer's CPU side
+// ('render', with draw calls and triangles per frame).
 (async () => {
   while (!window.__game || !window.__game.player || window.__game.loadingFloor) await new Promise((r) => setTimeout(r, 200));
   await new Promise((r) => setTimeout(r, 1000));
@@ -62,8 +64,11 @@
       e.drawn += L.geo?.instanceCount ?? L.capacity; e.live += n; e.n++;
     }
   };
+  const RENDER = Q.has('render');
+  let calls = 0, tris = 0, rendered = 0;
   const drive = () => {
     frame++;
+    if (RENDER) { g.renderer.render(g.time); const st = g.renderer.lastStats; calls += st.calls; tris += st.tris; rendered++; }
     if (frame % 30 === 0) sampleParticles();
     if (frame % 15 === 0) fill();
     const t = nearest(p.pos);
@@ -135,6 +140,7 @@
   time(g.critters, 'update', 'critters');
   time(g.ui, 'update', 'ui');
   time(g, '_viewModel', 'viewmodel');
+  if (Q.has('render')) time(g.renderer, 'render', 'render');
   for (const r of mates) time(r, 'update', 'remotes');
   // warm up: fill the room and let the fight get going
   fill();
@@ -169,5 +175,6 @@
     hudGlyphs: { cached: g.ui?._tb?.size, pages: g.ui?._atlas?.pages.length, numbers: g.ui?.numbers?.length },
     particles: Object.fromEntries(layers.map((k) => [k, { drawn: Math.round(pc[k].drawn / pc[k].n), live: Math.round(pc[k].live / pc[k].n) }])),
     median: med, runs: runs.map((r) => +r.total.toFixed(2)),
+    ...(RENDER ? { drawCalls: Math.round(calls / rendered), tris: Math.round(tris / rendered) } : {}),
   };
 })()

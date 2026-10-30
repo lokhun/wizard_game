@@ -2,6 +2,7 @@ import { loadProfile, saveProfile, classRec } from './profile.js';
 import { checkFeats } from './feats.js';
 import { riteScore, prevDay } from './pacts.js';
 import { BOSS_DEFS } from '../game/enemyDefs.js';
+import { CLASS_META } from '../game/classMeta.js';
 
 // ---------------------------------------------------------------------------
 // The run tracker listens to the game's event bus and keeps this machine's
@@ -170,7 +171,7 @@ export class RunTracker {
     const r = this.run;
     if (!FIGHT.has(room.type) || r.cur?.id === room.id) return;
     if (r.cur) this._closeRoom(false);
-    r.cur = { id: room.id, f: this.g.floorIndex, type: room.type, t0: this.g.stats.time, t: 0, dmg: 0, dashes: 0, kills: 0, done: false, trial: null };
+    r.cur = { id: room.id, f: this.g.floorIndex, ab: this.g.abyss ?? 0, type: room.type, t0: this.g.stats.time, t: 0, dmg: 0, dashes: 0, kills: 0, done: false, trial: null };
   }
 
   _closeRoom(done) {
@@ -246,7 +247,7 @@ export class RunTracker {
       dmgBy: Object.entries(p.dmgBy ?? {}).filter(([, v]) => v >= 1).sort((a, b) => b[1] - a[1]).slice(0, 7)
         .map(([k, v]) => [p.cls?.spells?.[k]?.name ?? SOURCE[k]?.[0] ?? k, p.cls?.spells?.[k]?.icon ?? SOURCE[k]?.[1] ?? 'star', Math.round(v)]),
       tomes: [...tomes.values()], relics: p.relics.map((x) => x.def?.id).filter(Boolean),
-      rooms: r.rooms.map((c) => [c.f, c.type, Math.round(c.t), Math.round(c.dmg), (c.done ? 1 : 0) | (c.trial ? 2 : 0), c.kills]),
+      rooms: r.rooms.map((c) => [c.f, c.type, Math.round(c.t), Math.round(c.dmg), (c.done ? 1 : 0) | (c.trial ? 2 : 0), c.kills, c.ab ?? 0]),
     };
   }
 
@@ -278,6 +279,8 @@ export class RunTracker {
     r.ended = true; r.abandoned = true;
     r.time = this.g.stats.time;
     r.winTime ||= r.time;
+    // a run left in the Abyss was already won: its victory's feats are earned as on any other ending
+    if (r.won) { r.coop ||= !this.g.isSolo; if (r.cur) this._closeRoom(false); this.fire('end'); }
     this.record();
   }
 
@@ -350,7 +353,7 @@ export class RunTracker {
       if (d.last !== r.daily) { d.streak = d.last === prevDay(r.daily) ? d.streak + 1 : 1; d.last = r.daily; }
       d.bestStreak = Math.max(d.bestStreak, d.streak);
       d.runs++;
-      const res = { date: r.daily, floor: realm, won: r.won, time: Math.round(r.time), kills: r.kills };
+      const res = { date: r.daily, floor: realm, won: r.won, time: Math.round(r.won ? r.winTime : r.time), kills: r.kills }; // (a won rite is timed to its throne: the Abyss after it is no slower win)
       res.score = riteScore(res);
       if (!d.best || d.best.date !== r.daily || res.score > d.best.score) { if (d.best?.date === r.daily) rec.daily = true; d.best = res; }
     }
@@ -362,7 +365,27 @@ export class RunTracker {
   remoteSummary(msg) {
     const s = msg?.s;
     if (!s || typeof s !== 'object' || !s.pid || s.pid === this.g.player?.id) return;
-    this.remote.set(s.pid, s);
-    this.hooks.onRemote?.(s);
+    const c = cleanSummary(s);
+    this.remote.set(c.pid, c);
+    this.hooks.onRemote?.(c);
   }
+}
+
+// A teammate's summary comes off the wire and is drawn into the run summary's markup: keep only the fields it
+// shows, each as the type it should be (numbers finite, text a string of sane length, lists of the right shape)
+function cleanSummary(s) {
+  const num = (v) => (Number.isFinite(+v) ? +v : 0);
+  const str = (v, n = 40) => (v == null ? '' : String(v).slice(0, n));
+  const arr = (v, n) => (Array.isArray(v) ? v.slice(0, n) : []);
+  return {
+    pid: str(s.pid, 24), name: str(s.name, 16) || 'Wizard', classId: CLASS_META[s.classId] ? s.classId : 'pyromancer',
+    kills: num(s.kills), damage: num(s.damage), biggest: num(s.biggest), reactions: num(s.reactions), taken: num(s.taken), downs: num(s.downs),
+    dodges: s.dodges === undefined ? undefined : num(s.dodges), interrupts: num(s.interrupts),
+    killer: s.killer ? str(s.killer, 60) : null,
+    recap: arr(s.recap, 8).filter((h) => h && typeof h === 'object').map((h) => ({ name: str(h.name), move: h.move ? str(h.move) : '', n: num(h.n), dmg: num(h.dmg) })),
+    dmgBy: arr(s.dmgBy, 12).filter(Array.isArray).map((x) => [str(x[0]), str(x[1], 24), num(x[2])]),
+    tomes: arr(s.tomes, 120).filter(Array.isArray).map((x) => [str(x[0]), num(x[1]), num(x[2])]),
+    relics: arr(s.relics, 60).map((x) => str(x)),
+    feats: arr(s.feats, 60).map((x) => str(x)),
+  };
 }

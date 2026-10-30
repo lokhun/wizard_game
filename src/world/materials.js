@@ -27,6 +27,16 @@ function wetEnv() {
   return t;
 }
 
+// Ripples on every water surface: a ring of 12 sources (x, z, start time, strength) that each spread a
+// rippling ring out over 1.8 s, in the water's own shader (no meshes; the normals bend, so a ripple catches
+// the torches). Drips, rain and anything wading feed it (waterRipple).
+const RIP_N = 12, RIP = { value: Array.from({ length: RIP_N }, () => new THREE.Vector4(0, 0, -99, 0)) }, RIP_T = { value: 0 };
+let ripI = 0;
+export function waterRipple(x, z, k = 1) {
+  RIP.value[ripI].set(x, z, RIP_T.value, k);
+  ripI = (ripI + 1) % RIP_N;
+}
+
 export function makeWaterMaterial(factory, tint = 0x0d1a12) {
   const t = factory.get('rock', 512, 7);
   const n2 = t.normalMap.clone();
@@ -45,8 +55,49 @@ export function makeWaterMaterial(factory, tint = 0x0d1a12) {
     opacity: 0.88,
     depthWrite: false,
   });
+  // two ripple layers: the map scrolling one way and itself again at 0.61x the scale drifting the other,
+  // blended (the sum of their slopes): one map sliding over the channel read as moving stone, not water.
+  // One extra texture read; the program compiles with the rest at load.
+  const uB = { value: new THREE.Vector2() };
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uWaterB = uB; sh.uniforms.uRip = RIP; sh.uniforms.uRipT = RIP_T;
+    // a channel's water runs (aFlow, m/s: its surface scrolls that way, the two layers at different rates)
+    // and froths where it meets the banks and a bridge's piers (aFoam), scum riding mid-stream; a basin's
+    // still water has neither (the attributes read 0)
+    sh.vertexShader = 'attribute vec2 aFlow; attribute float aFoam; varying vec2 vFlow; varying float vFoam; varying vec2 vRipW;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vRipW = (modelMatrix * vec4(transformed, 1.0)).xz; vFlow = aFlow; vFoam = aFoam;');
+    sh.fragmentShader = `uniform vec2 uWaterB; uniform vec4 uRip[${RIP_N}]; uniform float uRipT; varying vec2 vRipW; varying vec2 vFlow; varying float vFoam;\n` + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+      vec2 fUv = vec2(vFlow.x, -vFlow.y) / 6.0 * uRipT;
+      float fl = length(vFlow);
+      float wFoam = smoothstep(0.62, 1.0, vFoam) * smoothstep(0.46, 0.7, texture2D( normalMap, vNormalMapUv * 2.3 + fUv * 2.6 ).r);
+      wFoam += fl * 0.8 * (1.0 - vFoam) * smoothstep(0.74, 0.86, texture2D( normalMap, vNormalMapUv * 1.3 + fUv * 1.5 + 0.37 ).g);
+      wFoam = clamp(wFoam, 0.0, 1.0);
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.36, 0.42, 0.33), wFoam * 0.65);
+      diffuseColor.a = mix(diffuseColor.a, 1.0, wFoam * 0.5);`).replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+      roughnessFactor = mix(roughnessFactor, 0.75, wFoam);`).replace('#include <normal_fragment_maps>', `
+      vec3 mapN = texture2D( normalMap, vNormalMapUv + fUv ).xyz * 2.0 - 1.0;
+      vec3 mapN2 = texture2D( normalMap, vNormalMapUv * 0.61 + uWaterB + fUv * 0.8 ).xyz * 2.0 - 1.0;
+      mapN = vec3( mapN.xy + mapN2.xy, mapN.z * mapN2.z );
+      mapN.xy *= normalScale;
+      // ripples: a couple of crests riding out on a ring (the surfaces' uv runs along +x and -z)
+      vec2 rip = vec2(0.0); float ripK = 0.0;
+      for (int i = 0; i < ${RIP_N}; i++) {
+        vec4 R = uRip[i];
+        float age = uRipT - R.z;
+        if (age < 0.0 || age > 1.8) continue;
+        vec2 dv = vRipW - R.xy; float d = length(dv) + 1e-4, x = d - age * 0.8;
+        float w = exp(-x * x * 36.0) * (1.0 - age / 1.8) * R.w, c = sin(x * 34.0);
+        rip += vec2(dv.x, -dv.y) / d * c * w; ripK += max(c, 0.0) * w;
+      }
+      mapN.xy += rip * 2.0;
+      normal = normalize( tbn * mapN );`).replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+      totalEmissiveRadiance += vec3(0.05, 0.065, 0.065) * min(ripK, 1.5); // (a crest's sheen, so it reads away from the torches too)
+      totalEmissiveRadiance += vec3(0.035, 0.045, 0.035) * wFoam;`);
+  };
+  mat.customProgramCacheKey = () => 'water4';
   mat.userData.update = (time) => {
     t.normalMap.offset.set(time * 0.012, time * 0.02);
+    uB.value.set(-time * 0.017, time * 0.009);
+    RIP_T.value = time;
   };
   void n2;
   return mat;
@@ -111,6 +162,7 @@ function splatTexture() {
 }
 
 let shared = null;
+const BANNER_T = { value: 0 }, BANNER_K = { value: 1 };
 
 // Biome-independent materials are cached across floors.
 export function getSharedMaterials(factory) {
@@ -124,9 +176,22 @@ export function getSharedMaterials(factory) {
   m.gold = S('gold', { size: 512 });
   m.cloth = S('cloth', { size: 512, vertexColors: true });
   m.banner = S('cloth', { size: 512, vertexColors: true, side: THREE.DoubleSide });
+  // banners and awnings stir: a slow wave runs down the cloth along its normal, growing toward the free
+  // edge (uv.y 0; the hem at the top stays put). A draught indoors, a flapping gale under a storm
+  // (BANNER_K, set per realm: the material is shared across floors).
+  m.banner.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = BANNER_T; sh.uniforms.uSwayK = BANNER_K;
+    sh.vertexShader = 'uniform float uTime; uniform float uSwayK;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+      vec3 bw = (modelMatrix * vec4(position, 1.0)).xyz;
+      float free = pow(1.0 - uv.y, 1.3);
+      transformed += objectNormal * sin(uTime * (1.3 + uSwayK * 0.6) + bw.x * 0.7 + bw.z * 0.5 + (1.0 - uv.y) * 5.0) * 0.045 * free * uSwayK;`);
+  };
+  m.banner.customProgramCacheKey = () => 'bannerSway';
+  m.banner.userData.update = (time) => { BANNER_T.value = time; };
   m.canvas = S('cloth', { size: 512, vertexColors: true });
   m.bone = S('bone', { size: 512 });
   m.leather = S('leather', { size: 512, vertexColors: true });
+  m.bookRow = S('bookRow', { size: 512, vertexColors: true });
   m.rock = S('rock', { size: 512 });
   m.stone = S('castleWall', { size: 512, color: 0xa8a49c });
   m.roof = S('roof', { size: 512 });
@@ -156,9 +221,13 @@ export function getBiomeMaterials(factory, biome) {
   m.wall = S(biome.wall, { vertexColors: true });
   m.floor = S(biome.floor, { vertexColors: true });
   m.floorAlt = S(biome.floorAlt, { vertexColors: true });
+  // under a storm the ground is wet: darker, and the stones glossy enough to catch the moon and torches
+  // (same programs: only the parameters change)
+  if (biome.storm) { m.floor.color.setScalar(0.8); m.floor.roughness = 0.78; m.floorAlt.color.setScalar(0.72); m.floorAlt.roughness = 0.42; }
   m.ceiling = biome.ceilingMat ? S(biome.ceilingMat, { vertexColors: true, color: 0x8a8070 }) : null;
   m.trim = S(biome.trimMat === 'gold' ? 'castleWall' : biome.trimMat, { vertexColors: true, color: biome.trimTint ?? (biome.trimMat === 'gold' ? 0xd8d0c0 : 0xffffff) });
   m.water = makeWaterMaterial(factory, biome.id === 'sewers' ? 0x14200c : 0x0a1418);
   m.channelBed = S('dirt', { vertexColors: true, color: 0x606850 });
+  BANNER_K.value = biome.storm ? 2.2 : biome.outdoor ? 1.2 : 0.7;
   return m;
 }

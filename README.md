@@ -68,10 +68,12 @@ A first-person, co-op wizard roguelike for the browser. Fight your way up from t
 | Space | Jump (jump over boss shockwaves) |
 | F | Interact / hold to revive an ally |
 | G | Ping a location for your party |
+| X | Use your item |
 | Tab / M | Map |
-| Esc | Pause and settings |
+| C (hold) | Party scores: each wizard's damage, kills and gold |
+| Esc / P | Pause and settings |
 
-Every key above (but the mouse buttons and Esc) can be rebound under **Settings → Controls**, including to a mouse's middle or side buttons.
+Every key above (but the mouse buttons, Esc and P) can be rebound under **Settings → Controls**, including to a mouse's middle or side buttons.
 
 ## Running locally
 

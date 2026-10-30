@@ -58,6 +58,7 @@ export const ITEMS = {
     desc: 'Drink: hasted for 8 s, and every spell on cooldown comes back 4 s sooner.',
     use(g, p) {
       p.hasteT = Math.max(p.hasteT ?? 0, 8);
+      p.recomputeStats(); // (the haste lives in the stats)
       for (const s in p.cds) p.cds[s] = Math.max(0, p.cds[s] - 4);
     },
     show(g, at) {
@@ -122,7 +123,8 @@ export function itemK(g) { return 1 + 0.45 * ((g.floorIndex ?? 0) + 5 * (g.abyss
 function flask(g, p, at, local, k) {
   const pos = v3(at.x, at.y, at.z), dir = v3(at.dx, at.dy ?? 0.25, at.dz).normalize();
   g.spells.spawn({
-    local, faction: 'player', owner: p?.id ?? 0, el: 'fire', pos, vel: dir.multiplyScalar(12).add(v3(0, 3.2, 0)), gravity: 16, // (a flat throw lands ~9 m off; aim up to throw further) radius: 0.25, life: 3,
+    local, faction: 'player', owner: p?.id ?? 0, el: 'fire', pos, vel: dir.multiplyScalar(12).add(v3(0, 3.2, 0)), gravity: 16, // (a flat throw lands ~9 m off; aim up to throw further)
+    radius: 0.25, life: 3,
     core: 0.8, mesh: 'orb', light: 7, trail: 1.2,
     hit: local ? { dmg: 20 * k, el: 'fire' } : null,
     aoe: { radius: 4.5, dmg: local ? 75 * k : 0, el: 'fire', st: { burn: [4, 8 * k] }, kb: 10 },

@@ -16,6 +16,10 @@ const C = (hex, k = 1) => {
 // Kept to ~1.5-2.2x HDR: enough to stay the brightest thing on screen and to
 // bloom a little, but ACES no longer shifts fire to pink/white or necrotic
 // to neon. Hues are deliberately deep (grim, low-key palette).
+// lightning's scratch (see VFX.lightning)
+const _boltPts = [Array.from({ length: 64 }, () => new THREE.Vector3()), Array.from({ length: 64 }, () => new THREE.Vector3())];
+const _bUp = new THREE.Vector3(0, 1, 0), _bDir = new THREE.Vector3(), _bP1 = new THREE.Vector3(), _bP2 = new THREE.Vector3(), _bSide = new THREE.Vector3(), _bSeg = new THREE.Vector3(), _bCam = new THREE.Vector3(), _bTo = new THREE.Vector3();
+const _bOpt = { element: undefined, color: undefined, life: undefined, width: 0, jag: 0, branches: 0, seg: undefined };
 export const FX = {
   fire: { core: C(0xffb85a, 1.9), mid: C(0xff6418, 1.45), end: C(0x4a0a00, 1), smoke: [0.06, 0.045, 0.035], spr: SPR.FLAME, spark: SPR.EMBER, light: 0xff6a20 },
   frost: { core: C(0xc8eeff, 1.8), mid: C(0x4aa8e8, 1.4), end: C(0x183a70, 0.9), smoke: [0.5, 0.62, 0.72], spr: SPR.SHARD, spark: SPR.SNOW, light: 0x80c8ff },
@@ -93,9 +97,9 @@ const ORB_VERT = /* glsl */ `
 varying vec3 vN; varying vec3 vV; varying vec3 vP; varying float vDepth;
 ${SAFE_V}
 void main(){
-  vP = normalize(position);
+  vP = safeV(position);
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  vN = normalize(normalMatrix * normal);
+  vN = safeV(normalMatrix * normal);
   vV = safeV(-mv.xyz);
   vDepth = -mv.z;
   gl_Position = projectionMatrix * mv;
@@ -184,7 +188,7 @@ void main(){
 const TELE_FRAG = /* glsl */ `
 uniform vec3 uColor; uniform float uProg; uniform float uTime; uniform int uMode; uniform float uAngle; uniform float uFade;
 uniform vec2 uSize; uniform vec2 uK;
-varying vec2 vUv;
+varying vec2 vUv; varying float vDepth;
 void main(){
   vec2 p = (vUv * 2.0 - 1.0) * uK;
   float e, f; // signed distance to the edge in metres (negative inside), sweep coordinate
@@ -203,8 +207,11 @@ void main(){
   // fill seen from inside the zone read as a solid slab standing on the floor, not a mark painted on it
   vec2 m = p * uSize;
   float hatch = 0.45 + 0.55 * smoothstep(0.3, 0.7, abs(fract((m.x + m.y) * 2.2 - uTime * 0.35) - 0.5) * 2.0);
-  vec3 col = uColor * (line * 1.05 * pulse + glowIn * 0.28 + sweep * (0.08 + 0.22 * imminent) * hatch + front * 0.5) + vec3(0.24 * line * pulse);
-  float dark = halo * 0.5 + inside * (0.14 + 0.1 * imminent);
+  // the fill eases off right under the camera: a zone you stand in filled the lower screen with a bright
+  // wash that read as a pale slab and hid the floor (its edge stays full, so you still see where it ends)
+  float nearK = mix(0.4, 1.0, smoothstep(1.2, 5.0, vDepth));
+  vec3 col = uColor * (line * 1.05 * pulse + (glowIn * 0.28 + sweep * (0.08 + 0.22 * imminent) * hatch + front * 0.5) * nearK) + vec3(0.24 * line * pulse);
+  float dark = halo * 0.5 + inside * (0.14 + 0.1 * imminent) * nearK;
   col *= uFade; dark *= uFade;
   if (max(max(col.r, col.g), max(col.b, dark)) < 0.003) discard;
   gl_FragColor = vec4(col, dark);
@@ -250,7 +257,7 @@ ${SAFE_V}
 void main(){
   vUv = uv;
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  vN = normalize(normalMatrix * normal);
+  vN = safeV(normalMatrix * normal);
   vAx = (modelViewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz; // the beam's axis (local +Y) in view space
   vV = safeV(-mv.xyz);
   vDepth = -mv.z;
@@ -259,12 +266,13 @@ void main(){
 const BEAM_FRAG = /* glsl */ `
 uniform vec3 uColor; uniform vec3 uCore; uniform float uTime; uniform float uLen; uniform float uAlpha; uniform float uNoise;
 varying vec2 vUv; varying vec3 vN; varying vec3 vV; varying float vDepth; varying vec3 vAx;
+${SAFE_V}
 float h(float x){ return fract(sin(x) * 43758.5453); }
 float n1(float x){ float i = floor(x), f = fract(x); return mix(h(i), h(i + 1.0), smoothstep(0.,1.,f)); }
 void main(){
   // facing measured across the beam, not along it: your own beam runs nearly
   // straight away from the eye, where a plain N.V goes to zero and it vanished
-  vec3 ax = normalize(vAx);
+  vec3 ax = safeV(vAx);
   vec3 vp = vV - ax * dot(vV, ax);
   float facing = dot(vp, vp) > 1e-6 ? abs(dot(vN, normalize(vp))) : 1.0;
   float core = pow(facing, 6.0);
@@ -343,7 +351,7 @@ void main(){
   p.x += sin(y * 3.1 + uTime * 2.3) * uSnake * y;
   p.z += cos(y * 2.7 + uTime * 1.9) * uSnake * y;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
-  vec3 n = normalize(normalMatrix * vec3(cos(a), 0.0, sin(a)));
+  vec3 n = safeV(normalMatrix * vec3(cos(a), 0.0, sin(a)));
   vFacing = abs(dot(n, safeV(-mv.xyz)));
   vDepth = -mv.z;
   gl_Position = projectionMatrix * mv;
@@ -375,7 +383,7 @@ ${SAFE_V}
 void main(){
   vUv = uv;
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  vec3 n = normalize(normalMatrix * normal);
+  vec3 n = safeV(normalMatrix * normal);
   vFacing = abs(dot(n, safeV(-mv.xyz)));
   vDepth = -mv.z;
   gl_Position = projectionMatrix * mv;
@@ -476,6 +484,7 @@ function alphaNormalMap(srcCanvas, strength = 3) {
 
 // how each decal type is drawn: lit pools respond to torches and spell light,
 // additive ones (glyphs, rime) glow faintly
+const _wdN = new THREE.Vector3(), _wdUp = new THREE.Vector3(0, 1, 0), _wdQ = new THREE.Quaternion();
 const DECAL_LOOK = {
   scorch: { rough: 0.95 },
   crack: { rough: 0.95 },
@@ -591,7 +600,7 @@ export class VFX {
     // oldest warning still on the floor: a blow that landed with no mark)
     // (each zone its own finely divided quad: it is draped over the floor under it, see drape)
     this.telePool = this._pool(64, () => new THREE.Mesh(drapeGeo(), new THREE.ShaderMaterial({
-      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }',
+      vertexShader: 'varying vec2 vUv; varying float vDepth; void main(){ vUv = uv; vec4 mv = modelViewMatrix * vec4(position,1.); vDepth = -mv.z; gl_Position = projectionMatrix * mv; }',
       fragmentShader: TELE_FRAG,
       uniforms: { uColor: { value: new THREE.Color() }, uProg: { value: 0 }, uTime: { value: 0 }, uMode: { value: 0 }, uAngle: { value: 0.6 }, uFade: { value: 1 }, uSize: { value: new THREE.Vector2(1, 1) }, uK: { value: new THREE.Vector2(1, 1) } },
       transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
@@ -963,58 +972,62 @@ export class VFX {
     pos.needsUpdate = true;
   }
 
-  lightning(a, b, o = {}) {
+  // (no allocations: a stormcaller draws dozens of bolts a second, and each one used to make ~70 vectors.
+  // depth 0 is the bolt, depth 1 its branches, each with its own scratch points)
+  lightning(a, b, o = {}, depth = 0) {
     const m = this.boltPool.get();
-    const segs = Math.min(63, Math.max(4, Math.floor(a.distanceTo(b) / 0.35)));
-    const pts = [];
-    const dir = new THREE.Vector3().subVectors(b, a);
+    const pts = _boltPts[depth];
+    const dir = _bDir.subVectors(b, a);
     const len = dir.length();
+    const segs = Math.min(63, Math.max(4, Math.floor(len / (o.seg ?? 0.35)))); // (o.seg: a sky bolt takes long strides)
     const jag = o.jag ?? Math.min(1.2, len * 0.08);
-    const perp1 = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
+    const perp1 = _bP1.crossVectors(dir, _bUp);
     if (perp1.lengthSq() < 1e-6) perp1.set(1, 0, 0);
     perp1.normalize();
-    const perp2 = new THREE.Vector3().crossVectors(dir, perp1).normalize();
-    for (let i = 0; i <= segs; i++) {
+    const perp2 = _bP2.crossVectors(dir, perp1).normalize();
+    const n = segs + 1;
+    for (let i = 0; i < n; i++) {
       const t = i / segs;
       const env = Math.sin(t * Math.PI);
-      const p = new THREE.Vector3().copy(a).addScaledVector(dir, t);
+      const p = pts[i].copy(a).addScaledVector(dir, t);
       if (i > 0 && i < segs) {
         p.addScaledVector(perp1, (Math.random() - 0.5) * jag * env);
         p.addScaledVector(perp2, (Math.random() - 0.5) * jag * env);
       }
-      pts.push(p);
     }
     const pos = m.geometry.getAttribute('position');
     const uv = m.geometry.getAttribute('uv');
     const camPos = this.camera.position;
     const w = o.width ?? 0.08;
-    const side = new THREE.Vector3(), seg = new THREE.Vector3(), toCam = new THREE.Vector3();
+    const side = _bSide, seg = _bSeg, toCam = _bCam;
     for (let i = 0; i < 64; i++) {
-      const p = pts[Math.min(i, pts.length - 1)];
-      const q = pts[Math.min(i + 1, pts.length - 1)];
-      const pp = pts[Math.max(0, Math.min(i, pts.length - 1) - 1)];
+      const p = pts[Math.min(i, n - 1)];
+      const q = pts[Math.min(i + 1, n - 1)];
+      const pp = pts[Math.max(0, Math.min(i, n - 1) - 1)];
       seg.subVectors(q, pp).normalize();
       toCam.subVectors(camPos, p).normalize();
-      side.crossVectors(seg, toCam).normalize().multiplyScalar(w * (i >= pts.length - 1 ? 0.3 : 1));
+      side.crossVectors(seg, toCam).normalize().multiplyScalar(w * (i >= n - 1 ? 0.3 : 1));
       pos.setXYZ(i * 2, p.x + side.x, p.y + side.y, p.z + side.z);
       pos.setXYZ(i * 2 + 1, p.x - side.x, p.y - side.y, p.z - side.z);
       uv.setXY(i * 2, i / 63, 0); uv.setXY(i * 2 + 1, i / 63, 1);
     }
     pos.needsUpdate = true; uv.needsUpdate = true;
-    m.geometry.setDrawRange(0, (pts.length - 1) * 6);
+    m.geometry.setDrawRange(0, (n - 1) * 6);
     const fx = fxOf(o.element ?? 'lightning');
-    m.material.uniforms.uColor.value.setRGB(...(o.color ?? fx.mid));
+    const col = o.color ?? fx.mid;
+    m.material.uniforms.uColor.value.setRGB(col[0], col[1], col[2]);
     const life = o.life ?? 0.15;
     this._track(m, life, (k) => { m.material.uniforms.uAlpha.value = (1 - k) * (0.7 + Math.random() * 0.6); });
-    // branches
-    if ((o.branches ?? 1) > 0 && len > 3) {
-      for (let i = 0; i < (o.branches ?? 1); i++) {
-        const from = pts[Math.floor(rand(0.2, 0.7) * pts.length)];
-        const to = from.clone().add(new THREE.Vector3(rand(-1, 1), rand(-1, 0.6), rand(-1, 1)).multiplyScalar(len * 0.25));
-        this.lightning(from, to, { ...o, branches: 0, width: w * 0.5, jag: jag * 0.6 });
+    // branches (from a point of this bolt to a little way off it)
+    const nb = depth ? 0 : (o.branches ?? 1);
+    if (nb > 0 && len > 3) {
+      for (let i = 0; i < nb; i++) {
+        const from = pts[Math.floor(rand(0.2, 0.7) * n)];
+        _bTo.set(rand(-1, 1), rand(-1, 0.6), rand(-1, 1)).multiplyScalar(len * 0.25).add(from);
+        _bOpt.element = o.element; _bOpt.color = o.color; _bOpt.life = o.life; _bOpt.width = w * 0.5; _bOpt.jag = jag * 0.6; _bOpt.seg = o.seg;
+        this.lightning(from, _bTo, _bOpt, 1);
       }
     }
-    return pts;
   }
 
   // persistent beam; call update(a,b) every frame; release() when done
@@ -1035,6 +1048,11 @@ export class VFX {
       update: (a, b, w = width) => {
         d.subVectors(b, a);
         const len = d.length();
+        // (a beam with no length - its end inside whatever it starts against, a huge boss up close -
+        // had its mesh scaled to nothing along its axis: a singular matrix, normalize(0) in the shader,
+        // NaN pixels that the bloom smeared over the whole screen as a black frame. Not drawn instead.)
+        if (!(len > 0.04) || !(w > 0)) { m.visible = false; return; }
+        m.visible = true;
         m.position.copy(a);
         m.quaternion.setFromUnitVectors(up, d.normalize());
         m.scale.set(w, len, w);
@@ -1228,6 +1246,20 @@ export class VFX {
     return m;
   }
 
+  // A mark on a wall where a shot struck it: a decal laid flat (the drape grid flattened back to a plane)
+  // and turned to face out of the wall along (nx, nz), spun at random about that face.
+  wallDecal(pos, nx, nz, type, size = 1.2, life = 8, color) {
+    const m = this.decal(pos, type, size, life, color);
+    if (!m) return null;
+    const P = m.geometry.attributes.position;
+    for (let i = 0; i < P.count; i++) P.setY(i, 0);
+    P.needsUpdate = true;
+    _wdN.set(nx, 0, nz).normalize();
+    m.quaternion.setFromUnitVectors(_wdUp, _wdN).multiply(_wdQ.setFromAxisAngle(_wdUp, Math.random() * Math.PI * 2));
+    m.position.set(pos.x + _wdN.x * 0.03, pos.y, pos.z + _wdN.z * 0.03);
+    return m;
+  }
+
   // A shockwave rolling out along the floor: a ring of dust (or mist) puffs
   // shoved outward that slow and spread as they reach `radius`, so a nova reads
   // on the ground from any angle. o: { color:[r,g,b], alpha, count, glow:[r,g,b] }
@@ -1341,6 +1373,7 @@ export class VFX {
   }
 
   explosion(pos, element, radius = 3, o = {}) {
+    this.onBlast?.(pos, radius); // (the bodies lying in it are thrown: Actors.blastCorpses)
     const fx = fxOf(element);
     const s = radius / 3;
     // Dim the glow by how much of the screen the blast covers: a blast that

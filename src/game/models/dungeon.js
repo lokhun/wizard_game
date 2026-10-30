@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { G, xf, lathe, shell, robe, panel, tube, taper, extrude, deform, bumpy, mergeRaw, chainSkin, rng, vnoise, clamp, lerp, TAU, smooth, bump, easeOut, easeIn } from './core.js';
 import { humanSkeleton, humanoidPose, act2, ACT } from './humanoid.js';
-import { glowLevel } from './bossKit.js';
+import { glowLevel, robeRing, embroideryOf } from './bossKit.js';
 import { twoSided, addSkull, addSkeletonBody, addBoneHand, addFleshHand, addSword, swordGeo, addRoundShield, addAxe, addTowerShield, addClub, pointedHood, addFleshBody, pauldron, kettleHat, HDR, belt, rivets, addBow, hood, BONE_PALE, boneShade, thinBone, STEEL, RUSTY, DARKSTEEL, BRASS } from './parts.js';
 
 const BONE_C = BONE_PALE;
@@ -583,7 +583,7 @@ export function buildHeadsman(rig, o = {}) {
   // black hood with mantle, eye holes
   rig.add('head', 'cloth', pointedHood(0.13, { lean: 0.8 }), { y: 0.0 }, { c: [0.09, 0.08, 0.08] });
   // short hood cowl over the shoulders, longer at the back so the chest stays bare
-  const cowl = robe(0.15, 0.36, 0.26, { seg: 18, rows: 3, folds: 7, foldAmp: 0.1, tatter: 0.3, seed: 4 });
+  const cowl = robe(0.15, 0.36, 0.26, boss ? { seg: 56, rows: 10, folds: 11, foldAmp: 0.1, tatter: 0.3, seed: 4, pipe: true } : { seg: 18, rows: 3, folds: 7, foldAmp: 0.1, tatter: 0.3, seed: 4 });
   deform(cowl, (v) => { if (v.z > 0) v.y = Math.max(v.y, -0.12 - Math.abs(v.x) * 0.25); else v.y *= 1.4; }, true);
   rig.add('chest', 'cloth', cowl, { y: D.chest + 0.08, sz: 0.85 }, { c: [0.09, 0.08, 0.08], anim: (v) => clamp(-v.y * 2.5) * 0.5 });
   rig.pair('head', 'head', 'dark', xf(G.sph(0.024, 8, 6), { sx: 1.4, sz: 0.4 }), { x: 0.048, y: 0.14, z: 0.137 });
@@ -596,7 +596,15 @@ export function buildHeadsman(rig, o = {}) {
   // belt, kilt, trousers, boots, bracers
   rig.add('hips', 'leather', xf(G.cyl(0.27, 0.27, 0.11, 18, true), { sz: 0.8 }), { y: 0.02 }, { c: [0.22, 0.15, 0.1] });
   rig.add('hips', 'iron', mergeRaw([xf(G.box(0.13, 0.11, 0.03), { y: 0.02, z: 0.23 }), xf(G.tor(0.035, 0.008, 4, 10), { y: 0.02, z: 0.25 })]), {}, { c: RUSTY });
-  rig.add('hips', 'leather', robe(0.27, 0.38, 0.42, { seg: 10, rows: 2, folds: 5, foldAmp: 0.04, tatter: 0.15, seed: 6 }), { y: -0.02, sz: 0.85 }, { c: [0.16, 0.11, 0.08], anim: (v) => clamp(-v.y * 2) * 0.5, skin: chainSkin([['hips', -0.08], ['thighL', -0.5]], (v) => -v.y) });
+  const kilt = robe(0.27, 0.38, 0.42, boss ? { seg: 60, rows: 12, folds: 9, foldAmp: 0.05, tatter: 0.15, seed: 6, pipe: true } : { seg: 10, rows: 2, folds: 5, foldAmp: 0.04, tatter: 0.15, seed: 6 });
+  const kiltO = { anim: (v) => clamp(-v.y * 2) * 0.5, skin: chainSkin([['hips', -0.08], ['thighL', -0.5]], (v) => -v.y) };
+  rig.add('hips', 'leather', kilt, { y: -0.02, sz: 0.85 }, { c: [0.16, 0.11, 0.08], ...kiltO });
+  if (boss) {
+    // (a boss's kilt: a stitched welt along its hem, and a stitched belt)
+    const st = embroideryOf('stitch', [0.13, 0.09, 0.065], [0.5, 0.42, 0.3], 0.05);
+    const b = robeRing(kilt, 0.8, 0.04, st, { lift: 0.004 });
+    rig.add('hips', 'leather', b.geo, { y: -0.02, sz: 0.85 }, { vcol: b.vcol, ...kiltO });
+  }
   rig.add('hips', 'iron', rivets(Array.from({ length: 10 }, (_, i) => { const a = (i / 10 - 0.5) * 2.4; return [Math.sin(a) * 0.29, -0.15, Math.cos(a) * 0.25]; }), 0.012), {}, { c: RUSTY });
   for (const S of ['L', 'R']) {
     rig.add('thigh' + S, 'cloth', taper(0.14, 0.105, D.thigh + 0.05, 10, 2), { y: 0.03 }, { c: [0.14, 0.12, 0.11] });

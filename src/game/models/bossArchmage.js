@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { G, xf, lathe, tube, deform, robe, panel, mergeRaw, chainSkin, rng, vnoise, fbm3, clamp, lerp, smooth, bump, easeOut, easeIn, easeInOut, TAU } from './core.js';
 import { humanSkeleton, humanoidPose, act2 } from './humanoid.js';
 import { addSkull, addBoneHand, addCrystalStaff, pauldron, hood, twoSided, HDR, GOLDTRIM } from './parts.js';
-import { addFx, fxOf, fxSet, fxRot, paint, softRing, softDisc, Rope, aimChain, boneWorld, glowLevel } from './bossKit.js';
+import { wounds, strikeLayer } from './bossKit.js';
+import { addFx, fxOf, fxSet, fxRot, paint, softRing, softDisc, Rope, aimChain, boneWorld, glowLevel, robeRing, robeEdge, embroideryOf } from './bossKit.js';
 
 // ============================================================ Archmage Veyrin ==
 // The Court Archmage, long since a lich: a towering archivist in layered violet and
@@ -39,7 +40,7 @@ function sigilGeo(R) {
 }
 
 export const courtArchmage = {
-  id: 'courtArchmage', height: 4.6, radius: 1.0, boss: true, flying: true, eyeColor: EYE, magicColor: ARC, defaultAttack: 'cast', attackTypes: ['cast', 'summon', 'spin', 'beam'], orbSize: 0.13, flutter: 0.035,
+  id: 'courtArchmage', height: 4.6, radius: 1.0, boss: true, flying: true, eyeColor: EYE, magicColor: ARC, defaultAttack: 'cast', attackTypes: ['cast', 'summon', 'spin', 'beam', 'volley', 'flick', 'runes', 'orbs', 'blink', 'prison', 'beams', 'starfall'], orbSize: 0.13, flutter: 0.035,
   build(rig) {
     rig.scale = 1.85;
     const D = humanSkeleton(rig, { thigh: 0.45, shin: 0.44, spine: 0.17, chest: 0.33, neck: 0.09, shoulderW: 0.21, upper: 0.31, fore: 0.29, jaw: [0.035, 0.035] });
@@ -53,17 +54,29 @@ export const courtArchmage = {
     rig.bone('cen0', 'hips', -0.17, -0.05, 0.08);
     for (let i = 1; i < CEN_N; i++) rig.bone('cen' + i, 'cen' + (i - 1), 0, -CEN_L, 0);
     const VIOL = [0.18, 0.06, 0.3], GOLDC = [0.9, 0.75, 0.45], BLK = [0.06, 0.035, 0.09];
-    const embroid = (v, base) => { const a = Math.atan2(v.x, v.z), b = Math.sin(a * 14 + v.y * 22) * Math.sin(v.y * 38); return b > 0.86 ? GOLDTRIM : base; };
-    // ---- three robe layers, the hems fraying into ghost wisps
-    rig.add('hips', 'cloth', robe(0.19, 0.31, D.hipH + 0.12, { seg: 26, rows: 7, folds: 9, foldAmp: 0.06, tatter: 0.18, seed: 3 }), { y: 0.04 }, { anim: (v) => clamp(-v.y / 1.0), cfn: (v) => (v.y < -(D.hipH - 0.02) ? GOLDTRIM : embroid(v, [0.5, 0.46, 0.42])) });
-    const mid = new THREE.CylinderGeometry(0.21, 0.42, D.hipH + 0.12, 26, 7, true, 0.5, TAU - 1.0);
-    xf(mid, { y: -(D.hipH + 0.12) / 2 });
-    deform(mid, (v) => { const a = Math.atan2(v.x, v.z); const k = 1 + Math.sin(a * 9) * 0.05 * (-v.y); v.x *= k; v.z *= k; });
-    rig.add('hips', 'cloth', mid, { y: 0.1 }, { anim: (v) => clamp(-v.y / 1.0) * 1.2, cfn: (v) => { const a = Math.atan2(v.x, v.z); return (Math.abs(Math.abs(a) - 0.5) < 0.05 || v.y < -(D.hipH + 0.04)) ? GOLDTRIM : embroid(v, VIOL); } });
-    const outer = new THREE.CylinderGeometry(0.24, 0.6, D.hipH + 0.3, 26, 7, true, 1.4, TAU - 2.8);
-    xf(outer, { y: -(D.hipH + 0.3) / 2 });
-    deform(outer, (v) => { const a = Math.atan2(v.x, v.z); const t = -v.y / (D.hipH + 0.3); v.y -= Math.max(0, vnoise(a * 3, 1, 2, 5) - 0.45) * 0.25 * t * t; const k = 1 + Math.sin(a * 7 + 1) * 0.05 * t; v.x *= k; v.z *= k; });
-    rig.add('chest', 'cloth', twoSided(outer), { y: -D.spine + 0.15, z: -0.03 }, { c: BLK, anim: (v) => clamp(-v.y / 1.2) * 1.5, cfn: (v) => (v.y < -(D.hipH + 0.2) ? [0.5, 0.38, 0.22] : embroid(v, BLK)), skin: chainSkin([['hips', -1.2], ['chest', -0.1]], (v) => v.y) });
+    // brocade: a faint lattice of gold thread through the cloth, sharper where the mesh is fine
+    const embroid = (v, base) => { const a = Math.atan2(v.x, v.z), b = Math.sin(a * 28 + v.y * 30) * Math.sin(a * 28 - v.y * 30); const k = Math.max(0, b - 0.7) / 0.3; return [base[0] + (GOLDTRIM[0] * 0.55 - base[0]) * k, base[1] + (GOLDTRIM[1] * 0.55 - base[1]) * k, base[2] + (GOLDTRIM[2] * 0.55 - base[2]) * k]; };
+    // ---- three robe layers in deep pipe folds, the hems fraying into ghost wisps; gold-worked
+    // bands down every opening and round every hem (vine, lozenge, rune), the cloth brocaded
+    const L1 = D.hipH + 0.12, L2 = D.hipH + 0.12, L3 = D.hipH + 0.3;
+    const inner = robe(0.19, 0.31, L1, { seg: 84, rows: 24, folds: 12, foldAmp: 0.08, tatter: 0.14, seed: 3, pipe: true });
+    rig.add('hips', 'cloth', inner, { y: 0.04 }, { anim: (v) => clamp(-v.y / 1.0), cfn: (v) => embroid(v, [0.5, 0.46, 0.42]) });
+    const vineV = embroideryOf('vine', GOLDTRIM, [0.16, 0.05, 0.26], 0.06);
+    const b1 = robeRing(inner, 0.86, 0.075, vineV);
+    rig.add('hips', 'cloth', b1.geo, { y: 0.04 }, { anim: (v) => clamp(-v.y / 1.0), vcol: b1.vcol });
+    const mid = robe(0.21, 0.42, L2, { seg: 72, rows: 24, folds: 10, foldAmp: 0.08, tatter: 0, seed: 5, pipe: true, thetaStart: 0.5, thetaLength: TAU - 1.0 });
+    rig.add('hips', 'cloth', mid, { y: 0.1 }, { anim: (v) => clamp(-v.y / 1.0) * 1.2, cfn: (v) => embroid(v, VIOL) });
+    const loz = embroideryOf('diamond', GOLDTRIM, [0.1, 0.03, 0.16], 0.07);
+    for (const b of [robeEdge(mid, 0.5 + 0.11, 0.02, 0.985, 0.075, loz), robeEdge(mid, -0.5 - 0.11, 0.02, 0.985, 0.075, loz), robeRing(mid, 0.955, 0.07, loz, { a0: 0.62, a1: TAU - 0.62 })])
+      rig.add('hips', 'cloth', b.geo, { y: 0.1 }, { anim: (v) => clamp(-v.y / 1.0) * 1.2, vcol: b.vcol });
+    const outer = robe(0.24, 0.6, L3, { seg: 72, rows: 24, folds: 9, foldAmp: 0.1, tatter: 0, seed: 7, pipe: true, thetaStart: 1.4, thetaLength: TAU - 2.8 });
+    // (a hem worn ragged and lifting at the back)
+    deform(outer, (v) => { const a = Math.atan2(v.x, v.z); const t = -v.y / L3; v.y -= Math.max(0, vnoise(a * 3, 1, 2, 5) - 0.45) * 0.25 * t * t; });
+    const outerT = { y: -D.spine + 0.15, z: -0.03 }, outerO = { anim: (v) => clamp(-v.y / 1.2) * 1.5, skin: chainSkin([['hips', -1.2], ['chest', -0.1]], (v) => v.y) };
+    rig.add('chest', 'cloth', twoSided(outer), outerT, { ...outerO, c: BLK, cfn: (v) => (v.y < -(L3 - 0.1) ? [0.5, 0.38, 0.22] : embroid(v, BLK)) });
+    const runes = embroideryOf('runes', [0.42, 0.3, 0.16], [0.75, 0.55, 0.95], 0.05);
+    for (const b of [robeEdge(outer, 1.4 + 0.09, 0.03, 0.9, 0.06, runes, { lift: 0.006 }), robeEdge(outer, -1.4 - 0.09, 0.03, 0.9, 0.06, runes, { lift: 0.006 })])
+      rig.add('chest', 'cloth', b.geo, outerT, { ...outerO, vcol: b.vcol });
     // ghostly wisps trailing below the hem
     const wisp = robe(0.31, 0.5, 0.5, { seg: 22, rows: 4, folds: 11, foldAmp: 0.25, tatter: 0.8, seed: 17 });
     rig.add('hips', 'spirit', wisp, { y: -D.hipH + 0.02 }, { cfn: (v) => { const t = clamp(-v.y / 0.5); return HDR(ARC, 0.35 * (1 - t) ** 1.5); }, anim: (v) => 0.6 + clamp(-v.y / 0.5) * 2.0 });
@@ -74,7 +87,10 @@ export const courtArchmage = {
     rig.add('hips', 'leather', xf(G.cyl(0.215, 0.215, 0.05, 20, true), { sz: 0.85 }), { y: 0.06 }, { c: [0.25, 0.14, 0.1] });
     rig.add('hips', 'gold', mergeRaw([xf(G.box(0.07, 0.06, 0.015), { y: 0.06, z: 0.185 }), ...[0.5, 1.2, -0.5, -1.2].map((a) => xf(G.tor(0.022, 0.006, 4, 8), { x: Math.sin(a) * 0.2, y: 0.03, z: Math.cos(a) * 0.17 }))]), {}, { c: GOLDC });
     // mantle w/ spiked shoulder pieces + tall collar
-    rig.add('chest', 'cloth', robe(0.13, 0.34, 0.3, { seg: 20, rows: 2, folds: 7, foldAmp: 0.08, tatter: 0.1, seed: 6 }), { y: D.chest + 0.06, sz: 0.85 }, { c: VIOL, cfn: (v) => (v.y < -0.26 ? GOLDTRIM : embroid(v, VIOL)) });
+    const mantle = robe(0.13, 0.34, 0.3, { seg: 64, rows: 10, folds: 13, foldAmp: 0.08, tatter: 0.08, seed: 6, pipe: true });
+    rig.add('chest', 'cloth', mantle, { y: D.chest + 0.06, sz: 0.85 }, { c: VIOL, cfn: (v) => embroid(v, VIOL) });
+    const mb = robeRing(mantle, 0.84, 0.05, vineV);
+    rig.add('chest', 'cloth', mb.geo, { y: D.chest + 0.06, sz: 0.85 }, { vcol: mb.vcol });
     rig.pair('chest', 'chest', 'gold', mergeRaw([pauldron(0.1, 3), xf(G.cone(0.025, 0.2, 4), { y: 0.16, rz: -0.4 }), xf(G.cone(0.02, 0.15, 4), { y: 0.12, x: 0.06, rz: -0.9 }), xf(G.cone(0.018, 0.12, 4), { y: 0.09, x: 0.1, rz: -1.3 })]), { x: 0.2, y: D.chest - 0.02, rz: 0.4 }, { c: GOLDC });
     const collar = new THREE.CylinderGeometry(0.28, 0.12, 0.46, 20, 2, true, Math.PI * 0.55, Math.PI * 0.9);
     rig.add('chest', 'cloth', twoSided(xf(collar, { y: 0.23 })), { y: D.chest + 0.03, z: -0.03 }, { c: [0.12, 0.05, 0.22] });
@@ -110,8 +126,11 @@ export const courtArchmage = {
     // ---- sleeves and skeletal hands
     for (const S of ['L', 'R']) {
       const sx = S === 'L' ? 1 : -1;
-      rig.add('arm' + S, 'cloth', robe(0.065, 0.085, D.upper + 0.02, { seg: 10, rows: 2, folds: 4, tatter: 0, seed: 2 }), { y: 0.02 }, { c: VIOL });
-      rig.add('fore' + S, 'cloth', twoSided(robe(0.075, 0.19, D.fore * 0.95, { seg: 14, rows: 2, folds: 6, foldAmp: 0.12, tatter: 0.3, seed: 5 + sx })), {}, { c: VIOL, anim: (v) => clamp(-v.y * 3) * 0.7, cfn: (v) => (v.y < -D.fore * 0.85 ? GOLDTRIM : VIOL) });
+      rig.add('arm' + S, 'cloth', robe(0.065, 0.085, D.upper + 0.02, { seg: 28, rows: 6, folds: 6, foldAmp: 0.05, tatter: 0, seed: 2, pipe: true }), { y: 0.02 }, { c: VIOL, cfn: (v) => embroid(v, VIOL) });
+      const sleeve = robe(0.075, 0.19, D.fore * 0.95, { seg: 44, rows: 10, folds: 8, foldAmp: 0.12, tatter: 0.2, seed: 5 + sx, pipe: true });
+      rig.add('fore' + S, 'cloth', twoSided(sleeve), {}, { c: VIOL, anim: (v) => clamp(-v.y * 3) * 0.7, cfn: (v) => embroid(v, VIOL) });
+      const cb = robeRing(sleeve, 0.82, 0.045, loz, { lift: 0.005 });
+      rig.add('fore' + S, 'cloth', cb.geo, {}, { anim: (v) => clamp(-v.y * 3) * 0.7, vcol: cb.vcol });
       rig.add('fore' + S, 'bone', G.cyl(0.014, 0.018, D.fore * 0.5, 6), { y: -D.fore * 0.78 }, { c: [0.78, 0.72, 0.6] });
       addBoneHand(rig, 'hand' + S, sx, { c: [0.78, 0.72, 0.6], s: 1.3, grip: S === 'R', fingerLen: 1.25 });
       rig.add('hand' + S, 'gold', mergeRaw([xf(G.tor(0.011, 0.004, 3, 6), { x: 0.0, y: -0.075, z: 0.01, rx: Math.PI / 2 })]), {}, { c: GOLDTRIM });
@@ -149,6 +168,17 @@ export const courtArchmage = {
     if (st.born === undefined) st.born = m.time;
     // the game drives his blink as a short 'cast'; everything else is in anim.actions / extra
     const r = humanoidPose(m, s, P, dt);
+    // struck: he reels back from the blow a moment, head snapping away (as the other bosses do)
+    if (m._flash > (st.lastFlash ?? 0) + 0.2) st.hitT = m.time;
+    st.lastFlash = m._flash;
+    const hit = st.hitT !== undefined && m.time - st.hitT < 0.6 ? Math.exp(-(m.time - st.hitT) * 7) : 0;
+    if (hit) { P.r('spine', -0.06 * hit); P.r('chest', -0.12 * hit, 0.1 * hit); P.r('head', -0.2 * hit, -0.08 * hit); }
+    // the spin is counted in whole turns off the damped angle, so it never unwinds the long way back
+    const bi = P.idx.get('base') * 9 + 1;
+    if (P.cur[bi] > Math.PI) { P.cur[bi] -= TAU; P.tgt[bi] -= TAU; st.spinOff = (st.spinOff ?? 0) + TAU; }
+    if (!(s.anim === 'cast' && s.attackType === 'spin')) st.spinOff = 0;
+    strikeLayer(m, s, P, dt, BLOW_O);
+    wounds(m, s, P, dt, { hunch: [['spine', 0.16], ['chest', 0.07], ['neck', 0.1], ['head', 0.06]], breath: [['chest', 0.05], ['spine', 0.02]], shoulders: ['armL', 'armR'], spasm: ['chest', 'head'] }); // (near his end: bossKit.wounds)
     archSecondary(m, s, dt);
     return r;
   },
@@ -178,6 +208,14 @@ export const courtArchmage = {
         { armR: [-2.7, 0, -0.45], armL: [-2.8, 0, 0.55], foreR: [-0.3, 0, 0], foreL: [-0.2, 0, 0], handL: [-0.4, 0, 0], chest: [-0.32, 0, 0], spine: [-0.1, 0, 0], head: [-0.45, 0, 0], jaw: [0.5, 0, 0], hips: [0, 0, 0, 0, 0.2, 0] },
         { hit: 0.4, recover: 0.82 },
       ),
+      volley: (P, ph, p, m) => volley(P, p, m),
+      flick: (P, ph, p, m) => flick(P, p, m),
+      runes: (P, ph, p, m) => runes(P, p, m),
+      orbs: (P, ph, p, m) => orbs(P, p, m),
+      blink: (P, ph, p) => { P.apply(A_CURL, smooth(0, 0.8, p)); return 18; },
+      prison: (P, ph, p, m) => prison(P, p, m),
+      beams: (P, ph, p, m) => fanBeams(P, p, m),
+      starfall: (P, ph, p, m) => starfall(P, p, m),
       // arms flung wide, a slow turn that whips round on the release
       spin: (P, ph, p, m) => {
         if (ph === 'windup') {
@@ -186,7 +224,7 @@ export const courtArchmage = {
           return 8;
         }
         const k = smooth(0, 0.15, p) * (1 - smooth(0.85, 1, p));
-        P.r('base', 0, easeInOut(p) * TAU * 1.5, 0);
+        P.r('base', 0, easeInOut(p) * TAU * 2 - (m.state.spinOff ?? 0), 0); // (two whole turns: he ends facing you; spinOff: see pose)
         P.apply({ armR: [-1.5, 0, -1.25], armL: [-1.5, 0, 1.25], foreR: [-0.1, 0, 0], foreL: [-0.1, 0, 0], chest: [-0.15, 0.25, 0], head: [-0.3, 0, 0], jaw: [0.4, 0, 0], hips: [0, 0, 0, 0, 0.22, 0] }, k);
         return 22;
       },
@@ -196,12 +234,85 @@ export const courtArchmage = {
   },
 };
 
+// ---- his spells, each with its own gesture, timed to the moment it is loosed (see the scripts)
+const BLOWS = {
+  volley: { hit: 0.86, imp: [1.3, 0.6, 0.2], rec: 0.92 },
+  flick: { hit: 0.64, imp: [0.8, 1.4, 0], rec: 0.85 },
+  runes: { hit: 0.78, imp: [1.6, 0, 0.6], rec: 0.9 },
+  orbs: { hit: 0.82, imp: [1.4, 0, 0.2], rec: 0.92 },
+  prison: { hit: 0.72, imp: [1.5, 0, 0.5], rec: 0.88 },
+  beams: { hit: 0.75, hits: [0.84, 0.94], imp: [0.7, 0, 0.1], rec: 2 },
+  starfall: { hit: 0.53, hits: [0.97], imp: [1.9, 0, 0.6], rec: 2 },
+  spin: { hit: 2, rel: [-0.9, 0, -0.5] },
+  summon: { hit: 0.4, rel: [-1.2, 0, -0.4], rec: 0.85 },
+  cast: { hit: 0.3, imp: [0.9, 0.5, 0], rec: 0.85 },
+};
+const BLOW_O = { types: BLOWS, chain: [['spine', 0.35, 0.3], ['chest', 0.65, 0.6]], head: 'head', root: 'hips', chest: 'chest', sink: 0.06 };
+const A_CURL = { armR: [-0.9, 0, 0.6], foreR: [-1.9, 0, 0], armL: [-0.9, 0, -0.6], foreL: [-1.9, 0, 0], chest: [0.35, 0, 0], spine: [0.2, 0, 0], neck: [0.2, 0, 0], head: [0.35, 0, 0], thighL: [-0.7, 0, 0], thighR: [-0.6, 0, 0], shinL: [1.0, 0, 0], shinR: [0.9, 0, 0], hips: [0, 0, 0, 0, 0.12, 0] };
+// the volley: the staff drawn back over his shoulder, the left palm sighting along it; then the staff is swung down to point, and the bolts fly
+const V_DRAW = { armR: [-2.5, 0, -0.35], foreR: [-0.7, 0, 0], handR: [0.4, 0, 0], armL: [-1.35, 0, 0.35], foreL: [-0.35, 0, 0], handL: [-0.9, 0, 0], chest: [-0.15, -0.4, 0], spine: [-0.06, -0.15, 0], head: [0, 0.35, 0], hips: [0, -0.1, 0, 0, 0, -0.06] };
+const V_LOOSE = { armR: [-1.5, 0, 0.1], foreR: [-0.12, 0, 0], handR: [-0.9, 0, 0], armL: [-0.35, 0, 0.55], foreL: [-0.6, 0, 0], chest: [0.18, 0.28, 0], spine: [0.1, 0.1, 0], head: [-0.05, -0.2, 0], hips: [0, 0.08, 0, 0, 0, 0.1] };
+function volley(P, p, m) {
+  const d = smooth(0, 0.55, p), r = smooth(0.76, 0.88, p), out = smooth(0.95, 1, p) * 0.5;
+  P.apply(V_DRAW, d * (1 - r)); P.apply(V_LOOSE, r * (1 - out));
+  const tr = smooth(0.4, 0.76, p) * (1 - r) * 0.02; P.r('armR', Math.sin(m.time * 37) * tr); P.r('armL', Math.sin(m.time * 31) * tr);
+  return r > 0 && r < 1 ? 26 : 10;
+}
+// the mirror-dance flick: the left hand drawn across to the right shoulder, then flung out backhand
+function flick(P, p, m) {
+  const d = smooth(0, 0.45, p), r = smooth(0.54, 0.66, p), out = smooth(0.9, 1, p) * 0.6;
+  P.apply({ armL: [-1.2, 0, -0.65], foreL: [-1.8, 0, 0], handL: [0.4, 0, 0], chest: [-0.05, -0.35, 0], spine: [0, -0.12, 0], head: [0, 0.3, 0], armR: [-0.5, 0, -0.3] }, d * (1 - r));
+  P.apply({ armL: [-1.45, 0, 0.95], foreL: [-0.1, 0, 0], handL: [-0.9, 0, 0.3], chest: [0.1, 0.4, 0], spine: [0.05, 0.15, 0], head: [0, -0.25, 0], armR: [-0.3, 0, -0.5] }, r * (1 - out));
+  return r > 0 && r < 1 ? 28 : 12;
+}
+// the runes: bent over, the left hand traces glyphs in the air below him; then the staff is driven down to set them
+function runes(P, p, m) {
+  const T = m.time, k = smooth(0, 0.2, p) * (1 - smooth(0.9, 1, p)), dn = smooth(0.7, 0.8, p), tr = 1 - dn;
+  P.apply({ chest: [0.3, 0, 0], spine: [0.12, 0, 0], neck: [0.15, 0, 0], head: [0.35, 0, 0], armR: [-2.2 + 1.5 * dn, 0, -0.25], foreR: [-0.5 + 0.3 * dn, 0, 0], handR: [0.3 - 0.6 * dn, 0, 0] }, k);
+  P.apply({ armL: [-1.0 + 0.3 * Math.sin(T * 8), 0, 0.45 + 0.3 * Math.cos(T * 8)], foreL: [-0.4, 0, 0], handL: [-1.1, 0, 0] }, k * tr);
+  P.apply({ armL: [-0.6, 0, 0.7], foreL: [-0.6, 0, 0] }, k * dn);
+  return dn > 0 && dn < 1 ? 24 : 10;
+}
+// the orbs: hands cupped before his chest, turning about each other as the sphere grows; then pushed out
+function orbs(P, p, m) {
+  const T = m.time, k = smooth(0, 0.25, p) * (1 - smooth(0.92, 1, p)), r = smooth(0.78, 0.86, p), g = k * (1 - r);
+  P.apply({ armR: [-1.1, 0, 0.3 + 0.12 * Math.sin(T * 6)], armL: [-1.1, 0, -0.3 + 0.12 * Math.cos(T * 6)], foreR: [-1.25, 0, 0], foreL: [-1.25, 0, 0], handR: [0.2, 0, 0.6], handL: [0.2, 0, -0.6], chest: [0.1, 0, 0], head: [0.25, 0, 0] }, g);
+  P.apply({ armR: [-1.5, 0, -0.1], armL: [-1.5, 0, 0.1], foreR: [-0.05, 0, 0], foreL: [-0.05, 0, 0], handR: [-0.9, 0, 0], handL: [-0.9, 0, 0], chest: [0.22, 0, 0], head: [-0.05, 0, 0] }, k * r);
+  return r > 0 && r < 1 ? 26 : 10;
+}
+// the rune prison: arms flung wide, then brought together in a clap that closes the cage
+function prison(P, p, m) {
+  const k = smooth(0, 0.3, p) * (1 - smooth(0.92, 1, p)), c = smooth(0.66, 0.74, p);
+  P.apply({ armR: [-1.35, 0, -1.15], armL: [-1.35, 0, 1.15], foreR: [-0.2, 0, 0], foreL: [-0.2, 0, 0], chest: [-0.22, 0, 0], head: [-0.2, 0, 0], jaw: [0.3, 0, 0] }, k * (1 - c));
+  P.apply({ armR: [-1.45, 0, 0.28], armL: [-1.45, 0, -0.28], foreR: [-0.25, 0, 0], foreL: [-0.25, 0, 0], handR: [0, 0, 0.9], handL: [0, 0, -0.9], chest: [0.25, 0, 0], head: [0.1, 0, 0] }, k * c);
+  return c > 0 && c < 1 ? 26 : 9;
+}
+// the fan of beams: arms raised and trembling, then the staff sweeps across the four lanes, one after another, as each fires
+function fanBeams(P, p, m) {
+  const T = m.time, k = smooth(0, 0.2, p) * (1 - smooth(0.97, 1, p)), lane = clamp((p * 1.6 - 1.2) / 0.15, 0, 3), aim = (lane - 1.5) * 0.7 * smooth(0.55, 0.75, p) - 1.05 * (1 - smooth(0.55, 0.75, p)) * smooth(0.3, 0.55, p);
+  const fire = smooth(0.7, 0.76, p);
+  P.apply({ armR: [-2.3, 0, -0.6], armL: [-2.3, 0, 0.6], foreR: [-0.5, 0, 0], foreL: [-0.5, 0, 0], chest: [-0.25, 0, 0], head: [-0.3, 0, 0] }, k * (1 - fire));
+  P.apply({ armR: [-1.5, 0, 0.05], foreR: [-0.1, 0, 0], handR: [-1.0, 0, 0], armL: [-0.6, 0, 0.7], foreL: [-0.8, 0, 0], chest: [0.12, 0, 0], jaw: [0.35, 0, 0] }, k * fire);
+  P.r('hips', 0, aim * 0.25 * k, 0); P.r('spine', 0, aim * 0.25 * k, 0); P.r('chest', 0, aim * 0.3 * k, 0);
+  const tr = k * (1 - fire) * smooth(0.3, 0.7, p) * 0.025; P.r('armR', Math.sin(T * 41) * tr); P.r('armL', Math.sin(T * 37) * tr);
+  return 14;
+}
+// starfall: the staff raised to the vault in both hands, then hauled down as the first stars fall; raised again, and down
+function starfall(P, p, m) {
+  const k = smooth(0, 0.2, p) * (1 - smooth(0.98, 1, p));
+  const dn = smooth(0.48, 0.55, p) * (1 - smooth(0.62, 0.85, p)) + smooth(0.92, 0.97, p);
+  const up = k * (1 - dn), d = k * dn;
+  P.apply({ armR: [-2.9, 0, -0.2], armL: [-2.8, 0, 0.3], foreR: [-0.2, 0, 0], foreL: [-0.3, 0, 0], handR: [0.5, 0, 0], chest: [-0.3, 0, 0], spine: [-0.1, 0, 0], head: [-0.5, 0, 0], jaw: [0.4, 0, 0], hips: [0, 0, 0, 0, 0.15, 0] }, up);
+  P.apply({ armR: [-0.9, 0, 0.2], armL: [-0.9, 0, -0.2], foreR: [-0.2, 0, 0], foreL: [-0.3, 0, 0], handR: [0.8, 0, 0], chest: [0.35, 0, 0], spine: [0.15, 0, 0], head: [0.1, 0, 0], hips: [0, 0, 0, 0, -0.08, 0] }, d);
+  return 18;
+}
+
 function archExtra(P, m, s, dt, k) {
   const T = m.time, st = m.state, act = k.action, an = s.anim, at = s.attackType, p = s.progress, D = m.spec.dims;
   const dead = an === 'death';
   const casting = act ? 1 : 0;
   const spinning = at === 'spin' && an === 'cast';
-  const fast = act ? (spinning ? 5 + 6 * bump(0, 1, p) : at === 'beam' ? 3.5 : 2.2) : 1;
+  const fast = act ? (spinning ? 5 + 6 * bump(0, 1, p) : at === 'beam' || at === 'beams' || at === 'starfall' ? 3.5 : 2.2) : 1;
   st.rot = (st.rot ?? 0) + dt * fast;
   const r = st.rot;
   // phase moments

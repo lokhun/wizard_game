@@ -42,6 +42,8 @@ export class Level {
     this.torches = [];
     this.colliders = []; // circles {x,z,r}
     this.breakables = []; // barrels/crates {i,type,x,z,r,alive}
+    this.pits = []; // the Oubliette's grated shafts {i (cell), x, z, y (the floor round it)}
+    this.grates = []; // street drains in the Sewers' vaults, moonlight falling through them {x, z}
   }
   idx(x, y) { return y * this.W + x; }
   inb(x, y) { return x >= 0 && y >= 0 && x < this.W && y < this.H; }
@@ -179,7 +181,8 @@ export function generateLevel(seed, floorIndex, force = null, opts = {}) {
   const sides = sideTypes.slice(0, biome.branches);
   // and on most floors a bargain: a blood altar or a gambler
   const bargain = F('altar') ? ROOM.ALTAR : F('gambler') ? ROOM.GAMBLER : biome.branches && er.chance(0.7) ? er.pick([ROOM.ALTAR, ROOM.GAMBLER]) : null;
-  if (bargain) sides.push(bargain);
+  // (side rooms the layout has no spot for are dropped from the end: a forced one (?enc=) goes first)
+  if (bargain) { if (F('altar') || F('gambler')) sides.unshift(bargain); else sides.push(bargain); }
   let branches = sides.length;
   const candidates = rng.shuffle(mainRooms.slice(1, -2));
   for (const host of candidates) {
@@ -420,18 +423,23 @@ function decorateRoom(level, room, rng) {
         const bx = rng.int(x + 2, x + w - 4);
         setRect(level, bx, yy, 2, cwid, (i) => { level.kind[i] = K_ALT; level.hgt[i] = 0; });
         room.layout = 'channelH';
+        room.flow = [rng.chance(0.5) ? 1 : -1, 0]; // (the way its water runs)
+        room.chan = { x0: x, x1: x + w, y0: yy, y1: yy + cwid, bridge: bx };
       } else {
         const xx = Math.floor(cx - cwid / 2);
         setRect(level, xx, y, cwid, h, (i) => { level.kind[i] = K_WATER; level.hgt[i] = -0.7; });
         const by = rng.int(y + 2, y + h - 4);
         setRect(level, xx, by, cwid, 2, (i) => { level.kind[i] = K_ALT; level.hgt[i] = 0; });
         room.layout = 'channelV';
+        room.flow = [0, rng.chance(0.5) ? 1 : -1];
+        room.chan = { x0: xx, x1: xx + cwid, y0: y, y1: y + h, bridge: by };
       }
     } else if (isBoss) {
       // boss cistern: big central pool ring
       setRect(level, x + 3, y + 3, w - 6, h - 6, (i) => { level.kind[i] = K_WATER; level.hgt[i] = -0.6; });
       setRect(level, x + 6, y + 6, w - 12, h - 12, (i) => { level.kind[i] = K_ALT; level.hgt[i] = 0; });
       room.layout = 'cistern';
+      room.flow = 'ring'; // (it wheels round the island, sunwise)
     }
     // pillars
     if (w >= 10 && h >= 10 && rng.chance(0.6)) {
@@ -448,6 +456,17 @@ function decorateRoom(level, room, rng) {
       const s = randFloorSpot(1); if (s) P(rng.pick(['grate', 'puddle', 'mushrooms', 'rubble']), s[0], s[1]);
     }
     wallTorches(level, room, rng, isBoss ? 3 : 4);
+    // a street drain in the vault of the bigger rooms, the night's light falling through it: over the
+    // channel where there is one (a bright patch on the moving water), else somewhere mid-room
+    if (room.type !== ROOM.START && w * h >= 90 && rng.chance(0.75)) {
+      let gx, gz;
+      if (room.chan) {
+        const c = room.chan, horiz = c.x1 - c.x0 > c.y1 - c.y0;
+        gx = horiz ? (rng.int(c.x0 + 2, c.x1 - 3) + 0.5) * T : (c.x0 + c.x1) / 2 * T;
+        gz = horiz ? (c.y0 + c.y1) / 2 * T : (rng.int(c.y0 + 2, c.y1 - 3) + 0.5) * T;
+      } else { gx = (x + w / 2 + rng.range(-w * 0.2, w * 0.2)) * T; gz = (y + h / 2 + rng.range(-h * 0.2, h * 0.2)) * T; }
+      if (!level.colliders.some((c) => Math.hypot(c.x - gx, c.z - gz) < 2)) level.grates.push({ x: gx, z: gz });
+    }
     // glowing fungus lights
     for (let i = 0; i < rng.int(1, 3); i++) {
       const s = edgeSpot(); if (!s) continue;
@@ -481,9 +500,14 @@ function decorateRoom(level, room, rng) {
           // bars across the opening
           const bxw = horiz ? (ax + 1) * T : (s === 0 ? (x) * T : (x + w) * T);
           const bzw = horiz ? (s === 0 ? y * T : (y + h) * T) : (ay + 1) * T;
-          level.props.push({ type: 'cellBars', x: bxw, z: bzw, rot: horiz ? 0 : Math.PI / 2, len: 4 });
-          level.colliders.push({ x: bxw, z: bzw, r: 0, seg: horiz ? [bxw - 2, bzw, bxw + 2, bzw] : [bxw, bzw - 2, bxw, bzw + 2] });
+          // (the bars are the cell's door: two leaves that swing out into the room when the fight begins,
+          // letting out whoever was locked in it: Game.openCells. out: the room's side, along the bars' +z)
           const [ccx, ccz] = [(ax + 1) * T, (ay + 1) * T];
+          const bars = { type: 'cellBars', x: bxw, z: bzw, rot: horiz ? 0 : Math.PI / 2, len: 4, cell: true, out: Math.sign(horiz ? bzw - ccz : bxw - ccx) };
+          const col = { x: bxw, z: bzw, r: 0, seg: horiz ? [bxw - 2, bzw, bxw + 2, bzw] : [bxw, bzw - 2, bxw, bzw + 2] };
+          level.props.push(bars);
+          level.colliders.push(col);
+          (room.cells ??= []).push({ x: ccx, z: ccz, bars, col, open: false });
           P(rng.pick(['bones', 'hay', 'bucket', 'chains', 'skeletonSit']), ccx + rng.range(-0.6, 0.6), ccz + rng.range(-0.6, 0.6));
         }
       }
@@ -639,7 +663,7 @@ function decorateRoom(level, room, rng) {
       // raised dais with the throne at the north end
       setRect(level, Math.floor(cx) - 4, y + 1, 8, 4, (i) => { level.kind[i] = K_DAIS; level.hgt[i] = 0.6; });
       setRect(level, Math.floor(cx) - 3, y + 1, 6, 2, (i) => { level.hgt[i] = 1.2; });
-      P('throne', cx * T, (y + 2) * T, { rot: 0, y: 1.2 });
+      P('throne', cx * T, (y + 2) * T, { rot: 0 }); // (on the dais: the builder stands props on the floor's height, 1.2 m here)
       room.layout = 'throne';
       for (let i = 0; i < 4; i++) {
         const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
@@ -714,6 +738,29 @@ function decorateRoom(level, room, rng) {
       P('grate', s[0], s[1], { rot: rng.int(0, 3) * Math.PI / 2 });
     }
     if (!room.vents.length) room.vents = null;
+  }
+
+  // ---------------- THE OUBLIETTE: a forgetting-hole in the floor, a 2 m shaft under a heavy grate with a
+  // cold light far down it and mist rising out. It is real: the cell's floor is 3.2 m down, so the step
+  // walls build its shaft. Nobody walks it (Collision marks it blocked to feet, but not to sight or shots).
+  if (b.id === 'dungeon' && (room.type === ROOM.COMBAT || room.type === ROOM.ELITE) && w >= 10 && h >= 10 && rng.chance(0.6)) {
+    for (let k = 0; k < 40; k++) {
+      const px = x + 3 + rng.int(0, w - 7), py = y + 3 + rng.int(0, h - 7);
+      const i0 = level.idx(px, py), h0 = level.hgt[i0];
+      let ok = true;
+      for (let dy = -2; dy <= 2 && ok; dy++) for (let dx = -2; dx <= 2; dx++) { const j = level.idx(px + dx, py + dy); if (level.cells[j] !== FLOOR || level.hgt[j] !== h0 || level.kind[j] === K_WATER) { ok = false; break; } }
+      if (!ok) continue;
+      const wx = (px + 0.5) * T, wz = (py + 0.5) * T;
+      if (level.colliders.some((c) => Math.hypot(c.x - wx, c.z - wz) < 3.2) || level.props.some((q) => Math.hypot(q.x - wx, q.z - wz) < 2.2)) continue;
+      if (room.vents?.some((v) => Math.hypot(v.x - wx, v.z - wz) < 3.5)) continue;
+      level.hgt[i0] = h0 - 3.2;
+      level.pits.push({ i: i0, x: wx, z: wz, y: h0 });
+      P('pitGrate', wx, wz, { y: 3.2, rot: rng.int(0, 3) * Math.PI / 2 });
+      P('bones', wx + rng.range(-0.4, 0.4), wz + rng.range(-0.4, 0.4), { rot: rng.range(0, 6.28) }); // (on the shaft's floor: the last one forgotten)
+      level.torches.push({ x: wx, y: h0 - 1.6, z: wz, type: 'brazier', noFlame: true, color: 0x6a9aa8, intensity: 20, range: 8, priority: 0.6 });
+      room.pit = true;
+      break;
+    }
   }
 
   // ---------------- mid-room cover for realms whose rooms are otherwise open floor,

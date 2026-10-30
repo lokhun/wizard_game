@@ -71,24 +71,25 @@ export function resolveHit(hit, stats, target) {
   const def = target.def ?? {};
   if (def.undead && hit.el === 'holy') dmg *= 1.5;
   if (def.resist && def.resist[hit.el]) dmg *= def.resist[hit.el];
-  // reactions
+  // reactions (a blast's damage is from the hit's base: each foe it reaches resolves it again, with the
+  // damage and element multipliers, a crit roll and its own hex, so the hit's own would count twice)
   if (!hit.noReact) {
-    const el = hit.el;
+    const el = hit.el, base = hit.dmg;
     if ((el === 'earth' || el === 'blade' || el === 'physical' || (el === 'frost' && hit.tag === 'shard')) && has(mask, 'frozen')) {
       out.reaction = 'shatter'; dmg *= 2.5; out.consume.push('frozen', 'chill');
     } else if (el === 'fire' && (has(mask, 'frozen') || has(mask, 'chill'))) {
       out.reaction = 'melt'; dmg *= 1.8; out.consume.push('frozen', 'chill');
     } else if (el === 'lightning' && has(mask, 'burn')) {
-      out.reaction = 'overload'; out.aoe = { radius: 3.5, dmg: dmg * 0.6, el: 'fire' }; out.consume.push('burn');
+      out.reaction = 'overload'; out.aoe = { radius: 3.5, dmg: base * 0.6, el: 'fire' }; out.consume.push('burn');
     } else if (el === 'lightning' && has(mask, 'wet')) {
       out.reaction = 'electrocute'; dmg *= 1.5; out.chain = 3; out.consume.push('wet');
     } else if (el === 'frost' && has(mask, 'shock')) {
-      out.reaction = 'superconduct'; out.aoe = { radius: 4, dmg: dmg * 0.4, el: 'frost', st: { chill: 2 } }; out.consume.push('shock');
+      out.reaction = 'superconduct'; out.aoe = { radius: 4, dmg: base * 0.4, el: 'frost', st: { chill: 2 } }; out.consume.push('shock');
     } else if (el === 'fire' && has(mask, 'poison')) {
       const n = target.stacks?.poison ?? 3;
-      out.reaction = 'combust'; out.aoe = { radius: 4, dmg: dmg * 0.4 + n * 6, el: 'poison' }; out.consume.push('poison');
+      out.reaction = 'combust'; out.aoe = { radius: 4, dmg: base * 0.4 + n * 6, el: 'poison' }; out.consume.push('poison');
     } else if (el === 'necrotic' && (has(mask, 'poison') || has(mask, 'bleed'))) {
-      out.reaction = 'blight'; out.aoe = { radius: 5, dmg: dmg * 0.3, el: 'necrotic', st: { poison: [2, 4] } };
+      out.reaction = 'blight'; out.aoe = { radius: 5, dmg: base * 0.3, el: 'necrotic', st: { poison: [2, 4] } };
     } else if (el === 'holy' && has(mask, 'hex')) {
       out.reaction = 'purge'; dmg *= 2; out.consume.push('hex');
     } else if ((el === 'blade' || el === 'physical' || el === 'blood') && has(mask, 'bleed') && hit.tag !== 'dot') {
@@ -96,7 +97,7 @@ export function resolveHit(hit, stats, target) {
     } else if (el === 'time' && has(mask, 'slow') && hit.tag === 'big') {
       out.reaction = 'paradox'; dmg *= 1.6;
     } else if (el === 'wind' && (has(mask, 'burn') || has(mask, 'poison'))) {
-      out.reaction = 'sandblast'; out.aoe = { radius: 4, dmg: dmg * 0.5, el: has(mask, 'burn') ? 'fire' : 'poison', st: has(mask, 'burn') ? { burn: [3, 6] } : { poison: [2, 4] } };
+      out.reaction = 'sandblast'; out.aoe = { radius: 4, dmg: base * 0.5, el: has(mask, 'burn') ? 'fire' : 'poison', st: has(mask, 'burn') ? { burn: [3, 6] } : { poison: [2, 4] } };
     }
   }
   out.dmg = Math.max(1, Math.round(dmg));

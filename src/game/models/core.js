@@ -4,6 +4,8 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { makeSurfaceMaterial } from '../../render/textures.js';
 import { arrayTargets } from '../../render/bake.js';
 import { creatureSurface, creatureLayer } from './surfaces.js';
+import { setRotXYZ } from '../../render/rot.js';
+import { Ragdoll, canRagdoll } from './ragdoll.js';
 
 // ---------------------------------------------------------------------------
 // Enemy model core: material library, geometry kit, rig builder and the
@@ -202,24 +204,45 @@ export function shaggy(g, len, freq = 14, seed = 3, dir = [0, 0, -1], comb = 0.6
   return g;
 }
 // Robe / skirt: open cone with folds and a tattered hem. y from 0 (top) to -len.
-export function robe(rTop, rBot, len, { seg = 18, rows = 6, folds = 7, foldAmp = 0.06, tatter = 0.12, seed = 1, flareZ = 0, open = 0 } = {}) {
-  const g = new THREE.CylinderGeometry(rTop, rBot, len, seg, rows, true);
+export function robe(rTop, rBot, len, { seg = 18, rows = 6, folds = 7, foldAmp = 0.06, tatter = 0.12, seed = 1, flareZ = 0, open = 0, pipe = false, thetaStart, thetaLength } = {}) {
+  const g = thetaLength !== undefined ? new THREE.CylinderGeometry(rTop, rBot, len, seg, rows, true, thetaStart, thetaLength) : new THREE.CylinderGeometry(rTop, rBot, len, seg, rows, true);
   g.translate(0, -len / 2, 0);
   const R = rng(seed);
   const cut = [];
   for (let j = 0; j <= seg; j++) cut.push(R());
   cut[seg] = cut[0];
+  const J = Array.from({ length: 61 }, () => R());
+  // the cloth's radius factor and hem drop at (a, t): sine folds, or (pipe) round ridges hanging
+  // from the top with narrow valleys, each its own depth, wandering a little as they fall
+  const FO = { k: 1, dy: 0 };
+  const foldAt = (a, t) => {
+    t = clamp(t); // (the top row can sit a hair above 0: a power of a negative is NaN)
+    if (pipe) {
+      const u = (a * folds) / TAU + 0.18 * Math.sin(t * 3.1 + seed) + 0.08 * (fbm3(a * 3, t * 2, 1.5, seed, 2) - 0.5);
+      const c = Math.cos(TAU * u);
+      let f = 2 * Math.pow((c + 1) / 2, 0.55) - 1;
+      const amp = foldAmp * (0.65 + 0.7 * J[(Math.floor(u + 0.5) % 61 + 61) % 61]);
+      f += 0.22 * Math.sin(a * folds * 2.6 + seed * 3 - t * 2.3) * t + 0.3 * (vnoise(a * 2 + 5, t * 3, seed, 9) - 0.5);
+      f = clamp(f, -1, 1);
+      const w = Math.pow(t, 0.8) * Math.min(1, t / 0.08);
+      FO.k = 1 + f * amp * w;
+      FO.dy = t > 0.7 ? -f * amp * w * 0.9 * smooth(0.7, 1, t) : 0;
+    } else {
+      FO.k = 1 + Math.sin(a * folds + seed) * foldAmp * t + (vnoise(a * 2 + 5, t * 3, seed, 9) - 0.5) * foldAmp * t;
+      FO.dy = 0;
+    }
+    return FO;
+  };
   const p = g.getAttribute('position');
   for (let i = 0; i < p.count; i++) {
     let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
     const t = -y / len; // 0 top .. 1 bottom
     const a = Math.atan2(x, z);
     const rr = Math.hypot(x, z);
-    const fold = 1 + Math.sin(a * folds + seed) * foldAmp * t + (vnoise(a * 2 + 5, t * 3, seed, 9) - 0.5) * foldAmp * t;
-    let nr = rr * fold;
+    const fo = foldAt(a, t);
+    const nr = rr * fo.k;
     x = Math.sin(a) * nr; z = Math.cos(a) * nr + flareZ * t * t;
-    // front opening gap
-    if (open > 0 && Math.abs(a) < open) { x *= 1; }
+    y += fo.dy * rr;
     if (t > 0.999 && tatter > 0) {
       const j = Math.round(((a + Math.PI) / TAU) * seg) % (seg + 1);
       const c = cut[j];
@@ -228,21 +251,45 @@ export function robe(rTop, rBot, len, { seg = 18, rows = 6, folds = 7, foldAmp =
     p.setXYZ(i, x, y, z);
   }
   g.computeVertexNormals();
+  // a point on the finished cloth at angle a (0 = front), t down its length, `lift` metres out:
+  // for embroidery and trims laid over it
+  g.userData.surf = (a, t, lift = 0, out = new THREE.Vector3()) => {
+    const r0 = rTop + (rBot - rTop) * t, fo = foldAt(a, t), nr = r0 * fo.k + lift;
+    return out.set(Math.sin(a) * nr, -t * len + fo.dy * r0, Math.cos(a) * nr + flareZ * t * t);
+  };
   return g;
 }
 // Flat cloth panel (cape / tabard / loincloth) hanging from y=0 to -h, in XY plane, z bulge.
-export function panel(w, h, { ws = 6, hs = 6, tatter = 0.15, seed = 2, curve = 0.08, taperBot = 1 } = {}) {
+export function panel(w, h, { ws = 6, hs = 6, tatter = 0.15, seed = 2, curve = 0.08, taperBot = 1, folds = 0, foldAmp = 0.04 } = {}) {
   const g = new THREE.PlaneGeometry(w, h, ws, hs);
   g.translate(0, -h / 2, 0);
   const R = rng(seed);
   const cut = []; for (let j = 0; j <= ws; j++) cut.push(R());
+  const J = Array.from({ length: 31 }, () => R());
+  // folds > 0: pipe folds hanging from the top edge (round ridges, narrow valleys, each its own
+  // depth), growing toward the hem, the hem dropping under the ridges
+  const zAt = (u, t) => {
+    t = clamp(t);
+    const us = u * lerp(1, taperBot, t); // (the taper widens the panel: the curve follows the cloth)
+    let z = -(us * us) * curve + Math.sin(t * 7 + us * 3 + seed) * 0.015;
+    let dy = 0;
+    if (folds > 0) {
+      const q = (u + 1) * 0.5 * folds + 0.15 * Math.sin(t * 3 + seed);
+      let f = 2 * Math.pow((Math.cos(TAU * q) + 1) / 2, 0.55) - 1;
+      f += 0.25 * (vnoise(q * 1.7, t * 3, seed, 7) - 0.5);
+      const amp = foldAmp * (0.6 + 0.8 * J[Math.floor(q + 0.5) % 31]) * Math.pow(t, 0.7) * Math.min(1, t / 0.06);
+      z += f * amp;
+      if (t > 0.75) dy = -f * amp * 0.8 * smooth(0.75, 1, t);
+    }
+    return [z, dy];
+  };
   const p = g.getAttribute('position');
   for (let i = 0; i < p.count; i++) {
     let x = p.getX(i), y = p.getY(i);
     const t = -y / h;
+    const [z, dy] = zAt(x / (w / 2), t);
     x *= lerp(1, taperBot, t);
-    const u = x / (w / 2);
-    let z = -(u * u) * curve + Math.sin(t * 7 + u * 3 + seed) * 0.015;
+    y += dy;
     if (t > 0.999) {
       const j = Math.round((p.getX(i) / w + 0.5) * ws);
       y += cut[j] * tatter * h * (j % 2 ? 1 : 0.4);
@@ -250,6 +297,11 @@ export function panel(w, h, { ws = 6, hs = 6, tatter = 0.15, seed = 2, curve = 0
     p.setXYZ(i, x, y, z);
   }
   g.computeVertexNormals();
+  // a point on the panel at u (-1..1 across) and t (0 top .. 1 hem), lifted along +z by `lift`
+  g.userData.surf = (u, t, lift = 0, out = new THREE.Vector3()) => {
+    const [z, dy] = zAt(u, t);
+    return out.set(u * (w / 2) * lerp(1, taperBot, t), -t * h + dy, z + lift);
+  };
   return g;
 }
 // Spiked / jagged ring of cones, e.g. crowns, collars
@@ -443,6 +495,45 @@ const FCHUNK = /* glsl */ `
 #endif
 `;
 
+// Dissolve: a dead body burns away from a ragged ember front instead of sinking through the floor. Only a
+// dying body's materials carry it (EN_DISSOLVE: its own programs, warmed at load with the faded copies), so the
+// living keep shaders without a discard. The pattern is 3D value noise over the rest-pose position, so it stays
+// put on the body; a little height bias makes the burn climb from the feet.
+const DISSOLVE_V = `
+#ifdef EN_DISSOLVE
+  vEnPos = position;
+#endif
+`;
+const DISSOLVE_PARS = `
+#ifdef EN_DISSOLVE
+  varying vec3 vEnPos;
+  uniform float uDissolve, uEnH;
+  uniform vec3 uDissolveCol;
+  float enH3(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+  float enN3(vec3 x) {
+    vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(enH3(i), enH3(i + vec3(1, 0, 0)), f.x), mix(enH3(i + vec3(0, 1, 0)), enH3(i + vec3(1, 1, 0)), f.x), f.y),
+               mix(mix(enH3(i + vec3(0, 0, 1)), enH3(i + vec3(1, 0, 1)), f.x), mix(enH3(i + vec3(0, 1, 1)), enH3(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+  }
+  float enBurn() { return enN3(vEnPos * 5.5) * 0.62 + enN3(vEnPos * 13.0) * 0.23 + clamp(vEnPos.y / uEnH, 0.0, 1.0) * 0.15; }
+#endif
+`;
+const DISSOLVE_CLIP = `
+#ifdef EN_DISSOLVE
+  float enDb = enBurn() - uDissolve * 1.08 + 0.04;
+  if (enDb < 0.0) discard;
+#endif
+`;
+const DISSOLVE_GLOW = `
+#ifdef EN_DISSOLVE
+  {
+    float enE = 1.0 - smoothstep(0.0, 0.1, enDb);
+    // a white-hot lip right at the front, cooling to embers behind it
+    totalEmissiveRadiance += (uDissolveCol * enE + vec3(1.6, 1.3, 0.9) * enE * enE * enE * enE) * step(0.001, uDissolve);
+  }
+#endif
+`;
+
 // Shared rim light for every enemy: a faint edge glow so silhouettes separate from
 // dark rooms without flattening the torch-lit look. Colour is set per realm.
 export const RIM = { uRim: { value: new THREE.Color(0.22, 0.2, 0.2) } };
@@ -508,6 +599,10 @@ export function patchInstanceMaterial(mat, U, feats) {
   if (keyBits.includes('R')) mat.defines.EN_RIM = '';
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, U, RIM);
+    sh.vertexShader = '#ifdef EN_DISSOLVE\nvarying vec3 vEnPos;\n#endif\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + DISSOLVE_V);
+    sh.fragmentShader = DISSOLVE_PARS + sh.fragmentShader
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + DISSOLVE_CLIP)
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + DISSOLVE_GLOW);
     if (atlas) {
       Object.assign(sh.uniforms, atlas.uniforms);
       sh.fragmentShader = atlasFragment(sh.fragmentShader);
@@ -524,7 +619,7 @@ export function patchInstanceMaterial(mat, U, feats) {
         sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + FCHUNK);
     }
   };
-  mat.customProgramCacheKey = () => 'enemyfx:' + keyBits.join('');
+  mat.customProgramCacheKey = () => 'enemyfx:' + keyBits.join('') + (mat.defines.EN_DISSOLVE !== undefined ? 'D' : '');
 }
 
 // ------------------------------------------------------------ rig build ----
@@ -758,6 +853,7 @@ export function turnK(m, dt) {
   if (st.lastYaw !== null && dt > 1e-4) { const d = yaw - st.lastYaw; yr = Math.atan2(Math.sin(d), Math.cos(d)) / dt; }
   st.lastYaw = yaw;
   st.turnK += (clamp(Math.abs(yr) / 2.5) - st.turnK) * (1 - Math.exp(-8 * dt));
+  st.turnS += (clamp(yr / 3, -1, 1) - st.turnS) * (1 - Math.exp(-6 * dt)); // (signed, + turning left: a run banks into it)
   return st.turnK;
 }
 
@@ -842,14 +938,21 @@ export class PoseBuf {
   }
   blend(a, b, u, w = 1) { this.apply(a, (1 - u) * w); this.apply(b, u * w); return this; }
   get(name) { const i = this.idx.get(name); return i === undefined ? null : this.tgt.subarray(i * K, i * K + K); }
+  // Every bone of every posed body, every frame: so the ease is worked out once per rate (nearly every bone
+  // has the body's), and each bone's quaternion is written straight from its angles (setRotXYZ) instead of
+  // through rotation.set and its change callback - the same numbers, a good part of the pose cost gone.
   damp(dt, rate) {
     const { tgt, cur, bones, rest } = this;
+    const a1 = 1 - Math.exp(-rate * dt);
+    let rr = 1, ra = a1;
     for (let i = 0; i < this.n; i++) {
-      const a = 1 - Math.exp(-rate * this.rate[i] * dt);
+      const ri = this.rate[i];
+      if (ri !== 1 && ri !== rr) { rr = ri; ra = 1 - Math.exp(-rate * ri * dt); }
+      const a = ri === 1 ? a1 : ra;
       const o = i * K;
       for (let k = 0; k < K; k++) cur[o + k] += (tgt[o + k] - cur[o + k]) * a;
       const b = bones[i];
-      b.rotation.set(cur[o], cur[o + 1], cur[o + 2]);
+      setRotXYZ(b, cur[o], cur[o + 1], cur[o + 2]);
       b.position.set(rest[i].x + cur[o + 3], rest[i].y + cur[o + 4], rest[i].z + cur[o + 5]);
       b.scale.set(Math.max(1e-4, cur[o + 6]), Math.max(1e-4, cur[o + 7]), Math.max(1e-4, cur[o + 8]));
     }
@@ -868,6 +971,8 @@ function shadowProxyMaterial(side, map) {
 }
 
 // ------------------------------------------------------------ instance ----
+const _lw = new THREE.Vector3(), _lr = new THREE.Vector3(), _lu = new THREE.Vector3(0, 1, 0);
+const _lq = new THREE.Quaternion(), _lq2 = new THREE.Quaternion(), _lpw = new THREE.Quaternion();
 const _white = new THREE.Color(1, 1, 1);
 const orbGeoCache = new Map();
 function orbGeo() {
@@ -888,8 +993,11 @@ export class EnemyInstance {
     this.magicColor = spec.magicColor ?? spec.eyeColor;
     this.time = Math.random() * 100;
     this.seed = Math.random();
-    this.state = { phase: Math.random() * TAU, lastAnim: null, lastYaw: null, turnK: 0 };
+    this.state = { phase: Math.random() * TAU, lastAnim: null, lastYaw: null, turnK: 0, turnS: 0, fidT: 2 + Math.random() * 10, fidI: -1, fidU: 0, fidS: 1 };
     this._flash = 0;
+    this._look = { x: 0, y: 0 }; // (the head's turn toward its foe, eased: see _layers)
+    this._kick = { x: 0, z: 0, k: 0 };
+    this.footfall = 0; // (set by a walk cycle as a foot comes down: 1 / -1, the side) // (a blow's recoil: world push direction and its size, decaying)
     this._tint = null; this._tintK = 0;
     this._opacity = 1;
     this._dirty = true;
@@ -899,7 +1007,9 @@ export class EnemyInstance {
       uDrag: { value: new THREE.Vector3() }, uTint: { value: new THREE.Color(0, 0, 0) }, uCrack: { value: new THREE.Color(spec.crackColor ?? 0xff5a10).multiplyScalar(spec.crackIntensity ?? 3) },
       uCrackLo: { value: 0.045 }, uCrackHi: { value: 0.012 },
       uTintCol: { value: new THREE.Color(0, 0, 0) }, uTintMix: { value: 0 },
+      uDissolve: { value: 0 }, uEnH: { value: spec.height ?? 1.8 }, uDissolveCol: { value: new THREE.Color(spec.dissolveColor ?? 0xff7a2a).multiplyScalar(3) },
     };
+    this._dissolving = false;
     // per-instance materials
     const clones = new Map();
     this.mats = [];
@@ -941,7 +1051,10 @@ export class EnemyInstance {
     this._soles = template.soles && !spec.flying ? template.soles.map((s) => {
       const chain = [];
       for (let b = this.bones[s.name]; b?.isBone; b = b.parent) chain.push(b);
-      return { chain, pts: s.pts };
+      // a leg (foot <- shin <- thigh) can bend to set its foot on a step: its two lengths, or none
+      const leg = /^foot/.test(chain[0]?.name) && /^shin/.test(chain[1]?.name) && /^thigh/.test(chain[2]?.name)
+        ? chain[0].position.length() + chain[1].position.length() : 0;
+      return { chain, pts: s.pts, leg, d: 0, lo: 0, raise: 0 };
     }) : null;
     this._lift = 0;
     this.sockets = {};
@@ -1020,46 +1133,180 @@ export class EnemyInstance {
       m.opacity = o;
     }
   }
+  // the killing blow: go limp (see ragdoll.js); false if this body falls the old way (o: the push)
+  ragdoll(o) {
+    if (this._rag || !canRagdoll(this)) return false;
+    this._rag = new Ragdoll(this, o);
+    return true;
+  }
+  get ragdolling() { return !!this._rag && !this._rag.done; }
+  blast(c, R, k) { return !!this._rag?.blast(c, R, k); }
   update(dt, s = {}) {
     dt = Math.min(dt, 0.1);
     this.time += dt;
     this.U.uTime.value = this.time;
+    if (this._rag && s.anim === 'death') {
+      this._rag.step(dt, s.floor, s.wall);
+      this._orbTarget = 0;
+      this._updateOrb(dt);
+      if (this._flash > 0) { this._flash = Math.max(0, this._flash - dt * 8); this._dirty = true; }
+      if (this._dirty) { this._applyMats(); this._dirty = this._flash > 0; }
+      return;
+    }
     const st = this.state;
     const anim = s.anim ?? 'idle';
     if (anim !== st.lastAnim) { st.prevAnim = st.lastAnim; st.lastAnim = anim; st.animStart = this.time; }
-    const S = { anim, t: s.t ?? this.time - st.animStart, speed: s.speed ?? 0, progress: clamp(s.progress ?? 0), attackType: s.attackType || this.spec.defaultAttack };
+    const S = { anim, t: s.t ?? this.time - st.animStart, speed: s.speed ?? 0, dir: s.dir ?? 0, progress: clamp(s.progress ?? 0), attackType: s.attackType || this.spec.defaultAttack, hpf: s.hpf ?? 1 };
     this.P.reset();
     this._orbTarget = 0;
     this._opTarget = 1;
     let rate = 12;
     const r = this.spec.pose(this, S, this.P, dt);
     if (typeof r === 'number') rate = r;
+    this._layers(dt, S, s.look);
+    if (this._dissolving && S.anim !== 'death' && S.anim !== 'spawn') this.setDissolve(0); // (burnt in: whole again)
     this.P.damp(dt, rate);
     // (off in death and flight; a body rising out of the floor takes it up over the end of the rise, not in a pop)
-    if (this._soles) this._ground(dt, S.anim === 'death' || this._flying ? 0 : S.anim === 'spawn' ? smooth(0.7, 1, S.progress) : 1);
+    if (this._soles) this._ground(dt, S.anim === 'death' || this._flying ? 0 : S.anim === 'spawn' ? smooth(0.7, 1, S.progress) : 1, s.floor);
+    if (this.spec.look) this._lookWorld(dt, S, s.look);
     if (Math.abs(this._opTarget - this._opacity) > 1e-3) { this._opacity = this._opTarget; this._dirty = true; }
     this._updateOrb(dt);
     if (this._flash > 0) { this._flash = Math.max(0, this._flash - dt * 8); this._dirty = true; }
     if (this._dirty) { this._applyMats(); this._dirty = this._flash > 0; }
   }
+  // burn the body away (k: 0 whole .. 1 gone): the first call swaps its materials to the dissolve programs
+  // (warmed at load: Game._prewarm), and its shadow twins stop casting once it is half gone
+  // (k back to 0, a body burnt into being, returns to the plain programs: the living keep no discard)
+  setDissolve(k) {
+    if (!this._dissolving && k > 0) {
+      this._dissolving = true;
+      for (const e of this.mats) { if (!e.m.defines) continue; e.m.defines.EN_DISSOLVE = ''; e.m.needsUpdate = true; }
+    } else if (this._dissolving && k <= 0) {
+      this._dissolving = false;
+      for (const e of this.mats) { if (!e.m.defines) continue; delete e.m.defines.EN_DISSOLVE; e.m.needsUpdate = true; }
+    }
+    this.U.uDissolve.value = Math.max(0, k);
+    for (const o of this.shadowProxies) o.visible = k <= 0.5;
+  }
+  // a blow lands: (dx, dz) the way it pushed (world), k its size (0..1)
+  kick(dx, dz, k) { const K = this._kick, l = Math.hypot(dx, dz) || 1; K.x = dx / l; K.z = dz / l; K.k = Math.max(K.k, k); }
+  // Two layers over every type's own pose, on the bones a rig has (spine/chest or body/front, neck, head):
+  // - look: the head and neck turn toward the foe it fights (look: a world point), within a neck's reach,
+  //   eased, and not while dying, rising, staggered or with the foe behind it;
+  // - recoil: a blow rocks the body the way it pushed and springs back over a quarter second.
+  // A type opts down with lookAt / recoil on its spec or its anim (0 turns it off: the bosses whose rigs
+  // turn the head on other axes).
+  _layers(dt, S, look) {
+    const P = this.P, A = this.spec.anim ?? {}, L = this._look, root = this.root;
+    const lw = this.spec.lookAt ?? A.lookAt ?? 1, rk = this.spec.recoil ?? A.recoil ?? 1;
+    let ty = 0, tx = 0;
+    if (look && lw > 0 && S.anim !== 'death' && S.anim !== 'spawn' && S.anim !== 'stagger') {
+      const dx = look.x - root.position.x, dz = look.z - root.position.z, dy = look.y - (root.position.y + (this.height ?? 1.8) * 0.85);
+      let rel = Math.atan2(dx, dz) - root.rotation.y;
+      rel -= Math.round(rel / (Math.PI * 2)) * Math.PI * 2;
+      if (Math.abs(rel) < 2.3) { ty = clamp(rel, -1.05, 1.05); tx = clamp(-Math.atan2(dy, Math.hypot(dx, dz)), -0.45, 0.45); }
+    }
+    const e = 1 - Math.exp(-6 * dt);
+    L.y += (ty - L.y) * e; L.x += (tx - L.x) * e;
+    if (Math.abs(L.y) + Math.abs(L.x) > 1e-3) {
+      P.r('neck', L.x * 0.3 * lw, L.y * 0.35 * lw, 0);
+      P.r('head', L.x * 0.7 * lw, L.y * 0.65 * lw, 0);
+    }
+    const K = this._kick;
+    if (K.k > 0.01) {
+      const yaw = root.rotation.y, fx = Math.sin(yaw), fz = Math.cos(yaw);
+      const k = K.k * 1.4 * rk, f = (K.x * fx + K.z * fz) * k, sd = (K.x * fz - K.z * fx) * k;
+      P.r('spine', f * 0.14, 0, -sd * 0.1); P.r('chest', f * 0.18, -sd * 0.12, -sd * 0.12);
+      P.r('front', f * 0.12, 0, -sd * 0.1); P.r('neck', f * 0.1, 0, -sd * 0.08);
+      P.r('head', f * 0.22, -sd * 0.15, -sd * 0.16);
+      K.k *= Math.exp(-dt * 10);
+    }
+  }
+  // A boss's eyes on its foe (spec.look: { bones: [[name, share]...], yaw, pitch, off: [anims] }): the
+  // heads of the big rigs turn on axes of their own (a wyvern's neck runs along z, the Mother's is a stalk),
+  // so the turn is worked out in the world - a yaw about the world's up and a pitch about the body's own
+  // right - shared down the neck, each part's share taken into its own frame through its parent's. Laid
+  // over the finished pose (the next frame's pose writes the bones afresh, so it never adds up); eased in
+  // and out, within the neck's reach, off when the foe is behind it and in the anims a spec names.
+  _lookWorld(dt, S, look) {
+    const L = this.spec.look, st = this._lk ??= { y: 0, x: 0 };
+    const root = this.root;
+    let ty = 0, tx = 0;
+    const on = look && S.anim !== 'death' && S.anim !== 'spawn' && !(L.off && L.off.includes(S.anim)) && !(L.offAt && L.offAt.includes(S.attackType));
+    const head = this.bones[L.bones[L.bones.length - 1][0]];
+    if (on && head) {
+      head.getWorldPosition(_lw);
+      const dx = look.x - root.position.x, dz = look.z - root.position.z;
+      let rel = Math.atan2(dx, dz) - root.rotation.y;
+      rel -= Math.round(rel / TAU) * TAU;
+      if (Math.abs(rel) < 2.2) {
+        ty = clamp(rel, -(L.yaw ?? 1), L.yaw ?? 1);
+        tx = clamp(Math.atan2(look.y - _lw.y, Math.hypot(look.x - _lw.x, look.z - _lw.z)), -(L.pitch ?? 0.5), L.pitch ?? 0.5);
+      }
+    }
+    const e = 1 - Math.exp(-(L.rate ?? 5) * dt);
+    st.y += (ty - st.y) * e; st.x += (tx - st.x) * e;
+    if (Math.abs(st.y) + Math.abs(st.x) < 1e-3) return;
+    const yaw = root.rotation.y, fx = Math.sin(yaw), fz = Math.cos(yaw);
+    _lr.set(-fz, 0, fx); // (the body's right: forward x up)
+    for (const [name, k] of L.bones) {
+      const b = this.bones[name];
+      if (!b) continue;
+      // the world turn R for this share, then q' = Pw^-1 R Pw q (the bone's own frame)
+      _lq.setFromAxisAngle(_lu, st.y * k).multiply(_lq2.setFromAxisAngle(_lr, st.x * k));
+      b.parent.updateWorldMatrix(true, false);
+      b.parent.getWorldQuaternion(_lpw);
+      _lq2.copy(_lpw).invert().multiply(_lq).multiply(_lpw);
+      b.quaternion.premultiply(_lq2);
+      b.updateMatrix();
+    }
+  }
   // lift the body so no sole sits below the floor (y = 0 in the top bone's parent space): the leg's
-  // local matrices multiplied up by hand, a handful per foot, no world update
-  _ground(dt, w) {
-    let lo = Infinity, top = null;
+  // local matrices multiplied up by hand, a handful per foot, no world update. With the world's floor
+  // (floor(x, z): its height there) each sole also finds the floor under itself: a body astride a step
+  // drops its hips onto the lower floor and bends the other knee to set that foot on the step (a foot
+  // used to stand in the riser, or hang over the drop). On level ground this is the plain lift.
+  _ground(dt, w, floor) {
+    let lo = Infinity, top = null, dmin = 0, stepped = false;
     if (w > 0) {
+      const pw = this._soles[0].chain[this._soles[0].chain.length - 1].parent?.matrixWorld.elements;
+      const sy = pw ? Math.hypot(pw[4], pw[5], pw[6]) || 1 : 1;
       for (const s of this._soles) {
         const c = s.chain;
         _m.identity();
         for (let i = c.length - 1; i >= 0; i--) { c[i].updateMatrix(); _m.multiply(c[i].matrix); }
         const e = _m.elements, p = s.pts;
-        for (let j = 0; j < 6; j += 3) lo = Math.min(lo, e[1] * p[j] + e[5] * p[j + 1] + e[9] * p[j + 2] + e[13]);
+        let l = Infinity;
+        for (let j = 0; j < 6; j += 3) l = Math.min(l, e[1] * p[j] + e[5] * p[j + 1] + e[9] * p[j + 2] + e[13]);
+        s.lo = l; s.d = 0;
+        if (floor && pw && s.leg > 0) {
+          // the sole's middle, out into the world, and the floor there against the body's own
+          const mx = (p[0] + p[3]) * 0.5, my = (p[1] + p[4]) * 0.5, mz = (p[2] + p[5]) * 0.5;
+          const lx = e[0] * mx + e[4] * my + e[8] * mz + e[12], lz = e[2] * mx + e[6] * my + e[10] * mz + e[14];
+          const wx = pw[0] * lx + pw[8] * lz + pw[12], wz = pw[2] * lx + pw[10] * lz + pw[14];
+          const d = (floor(wx, wz) - pw[13]) / sy;
+          if (Math.abs(d) > 0.03 && Math.abs(d) < s.leg * 0.45) { s.d = d; stepped = true; }
+        }
+        lo = Math.min(lo, l);
         top = c[c.length - 1];
       }
+      if (stepped) { dmin = Infinity; for (const s of this._soles) dmin = Math.min(dmin, s.d); }
     } else top = this._soles[0].chain[this._soles[0].chain.length - 1];
-    const tgt = w > 0 ? clamp(-lo, 0, this.height * 0.2) * w : 0;
+    // the body sits on the lowest floor under it (never sunk into it: the plain lift on top)
+    const tgt = w > 0 ? (dmin + clamp(dmin - lo, 0, this.height * 0.2)) * w : 0;
     // quick to rise (a sinking foot shows), slower to settle back (no pop when an action ends or the body falls)
     this._lift += (tgt - this._lift) * (1 - Math.exp(-(tgt > this._lift ? 30 : 8) * dt));
-    if (this._lift > 1e-4) top.position.y += this._lift;
+    if (Math.abs(this._lift) > 1e-4) top.position.y += this._lift;
+    // each foot short of its own floor bends its knee to reach it: thigh forward, shin back twice as far,
+    // foot level, eased like the lift
+    for (const s of this._soles) {
+      if (!s.leg) continue;
+      const want = stepped && w > 0 ? clamp(s.d - (s.lo + this._lift), 0, s.leg * 0.45) * w : 0;
+      s.raise += (want - s.raise) * (1 - Math.exp(-(want > s.raise ? 24 : 10) * dt));
+      if (s.raise < 1e-3) continue;
+      const a = Math.acos(1 - s.raise / s.leg);
+      s.chain[2].rotation.x -= a; s.chain[1].rotation.x += 2 * a; s.chain[0].rotation.x -= a;
+    }
   }
   dispose() {
     for (const e of this.mats) e.m.dispose();

@@ -144,7 +144,7 @@ export class Encounters {
     if (room.mod === 'bloodmoon') {
       // the torches already burn red: you can see it from the corridor
       for (const e of st.torches) e.t.color.lerp(new THREE.Color(0xff2a14), 0.8);
-      for (const e of st.flames) e.f.color = 0xff3018;
+      for (const e of st.flames) { e.f.color = 0xff3018; if (e.f.gpu !== undefined) this.g.built.candles.sync(e.f.gpu, e.f.gk, e.f.color); }
     }
     if (room.mod === 'darkness') st.level = 0.55;
   }
@@ -159,7 +159,10 @@ export class Encounters {
       st.level += (want - st.level) * Math.min(1, dt * (want < st.level ? 1.4 : 2.5));
       const gut = st.level < 0.9 ? 0.75 + 0.25 * Math.sin(g.time * 13 + room.id) * Math.sin(g.time * 5.3) : 1;
       for (const e of st.torches) e.t.intensity = e.i0 * st.level * gut;
-      for (const e of st.flames) { e.f.out = st.level < 0.12; e.f.size = e.s0 * Math.max(0.35, st.level); }
+      for (const e of st.flames) {
+        e.f.out = st.level < 0.12; e.f.size = e.s0 * Math.max(0.35, st.level);
+        if (e.f.gpu !== undefined) g.built.candles.sync(e.f.gpu, e.f.out ? 0 : e.f.gk * Math.max(0.35, st.level), e.f.color);
+      }
       if (inRoom && active) {
         this._hemiWant = Math.min(this._hemiWant, 0.4);
         this._selfWant = Math.max(this._selfWant, 2.4);
@@ -291,7 +294,7 @@ export class Encounters {
     if (room.champ && room.type === ROOM.ELITE) {
       const at = this._freeSpot(room.cx, room.cz + 2.8, room);
       this._hoard(at.x, at.z, 0);
-      return { rarity: 2, gold: 2, banner: ['CHAMPION SLAIN', 'An epic tome and a relic hoard await', '#ffb060'] };
+      return { tome: 2, gold: 2, banner: ['CHAMPION SLAIN', 'An epic tome and a relic hoard await', '#ffb060'] };
     }
     if (room.mimicAt) return { rarity: 1, gold: 1.5 };
     if (room.mod === 'darkness' || room.mod === 'haunted') return { rarity: 1, gold: 1 };
@@ -444,7 +447,7 @@ export class Encounters {
       }
       return;
     }
-    if (a.dead) return;
+    if (a.dead) { if (!M.sprung) this._slainAsleep(room); return; }
     // it loses patience with anyone who stands over it too long
     const close = g.allPlayers().some((p) => p.alive && !p.dead && Math.hypot(p.pos.x - a.pos.x, p.pos.z - a.pos.z) < 1.9);
     M.near = close ? M.near + dt : 0;
@@ -457,6 +460,7 @@ export class Encounters {
     const g = this.g, M = room._mimic, a = M.actor;
     if (M.sprung || !a) return;
     if (a.dormant) g.actors.wake(a, false);
+    if (g.director.active) return; // (another fight holds the director: awake, it springs when that one ends)
     M.sprung = true;
     room.cleared = false;
     room.sentriesPlaced = true;
@@ -464,6 +468,17 @@ export class Encounters {
     room.sentryIds = [a.id];
     g.director.startEncounter(room);
     this._send({ k: 'sprung', r: room.id, id: a.id }, true);
+  }
+
+  // host: it died before it ever sprang (a burst of blows in one frame): its hoard came with its death
+  // (onKilled); the vault counts as won, and no second mimic takes its place
+  _slainAsleep(room) {
+    const g = this.g, M = room._mimic;
+    M.sprung = true;
+    this._send({ k: 'sprung', r: room.id, id: M.actor?.id ?? -1 }, false);
+    room.cleared = true;
+    g.net?.broadcast({ t: 'lock', r: room.id, on: 0, clear: 1 });
+    g.onRoomCleared(room);
   }
 
   _sprungFx(room, id) {
@@ -613,7 +628,7 @@ export class Encounters {
   _addCurse(n) {
     this.curse += n;
     this._send({ k: 'cursed', r: -1, n: this.curse }, false);
-    this.g.ui?.toast(`Cursed: the next ${this.curse} chambers hold an extra elite`, '#e03a3a');
+    this.g.ui?.toast(`Cursed: ${this.curse === 1 ? 'the next chamber holds' : `the next ${this.curse} chambers hold`} an extra elite`, '#e03a3a');
   }
 
   // ================================================================ secret rooms
@@ -735,7 +750,10 @@ export class Encounters {
     room.neighbors.push(host.id);
     const c = S.c;
     const out = new THREE.Vector3(-s.nx, 0.3, -s.nz);
-    g.vfx.burst(c, { count: 46, speed: 7, dir: out, spread: 0.9, life: 1.6, size: 0.16, sprite: SPR.CHUNK, solid: true, color: [0.4, 0.37, 0.33], color2: [0.28, 0.26, 0.23], gravity: 15, spin: 9, jitter: 0.8 });
+    g.vfx.burst(c, { count: 30, speed: 7, dir: out, spread: 0.9, life: 1.6, size: 0.14, sprite: SPR.CHUNK, solid: true, color: [0.4, 0.37, 0.33], color2: [0.28, 0.26, 0.23], gravity: 15, spin: 9, jitter: 0.8 });
+    // and the wall's own blocks tumble out into the room
+    g.rubble?.burst(c.x, c.y, c.z, 12, 0.34, 0.22, 0.16, 3.5, 2.5, 0.8, -s.nx * 0.9, -s.nz * 0.9);
+    g.rubble?.burst(c.x, c.y + 0.6, c.z, 10, 0.16, 0.12, 0.09, 4.5, 3, 0.9, -s.nx * 0.8, -s.nz * 0.8);
     g.vfx.smoke(c, { count: 12, size: 1.2, color: [0.3, 0.27, 0.23], alpha: 0.5, life: 2.4, spread: 1, speed: 1.2 });
     g.lights.flash(c, 0xffb060, 16, 10, 0.6);
     g.vfx.addShake(0.4);
@@ -792,7 +810,7 @@ export class Encounters {
       case 'wail': this._wailFx(msg.x, msg.z); break;
       case 'wall': if (room) this.breakWall(room, false); break;
       case 'curse': if (g.isHost) this._addCurse(msg.n ?? 2); break;
-      case 'cursed': if (!g.isHost) { this.curse = msg.n; if (room) room.cursed = true; else g.ui?.toast(`Cursed: the next ${this.curse} chambers hold an extra elite`, '#e03a3a'); } break;
+      case 'cursed': if (!g.isHost) { this.curse = msg.n; if (room) room.cursed = true; else g.ui?.toast(`Cursed: ${this.curse === 1 ? 'the next chamber holds' : `the next ${this.curse} chambers hold`} an extra elite`, '#e03a3a'); } break;
       default: break;
     }
     void from;

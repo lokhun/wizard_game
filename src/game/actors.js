@@ -10,6 +10,10 @@ import { STEP } from '../world/collision.js';
 import { getEnemyModel } from './models.js';
 import { BossBrain } from './bosses.js';
 
+const ARC_SWINGS = new Set(['swing', 'sweep', 'claw', 'swipe', 'overhead', 'saw']), _arcDir = new THREE.Vector3();
+const ARC_OPTS = { alpha: 0.5, sparks: 0, life: 0.22 }, ARC_OVER = { alpha: 0.5, sparks: 0, life: 0.22, tilt: 1.2, roll: 0.1 };
+const _lk = { x: 0, y: 0, z: 0 }; // (a foe's look target: _lookAt)
+const _sparkA = new THREE.Vector3(), _sparkB = new THREE.Vector3(), SPARK = { life: 0.06, branches: 0, width: 0.03 }; // (a Shocked foe's flicker)
 const _frustum = new THREE.Frustum(), _m4 = new THREE.Matrix4(), _sph = new THREE.Sphere();
 const _aiOut = { x: 0, z: 0 }, NO_ATTACKS = [];
 const AFFIX_COL = { hasted: [0.6, 1.6, 2.6], vampiric: [2.4, 0.15, 0.25], volatile: [3, 1.2, 0.2], shielded: [2.6, 2.2, 0.8], frenzied: [2.8, 0.5, 1.6], bombardier: [3, 0.6, 0.1] };
@@ -133,6 +137,11 @@ export class Actor {
     this.scale = (this.def.scale ?? 1) * (this.elite && !this.def.elite ? 1.25 : 1);
     this.net = { x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw, t: 0 };
     this.lastHitBy = null;
+    this._kbx = 0; this._kby = 0; this._kbT = -1; this.deathYaw = null; // (the last blow's push; the way a body falls)
+    // (declared here, never added later: a field set on the fly changes the object's shape and slows every
+    // actor through the hot loops; the stress fight paid ~0.4 ms a frame for three of them)
+    this._heavy = null; this._arcSide = 1; this._matT = 0; this._teleE = null; this._tele = null; this._tap = false; this._combo = null;
+    this.gate = null; this.phaseAts = null; this._lblFor = null; this._lblA = null; this._lblB = null; this._lbl = null;
     this.lastHitEl = 'physical';
     this.hitFlash = 0;
     this.shieldHp = 0;
@@ -140,6 +149,11 @@ export class Actor {
     this.collapsed = false;
     // sentries placed before the party arrives: idle until they notice someone
     this.dormant = !!opts.dormant;
+    this.caged = false; // (a sentry locked in an Oubliette cell: it waits for the door, not for a sight of you)
+    this.falling = null; // (knocked into an oubliette: going down the shaft, see _fall)
+    // a boss's entrance (game/bossIntro.js): the host holds it still this long; the model is drawn this far
+    // from where the body is (rising out of the floor, dropping from the sky: every peer's own)
+    this.introHold = 0; this.stageX = 0; this.stageY = 0; this.stageZ = 0;
     this.homeRoom = opts.homeRoom ?? null;
     // Every field an actor ever gets, declared here in one order. Added as
     // they came up (by state, attack, status, encounter), actors ended up with
@@ -168,7 +182,8 @@ export class Actor {
 // what an enemy's body is made of, for death debris
 function bodyOf(type) {
   if (/skeleton|lich/i.test(type)) return 'bone';
-  if (/armor|knight|guard|gargoyle|captain/i.test(type)) return 'metal';
+  if (/gargoyle/i.test(type)) return 'stone';
+  if (/armor|knight|guard|captain/i.test(type)) return 'metal';
   if (/slime|ooze/i.test(type)) return 'slime';
   if (/wraith|grimoire|imp|spirit/i.test(type)) return 'spirit';
   return 'flesh';
@@ -183,6 +198,8 @@ export class ActorManager {
     this.g = game;
     this.list = [];
     this.byId = new Map();
+    this._floor = (x, z) => game.groundY(x, z); // (the floor under each foot: see EnemyInstance._ground)
+    this._wall = (x, z, y) => game.collision.cellBlocked(Math.floor(x / 2), Math.floor(z / 2), y); // (a limp body's walls: ragdoll.js)
     this.nextId = 1;
     this._hostiles = [];
     this._allies = [];
@@ -297,6 +314,15 @@ export class ActorManager {
     a.wakeAt = 0;
     a.retargetT = 0;
     const g = this.g;
+    // a prisoner roused in its cell (struck through the bars, or by the alarm) brings every cell of the room open
+    if (a.caged) {
+      a.caged = false;
+      const room = a.homeRoom;
+      if (g.isHost && room?.cells && !room.cellsOpen) {
+        g.openCells(room, true);
+        for (const id of room.sentryIds ?? []) { const b = this.byId.get(id); if (b?.caged) { b.caged = false; b.wakeAt = g.time + 0.6 + Math.random() * 0.6; } }
+      }
+    }
     if (g.isHost) g.net?.broadcast({ t: 'wake', id: a.id });
     g.audio?.play(a.def.sound ?? 'beast_growl', { pos: a.pos, volume: 0.7 });
     g.ui?.floatText(new THREE.Vector3(a.pos.x, a.pos.y + a.height + 0.3, a.pos.z), '!', '#ff6040', true);
@@ -372,6 +398,58 @@ export class ActorManager {
     a._teleE = g.vfx.active[g.vfx.active.length - 1];
     a._tele = a._teleE.mesh;
   }
+  // The way a body should face to fall along the killing blow's push (a face-down fall faces the push, a fall
+  // onto the back faces against it), or null to fall as it stands: no push in the last second, a boss, or a
+  // death that isn't a topple (crumbling, flying apart, dissipating, a type's own).
+  // the push a dying body is flung with (host: the last blow's direction and knockback; a client may only
+  // know the way it falls, from the die message), and its own run carried on
+  _goLimp(a) {
+    const g = this.g;
+    if (a._prevAnim === 'spawn') return false; // (still rising out of the floor: it sinks back the old way)
+    let dx = 0, dz = 0;
+    if (a._kbT >= 0 && g.time - a._kbT < 1) { dx = a._kbx; dz = a._kby; }
+    else if (a.deathYaw != null) { dx = Math.sin(a.deathYaw); dz = Math.cos(a.deathYaw); }
+    else { const r = Math.random() * Math.PI * 2; dx = Math.cos(r) * 0.3; dz = Math.sin(r) * 0.3; }
+    const kb = Math.hypot(a.kb.x, a.kb.z);
+    const sp = Math.min(8, 1.6 + kb * 0.45) * Math.min(1, 1.3 / (1 + (a.def.poise ?? 20) / 60)); // (a heavy body is flung less)
+    const run = (a.moveSpeed ?? 0) > 0.5 && a.moveYaw != null ? Math.min(a.moveSpeed, 6) * 0.55 : 0;
+    const ok = a.model.ragdoll({ vx: dx * sp, vz: dz * sp, up: 0.5 + sp * 0.22, spin: (Math.random() - 0.5) * 3,
+      carry: { x: run ? Math.sin(a.moveYaw) * run : 0, z: run ? Math.cos(a.moveYaw) * run : 0 }, floor: this._floor });
+    if (ok) { a.kb.x = a.kb.z = 0; a.deathYaw = null; }
+    return ok;
+  }
+  // a blast tosses the limp bodies lying in reach (visual only, on each peer: explosions play everywhere)
+  blastCorpses(c, radius) {
+    const R = radius * 1.3 + 0.8, k = 2.5 + radius * 1.1;
+    for (const a of this.list) {
+      if (!a.dead || !a._rag || (a.sinkT ?? 0) > 0) continue;
+      if ((a.pos.x - c.x) ** 2 + (a.pos.z - c.z) ** 2 > (R + a.height) ** 2) continue;
+      a.model?.blast(c, R, k);
+    }
+  }
+  _fallYaw(a) {
+    if (a.boss || a._kbT < 0 || this.g.time - a._kbT > 1) return null;
+    const st = a.model?.spec?.anim?.death ?? 'fall';
+    if (st !== 'fall' && st !== 'kneel' && st !== 'fallBack') return null;
+    // (not into a wall: with stone within a body's length that way, it falls as it stands)
+    const L = (a.height ?? 1.8) * 0.9, y = a.pos.y + 0.4;
+    if (!this.g.collision.los(a.pos.x, y, a.pos.z, a.pos.x + a._kbx * L, y, a.pos.z + a._kby * L)) return null;
+    return Math.atan2(a._kbx, a._kby) + (st === 'fallBack' ? Math.PI : 0);
+  }
+  // where a foe's eyes go (its model turns its head there): the wizard it fights (a client, with no AI to say,
+  // takes the nearest wizard in reach); nothing while dormant (a sentry's idle gaze is its own)
+  _lookAt(a) {
+    if (a.dead || a.dormant || a.faction !== 'enemy') return null;
+    let t = a.boss ? a.brain?.target : a.target;
+    if (t?.follow) t = t.follow;
+    if (!t && !this.g.isHost) {
+      let bd = 256;
+      for (const p of this.g.allPlayers()) { if (p.dead || p.downed) continue; const d = (p.pos.x - a.pos.x) ** 2 + (p.pos.z - a.pos.z) ** 2; if (d < bd) { bd = d; t = p; } }
+    }
+    if (!t?.pos) return null;
+    _lk.x = t.pos.x; _lk.y = t.pos.y + (t.height ? t.height * 0.85 : 1.55); _lk.z = t.pos.z;
+    return _lk;
+  }
   // the wind-up's arc follows the attacker; it fades as soon as the wind-up ends (struck, interrupted, killed)
   _teleFollow(a) {
     const e = a._teleE;
@@ -400,6 +478,7 @@ export class ActorManager {
     const g = this.g;
     if (!a.alive) return 0;
     if (a.state === 'spawn' && a.stateT < 0.3 && !a.boss) return 0;
+    if (a.introHold > 0) return 0; // (a boss still making its entrance isn't a target: a client's view of it may say otherwise)
     let dmg = H.dmg ?? 0;
     const def = a.def;
     if (a.dormant) {
@@ -432,6 +511,7 @@ export class ActorManager {
     if (a.brain?.modifyDamage) dmg = a.brain.modifyDamage(dmg, H);
     a.hp -= dmg;
     a.lastHitBy = H.src ?? a.lastHitBy;
+    if (H.kbDir && H.tag !== 'dot') { a._kbx = H.kbDir[0]; a._kby = H.kbDir[1]; a._kbT = this.g.time; } // (which way the last blow pushed: a body falls that way)
     a.lastHitEl = H.el ?? a.lastHitEl;
     if (H.consume?.length) consumeStatus(a, H.consume);
     if (H.st) applyStatus(a, H.st, H.power ?? 1);
@@ -494,12 +574,13 @@ export class ActorManager {
     a.deadT = 0;
     a.anim = 'death';
     a.animT = 0;
+    a.deathYaw = this._fallYaw(a);
     a.deathMask = a.mask; // kill effects (burning foes exploding, relics) read what it died with
     a.st = {};
     a.mask = 0;
     this._rebuildLists();
     if (g.isHost) {
-      g.net?.broadcast({ t: 'die', id: a.id, k: killer ?? 0, el });
+      g.net?.broadcast({ t: 'die', id: a.id, k: killer ?? 0, el, fy: a.deathYaw == null ? undefined : +a.deathYaw.toFixed(2) });
       g.onActorKilled(a, killer, el);
       // on-death behaviours
       if (a.def.splitInto) {
@@ -579,6 +660,10 @@ export class ActorManager {
     } else if (body === 'metal') {
       g.vfx.burst(c, { count: 10 * s, speed: 5, life: 1.3, size: 0.12, sprite: SPR.CHUNK, gravity: 16, solid: true, spin: 10, upward: 0.5, color: [0.34, 0.35, 0.38], color2: [0.22, 0.22, 0.24] });
       g.vfx.burst(c, { count: 18, speed: 7, life: 0.4, size: 0.04, sprite: SPR.SPARK, stretch: 0.05, gravity: 10, color: [3, 2.2, 1.2] });
+    } else if (body === 'stone') {
+      // a carved body breaks up: lumps of it tumble to the floor in a puff of grit
+      g.rubble?.burst(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z, Math.round(9 * s), 0.24 * s, 0.17 * s, 0.11 * s, 3, 2.2, 0.35 * s);
+      g.vfx.smoke(c, { count: 5, size: 0.7 * s, color: [0.34, 0.32, 0.3], alpha: 0.4, life: 1.6 });
     } else if (body === 'slime') {
       g.vfx.burst(c, { count: 24 * s, speed: 4, life: 0.9, size: 0.14, sprite: SPR.DROP, gravity: 14, solid: true, upward: 0.8, color: [0.16, 0.3, 0.06], color2: [0.1, 0.2, 0.04] });
       g.vfx.decal(new THREE.Vector3(a.pos.x, a.pos.y, a.pos.z), 'slime', 2.4 * s, 12);
@@ -623,6 +708,11 @@ export class ActorManager {
         a.deadT += dt;
         a.animT += dt;
         a.progress = Math.min(1, a.deadT / 1.1);
+        // a human-shaped body goes limp at the killing blow and falls under its own weight (ragdoll.js):
+        // flung the way the blow pushed it, harder for a heavier push, carried on by its own run
+        if (a._rag === undefined && a.model && !a.boss && !a.collapsed) a._rag = this._goLimp(a);
+        // it turns as it buckles, to fall the way the killing blow pushed it (see _fallYaw)
+        if (a.deathYaw != null && a.deadT < 0.5 && a.model && !a._rag) { a.yaw = angleDamp(a.yaw, a.deathYaw, 9, dt); a.model.root.rotation.y = a.yaw; }
         // the killing blow carries the body for a moment
         const kbl = Math.hypot(a.kb.x, a.kb.z);
         if (kbl > 0.1 && !a.boss) {
@@ -636,16 +726,20 @@ export class ActorManager {
         const sinkAt = a.boss ? 9 : a.deadT > this._sinkOlder ? 1.8 : CORPSE_LINGER;
         if (a.model) {
           // bosses get a longer death performance (visual only: the model keeps animating past progress 1)
-          const posed = a.deadT < (a.boss ? 4.5 : 1.8);
-          if (posed) a.model.update(dt, { anim: 'death', t: a.animT, speed: 0, progress: a.progress, attackType: '' });
+          const posed = a._rag ? a.model.ragdolling : a.deadT < (a.boss ? 4.5 : 1.8);
+          if (posed) a.model.update(dt, { anim: 'death', t: a.animT, speed: 0, progress: a.progress, attackType: '', floor: this._floor, wall: this._wall });
           if (a.deadT > sinkAt) {
             a.sinkT = (a.sinkT ?? 0) + dt;
-            a.model.root.position.y = a.pos.y - a.sinkT * 0.7;
-            // the body crumbles as it goes: dark ash lifting off, a few dying embers
+            // the body burns away from the feet up behind a ragged ember front (core.js setDissolve); a body
+            // whose death already fades it out (a wraith dissipating) still sinks as before
+            const burn = a.model.setDissolve && a.model.spec?.anim?.death !== 'dissipate';
+            const k = Math.min(1, a.sinkT / 1.5) ** 1.4;
+            if (burn) { a.model.setDissolve(k); a.model.root.position.y = a.pos.y - a.sinkT * 0.08; } else a.model.root.position.y = a.pos.y - a.sinkT * 0.7;
+            // the body crumbles as it goes: dark ash lifting off, a few dying embers (rising with the front)
             const cam = g.renderer.camera.position;
-            if (a.sinkT < 1.1 && (cam.x - a.pos.x) ** 2 + (cam.z - a.pos.z) ** 2 < 700) {
+            if (a.sinkT < 1.35 && (cam.x - a.pos.x) ** 2 + (cam.z - a.pos.z) ** 2 < 700) {
               const n = Math.min(3, Math.floor(dt * 34 * Math.min(2, a.radius * 2) + Math.random()));
-              const r = a.radius * 0.9, top = Math.max(0.15, a.height * 0.35 - a.sinkT * 0.7);
+              const r = a.radius * 0.9, top = burn ? Math.max(0.15, a.height * 0.45 * (0.25 + k)) : Math.max(0.15, a.height * 0.35 - a.sinkT * 0.7);
               for (let k = 0; k < n; k++) {
                 const x = a.pos.x + rand(-r, r), z = a.pos.z + rand(-r, r), y = a.pos.y + rand(0.05, top);
                 g.vfx.P.solid({ x, y, z, vx: rand(-0.2, 0.2), vy: rand(0.3, 0.8), vz: rand(-0.2, 0.2), r: 0.13, g: 0.12, b: 0.105, a: 0.55, life: rand(0.8, 1.4), size: 0.16, size2: 0.7, sprite: SPR.SMOKE, drag: 1.5 });
@@ -654,9 +748,9 @@ export class ActorManager {
             }
           }
         }
-        if (a.model) this._settle(a, a.deadT < (a.boss ? 4.5 : 1.8));
+        if (a.model) this._settle(a, a._rag ? a.model.ragdolling : a.deadT < (a.boss ? 4.5 : 1.8));
         if (a.model && a.casters) this._castShadow(a);
-        if ((a.sinkT ?? 0) > 1.4 || (!a.model && a.deadT > 2.6)) { this.remove(a); listDirty = false; }
+        if ((a.sinkT ?? 0) > 1.6 || (!a.model && a.deadT > 2.6)) { this.remove(a); listDirty = false; }
         continue;
       }
       if (g.isHost) this._hostUpdate(a, dt);
@@ -666,6 +760,7 @@ export class ActorManager {
       if (a.model) {
         const m = a.model;
         m.root.position.copy(a.pos);
+        if (a.boss) { m.root.position.x += a.stageX; m.root.position.y += a.stageY; m.root.position.z += a.stageZ; }
         if (a.airDur > 0) {
           a.airT += dt;
           const u = a.airT / a.airDur;
@@ -699,6 +794,15 @@ export class ActorManager {
         if (a._tele) this._teleFollow(a);
         // staggered out of a wind-up (or a cast-type one: its circles are placed as it starts): the blow never lands
         if (a.anim === 'stagger' && (a._prevAnim === 'windup' || a._prevAnim === 'cast')) g.cancelHazardsFrom?.(a.id, _v.set(a.pos.x, a.pos.y + a.height + 0.4, a.pos.z));
+        // a cutting blow leaves a faint arc in the foe's red where the blade went (every peer sees the swing
+        // start; the blow itself is the host's)
+        if (a.anim === 'attack' && a._prevAnim !== 'attack' && !a.boss && a.faction === 'enemy' && ARC_SWINGS.has(a.attackType)
+          && (a.pos.x - cam.position.x) ** 2 + (a.pos.z - cam.position.z) ** 2 < 625) {
+          const fx = Math.sin(a.yaw), fz = Math.cos(a.yaw);
+          a._arcSide = -(a._arcSide ?? 1);
+          _v.set(a.pos.x + fx * a.radius * 0.4, a.pos.y + a.height * 0.55, a.pos.z + fz * a.radius * 0.4);
+          g.vfx.slash(_v, _arcDir.set(fx, 0, fz), 'enemy', a.radius + Math.max(1, a.height * 0.7), a._arcSide, a.attackType === 'overhead' ? ARC_OVER : ARC_OPTS);
+        }
         a._prevAnim = a.anim;
         const frozen = (a.mask & ST.frozen) !== 0;
         const animDt = frozen ? 0 : dt * (a.mask & ST.slow ? 0.5 : 1);
@@ -715,8 +819,23 @@ export class ActorManager {
         }
         const posed = every === 1 || (this._frame + a.id) % every === 0 || a.anim !== a._posedAnim;
         if (posed) {
-          m.update(a._poseDt, { anim: a.anim, t: a.animT, speed: a.moveSpeed ?? 0, progress: a.progress, attackType: a.attackType });
+          m.update(a._poseDt, { anim: a.anim, t: a.animT, speed: a.moveSpeed ?? 0, dir: a.moveYaw != null ? a.moveYaw - a.yaw : 0, progress: a.progress, attackType: a.attackType, look: this._lookAt(a), floor: this._floor, hpf: a.boss ? Math.max(0, a.hp / a.maxHp) : 1 });
           a._poseDt = 0; a._posedAnim = a.anim;
+        }
+        // heavy feet raise a little dust where they land (dry ground, near the camera)
+        if (m.footfall) {
+          const side = m.footfall; m.footfall = 0;
+          a._heavy ??= m.spec?.anim?.gait === 'plod' || a.height > 2.4;
+          if (a._heavy && a.pos.y > -0.05 && !(a.mask & ST.frozen) && (a.pos.x - cam.position.x) ** 2 + (a.pos.z - cam.position.z) ** 2 < 500) {
+            const r = (a.radius ?? 0.5) * 0.55 * side, big = Math.min(2, a.height / 1.9);
+            _v.set(a.pos.x + Math.cos(a.yaw) * r, a.pos.y + 0.05, a.pos.z - Math.sin(a.yaw) * r);
+            g.vfx.smoke(_v, { count: a.boss ? 4 : 2, color: g.biome?.dust ?? [0.13, 0.11, 0.09], alpha: 0.28, size: 0.32 * big, speed: 0.55 * big, rise: 0.25, life: 0.85, spread: 0.12 * big });
+          }
+          // a boss's tread is felt underfoot: a small jolt, nearer and bigger the heavier (not a floating one)
+          if (a.boss && m.spec?.anim?.gait !== 'float') {
+            const pl = g.player, d = Math.hypot(pl.pos.x - a.pos.x, pl.pos.z - a.pos.z);
+            if (d < 20 && !pl.dead) g.vfx.addShake(0.06 * (1 - d / 20) * Math.min(1.6, a.height / 3));
+          }
         }
         this._settle(a, posed);
         if ((a.moveSpeed ?? 0) > 0.5 && a.pos.y < 0) g.wadeFx(a, a.moveSpeed, dt, a.radius ?? 0.5);
@@ -794,7 +913,7 @@ export class ActorManager {
     if (m & ST.burn && Math.random() < dt * 30) P.glow({ x: x + rand(-r, r), y: y + rand(0.2, h), z: z + rand(-r, r), vy: rand(1, 2.2), r: 4, g: 1.5, b: 0.3, r2: 1, g2: 0.15, b2: 0.02, life: rand(0.3, 0.6), size: 0.3, size2: 0.05, sprite: SPR.FLAME, drag: 1 });
     if (m & ST.burn) g.lights.request(_v.set(x, y + h * 0.6, z), 0xff6020, 3, 4);
     if (m & ST.poison && Math.random() < dt * 8) P.glow({ x: x + rand(-r, r), y: y + rand(0.2, h), z: z + rand(-r, r), vy: rand(0.3, 0.8), r: 1.2, g: 2.4, b: 0.4, life: 0.8, size: 0.12, sprite: SPR.BUBBLE, gravity: -0.5 });
-    if (m & ST.shock && Math.random() < dt * 6) g.vfx.lightning(_v.set(x + rand(-r, r), y + rand(0, h), z + rand(-r, r)).clone(), new THREE.Vector3(x + rand(-r, r) * 2, y + rand(0, h), z + rand(-r, r) * 2), { life: 0.06, branches: 0, width: 0.03 });
+    if (m & ST.shock && Math.random() < dt * 6) g.vfx.lightning(_sparkA.set(x + rand(-r, r), y + rand(0, h), z + rand(-r, r)), _sparkB.set(x + rand(-r, r) * 2, y + rand(0, h), z + rand(-r, r) * 2), SPARK);
     if (m & ST.bleed && Math.random() < dt * 8) P.solid({ x: x + rand(-r, r) * 0.6, y: y + rand(0.4, h * 0.8), z: z + rand(-r, r) * 0.6, vy: -0.5, r: 0.35, g: 0, b: 0.02, life: 0.7, size: 0.05, sprite: SPR.DROP, gravity: 9 });
     if (m & ST.chill && Math.random() < dt * 5) P.glow({ x: x + rand(-r, r), y: y + rand(0.2, h), z: z + rand(-r, r), vy: -0.3, r: 1.5, g: 2, b: 2.6, life: 1, size: 0.06, sprite: SPR.SNOW, spin: 2 });
     if (m & ST.hex && Math.random() < dt * 4) P.glow({ x, y: y + h + 0.4, z, vy: 0.4, r: 1.6, g: 0.4, b: 2.4, life: 0.8, size: 0.35, sprite: SPR.RUNE, spin: 1 });
@@ -819,6 +938,7 @@ export class ActorManager {
     a.pos.y += (n.y - a.pos.y) * k;
     a.yaw = angleDamp(a.yaw, n.yaw, 12, dt);
     a.moveSpeed = Math.hypot(dx, dz) * 12 * 0.9;
+    if (a.moveSpeed > 0.3) a.moveYaw = Math.atan2(dx, dz);
     if (a.anim === 'windup' || a.anim === 'attack' || a.anim === 'cast') a.progress = Math.min(1, a.progress + dt / Math.max(0.2, a.netDur ?? 0.6));
     else if (a.anim === 'spawn') a.progress = Math.min(1, a.progress + dt / 0.9);
     // archer laser
@@ -864,6 +984,23 @@ export class ActorManager {
     return out;
   }
 
+  // over the edge: it staggers out over the grate (the bars give: they were never meant to hold), drops down
+  // the shaft, and is gone, a kill for whoever shoved it (host; peers see it fall in the snapshots)
+  _startFall(a, pit) {
+    a.falling = { t: 0, pit, x0: a.pos.x, z0: a.pos.z };
+    a.kb.x = a.kb.z = 0;
+    this._setState(a, 'stagger', 'stagger');
+    this.g.pitFallFx(a, pit, true);
+  }
+  _fall(a, dt) {
+    const F = a.falling;
+    F.t += dt;
+    const k = Math.min(1, F.t / 0.22) * 0.85, drop = Math.max(0, F.t - 0.12);
+    a.pos.x = F.x0 + (F.pit.x - F.x0) * k; a.pos.z = F.z0 + (F.pit.z - F.z0) * k;
+    a.pos.y = F.pit.y - 6 * drop * drop;
+    if (F.t > 0.75) { a.falling = null; a.hp = 0; this.kill(a, a.lastHitBy, 'physical'); }
+  }
+
   // ------------------------------------------------------------- host AI
   _hostUpdate(a, dt) {
     const g = this.g;
@@ -904,6 +1041,7 @@ export class ActorManager {
       a.life -= dt;
       if (a.life <= 0) { this.kill(a, 0, 'necrotic'); return; }
     }
+    if (a.falling) { this._fall(a, dt); return; }
 
     if (hasAffix(a, 'bombardier') && !a.dormant && a.state !== 'spawn') this._bombard(a, dt);
     const mm = moveMult(a);
@@ -912,13 +1050,24 @@ export class ActorManager {
     // knockback integration
     const kbl = Math.hypot(a.kb.x, a.kb.z);
     let mx = 0, mz = 0;
+    // a hard shove over an oubliette's grate sends a foe down it (never a boss, nor anything that flies)
+    if (kbl > 5 && !a.boss && !a.flying && g.level.pits.length) {
+      const L = g.level, ahead = a.radius + 0.35;
+      const i = L.idx(Math.floor((a.pos.x + a.kb.x / kbl * ahead) / 2), Math.floor((a.pos.z + a.kb.z / kbl * ahead) / 2));
+      const pit = L.pits.find((q) => q.i === i);
+      if (pit) { this._startFall(a, pit); return; }
+    }
     if (kbl > 0.05) {
       mx += a.kb.x * dt; mz += a.kb.z * dt;
       const decay = Math.exp(-dt * 6);
       a.kb.x *= decay; a.kb.z *= decay;
     }
 
-    if (a.brain) {
+    if (a.introHold > 0) {
+      // making its entrance: the intro drives its anims; not a target, not acting, until it ends
+      a.introHold -= dt;
+      a.state = 'spawn';
+    } else if (a.brain) {
       const r = a.brain.update(dt, mm, am);
       if (r) { mx += r.x; mz += r.z; }
     } else {
@@ -961,11 +1110,14 @@ export class ActorManager {
       // sentries are leashed to their room, so doors never lock them out of their own fight
       if (a.homeRoom && g.level.roomAt(r.x, r.z) !== a.homeRoom) r = { x: a.pos.x, z: a.pos.z };
       a.moveSpeed = Math.hypot(r.x - a.pos.x, r.z - a.pos.z) / dt;
+      if (a.moveSpeed > 0.3) a.moveYaw = Math.atan2(r.x - a.pos.x, r.z - a.pos.z); // (which way the feet carry it: see humanoidPose)
       a.pos.x = r.x; a.pos.z = r.z;
     } else a.moveSpeed = 0;
+    // up a step at once (eased up, the feet sank 36 cm into a tier's edge or a channel's lip for the first
+    // frames: scripts/collide.js), down one eased, a short hop off the edge
     const gy = g.groundY(a.pos.x, a.pos.z);
-    a.pos.y += (gy - a.pos.y) * Math.min(1, dt * 12);
-    a.progress = this._progress(a);
+    a.pos.y += (gy - a.pos.y) * Math.min(1, dt * (gy > a.pos.y ? 40 : 12));
+    if (!(a.introHold > 0) && !a.brain) a.progress = this._progress(a); // (an entrance drives its own; a boss's brain sets its own from the move's duration)
   }
 
   // Bombardier champions call a barrage down every few seconds: blasts
@@ -1053,6 +1205,7 @@ export class ActorManager {
       a.yaw += Math.sin(g.time * 0.4 + a.id) * dt * 0.15;
       a.dormantT = (a.dormantT ?? 0) - dt;
       if (a.wakeAt && g.time >= a.wakeAt) this.wake(a);
+      else if (a.caged) return out;
       else if (a.dormantT <= 0) {
         a.dormantT = 0.25;
         const A = g.director.active;
@@ -1103,7 +1256,8 @@ export class ActorManager {
     const speed = def.speed * mm * (hasAffix(a, 'hasted') ? 1.4 : hasAffix(a, 'frenzied') ? 1.12 : 1) * a.speedMult * (a.mask & ST.empower ? 1.15 : 1);
 
     if (a.state === 'windup') {
-      a.yaw = angleDamp(a.yaw, faceYaw, a.attack.kind === 'charge' ? 2 : 8, dt);
+      // (a charge holds the line it marked when the wind-up began: that lane is where it runs and where it hurts)
+      if (a.attack.kind !== 'charge') a.yaw = angleDamp(a.yaw, faceYaw, 8, dt);
       if (a.attack.laser) this._laser(a);
       if (a.stateT >= a.attack.windup) this._strike(a, tgt, dist);
       return out;
@@ -1119,7 +1273,7 @@ export class ActorManager {
         }
       }
       // (a charge runs its whole marked lane and a leap lands before the foe recovers)
-      if (a.stateT > 0.35 && !(a.leapT > 0)) this._setState(a, 'recover', 'idle');
+      if (a.stateT > 0.35 && !(a.leapT > 0)) { a.recoverT = a.attack?.recover ?? 0.6; this._setState(a, 'recover', 'idle'); } // (its authored recovery: the state change clears the attack)
       return out;
     }
     if (a.state === 'recover') {
@@ -1129,7 +1283,7 @@ export class ActorManager {
         a._combo = null;
         if (at && this._canUse(a, at, dist, tRad, true)) { this._beginAttack(a, at, tgt); return out; }
       }
-      if (a.stateT > (a.attack?.recover ?? 0.6) * (hasAffix(a, 'frenzied') ? 0.5 : 1) * (a.faction === 'enemy' ? g.difficulty?.aiRecover ?? 1 : 1)) this._setState(a, 'chase', 'idle', null);
+      if (a.stateT > (a.recoverT ?? 0.6) * (hasAffix(a, 'frenzied') ? 0.5 : 1) * (a.faction === 'enemy' ? g.difficulty?.aiRecover ?? 1 : 1)) this._setState(a, 'chase', 'idle', null);
       return out;
     }
 

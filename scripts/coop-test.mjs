@@ -3,12 +3,16 @@
 import { chromium } from 'playwright-core';
 const PORT = process.env.PORT ?? 5190;
 const peerQ = `peerHost=127.0.0.1&peerPort=${process.env.PEER ?? 9000}&peerPath=/wizard&peerSecure=0&quality=low&test=1&norender=1`;
-const browser = await chromium.launch({
+// (a browser each: two pages of one browser are a tab in front and one behind, and the one behind gets
+// no animation frames, so its game barely moves)
+const browsers = [];
+const launchOne = async () => { const b = await chromium.launch({
   executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
   args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--disable-renderer-backgrounding', '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows'],
-});
+}); browsers.push(b); return b; };
+const browser = { close: () => Promise.all(browsers.map((b) => b.close())) };
 const mk = async (tag) => {
-  const p = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  const p = await (await launchOne()).newPage({ viewport: { width: 1280, height: 720 } });
   p.on('pageerror', (e) => console.log(`[${tag} pageerror]`, e.message));
   p.on('console', (m) => { if (m.type() === 'error') console.log(`[${tag} err]`, m.text().slice(0, 300)); });
   return p;
@@ -42,7 +46,9 @@ console.log('host rx', await host.evaluate(() => JSON.stringify(window.__net?.rx
 console.log('fast channel', 'host:', await host.evaluate(() => window.__net?.fast?.size ?? -1), 'client:', await client.evaluate(() => !!window.__net?.fastConn?.open));
 // host walks into a combat room; client follows via teleport
 await host.evaluate(() => { const g = window.__game; const r = g.level.rooms.find((x) => x.type === 'combat'); g.player.pos.set(r.cx, 0, r.cz); });
-await host.waitForTimeout(12000);
+// (the fight, not a fixed wait: on a slow machine 12 s could pass before the host's game had stepped into it)
+await host.waitForFunction(() => window.__game.director.active, null, { timeout: 120000 }).catch(() => {});
+await host.waitForTimeout(4000);
 const hs = await host.evaluate(() => { const g = window.__game; return { actors: g.actors.list.length, remote: [...g.remotes.values()].map((r) => [r.name, r.classId, r.pos.toArray().map((v) => v.toFixed(1))]), active: !!g.director.active }; });
 const cs = await client.evaluate(() => { const g = window.__game; return { actors: g.actors.list.length, me: g.player.pos.toArray().map((v) => v.toFixed(1)), remote: [...g.remotes.values()].map((r) => [r.name, r.classId, r.pos.toArray().map((v) => v.toFixed(1))]), locked: g.level.rooms.some((r) => r.doors.some((d) => g.collision.dyn[g.level.doors[d].cells[0]])) }; });
 console.log('host state', JSON.stringify(hs));

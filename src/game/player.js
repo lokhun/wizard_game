@@ -7,6 +7,7 @@ import { SPR } from '../render/particles.js';
 import { fxOf } from '../render/vfx.js';
 import { rand } from '../core/rng.js';
 import { K_WATER, WATER_Y } from '../world/levelgen.js';
+import { waterRipple } from '../world/materials.js';
 import { applyRelicSets, ascendK } from './relicDefs.js';
 
 const WADE_C = [0.16, 0.22, 0.22]; // ripple rings on channel water
@@ -20,6 +21,7 @@ const RADIUS = 0.38;
 const GRAVITY = 24;
 const DASH_CARRY = 0.55; // the share of a dash's speed a dash-jump keeps
 const DASH_SPEED = 6.5 / 0.18; // a plain dash's (the dash key's: 6.5 m in 0.18 s)
+const _stepV = new THREE.Vector3(); // (a footfall's spray: scratch)
 
 export function baseStats(classId) {
   const C = CLASSES[classId];
@@ -160,8 +162,8 @@ export class LocalPlayer {
       if (r.stars) applyAscended(r.def.apply, s, this, ascendK(r.stars));
       else r.def.apply?.(s, this);
     }
-    for (const r of this.relics) r.def.after?.(s, this);
     applyRelicSets(s, this);
+    for (const r of this.relics) r.def.after?.(s, this); // (last: a curse's "no longer" outranks a set's bonus)
     for (const b of this.buffs) {
       for (const k in b.mods) {
         if (k === 'cdRate') s.cdRate += b.mods[k];
@@ -188,7 +190,7 @@ export class LocalPlayer {
   takeDamage(amount, el = 'physical', fromPos = null, opts = {}) {
     if (!this.alive || this.downed || this.dead) return 0;
     const g = this.game;
-    if (this.invuln > 0 && amount > 0 && fromPos && this._dashIv > g.time && !g.godMode) this._perfectDodge(); // (blows only: a pool has no fromPos)
+    if (this.invuln > 0 && amount > 0 && fromPos && this._dashIv > g.time && !g.godMode) this._perfectDodge(opts.attacker ?? opts.by ?? null); // (blows only: a pool has no fromPos)
     if (this.invuln > 0 || g.godMode) return 0;
     if (this.parryT > 0) { this._parrySuccess(fromPos); return 0; }
     let dmg = amount * (1 - this.stats.armor) * (g.difficulty?.playerDamage ?? 1);
@@ -302,7 +304,7 @@ export class LocalPlayer {
   // Dashing through a blow at the last moment: a beat of slow motion (solo: in co-op
   // the world's clock is shared), a quarter more damage for three seconds and a
   // little of the ultimate. At most once a second.
-  _perfectDodge() {
+  _perfectDodge(from = null) {
     const g = this.game;
     if (g.time < (this._pdT ?? 0)) return;
     this._pdT = g.time + 1;
@@ -313,7 +315,7 @@ export class LocalPlayer {
     g.screenTint?.([1.15, 1.08, 0.8], 0.35);
     g.audio?.play('crit', { volume: 0.8 });
     g.ui?.floatText(this.eye.clone().add(this.forward().multiplyScalar(2)).add(new THREE.Vector3(0, 0.4, 0)), 'PERFECT DODGE', '#ffd860', true);
-    g.events?.emit('perfectDodge');
+    g.events?.emit('perfectDodge', from); // (whose blow it was: only a boss's cracks his judgment)
   }
 
   _parrySuccess(fromPos) {
@@ -467,15 +469,13 @@ export class LocalPlayer {
     if (sp.mode === 'channel') {
       const S = {};
       this.channel = { slot, S, ctx, t: 0, max: sp.channel.max ?? 3 };
-      const sl = this.game.spells.slot; this.game.spells.slot = slot;
-      sp.channel.start(ctx, S);
-      this.game.spells.slot = sl;
+      const sl = this.game.spells.slot; this.game.spells.slot = slot; this.game.spells.localCast = true;
+      try { sp.channel.start(ctx, S); } finally { this.game.spells.slot = sl; this.game.spells.localCast = false; }
       this.game.net?.sendCast({ pid: this.id, slot, o: origin, d: dir, ap: aim.point, chan: 1, au: this.stats.augSlot?.[slot] });
     } else {
       const edgeBefore = this.edge;
-      const sl = this.game.spells.slot; this.game.spells.slot = slot;
-      sp.cast(ctx);
-      this.game.spells.slot = sl;
+      const sl = this.game.spells.slot; this.game.spells.slot = slot; this.game.spells.localCast = true;
+      try { sp.cast(ctx); } finally { this.game.spells.slot = sl; this.game.spells.localCast = false; }
       this.game.net?.sendCast({ pid: this.id, slot, o: origin, d: dir, ap: aim.point, ch: edgeBefore, au: this.stats.augSlot?.[slot] });
     }
     this.game.onLocalCast?.(slot);
@@ -533,6 +533,9 @@ export class LocalPlayer {
       this.buffs[i].t -= dt;
       if (this.buffs[i].t <= 0) { this.buffs.splice(i, 1); buffsChanged = true; }
     }
+    // stats that hang on the moment: the Tempest's airborne bonus, the Blood Mage's frenzy under 40% health
+    const air = !!this.stats.airDmg && !this.grounded, frz = !!this.stats.frenzy && this.hp / this.maxHp < 0.4;
+    if (air !== this._airOn || frz !== this._frzOn) { this._airOn = air; this._frzOn = frz; buffsChanged = true; }
     if (buffsChanged) this.recomputeStats();
     // cooldowns
     const cdRate = st.cdRate;
@@ -540,6 +543,7 @@ export class LocalPlayer {
       if (s === 'ultimate') continue;
       const sp = this.cls.spells[s];
       const maxCh = sp.charges ?? 1;
+      if (this.channel?.slot === s) continue; // (a channel's cooldown starts when it ends: endChannel sets it)
       if (this.chargesLeft[s] < maxCh) {
         this.cds[s] -= dt * cdRate;
         if (this.cds[s] <= 0) {
@@ -641,7 +645,8 @@ export class LocalPlayer {
     this.dashRecharge -= dt;
     if (this.dashCharges < st.dashCharges && this.dashRecharge <= 0) {
       this.dashCharges++;
-      this.dashRecharge = st.dashCd * (this.game.difficulty?.dashCd ?? 1);
+      // (the next only once one is spent: a timer left running while full shortened the next recharge)
+      this.dashRecharge = this.dashCharges < st.dashCharges ? st.dashCd * (this.game.difficulty?.dashCd ?? 1) : 0;
     }
     if (allowMove && input.was('dash') && this.dashCharges > 0 && this.dashT <= 0) {
       const dir = wish.lengthSq() > 0.01 ? target.clone().normalize() : f.clone();
@@ -740,6 +745,10 @@ export class LocalPlayer {
         if (this.inWater) {
           g.vfx.burst(new THREE.Vector3(this.pos.x, -0.25, this.pos.z), { count: 6, speed: 2, upward: 1, gravity: 9, life: 0.4, size: 0.05, sprite: SPR.DROP, color: [0.5, 0.6, 0.6], solid: true });
           g.vfx.ring({ x: this.pos.x, y: WATER_Y - 0.05, z: this.pos.z }, 0.75, WADE_C, 1.1, 0.07);
+          waterRipple(this.pos.x, this.pos.z, 1);
+        } else if (g.storm && this.grounded) {
+          // rain-soaked stones: a footfall kicks up a little spray
+          g.vfx.burst(_stepV.set(this.pos.x, this.pos.y + 0.03, this.pos.z), { count: 3, speed: 1.1, upward: 0.9, gravity: 9, life: 0.3, size: 0.03, sprite: SPR.DROP, color: [0.45, 0.52, 0.62], solid: true, jitter: 0.2 });
         }
       }
       if (this.stats.chainBonus !== undefined) {
@@ -771,7 +780,8 @@ export class LocalPlayer {
         ch.ctx.aimPoint.copy(aim.point);
         ch.ctx.stats = this.stats;
         const sl = this.game.spells.slot; this.game.spells.slot = ch.slot;
-        sp.channel.update(ch.ctx, ch.S, dt);
+        this.game.spells.localCast = true;
+        try { sp.channel.update(ch.ctx, ch.S, dt); } finally { this.game.spells.localCast = false; }
         this.game.spells.slot = sl;
         if (this.castAnim) this.castAnim.t = Math.min(this.castAnim.t, 0.2);
       }

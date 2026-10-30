@@ -203,9 +203,10 @@ export const hound = {
     // legs: sinewy, clawed
     for (const S of ['L', 'R']) {
       rig.add('legF' + S, 'magma', bumpy(taper(0.075, 0.05, Q.legF[0], 9, 2), 0.006, 12, 2), {}, { c: HIDE });
-      rig.add('legF2' + S, 'magma', taper(0.045, 0.03, Q.legF[1], 8, 2), {}, { c: HIDE });
+      // (the lower legs run on into the paws, which hang below their bones to meet the floor)
+      rig.add('legF2' + S, 'magma', taper(0.045, 0.03, Q.legF[1] + 0.06, 8, 2), {}, { c: HIDE });
       rig.add('legB' + S, 'magma', bumpy(xf(taper(0.1, 0.05, Q.legB[0], 9, 2), { sz: 1.3 }), 0.008, 10, 7), {}, { c: HIDE });
-      rig.add('legB2' + S, 'magma', taper(0.045, 0.03, Q.legB[1], 8, 2), {}, { c: HIDE });
+      rig.add('legB2' + S, 'magma', taper(0.045, 0.03, Q.legB[1] + 0.06, 8, 2), {}, { c: HIDE });
       for (const F of ['F', 'B']) {
         rig.add('paw' + F + S, 'magma', xf(G.sph(0.045, 8, 6), { sx: 1.0, sy: 0.6, sz: 1.5 }), { y: -0.07, z: 0.03 }, { c: HIDE });
         rig.add('paw' + F + S, 'bone', mergeRaw([0, 1, 2, 3].map((i) => xf(G.cone(0.008, 0.05, 4), { x: (i - 1.5) * 0.018, y: -0.09, z: 0.09, rx: Math.PI / 2 + 0.5 }))), {}, { c: [0.1, 0.08, 0.07] });

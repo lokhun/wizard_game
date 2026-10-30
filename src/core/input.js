@@ -31,6 +31,15 @@ export function applyBindings(over) {
   for (const [a, code] of Object.entries(over ?? {})) {
     if (KEYS[a] && a !== 'pause' && typeof code === 'string' && /^[A-Za-z0-9]{1,24}$/.test(code) && code !== 'Escape') KEYS[a][0] = code;
   }
+  // two actions on one main key (stored bindings the settings screen would have swapped): the later one goes
+  // back to its default, or to nothing if that's taken too
+  const taken = new Set();
+  for (const [a, ks] of Object.entries(KEYS)) {
+    if (!taken.has(ks[0])) { taken.add(ks[0]); continue; }
+    const d = DEFAULT_KEYS[a][0];
+    ks[0] = taken.has(d) ? '' : d;
+    if (ks[0]) taken.add(ks[0]);
+  }
   const main = new Map(Object.entries(KEYS).map(([a, ks]) => [ks[0], a]));
   for (const [a, ks] of Object.entries(KEYS)) KEYS[a] = ks.filter((k, i) => i === 0 || !main.has(k) || main.get(k) === a);
 }

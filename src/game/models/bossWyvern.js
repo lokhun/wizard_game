@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { G, xf, tube, deform, bumpy, mergeRaw, chainSkin, rng, vnoise, fbm3, clamp, lerp, smooth, bump, easeOut, easeIn, easeInOut, TAU } from './core.js';
 import { twoSided, HDR } from './parts.js';
+import { wounds, strikeLayer } from './bossKit.js';
 import { addFx, fxOf, fxSet, fxPos, fxRot, paint, softRing, softDisc, boneWorld, boneModel, glowLevel, polyParam } from './bossKit.js';
 
 // ==================================================== Gravemaw, the Stone Wyvern ==
@@ -32,7 +33,9 @@ function stoneC(v, seed = 1, base = 1) {
 }
 
 export const stoneWyvern = {
-  id: 'stoneWyvern', height: 3.6, radius: 1.6, length: 6.5, boss: true, eyeColor: 0xffa020, magicColor: 0xff6a18, defaultAttack: 'breath', attackTypes: ['breath', 'slam', 'sweep', 'fly', 'roar'], crackColor: MAGMA, crackIntensity: 4.5, orbSize: 0.22, flutter: 0.05, soles: ['toesL', 'toesR'],
+  lookAt: 0, recoil: 0, // (its own rig: the head turns on other axes; see EnemyInstance._layers)
+  look: { bones: [['neck0', 0.1], ['neck1', 0.12], ['neck2', 0.12], ['neck3', 0.13], ['neck4', 0.13], ['head', 0.4]], yaw: 1.15, pitch: 0.6, offAt: ['breath', 'sweep', 'fault', 'gust', 'rocks'] }, // (its eyes on its foe: EnemyInstance._lookWorld)
+  id: 'stoneWyvern', height: 3.6, radius: 1.6, length: 6.5, boss: true, eyeColor: 0xffa020, magicColor: 0xff6a18, defaultAttack: 'breath', attackTypes: ['breath', 'slam', 'sweep', 'fly', 'roar', 'fault', 'gust', 'rocks'], crackColor: MAGMA, crackIntensity: 4.5, orbSize: 0.22, flutter: 0.05, soles: ['toesL', 'toesR'],
   build(rig) {
     rig.bone('base', null);
     rig.bone('ground', null); // fx on the floor, never lifted or spun
@@ -186,6 +189,7 @@ export const stoneWyvern = {
       if (st.phaseN >= 2) st.heart = true;
     } else if (kind === 'fly' && !extra.on && st.everFlew) { st.broken = true; if (st.crashT === undefined) st.crashT = m.time; }
     else if (kind === 'enrage') st.heart = true;
+    else if (kind === 'breath') { st.brT = m.time; st.brYaw = extra.yaw ?? 0; st.brSw = extra.sweep ?? 0; st.brDur = Math.max(0.1, extra.dur ?? 1); }
   },
 
   pose(m, s, P, dt) {
@@ -255,7 +259,7 @@ export const stoneWyvern = {
 
     // ---------------------------------------------------------- actions
     let crackK = 1 + Math.sin(T * 2) * 0.1;
-    let orb = 0, flame = 0, maw = 0, ring = 0, ringR = 1, ringX = 0, ringZ = 0, trail = 0;
+    let orb = 0, flame = 0, maw = 0, ring = 0, ringR = 1, ringX = 0, ringZ = 0, trail = 0, gustK = 0, gustR = 1;
     if (anim === 'windup' || anim === 'attack' || anim === 'cast') {
       const wu = anim === 'windup';
       rate = wu ? 8 : 16;
@@ -270,8 +274,15 @@ export const stoneWyvern = {
           orb = 0.2 + 0.8 * p; maw = 0.3 + 0.7 * p; crackK = 1 + p * 1.6;
           P.r('head', Math.sin(T * 35) * 0.02 * smooth(0.6, 1, p));
         } else {
-          // the gout: head thrust forward and low, jaws wide, the neck shuddering
+          // the gout: head thrust forward and low, jaws wide, the neck shuddering; the neck and body turn
+          // to follow the fire as it sweeps (the flames go where the game aims them: Game.bossFx 'breath')
           const k = smooth(0, 0.15, p) * (1 - smooth(0.88, 1, p));
+          if (st.brT !== undefined && T - st.brT < st.brDur + 0.5) {
+            let rel = st.brYaw + st.brSw * clamp((T - st.brT) / st.brDur) - m.root.rotation.y;
+            rel = Math.atan2(Math.sin(rel), Math.cos(rel)) * k;
+            P.r('base', 0, rel * 0.35 * gw, 0); P.r('body', 0, rel * 0.15, 0);
+            for (let i = 0; i < NECK; i++) P.r('neck' + i, 0, rel * 0.5 / NECK, 0);
+          }
           for (let i = 0; i < NECK; i++) P.r('neck' + i, (i < 2 ? 0.05 : 0.08) * k, Math.sin(T * 3 + i * 0.3) * 0.05 * k);
           P.r('head', 0.05 * k, 0, Math.sin(T * 22) * 0.03 * k); P.r('jaw', 0.85 * k);
           P.p('body', 0, 0, 0.15 * k); P.sc('chest', 1 - 0.06 * k, 1 - 0.05 * k, 1);
@@ -298,6 +309,54 @@ export const stoneWyvern = {
           ring = (1 - r) * smooth(0.15, 0.2, p); ringR = 1 + r * 6; ringZ = 1.8;
           crackK = 1 + 2 * (1 - p);
         }
+      } else if (at === 'fault') {
+        // the fault: it rises on its hind legs, then hammers its wrists and chin into the ground before it,
+        // neck stretched low along the line the rock will split
+        if (wu) {
+          const k = smooth(0, 1, p), tr = smooth(0.6, 1, p);
+          P.r('body', -0.35 * k); P.p('body', 0, 0.35 * k, -0.25 * k);
+          for (let i = 0; i < NECK; i++) P.r('neck' + i, -0.12 * k);
+          P.r('head', -0.2 * k, Math.sin(T * 33) * 0.03 * tr); P.r('jaw', 0.5 * k);
+          for (const [S, sd] of [['L', 1], ['R', -1]]) wingFold(P, S, sd, 1 - 0.4 * k, -0.6 * k, 1.4 * k, brk);
+          crackK = 1 + 1.5 * k;
+        } else {
+          const k = smooth(0, 0.12, p) * (1 - smooth(0.6, 1, p)), u = 1 - smooth(0, 0.12, p);
+          P.r('body', 0.3 * k - 0.35 * u); P.p('body', 0, -0.3 * k + 0.35 * u, 0.5 * k);
+          for (let i = 0; i < NECK; i++) P.r('neck' + i, (i < 2 ? 0.2 : 0.08) * k);
+          P.r('head', 0.35 * k); P.r('jaw', 0.8 * k);
+          for (const [S, sd] of [['L', 1], ['R', -1]]) wingFold(P, S, sd, 1, 0.5 * k, -0.3 * k, brk);
+          const r = smooth(0.12, 0.6, p);
+          ring = (1 - r) * smooth(0.1, 0.14, p); ringR = 0.6 + r * 3; ringZ = 3.2;
+          crackK = 1 + 2.5 * (1 - p);
+        }
+      } else if (at === 'gust') {
+        // one huge wingbeat on the ground: wings raised high and wide, then driven down and forward
+        if (wu) {
+          const k = smooth(0, 1, p), tr = smooth(0.6, 1, p);
+          P.r('body', -0.4 * k); P.p('body', 0, 0.4 * k, -0.3 * k);
+          for (let i = 0; i < NECK; i++) P.r('neck' + i, -0.1 * k);
+          P.r('head', -0.35 * k); P.r('jaw', 0.6 * k);
+          for (const [S, sd] of [['L', 1], ['R', -1]]) wingSpread(P, S, sd, k * (1 - brk * 0.4), 1.4 * k + Math.sin(T * 30) * 0.05 * tr);
+        } else {
+          const dn = easeOut(smooth(0, 0.18, p)), k = 1 - smooth(0.55, 1, p);
+          P.r('body', (-0.4 + 0.65 * dn) * k); P.p('body', 0, (0.4 - 0.5 * dn) * k, (-0.3 + 0.6 * dn) * k);
+          for (let i = 0; i < NECK; i++) P.r('neck' + i, (-0.1 + 0.16 * dn) * k);
+          P.r('head', (-0.35 + 0.25 * dn) * k); P.r('jaw', 0.9 * k);
+          for (const [S, sd] of [['L', 1], ['R', -1]]) wingSpread(P, S, sd, k * (1 - brk * 0.4), (1.4 - 2.6 * dn) * k);
+          gustK = (1 - smooth(0.1, 0.8, p)) * smooth(0.08, 0.14, p); gustR = 1.5 + smooth(0.1, 0.8, p) * 5;
+          crackK = 1 + k;
+        }
+      } else if (at === 'rocks') {
+        // it lashes its tail high and brings it down on the flagstones; the walls shed their stones as it screams
+        const up = smooth(0, 0.35, p) * (1 - smooth(0.38, 0.45, p)), sl = smooth(0.38, 0.45, p) * (1 - smooth(0.8, 1, p)), sc = bump(0.42, 1, p);
+        for (let i = 0; i < TAIL; i++) P.r('tail' + i, -0.22 * up + 0.08 * sl, 0, 0);
+        P.r('body', 0.12 * up - 0.2 * sc); P.p('body', 0, -0.15 * sl + 0.2 * sc * gw, 0);
+        for (let i = 0; i < NECK; i++) P.r('neck' + i, -0.14 * sc);
+        P.r('head', -0.55 * sc, Math.sin(T * 40) * 0.04 * sc, Math.sin(T * 33) * 0.03 * sc); P.r('jaw', 0.95 * sc);
+        for (const [S, sd] of [['L', 1], ['R', -1]]) wingSpread(P, S, sd, 0.6 * (up + sc) * gw * (1 - brk * 0.4), 0.3);
+        const r = smooth(0.42, 0.9, p);
+        ring = (1 - r) * smooth(0.4, 0.44, p); ringR = 1 + r * 5; ringZ = -3.5;
+        crackK = 1 + 1.4 * sc; maw = sc * 0.6;
       } else if (at === 'sweep') {
         // tail whip: coil, then the whole body spins round with the club extended
         if (wu) {
@@ -398,15 +457,30 @@ export const stoneWyvern = {
     fxSet(F, 'maw', maw * (0.7 + 0.3 * Math.sin(T * 17)), 0.6 + maw * 0.5);
     // wing gusts: a dust ring on the ground under each downstroke while it hovers
     const gu = ((st.flap ?? 0) / TAU + 0.85) % 1;
-    fxSet(F, 'gust', fw * (1 - gu) * 0.45 * (fly ? 1 : 0), 1.2 + gu * 4.5);
+    if (gustK > 0) fxSet(F, 'gust', gustK * 0.8, gustR);
+    else fxSet(F, 'gust', fw * (1 - gu) * 0.45 * (fly ? 1 : 0), 1.2 + gu * 4.5);
     fxPos(F, 'ring', ringX, 0.06, ringZ);
     fxSet(F, 'ring', ring, ringR, 1, ringR);
     fxSet(F, 'core', st.heatW * (0.25 + 0.15 * Math.sin(T * 3.3)) + (anim === 'windup' && at === 'breath' ? p * 0.3 : 0), 1 + Math.sin(T * 3.3) * 0.05);
     fxRot(F, 'trail', 0, m.bones.base.rotation.y, 0);
     fxSet(F, 'trail', trail * 0.8);
+    if (!fly && fw < 0.5 && !dead) strikeLayer(m, s, P, dt, BLOW_O);
+    if (!fly) wounds(m, s, P, dt, { hunch: [['chest', 0.08], ['neck0', 0.1], ['neck1', 0.05], ['head', 0.06]], breath: [['chest', 0.05], ['body', 0.02]], spasm: ['chest', 'head'] }); // (near its end, grounded: bossKit.wounds)
     return rate;
   },
 };
+
+// its blows' weight (bossKit.strikeLayer), on the ground only
+const BLOWS = {
+  slam: { hit: 0.18, rel: [0.6, 0, 0], imp: [1.4, 0, 1.5], sink: 0.15, rec: 0.7 },
+  fault: { hit: 0.12, imp: [2.0, 0, 1.3], sink: 0.12, rec: 0.7 },
+  sweep: { hit: 0.3, rel: [0, 2.4, 0], imp: [0.3, 0.6, 0.6], sink: 0.12 },
+  breath: { hit: 2, rel: [-1.0, 0, 0.3], sink: 0.1 },
+  gust: { hit: 0.1, imp: [1.4, 0, 0.8], sink: 0.16, rec: 0.7 },
+  rocks: { hit: 0.42, imp: [0.9, 0, 1.3], rec: 0.85 },
+  roar: { hit: 2, rel: [-1.4, 0, -0.4], rec: 0.8 },
+};
+const BLOW_O = { types: BLOWS, chain: [['body', 0.35, 0.3], ['chest', 0.4, 0.3]], head: 'head', root: 'body', sink: 0.1 };
 
 // downstroke-weighted flap wave: -1 (top) .. 1 (bottom), quick down, slow up
 function flapWave(f) { const s = Math.sin(f); return s + 0.22 * Math.sin(2 * f - 0.6); }
@@ -490,12 +564,15 @@ function buildWing(rig, S, sd) {
   const R = rng(sd > 0 ? 41 : 43);
   // membrane: inner panel lofted from the arm (S-E-W) to the trailing edge (flank -> finger 3),
   // then two fans between the fingers; scalloped trailing edges, torn holes near the edge
-  const pos = [], wts = [], idx = [];
-  const push = (p, ws) => { pos.push(p.x, p.y, p.z); wts.push(ws); return pos.length / 3 - 1; };
+  const pos = [], wts = [], idx = [], vk = [];
+  // vk: a vertex's vein strength (0..1) and thinness, for its colour below
+  const push = (p, ws, vein = 0, thin = 0) => { pos.push(p.x, p.y, p.z); wts.push(ws); vk.push(vein, thin); return pos.length / 3 - 1; };
+  // veins: raised ribs where the membrane is stretched along (every so often across it)
+  const ribAt = (q, n) => { const f = Math.abs(((q * n) % 1 + 1) % 1 - 0.5) * 2; return Math.pow(f, 10); };
   const lerpV = (a, b, t) => a.clone().lerp(b, t);
   const armAt = (u) => (u < 0.4 ? lerpV(s0, e0, u / 0.4) : lerpV(e0, w0, (u - 0.4) / 0.6));
   const armW = (u) => (u < 0.4 ? [[B.wu, 1]] : u < 0.55 ? [[B.wu, 1 - (u - 0.4) / 0.15], [B.wf, (u - 0.4) / 0.15]] : u < 0.92 ? [[B.wf, 1]] : [[B.wf, 1 - (u - 0.92) / 0.08], [B.wh, (u - 0.92) / 0.08]]);
-  const NU = 14, NV = 6;
+  const NU = 44, NV = 16;
   const inner = [];
   for (let i = 0; i <= NU; i++) {
     const u = i / NU, a = armAt(u);
@@ -506,13 +583,16 @@ function buildWing(rig, S, sd) {
     for (let j = 0; j <= NV; j++) {
       const v = j / NV, p = lerpV(a, te, v);
       p.y -= Math.sin(v * Math.PI) * 0.12 * Math.sin(u * Math.PI);
-      row.push(push(p, mixW(armW(u), teW, v)));
+      // the hide wrinkles across its stretch, and ribs run from the arm to the trailing edge
+      const rib = ribAt(u, 7) * Math.sin(Math.min(1, v * 1.4) * Math.PI * 0.5) * (1 - v * 0.6);
+      p.y += 0.022 * rib + 0.007 * Math.sin(v * 40 + u * 9) * Math.sin(v * Math.PI);
+      row.push(push(p, mixW(armW(u), teW, v), rib, Math.sin(v * Math.PI) * Math.sin(u * Math.PI)));
     }
     inner.push(row);
   }
   for (let i = 0; i < NU; i++) for (let j = 0; j < NV; j++) { const a = inner[i][j], b = inner[i + 1][j], c = inner[i][j + 1], d = inner[i + 1][j + 1]; idx.push(a, c, b, b, c, d); }
   const fan = (ta, tb, ba, bb) => {
-    const NA = 7, NR = 6, rows = [];
+    const NA = 20, NR = 16, rows = [];
     for (let i = 0; i <= NA; i++) {
       const a = i / NA, edge = lerpV(ta, tb, a);
       edge.lerp(w0, 0.16 * Math.sin(a * Math.PI)); // scallop
@@ -520,7 +600,9 @@ function buildWing(rig, S, sd) {
       for (let k = 0; k <= NR; k++) {
         const r = k / NR, p = lerpV(w0, edge, r);
         p.y -= Math.sin(r * Math.PI) * Math.sin(a * Math.PI) * 0.08;
-        row.push(push(p, mixW([[B.wh, 1]], [[ba, 1 - a], [bb, a]], Math.min(1, r * 1.3))));
+        const rib = ribAt(a + 0.5 / 3, 3) * (1 - r * 0.5);
+        p.y += 0.018 * rib + 0.005 * Math.sin(r * 34 + a * 7) * Math.sin(a * Math.PI);
+        row.push(push(p, mixW([[B.wh, 1]], [[ba, 1 - a], [bb, a]], Math.min(1, r * 1.3)), rib, Math.sin(r * Math.PI) * Math.sin(a * Math.PI)));
       }
       rows.push(row);
     }
@@ -549,9 +631,12 @@ function buildWing(rig, S, sd) {
   for (let i = 0; i < pos.length / 3; i++) lookup.set(key(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]), i);
   let miss = 0;
   const memSkin = (v) => { const i = lookup.get(key(v.x, v.y, v.z)); if (i === undefined) miss++; return wts[i ?? 0]; };
+  const memVK = (v) => lookup.get(key(v.x, v.y, v.z)) ?? 0;
   rig.add('chest', 'stone', mem, {}, {
     skin: memSkin,
-    cfn: (v) => { const n = fbm3(v.x * 2, v.y * 2, v.z * 2, 3, 3), vein = Math.abs(vnoise(v.x * 3, v.y * 3, v.z * 3, 7) - 0.5) < 0.03 ? 0.6 : 1; const k = (0.3 + n * 0.2) * vein; return [k, k * 0.95, k * 0.9]; },
+    // stone hide, paler and warmer where it is stretched thin, darker along the ribs, with a
+    // fine web of cracks
+    cfn: (v) => { const i = memVK(v), rib = vk[i * 2], thin = vk[i * 2 + 1]; const n = fbm3(v.x * 2, v.y * 2, v.z * 2, 3, 3), crack = Math.abs(vnoise(v.x * 6, v.y * 6, v.z * 6, 7) - 0.5) < 0.025 ? 0.55 : 1; const k = (0.3 + n * 0.2) * crack * (1 - 0.45 * rib) * (1 + 0.25 * thin); return [k * (1 + 0.12 * thin), k * 0.95, k * (0.9 - 0.08 * thin)]; },
     anim: (v) => clamp(v.distanceTo(w0) / 3) * 0.6 * clamp(Math.abs(v.x) - 0.6),
   });
   // arm struts and fingers

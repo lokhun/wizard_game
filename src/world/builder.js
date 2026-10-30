@@ -1,9 +1,16 @@
 import * as THREE from 'three';
+import { tiledMesh, levelPVS } from '../render/tiles.js';
+// ?nocull=1: the level as one plain mesh per material (A/B tests of the occlusion cull)
+const NOCULL = typeof location !== 'undefined' && /[?&]nocull=1/.test(location.search);
 import { GeoBuilder, tf, worldBox } from '../render/geo.js';
 import { T, SOLID, FLOOR, BLOCK, K_MAIN, K_ALT, K_WATER, K_DAIS, ROOM } from './levelgen.js';
 import { PROPS, PROP_FLAMES, CHANDELIER_FLAMES, cellBars, bookshelf, setPropDetail } from './props.js';
 import { getBiomeMaterials, getSharedMaterials } from './materials.js';
 import { RNG } from '../core/rng.js';
+import { CandleField } from '../render/candles.js';
+import { Pages } from '../render/pages.js';
+import { Wisps } from '../render/wisps.js';
+import { SpectralCourt, SoulAsh } from '../render/court.js';
 import { dressLevel, streamMaterial, streamTexture } from './dressing.js';
 
 // ---------------------------------------------------------------------------
@@ -262,9 +269,32 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     }
   };
   const interactables = [];
+  const cellDoors = []; let leafGeo = null; // (the Oubliette's cell doors: openCellDoor)
   for (const p of level.props) {
     const fy = (p.y ?? 0) + (p.type === 'chandelier' ? 0 : level.floorAt(p.x, p.z));
-    if (p.type === 'cellBars') { addParts(cellBars(p.len), p.x, level.floorAt(p.x, p.z + 0.1), p.z, p.rot); continue; }
+    if (p.type === 'cellBars') {
+      const fy = level.floorAt(p.x, p.z + 0.1);
+      if (!p.cell) { addParts(cellBars(p.len), p.x, fy, p.z, p.rot); continue; }
+      // a cell's door: two leaves hung at the ends of the opening (one merged mesh each, sharing a geometry)
+      const half = p.len / 2;
+      leafGeo ??= (() => { const gb = new GeoBuilder(); for (const [, geo] of cellBars(half)) gb.addGeometry(geo, new THREE.Matrix4()); return gb.build(); })();
+      const base = new THREE.Group();
+      base.position.set(p.x, fy, p.z); base.rotation.y = p.rot;
+      const leaves = [];
+      for (const sd of [-1, 1]) {
+        const hinge = new THREE.Group();
+        hinge.position.x = sd * half;
+        const m = new THREE.Mesh(leafGeo, mats.iron);
+        m.position.x = -sd * half / 2;
+        hinge.add(m);
+        base.add(hinge);
+        leaves.push({ hinge, sd });
+      }
+      group.add(base);
+      p.door = cellDoors.length;
+      cellDoors.push({ prop: p, leaves, t: -1 });
+      continue;
+    }
     if (p.type === 'shelfRow') { addParts(bookshelf(p.len), p.x, level.floorAt(p.x, p.z), p.z, p.rot); continue; }
     // (only a chest the generator meant to be opened is loot: one placed as dressing is just a prop)
     if ((p.type === 'chest' && p.interact) || p.type === 'shrine' || p.type === 'merchant') {
@@ -283,7 +313,13 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     const fn = PROPS[type];
     if (!fn) continue;
     const rot = p.rot ?? 0;
-    addParts(fn(r01), p.x, p.type === 'chandelier' ? p.y : fy, p.z, rot);
+    const parts = fn(r01);
+    addParts(parts, p.x, p.type === 'chandelier' ? p.y : fy, p.z, rot);
+    // (a stand of candles names its wicks)
+    if (parts.flames) {
+      const c = Math.cos(rot), sn = Math.sin(rot);
+      for (const [ox, oy, oz] of parts.flames) flames.push({ x: p.x + ox * c + oz * sn, y: fy + oy, z: p.z - ox * sn + oz * c, size: 0.25, kind: 'candle', k: 0.8 });
+    }
     if (PROP_FLAMES[p.type]) {
       for (const [ox, oy, oz, s] of PROP_FLAMES[p.type]) {
         const c = Math.cos(rot), sn = Math.sin(rot);
@@ -438,18 +474,171 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     }
   }
 
-  // ---------------- water surfaces
-  {
-    const wb = new GeoBuilder();
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const i = level.idx(x, y);
-      if (level.cells[i] !== FLOOR || level.kind[i] !== K_WATER) continue;
-      const x0 = x * T, z0 = y * T, x1 = x0 + T, z1 = z0 + T, h = -0.25;
-      wb.quad([x0, h, z1], [x1, h, z1], [x1, h, z0], [x0, h, z0], [0, 1, 0],
-        [[x0 / 6, -z1 / 6], [x1 / 6, -z1 / 6], [x1 / 6, -z0 / 6], [x0 / 6, -z0 / 6]]);
+  // ---------------- candles: every candle flame on the floor is drawn on the GPU (render/candles.js), and
+  // the Hall of Whispers' halls and libraries have candles floating under their vaults, drifting, a warm
+  // glow over each room from the cloud of them
+  const candles = new CandleField();
+  for (const f of flames) {
+    if (f.kind !== 'candle') continue;
+    f.gpu = candles.addFlame(f.x, f.y - 0.05, f.z, { k: f.k ?? 1, color: f.color ?? null });
+    f.gk = f.k ?? 1; f.s0 = f.size;
+  }
+  if (biome.id === 'keep') {
+    const rng = new RNG((level.seed ?? 1) * 7 + 13);
+    const dens = quality === 'low' ? 0.12 : quality === 'medium' ? 0.22 : 0.34;
+    const chand = level.props.filter((p) => p.type === 'chandelier');
+    for (const room of level.rooms) {
+      if (room.type === ROOM.START || room.w < 7 || room.h < 7) continue;
+      const n = Math.round(room.w * room.h * dens);
+      let sx = 0, sy = 0, sz = 0, m = 0;
+      for (let t = 0, tries = 0; t < n && tries < n * 4; tries++) {
+        const cx = room.x + 1 + rng.next() * (room.w - 2), cz = room.y + 1 + rng.next() * (room.h - 2);
+        const i = level.idx(Math.floor(cx), Math.floor(cz));
+        if (level.roomId[i] !== room.id || level.cells[i] === SOLID) continue;
+        const x = cx * T, z = cz * T, ceil = level.ceil[i];
+        if (ceil < 6 || ceil > 30) continue;
+        // clear of the chandeliers' rings
+        if (chand.some((c) => (c.x - x) ** 2 + (c.z - z) ** 2 < 2.4 * 2.4)) continue;
+        const y = Math.max(3.9, ceil - 1.6 - rng.next() * 2.6), h = 0.18 + rng.next() * 0.24;
+        candles.addFloating(x, y, z, h, 0.026 + rng.next() * 0.01, rng.next());
+        sx += x; sy += y; sz += z; m++; t++;
+      }
+      // the cloud's own light: soft and warm from over the middle of the room
+      if (m >= 6) lightPool.addTorch(new THREE.Vector3(sx / m, sy / m - 0.4, sz / m), { color: 0xffb46a, intensity: 14 + m * 0.3, range: Math.max(room.w, room.h) * T * 0.8, flicker: 0.2, priority: 0.2 });
     }
-    if (wb.count) {
-      const wm = new THREE.Mesh(wb.build(), mats.water);
+  }
+  group.add(candles.build());
+  // ...and loose pages drifting down through them, let go under the vault and gone before the floor
+  const pages = new Pages();
+  if (biome.id === 'keep') {
+    const rng = new RNG((level.seed ?? 1) * 11 + 5);
+    const dens = quality === 'low' ? 0.025 : quality === 'medium' ? 0.045 : 0.07;
+    const open = (x, y) => level.inb(x, y) && level.cells[level.idx(x, y)] === FLOOR;
+    for (const room of level.rooms) {
+      if (room.w < 7 || room.h < 7) continue;
+      const n = Math.round(room.w * room.h * dens);
+      for (let t = 0, tries = 0; t < n && tries < n * 5; tries++) {
+        const cx = Math.floor(room.x + 1 + rng.next() * (room.w - 2)), cy = Math.floor(room.y + 1 + rng.next() * (room.h - 2));
+        const i = level.idx(cx, cy);
+        if (level.roomId[i] !== room.id || !open(cx, cy) || !open(cx + 1, cy) || !open(cx - 1, cy) || !open(cx, cy + 1) || !open(cx, cy - 1)) continue;
+        if (level.ceil[i] < 6 || level.ceil[i] > 30) continue;
+        const x = (cx + 0.3 + rng.next() * 0.4) * T, z = (cy + 0.3 + rng.next() * 0.4) * T;
+        const fy = level.floorAt(x, z);
+        pages.add(x, z, Math.min(level.ceil[i] - 1.2, 7.5), fy + 0.35, rng.next());
+        t++;
+      }
+    }
+  }
+  const pageMesh = pages.build();
+  if (pageMesh) group.add(pageMesh);
+  // ...and the whispers themselves: ghost-lights wandering the halls and the library stacks
+  const wisps = new Wisps();
+  if (biome.id === 'keep') {
+    const rng = new RNG((level.seed ?? 1) * 5 + 3);
+    for (const room of level.rooms) {
+      if (room.type === ROOM.START || room.w < 7 || room.h < 7) continue;
+      const n = (room.layout === 'library' ? 3 : 2) - (quality === 'low' ? 1 : 0);
+      for (let k = 0; k < n; k++) {
+        wisps.add(room.cx + (rng.next() - 0.5) * room.w * 0.5, 2.5 + rng.next() * 0.6, room.cz + (rng.next() - 0.5) * room.h * 0.5,
+          room.w * T * 0.32, room.h * T * 0.32, rng.next());
+      }
+    }
+  }
+  const wispMesh = wisps.build();
+  if (wispMesh) group.add(wispMesh);
+
+  // ---------------- the Hollow Throne's dead court (render/court.js): ghosts keeping their places in rows
+  // along each hall's aisles, facing the carpet, and on their knees before the throne; and the ash of
+  // souls sifting down through every room
+  const court = new SpectralCourt(), ash = new SoulAsh();
+  if (biome.id === 'throne') {
+    const rng = new RNG((level.seed ?? 1) * 13 + 7);
+    const clear = (x, z) => {
+      const cx = Math.floor(x / T), cz = Math.floor(z / T);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (!level.inb(cx + dx, cz + dy)) return false;
+        const c = level.cells[level.idx(cx + dx, cz + dy)];
+        if (c === SOLID && dx === 0 && dy === 0) return false;
+      }
+      const i = level.idx(cx, cz);
+      if (level.cells[i] !== FLOOR || level.kind[i] === K_DAIS) return false;
+      if (level.colliders.some((c) => Math.hypot(c.x - x, c.z - z) < (c.r ?? 0.5) + 0.75)) return false;
+      if (level.props.some((q) => Math.hypot(q.x - x, q.z - z) < 0.9)) return false;
+      // (standing on level ground: not astride a tier's step)
+      const f = level.floorAt(x, z);
+      return Math.abs(level.floorAt(x + 0.3, z) - f) < 0.05 && Math.abs(level.floorAt(x - 0.3, z) - f) < 0.05 && Math.abs(level.floorAt(x, z + 0.3) - f) < 0.05 && Math.abs(level.floorAt(x, z - 0.3) - f) < 0.05;
+    };
+    const person = (x, z, yaw, kneel) => {
+      if (!clear(x, z)) return false;
+      court.add(x, level.floorAt(x, z), z, yaw + (rng.next() - 0.5) * 0.25, { seed: rng.next(), kneel, crown: rng.next() < 0.15 ? 1 : 0, scale: 0.92 + rng.next() * 0.14 });
+      return true;
+    };
+    const keep = quality === 'low' ? 0.5 : 1;
+    for (const room of level.rooms) {
+      if (room.type === ROOM.START || room.w < 7 || room.h < 7) continue;
+      const cx = room.cx, z0 = room.y * T, z1 = (room.y + room.h) * T;
+      if (room.layout === 'throne') {
+        // kneeling in ranks before the dais, facing the throne
+        for (let z = z0 + 13; z < z1 - 3; z += 2.6) for (const side of [-1, 1]) for (let k = 0; k < 3; k++) {
+          if (rng.next() > 0.8 * keep) continue;
+          person(cx + side * (3.4 + k * 1.7) + (rng.next() - 0.5) * 0.3, z + (rng.next() - 0.5) * 0.4, Math.PI, 1);
+        }
+      } else {
+        // standing in a row down each side of the carpet, turned to it
+        // (each place tries a few distances out from the carpet: pillars and a tier's steps take some)
+        for (let z = z0 + 3; z < z1 - 3; z += 2.1) for (const side of [-1, 1]) {
+          if (rng.next() > 0.8 * keep) continue;
+          const jz = z + (rng.next() - 0.5) * 0.4, yaw = side < 0 ? Math.PI / 2 : -Math.PI / 2;
+          for (const off of [3.4, 2.7, 4.3, 5.2]) if (person(cx + side * (off + rng.next() * 0.3), jz, yaw, 0)) break;
+        }
+      }
+      // ash
+      const n = Math.round(room.w * room.h * (quality === 'low' ? 0.06 : quality === 'medium' ? 0.1 : 0.15));
+      for (let k = 0; k < n; k++) {
+        const x = (room.x + 0.5 + rng.next() * (room.w - 1)) * T, z = (room.y + 0.5 + rng.next() * (room.h - 1)) * T;
+        const i = level.idx(Math.floor(x / T), Math.floor(z / T));
+        if (level.roomId[i] !== room.id) continue;
+        ash.add(x, z, Math.min(level.ceil[i] - 0.4, 9), level.floorAt(x, z) + 0.05, 1.2, 1.2, rng.next());
+      }
+    }
+  }
+  const courtMesh = court.build(), ashMesh = ash.build();
+  if (courtMesh) group.add(courtMesh);
+  if (ashMesh) group.add(ashMesh);
+
+  // ---------------- water surfaces
+  // (each corner carries the way the water runs there, aFlow, from its room: along a channel, or wheeling
+  // round a cistern's island; and aFoam, 1 where the corner touches anything that isn't water: the banks,
+  // a bridge's piers. The water shader scrolls along the one and froths along the other.)
+  {
+    const pos = [], uv = [], nrm = [], flow = [], foam = [], idx = [];
+    const wet = (x, y) => level.inb(x, y) && level.cells[level.idx(x, y)] === FLOOR && level.kind[level.idx(x, y)] === K_WATER;
+    const SPEED = 0.55;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (!wet(x, y)) continue;
+      const i = level.idx(x, y), room = level.rooms[level.roomId[i]];
+      const x0 = x * T, z0 = y * T, x1 = x0 + T, z1 = z0 + T, h = -0.25;
+      let fx = 0, fz = 0;
+      if (room?.flow === 'ring') {
+        const dx = (x0 + 1) - room.cx, dz = (z0 + 1) - room.cz, l = Math.hypot(dx, dz) || 1;
+        fx = -dz / l * SPEED; fz = dx / l * SPEED;
+      } else if (room?.flow) { fx = room.flow[0] * SPEED; fz = room.flow[1] * SPEED; }
+      const v = pos.length / 3;
+      for (const [cx, cy, wx, wz] of [[x, y + 1, x0, z1], [x + 1, y + 1, x1, z1], [x + 1, y, x1, z0], [x, y, x0, z0]]) {
+        pos.push(wx, h, wz); nrm.push(0, 1, 0); uv.push(wx / 6, -wz / 6); flow.push(fx, fz);
+        foam.push(wet(cx - 1, cy - 1) && wet(cx, cy - 1) && wet(cx - 1, cy) && wet(cx, cy) ? 0 : 1);
+      }
+      idx.push(v, v + 1, v + 2, v, v + 2, v + 3);
+    }
+    if (idx.length) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      g.setAttribute('aFlow', new THREE.Float32BufferAttribute(flow, 2));
+      g.setAttribute('aFoam', new THREE.Float32BufferAttribute(foam, 1));
+      g.setIndex(idx);
+      const wm = new THREE.Mesh(g, mats.water);
       wm.renderOrder = 5;
       group.add(wm);
     }
@@ -461,7 +650,8 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     if (!b.count) continue;
     const mat = mats[key];
     if (!mat) continue;
-    const mesh = new THREE.Mesh(b.build(), mat);
+    // (indoors: tiled, so the occlusion cull below can drop what walls hide)
+    const mesh = NOCULL || biome.outdoor ? new THREE.Mesh(b.build(), mat) : tiledMesh(b.build(), mat);
     mesh.name = 'lvl_' + key;
     mesh.matrixAutoUpdate = false;
     mesh.updateMatrix();
@@ -469,6 +659,12 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     group.add(mesh);
     meshes.push(mesh);
   }
+  // indoors (walls to the ceiling) the tiles hidden behind walls are dropped (see levelPVS);
+  // outdoors you see over the walls (towers, the keep), so the courtyard draws whole
+  const tiled = meshes.filter((m) => m.userData.tiled);
+  const t0 = performance.now();
+  const pvs = tiled.length ? levelPVS(level, T, (i) => level.cells[i] !== SOLID) : null;
+  if (pvs) pvs.ms = performance.now() - t0; // (50-120 ms, behind the loading veil)
 
   // ---------------- dressing extras: falling water (scrolling; high quality only)
   if (dressed.streams) {
@@ -497,16 +693,29 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     const geo = card.build();
     grassMat = new THREE.MeshStandardMaterial({ map: grassCardTexture(), alphaTest: 0.42, vertexColors: true, roughness: 0.85, side: THREE.DoubleSide });
     grassMat.userData.time = { value: 0 };
+    // bodies moving through it part the grass: up to 8 (x, z, reach, 0), the wizards and the nearest foes
+    grassMat.userData.push = { value: Array.from({ length: 8 }, () => new THREE.Vector4(0, 0, 0, 0)) };
+    // a storm's wind drives the gusts harder and the blades flutter faster (and the wet turf is darker)
+    const windK = { value: biome.storm ? 1.9 : 1 };
+    if (biome.storm) grassMat.color.setScalar(0.82);
     grassMat.onBeforeCompile = (sh) => {
-      sh.uniforms.uTime = grassMat.userData.time;
-      sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+      sh.uniforms.uTime = grassMat.userData.time; sh.uniforms.uWindK = windK; sh.uniforms.uPush = grassMat.userData.push;
+      sh.vertexShader = 'uniform float uTime; uniform float uWindK; uniform vec4 uPush[8];\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
         vec4 wp = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
         // gust fronts roll across the yard; each blade also flutters on its own
-        float gust = 0.5 + 0.5 * sin(dot(wp.xz, vec2(0.11, 0.06)) - uTime * 1.15);
+        float gust = 0.5 + 0.5 * sin(dot(wp.xz, vec2(0.11, 0.06)) - uTime * 1.15 * uWindK);
         gust = gust * gust * (0.6 + 0.4 * sin(uTime * 0.37 + wp.z * 0.05));
-        float flutter = sin(uTime * 3.4 + wp.x * 1.9 + wp.z * 1.3 + position.x * 23.0 + position.z * 17.0);
-        float bend = uv.y * uv.y;
+        float flutter = sin(uTime * 3.4 * uWindK + wp.x * 1.9 + wp.z * 1.3 + position.x * 23.0 + position.z * 17.0);
+        float bend = uv.y * uv.y * mix(1.0, uWindK, 0.6);
         vec3 windW = vec3(0.07 + gust * 0.2 + flutter * 0.025, -gust * 0.05, 0.03 + gust * 0.07 + flutter * 0.015) * bend;
+        // pressed aside (and down) by whatever is walking through it
+        for (int i = 0; i < 8; i++) {
+          vec4 q = uPush[i];
+          if (q.z <= 0.0) continue;
+          vec2 dv = wp.xz - q.xy; float d = length(dv);
+          float k = 1.0 - smoothstep(q.z * 0.35, q.z, d);
+          if (k > 0.0) { vec2 dir = dv / max(d, 1e-3); windW += vec3(dir.x * 0.32, -0.22, dir.y * 0.32) * k * uv.y * uv.y; }
+        }
         // into the tuft's own frame, so every tuft leans the same way whatever its rotation
         mat3 grassIM = mat3(instanceMatrix);
         transformed += transpose(grassIM) * windW / max(1e-3, dot(grassIM[0], grassIM[0]));`);
@@ -556,8 +765,9 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
   }
 
   // ---------------- light shafts from the dressing's north windows: soft additive beams
+  const shafts = []; // (each beam's volume, for the dust drifting in it: Game._ambient)
   if (dressed.shafts.length) {
-    const shaftGeo = new GeoBuilder();
+    const shaftGeo = new GeoBuilder(), poolGeo = new GeoBuilder();
     // each beam falls from a moonlit window high on a north wall, slanting down into the room
     for (const sh of dressed.shafts) {
       const room = level.roomAt(sh.x, sh.z + 1);
@@ -565,6 +775,10 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
       const { x, w, top } = sh, z0 = sh.z;
       const len = Math.min(room.h * T * 0.8, top * 1.4);
       const z1 = z0 + len * 0.6, bottom = 0.05;
+      shafts.push({ x, w, top, z0, z1, col: null });
+      // where it lands, the window lies on the floor: a pool of its light crossed by the shadows of its bars
+      const pw = w + 0.7, zc = z1 - 0.35, fy = level.floorAt(x, zc) + 0.03;
+      poolGeo.quad([x - pw / 2, fy, zc - 1.0], [x + pw / 2, fy, zc - 1.0], [x + pw / 2, fy, zc + 1.0], [x - pw / 2, fy, zc + 1.0], [0, 1, 0], [[0, 0], [1, 0], [1, 1], [0, 1]]);
       shaftGeo.quad([x - w / 2, top, z0], [x + w / 2, top, z0], [x + w / 2 + 0.3, bottom, z1], [x - w / 2 - 0.3, bottom, z1], [0, 0, 1], [[0, 1], [1, 1], [1, 0], [0, 0]]);
       shaftGeo.quad([x, top, z0 - w / 2 + 0.01], [x, top, z0 + w / 2], [x + 0.2, bottom, z1 + w / 2], [x + 0.2, bottom, z1 - w / 2], [1, 0, 0], [[0, 1], [1, 1], [1, 0], [0, 0]]);
     }
@@ -580,35 +794,103 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
       gx.globalCompositeOperation = 'destination-out'; gx.fillStyle = side; gx.fillRect(0, 0, 64, 128);
       const tex = new THREE.CanvasTexture(c);
       ownTex.push(tex);
-      const col = biome.id === 'throne' ? new THREE.Color(0.22, 0.12, 0.32) : biome.id === 'dungeon' ? new THREE.Color(0.07, 0.09, 0.14) : new THREE.Color(0.14, 0.15, 0.2);
+      const col = biome.id === 'throne' ? new THREE.Color(0.22, 0.12, 0.32) : biome.id === 'dungeon' ? new THREE.Color(0.15, 0.19, 0.27) : new THREE.Color(0.14, 0.15, 0.2);
       const shaftMat = new THREE.MeshBasicMaterial({ map: tex, color: col, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: true });
+      for (const sh of shafts) sh.col = col;
       const sm = new THREE.Mesh(shaftGeo.build(), shaftMat);
       sm.renderOrder = 6;
       group.add(sm);
+      // the pools: a soft-edged patch with three bars' shadows down it and a crossbar's across
+      const pc = document.createElement('canvas');
+      pc.width = pc.height = 128;
+      const px = pc.getContext('2d');
+      const pr = px.createRadialGradient(64, 64, 8, 64, 64, 64);
+      pr.addColorStop(0, 'rgba(255,255,255,1)'); pr.addColorStop(0.55, 'rgba(255,255,255,0.75)'); pr.addColorStop(1, 'rgba(255,255,255,0)');
+      px.fillStyle = pr; px.fillRect(0, 0, 128, 128);
+      px.globalCompositeOperation = 'destination-out';
+      px.filter = 'blur(2px)';
+      px.fillStyle = 'rgba(0,0,0,0.85)';
+      for (const bx of [40, 64, 88]) px.fillRect(bx - 4, 0, 8, 128);
+      px.fillRect(0, 56, 128, 7);
+      const poolTex = new THREE.CanvasTexture(pc);
+      ownTex.push(poolTex);
+      const poolMat = new THREE.MeshBasicMaterial({ map: poolTex, color: col.clone().multiplyScalar(2.8), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: true, polygonOffset: true, polygonOffsetFactor: -2 });
+      const pm = new THREE.Mesh(poolGeo.build(), poolMat);
+      pm.renderOrder = 5;
+      group.add(pm);
 
     }
   }
 
-  // ---------------- arrival: moonlight through a ceiling grate in the start room
-  if (level.startShaft) {
-    const { x, z } = level.startShaft;
-    const ci = level.idx(Math.floor(x / T), Math.floor(z / T));
-    const top = level.ceil[ci], gy = level.hgt[ci];
-    // the grate: an iron frame with bars, set into the ceiling
-    const parts = [];
-    const S = 1.5;
-    for (const sgn of [-1, 1]) {
-      parts.push(['iron', worldBox(S * 2 + 0.16, 0.12, 0.12).translate(0, -0.06, sgn * S)]);
-      parts.push(['iron', worldBox(0.12, 0.12, S * 2).translate(sgn * S, -0.06, 0)]);
+  // ---------------- the stained-glass window's light: its own colours stream down through the air in
+  // slanted sheets and lie across the floor (and the dais) below it. Every point carries the window point
+  // its light came through (aWin, in the window's own coordinates: the glass shader's cells), so the
+  // colours run true along each ray; one additive draw.
+  for (const pr of level.props) {
+    if (pr.type !== 'stainedGlass') continue;
+    const wy0 = pr.y ?? 7, z0 = pr.z + 0.2, pos = [], win = [], kk = [], idx = [];
+    const vert = (x, y, z, k) => { pos.push(x, y, z); win.push(x - pr.x, y + (z - z0) - wy0); kk.push(k); return kk.length - 1; };
+    const quad = (a, b, c, d) => idx.push(a, b, c, a, c, d);
+    // (rays fall at 45 degrees: from window height h they reach the floor h further out)
+    const bot = wy0 - 3.5, top = wy0 + 4.1;
+    // sheets across the window at a few heights, down to the floor (a slab of light seen from the hall)
+    for (const h of [bot + 1.2, bot + 3.2, bot + 5.2, top - 0.6]) {
+      const zf = z0 + h - 0.1;
+      quad(vert(pr.x - 1.6, h, z0, 0.15), vert(pr.x + 1.6, h, z0, 0.15), vert(pr.x + 1.6, 0.1, zf, 0.035), vert(pr.x - 1.6, 0.1, zf, 0.035));
     }
-    for (let i = -2; i <= 2; i++) parts.push(['iron', worldBox(0.05, 0.06, S * 2).translate(i * S * 0.4, -0.04, 0)]);
-    for (let i = -2; i <= 2; i++) parts.push(['iron', worldBox(S * 2, 0.04, 0.05).translate(0, -0.03, i * S * 0.4)]);
-    addParts(parts, x, top, z, 0);
-    // a dark hole above the grate, so it reads as an opening rather than a decal
-    const hole = new THREE.Mesh(new THREE.PlaneGeometry(S * 2, S * 2), new THREE.MeshBasicMaterial({ color: 0x8aa0c0 }));
-    hole.rotation.x = Math.PI / 2; hole.position.set(x, top + 0.02, z);
-    group.add(hole);
-    // the beam: two crossed soft quads, cool and faint
+    // sheets along the rays at a few columns (the slab's depth, seen from the side)
+    for (const x of [-1.1, 0, 1.1]) {
+      const X = pr.x + x;
+      quad(vert(X, bot, z0, 0.11), vert(X, top, z0, 0.11), vert(X, 0.1, z0 + top - 0.1, 0.025), vert(X, 0.1, z0 + bot - 0.1, 0.025));
+    }
+    // the pool: a grid draped over the floor and the dais
+    const NX = 8, NZ = 24, x0 = pr.x - 2, x1 = pr.x + 2, za = z0 + bot - 0.6, zb = z0 + top + 0.4, base = kk.length;
+    for (let j = 0; j <= NZ; j++) for (let i = 0; i <= NX; i++) {
+      const x = x0 + (x1 - x0) * i / NX, z = za + (zb - za) * j / NZ;
+      vert(x, level.floorAt(x, z) + 0.03, z, 0.55);
+    }
+    for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) { const a = base + j * (NX + 1) + i; quad(a, a + 1, a + NX + 2, a + NX + 1); }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('aWin', new THREE.Float32BufferAttribute(win, 2));
+    geo.setAttribute('aK', new THREE.Float32BufferAttribute(kk, 1));
+    geo.setIndex(idx);
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { uTime: mats.stainedGlass.uniforms?.uTime ?? { value: 0 } },
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      vertexShader: `attribute vec2 aWin; attribute float aK; varying vec2 vWin; varying float vK;
+        void main(){ vWin = aWin; vK = aK; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }`,
+      fragmentShader: `uniform float uTime; varying vec2 vWin; varying float vK;
+        vec2 h2(vec2 p){ p = vec2(dot(p, vec2(127.1,311.7)), dot(p, vec2(269.5,183.3))); return fract(sin(p)*43758.5453); }
+        void main(){
+          // inside the window's arch (shape: x within 1.6, y 0..7.6 from its sill, rounded over the top 3.1)
+          float sy = vWin.y + 3.5, ax = abs(vWin.x);
+          float halfW = sy < 4.5 ? 1.6 : 1.6 * sqrt(max(0., 1. - (sy - 4.5) * (sy - 4.5) / 9.61));
+          float inside = smoothstep(-0.25, 0.25, halfW - ax) * smoothstep(-0.2, 0.2, sy) * smoothstep(-0.2, 0.2, 7.6 - sy);
+          if (inside < 0.01) discard;
+          // the glass shader's cells and palette
+          vec2 p = vWin * vec2(2.2, 1.6);
+          vec2 i = floor(p), f = fract(p);
+          float d1 = 9., d2 = 9.; vec2 id = vec2(0);
+          for (int y=-1;y<=1;y++) for(int x=-1;x<=1;x++){ vec2 g = vec2(x,y); vec2 o = h2(i+g); vec2 r = g + o - f; float d = dot(r,r); if (d < d1){ d2 = d1; d1 = d; id = i+g; } else if (d < d2) d2 = d; }
+          float lead = smoothstep(0.02, 0.12, sqrt(d2) - sqrt(d1));
+          float k = h2(id).x * 5.;
+          vec3 c = k < 1. ? vec3(0.9,0.1,0.15) : k < 2. ? vec3(0.15,0.25,0.95) : k < 3. ? vec3(0.95,0.7,0.15) : k < 4. ? vec3(0.5,0.1,0.8) : vec3(0.1,0.6,0.35);
+          float glow = 0.75 + 0.25 * sin(uTime * 0.7 + id.x * 1.3 + id.y);
+          gl_FragColor = vec4(c * (0.35 + 0.65 * lead) * glow * inside * vK, 1.);
+        }`,
+    });
+    const m = new THREE.Mesh(geo, mat);
+    m.renderOrder = 6;
+    group.add(m);
+  }
+
+  // ---------------- moonlight through ceiling grates: the start room's (where you arrive), and in the
+  // Drowned Sewers the street drains over the bigger rooms. Each is an iron grate set in the vault with
+  // the night sky pale above it, a beam of two crossed soft quads leaning down from it, the grate's
+  // shadow-latticed pool of light where the beam lands, and a cold light.
+  const grates = [...(level.startShaft ? [{ ...level.startShaft, start: true }] : []), ...(level.grates ?? [])];
+  if (grates.length) {
     const c = document.createElement('canvas');
     c.width = 64; c.height = 128;
     const gx = c.getContext('2d');
@@ -618,23 +900,61 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     const side = gx.createLinearGradient(0, 0, 64, 0);
     side.addColorStop(0, 'rgba(0,0,0,1)'); side.addColorStop(0.25, 'rgba(0,0,0,0)'); side.addColorStop(0.75, 'rgba(0,0,0,0)'); side.addColorStop(1, 'rgba(0,0,0,1)');
     gx.globalCompositeOperation = 'destination-out'; gx.fillStyle = side; gx.fillRect(0, 0, 64, 128);
-    const bg = new GeoBuilder();
-    const w = S * 1.9, w2 = S * 2.3, lean = 0.35;
-    bg.quad([x - w / 2, top, z], [x + w / 2, top, z], [x + w2 / 2 + lean, gy + 0.02, z + lean], [x - w2 / 2 + lean, gy + 0.02, z + lean], [0, 0, 1], [[0, 1], [1, 1], [1, 0], [0, 0]]);
-    bg.quad([x, top, z - w / 2], [x, top, z + w / 2], [x + lean, gy + 0.02, z + w2 / 2 + lean], [x + lean, gy + 0.02, z - w2 / 2 + lean], [1, 0, 0], [[0, 1], [1, 1], [1, 0], [0, 0]]);
     const beamTex = new THREE.CanvasTexture(c);
     ownTex.push(beamTex);
+    // the pool: a soft square crossed by the grate's bars both ways
+    const pc = document.createElement('canvas');
+    pc.width = pc.height = 128;
+    const px = pc.getContext('2d');
+    const pr = px.createRadialGradient(64, 64, 10, 64, 64, 64);
+    pr.addColorStop(0, 'rgba(255,255,255,1)'); pr.addColorStop(0.6, 'rgba(255,255,255,0.7)'); pr.addColorStop(1, 'rgba(255,255,255,0)');
+    px.fillStyle = pr; px.fillRect(0, 0, 128, 128);
+    px.globalCompositeOperation = 'destination-out';
+    px.filter = 'blur(2px)';
+    px.fillStyle = 'rgba(0,0,0,0.8)';
+    for (let k = -2; k <= 2; k++) { px.fillRect(64 + k * 20 - 3, 0, 6, 128); px.fillRect(0, 64 + k * 20 - 3, 128, 6); }
+    const poolTex = new THREE.CanvasTexture(pc);
+    ownTex.push(poolTex);
+    const bg = new GeoBuilder(), pg = new GeoBuilder();
+    const holeMat = new THREE.MeshBasicMaterial({ color: 0x8aa0c0 });
+    for (const gr of grates) {
+      const { x, z } = gr;
+      const ci = level.idx(Math.floor(x / T), Math.floor(z / T));
+      const top = level.ceil[ci], gy = level.kind[ci] === K_WATER ? -0.25 : level.hgt[ci];
+      const parts = [];
+      const S = gr.start ? 1.5 : 1.1;
+      for (const sgn of [-1, 1]) {
+        parts.push(['iron', worldBox(S * 2 + 0.16, 0.12, 0.12).translate(0, -0.06, sgn * S)]);
+        parts.push(['iron', worldBox(0.12, 0.12, S * 2).translate(sgn * S, -0.06, 0)]);
+      }
+      for (let i = -2; i <= 2; i++) parts.push(['iron', worldBox(0.05, 0.06, S * 2).translate(i * S * 0.4, -0.04, 0)]);
+      for (let i = -2; i <= 2; i++) parts.push(['iron', worldBox(S * 2, 0.04, 0.05).translate(0, -0.03, i * S * 0.4)]);
+      addParts(parts, x, top, z, 0);
+      // a pale hole above the grate (the night over the street), so it reads as an opening rather than a decal
+      const hole = new THREE.Mesh(new THREE.PlaneGeometry(S * 2, S * 2), holeMat);
+      hole.rotation.x = Math.PI / 2; hole.position.set(x, top + 0.02, z);
+      group.add(hole);
+      const w = S * 1.9, w2 = S * 2.3, lean = 0.35;
+      bg.quad([x - w / 2, top, z], [x + w / 2, top, z], [x + w2 / 2 + lean, gy + 0.02, z + lean], [x - w2 / 2 + lean, gy + 0.02, z + lean], [0, 0, 1], [[0, 1], [1, 1], [1, 0], [0, 0]]);
+      bg.quad([x, top, z - w / 2], [x, top, z + w / 2], [x + lean, gy + 0.02, z + w2 / 2 + lean], [x + lean, gy + 0.02, z - w2 / 2 + lean], [1, 0, 0], [[0, 1], [1, 1], [1, 0], [0, 0]]);
+      const P2 = S * 1.35, cx = x + lean, cz = z + lean, fy = gy + 0.035;
+      pg.quad([cx - P2, fy, cz - P2], [cx + P2, fy, cz - P2], [cx + P2, fy, cz + P2], [cx - P2, fy, cz + P2], [0, 1, 0], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      // a pool of cold light beneath it
+      lightPool.addTorch(new THREE.Vector3(x + lean * 0.5, top - 0.8, z + lean * 0.5), { color: 0x9ab4e0, intensity: gr.start ? 22 : 18, range: 9, flicker: 0.05, priority: 0.5 });
+      shafts.push({ x, w: S * 1.6, top, z0: z - 0.2, z1: z + 0.4, col: new THREE.Color(0.1, 0.12, 0.16), vertical: true });
+    }
     const bm = new THREE.Mesh(bg.build(), new THREE.MeshBasicMaterial({ map: beamTex, color: new THREE.Color(0.1, 0.12, 0.16), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: true }));
     bm.renderOrder = 6;
     group.add(bm);
-    // a pool of cold light on the floor beneath it
-    lightPool.addTorch(new THREE.Vector3(x + lean * 0.5, top - 0.8, z + lean * 0.5), { color: 0x9ab4e0, intensity: 22, range: 9, flicker: 0.05, priority: 0.5 });
+    const pm = new THREE.Mesh(pg.build(), new THREE.MeshBasicMaterial({ map: poolTex, color: new THREE.Color(0.22, 0.26, 0.32), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: true, polygonOffset: true, polygonOffsetFactor: -2 }));
+    pm.renderOrder = 5;
+    group.add(pm);
   }
 
   // ---------------- outdoor sky & distant keep
   let sky = null;
   if (biome.outdoor) {
-    sky = makeNightSky();
+    sky = makeNightSky(!!biome.storm);
     group.add(sky);
     group.add(makeDistantKeep(level, mats));
   }
@@ -644,11 +964,25 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     mats,
     doors,
     flames,
+    candles,
+    pages,
+    wisps,
+    court,
+    shafts,
     interactables,
     sky,
+    pvs,
+    // before each render: show only the level tiles that can be seen from the camera's tile
+    cull(camPos) { pvs?.apply(tiled, camPos.x, camPos.z); },
     update(dt, time) {
       mats.water.userData.update?.(time);
       mats.waterFlat.userData.update?.(time);
+      mats.banner.userData.update?.(time);
+      candles.update(time);
+      pages.update(time);
+      wisps.update(time);
+      court.update(time);
+      ash.update(time);
       if (mats.stainedGlass.uniforms) mats.stainedGlass.uniforms.uTime.value = time;
       for (const d of doors) {
         if (!d.mesh) continue;
@@ -662,6 +996,23 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
       if (sky) sky.material.uniforms.uTime.value = time;
       if (dressed.streams) streamTexture().offset.y = time * 1.3;
       if (grassMat) grassMat.userData.time.value = time;
+      for (const d of cellDoors) {
+        if (d.t < 0 || d.t > 2) continue;
+        d.t += dt;
+        // flung to 150 degrees, a bounce off the wall that dies away
+        const t = d.t, a = 2.6 * (1 - Math.exp(-6 * t) * Math.cos(9 * t));
+        for (const L of d.leaves) L.hinge.rotation.y = L.sd * d.prop.out * Math.min(2.75, a);
+      }
+    },
+    // throw a cell's door open (its bars prop): both leaves swing out into the room and bang against
+    // the wall, bouncing back a little (animated in update)
+    openCellDoor(bars) {
+      const d = cellDoors[bars.door];
+      if (d && d.t < 0) d.t = 0;
+    },
+    // the bodies parting the grass this frame (see the grass shader): i < 8, reach 0 for none
+    setGrassPush(i, x, z, r) {
+      if (grassMat) grassMat.userData.push.value[i].set(x, z, r, 0);
     },
     hideBreakable(b) {
       const zero = new THREE.Matrix4().makeScale(0, 0, 0);
@@ -919,16 +1270,17 @@ function webMaterial() {
   return _web;
 }
 
-function makeNightSky() {
+// (storm: a low, racing overcast with the moon in its gaps, lit from within by lightning: uFlash, toward uBolt)
+function makeNightSky(storm = false) {
   const geo = new THREE.SphereGeometry(400, 32, 16);
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
     fog: false,
-    uniforms: { uTime: { value: 0 }, uMoonDir: { value: new THREE.Vector3(0.35, 0.45, -0.82).normalize() } },
+    uniforms: { uTime: { value: 0 }, uMoonDir: { value: new THREE.Vector3(0.35, 0.45, -0.82).normalize() }, uStorm: { value: storm ? 1 : 0 }, uFlash: { value: 0 }, uBolt: { value: new THREE.Vector3(0, 1, 0) } },
     vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.); gl_Position = p.xyww; }`,
     fragmentShader: `
-      uniform float uTime; uniform vec3 uMoonDir; varying vec3 vDir;
+      uniform float uTime; uniform vec3 uMoonDir; uniform float uStorm; uniform float uFlash; uniform vec3 uBolt; varying vec3 vDir;
       float hash(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
       float noise(vec3 x){ vec3 i = floor(x); vec3 f = fract(x); f = f*f*(3.-2.*f);
         return mix(mix(mix(hash(i+vec3(0,0,0)),hash(i+vec3(1,0,0)),f.x),mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x),f.y),
@@ -944,7 +1296,7 @@ function makeNightSky() {
         float st = hash(floor(sp));
         float star = step(0.9965, st) * smoothstep(0.0, 0.2, h);
         float tw = 0.6 + 0.4 * sin(uTime * 3. + st * 100.);
-        col += vec3(0.8,0.85,1.) * star * tw * 1.6;
+        col += vec3(0.8,0.85,1.) * star * tw * 1.6 * (1.0 - uStorm * 0.75);
         // moon
         float md = dot(d, uMoonDir);
         float moon = smoothstep(0.9993, 0.9996, md);
@@ -953,10 +1305,14 @@ function makeNightSky() {
         col += vec3(0.25,0.3,0.5) * pow(max(md, 0.), 300.) * 1.4;
         col += vec3(0.08,0.1,0.18) * pow(max(md, 0.), 12.);
         // drifting clouds
-        vec2 cp = d.xz / max(0.08, d.y + 0.15) * 0.8 + vec2(uTime * 0.006, uTime * 0.002);
-        float c = smoothstep(0.45, 0.85, fbm(vec3(cp, uTime * 0.01)));
+        float race = 1.0 + uStorm * 4.0;
+        vec2 cp = d.xz / max(0.08, d.y + 0.15) * 0.8 + vec2(uTime * 0.006, uTime * 0.002) * race;
+        float f = fbm(vec3(cp, uTime * 0.01 * race));
+        float c = smoothstep(0.45 - uStorm * 0.25, 0.85 - uStorm * 0.22, f);
         vec3 cloudCol = mix(vec3(0.02,0.025,0.04), vec3(0.18,0.2,0.3), pow(max(md,0.), 6.));
-        col = mix(col, cloudCol, c * smoothstep(0.0, 0.2, h) * 0.85);
+        // lightning lights the overcast from inside: brightest round the bolt, thin edges glowing more
+        cloudCol += uFlash * vec3(0.42, 0.46, 0.62) * (0.25 + 2.2 * pow(max(dot(d, uBolt), 0.), 10.)) * (1.3 - c * 0.5);
+        col = mix(col, cloudCol, c * smoothstep(0.0, 0.2, h) * (0.85 + uStorm * 0.12));
         gl_FragColor = vec4(col, 1.);
       }`,
   });

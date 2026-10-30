@@ -53,7 +53,7 @@ export class UI {
     document.body.appendChild(this.canvas);
     this.ctx = this.canvas.getContext('2d');
     this._resize();
-    window.addEventListener('resize', () => this._resize());
+    window.addEventListener('resize', () => { this._resize(); this.layoutBar(); });
     root.innerHTML = `
       <div id="hud" class="hidden"></div>
       <div id="screens"></div>
@@ -285,8 +285,8 @@ export class UI {
           <div><span class="k">${esc(keyOf('ability1'))} / ${esc(keyOf('ability2'))}</span> abilities</div><div><span class="k">${esc(keyOf('ultimate'))}</span> ultimate (charges as you deal damage)</div>
           <div><span class="k">${esc(keyOf('dash'))}</span> dash (brief invulnerability)</div><div><span class="k">${esc(keyOf('jump'))}</span> jump — leap over shockwaves</div>
           <div><span class="k">${esc(keyOf('interact'))}</span> interact / revive allies</div><div><span class="k">${esc(BINDS.map.map(keyLabel).join(' / '))}</span> map</div>
-          <div><span class="k">Esc</span> pause & settings</div><div><span class="k">${esc(keyOf('ping'))}</span> ping a foe, item or spot</div>
-          <div><span class="k">${esc(keyOf('item'))}</span> use your item</div><div></div>
+          <div><span class="k">Esc / P</span> pause & settings</div><div><span class="k">${esc(keyOf('ping'))}</span> ping a foe, item or spot</div>
+          <div><span class="k">${esc(keyOf('item'))}</span> use your item</div><div><span class="k">${esc(keyOf('scores'))}</span> party scores (hold)</div>
         </div>
         <p><b style="color:var(--bronze-hi)">Skill pays:</b> dash through a blow at the last moment for a <i>perfect dodge</i> (+25% damage for a few seconds); jump during a dash (or just after) for a <i>dash-jump</i>, a long bound that keeps half its speed; aim for the head (the front of a beast; the crosshair turns gold over one) and a direct hit strikes a <i>weak point</i> for +35%, marked in gold; stagger or kill a foe as it winds up and you <i>interrupt</i> the blow (+5% ultimate). Enemy shots only bend toward you early in their flight: a late sidestep always beats them. The run summary scores your mastery against your best. <i>Items</i> (a fire flask, a frost phial, a rallying bell...) drop from elites and bosses, wait in chests and sit on the merchant's table: you carry one at a time, so spend it. A boss that lands a leap, ends a whirl or a charge is <i>EXPOSED</i> for a moment (+30% damage): dodge the blow, then punish it. When you fall, <i>What hit you</i> shows the blows that did it.</p>
         <p><b style="color:var(--bronze-hi)">For a harder fight:</b> <i>Nightmare</i> (on the wizard select) makes foes smarter and relentless and gives every boss a new move; chambers cleared without a scratch earn Dread Marks (+5% damage each). <i>Boss Rush</i> pits you against the five bosses back to back. After your first victory, <i>Pacts</i> raise the heat for finer rewards, and the Hollow King's fall opens the endless <i>Abyss</i>.</p>
@@ -314,7 +314,7 @@ export class UI {
         <div class="row">Invert mouse Y <input type="checkbox" id="sInv" ${settings.invertY ? 'checked' : ''}></div>
         <div class="row">Dynamic resolution <input type="checkbox" id="sDyn" ${settings.dynamicRes !== false ? 'checked' : ''}></div>
         <div class="row">Show FPS <input type="checkbox" id="sFps" ${settings.showFps ? 'checked' : ''}></div>
-        <div style="color:var(--text-dim);font-size:12px">Quality changes apply on the next page load.</div>
+        <div style="color:var(--text-dim);font-size:12px">A new graphics quality applies when you press Done (in a run: on the next page load).</div>
         <div style="display:flex;gap:10px;justify-content:center"><button class="btn" id="bKeys">Controls</button><button class="btn" id="bClose">Done</button></div>
       </div>`);
     m.querySelector('#sQual').value = settings.quality;
@@ -398,6 +398,7 @@ export class UI {
       <div class="boss-bar hidden"><div class="bname"></div><div class="btitle"></div><div class="bframe"><i class="cap l"></i><div class="bar"><div class="lag"></div><div class="fill"></div><div class="sheen"></div><div class="phase-marks"></div></div><i class="cap r"></i></div><div class="bgate hidden"><span class="gname"></span><span class="gleft"></span><div class="gtime"><div></div></div></div></div>
       <div class="wave-ind"></div>
       <div class="team"></div>
+      <div class="scores hidden"></div>
       <div class="hp-wrap" style="--pc:${col}">
         <div class="buffs"></div>
         <div class="pframe">
@@ -423,11 +424,11 @@ export class UI {
       <div class="click-hint hidden">CLICK TO CONTINUE</div>`;
     const q = (s) => this.hudEl.querySelector(s);
     this.h = {
-      hpWrap: q('.hp-wrap'), itemSlot: q('.itemslot'), itemIcon: q('.itemslot .iic'), hp: q('#hpBar .fill'), hpLag: q('#hpBar .lag'), hpShield: q('#hpBar .shield'), hpTxt: q('#hpBar .txt'),
+      hpWrap: q('.hp-wrap'), abilities: q('.abilities'), itemSlot: q('.itemslot'), itemIcon: q('.itemslot .iic'), hp: q('#hpBar .fill'), hpLag: q('#hpBar .lag'), hpShield: q('#hpBar .shield'), hpTxt: q('#hpBar .txt'),
       dash: q('.dash-pips'), res: q('.resource'), buffs: q('.buffs'),
       slots: Object.fromEntries(SLOTS.map((s) => [s, q(`.slot[data-slot="${s}"]`)])),
       gold: q('#goldTxt'), goldBox: q('.gold-box'), dread: q('#dreadTxt'), dreadBox: q('.gold-box .dread'), prompt: q('.prompt'), toasts: q('.toasts'), banner: q('.banner'),
-      hit: q('.hitmarker'), team: q('.team'), boss: q('.boss-bar'), bossFill: q('.boss-bar .fill'), bossLag: q('.boss-bar .lag'),
+      hit: q('.hitmarker'), team: q('.team'), scores: q('.scores'), boss: q('.boss-bar'), bossFill: q('.boss-bar .fill'), bossLag: q('.boss-bar .lag'),
       bossName: q('.boss-bar .bname'), bossGate: q('.boss-bar .bgate'), bossGateName: q('.boss-bar .gname'), bossGateLeft: q('.boss-bar .gleft'), bossGateTime: q('.boss-bar .gtime div'), bossTitle: q('.boss-bar .btitle'), minimap: q('.minimap'), fname: q('.fname'), fsub: q('.fsub'),
       obj: q('.objective'), deadline: q('.floor-info .deadline'), wave: q('.wave-ind'), dmgDir: q('.damage-dir'), clickHint: q('.click-hint'),
     };
@@ -452,10 +453,31 @@ export class UI {
     this._mmCenter = null;
   }
 
+  // The spell bar sits at the screen's centre unless that puts it over the health plate or the gold: then it
+  // is nudged (or, if it can't clear both, centred) into the gap between them. Measured, because the HUD
+  // scale and the window size move all three (at 130% on a 1280 window it covered the health bar's end).
+  layoutBar() {
+    const h = this.h, ab = h?.abilities;
+    if (!ab || !h.hpWrap || !h.goldBox) return;
+    ab.style.marginLeft = '0px'; ab.style.zoom = '';
+    const a = h.hpWrap.getBoundingClientRect(), c = h.goldBox.getBoundingClientRect();
+    let b = ab.getBoundingClientRect();
+    if (!b.width) return;
+    const lo = a.right + 10, hi = c.left - 10;
+    // wider than the gap (a big HUD scale on a small window): shrink it to fit, then centre it there
+    if (b.width > hi - lo && hi > lo) { ab.style.zoom = String((parseFloat(getComputedStyle(ab).zoom) || 1) * (hi - lo) / b.width); b = ab.getBoundingClientRect(); }
+    let shift = 0;
+    if (b.width >= hi - lo - 1) shift = (lo + hi) / 2 - (b.left + b.right) / 2;
+    else if (b.left < lo) shift = lo - b.left;
+    else if (b.right > hi) shift = hi - b.right;
+    if (shift) ab.style.marginLeft = (shift / (parseFloat(getComputedStyle(ab).zoom) || 1)) + 'px';
+  }
+
   update(dt, game) {
     if (!this.h || !game.player) return;
     const p = game.player;
     const h = this.h;
+    if ((this._barT = (this._barT ?? 0) - dt) <= 0) { this._barT = 1; this.layoutBar(); } // (the gold's width grows with it)
     // health (DOM writes only when a value changes: the HUD updates every frame)
     const hpPct = Math.max(0, p.hp / p.maxHp) * 100;
     setStyle(h.hp, 'width', hpPct.toFixed(1) + '%');
@@ -536,6 +558,7 @@ export class UI {
         <div class="tm ${r.downed || r.dead ? 'down' : ''}" style="--pc:${hex(r.meta.color)}"><div class="row"><span class="tmedal">${classEmblem(r.classId, hex(r.meta.color), 18)}</span><span class="tname">${esc(r.name)}</span><span class="thp">${r.dead ? 'SLAIN' : r.downed ? 'DOWN' : Math.ceil(r.hp)}</span></div>
         <div class="bar small ally"><div class="fill" style="width:${Math.max(0, r.hp / r.maxHp) * 100}%;--hpc:${r.downed || r.dead ? '#8a8a8a' : allyHpColor(r.hp / r.maxHp)}"></div></div></div>`).join('');
     }
+    this._scores(dt, game);
     // boss
     if (this.bossActor) {
       const a = this.bossActor;
@@ -545,17 +568,18 @@ export class UI {
       const ex = game.time < a.exposedUntil;
       if (this._bossEx !== ex) { this._bossEx = ex; h.boss.classList.toggle('exposed', ex); }
       if (a.gate) h.bossGateTime.style.transform = `scaleX(${Math.max(0, (a.gate.until - game.time) / a.gate.dur)})`;
-      if (a.dead) { setTimeout(() => h.boss.classList.add('hidden'), 1500); this.bossActor = null; }
+      if (a.dead) { setTimeout(() => { if (!this.bossActor) h.boss.classList.add('hidden'); }, 1500); this.bossActor = null; } // (not a boss come up since)
     }
     // objective
     const room = game.level.roomAt(p.pos.x, p.pos.z);
     let obj = '';
     const fightRoom = game.director.active?.room ?? room;
-    const foes = game.actors.list.reduce((n, a) => n + (fightsHere(a, fightRoom) ? 1 : 0), 0);
+    // (once its doors are shut, the objective also counts the room's sentries still standing dormant: they're there, and they will fight)
+    const foes = game.actors.list.reduce((n, a) => n + (fightsHere(a, fightRoom) || (fightRoom?._locked && a.dormant && a.faction === 'enemy' && !a.dead && !a.def.hoarder && a.homeRoom === fightRoom) ? 1 : 0), 0);
     const locked = game.director.active || (room && !room.cleared && foes > 0);
     const tr = fightRoom?.type === ROOM.TRIAL && fightRoom.trialWon === null && fightRoom.trialEnd ? Math.max(0, Math.ceil(fightRoom.trialEnd - game.time)) : null;
-    if (locked && tr !== null) obj = `Trial — ${tr}s left · ${foes} foe${foes === 1 ? '' : 's'} remain`;
-    else if (locked) obj = game.actors.list.some((a) => a.boss && !a.dead) ? 'Defeat the guardian' : `Survive the ambush — ${foes} foe${foes === 1 ? '' : 's'} remain`;
+    if (locked && tr !== null) obj = `Trial — ${tr}s left · ${foes === 1 ? '1 foe remains' : `${foes} foes remain`}`;
+    else if (locked) obj = game.actors.list.some((a) => a.boss && !a.dead) ? 'Defeat the guardian' : `Survive the ambush — ${foes === 0 ? 'more are coming' : foes === 1 ? '1 foe remains' : `${foes} foes remain`}`;
     else if (room?.type === ROOM.BOSS && room.cleared) obj = game.interactables.some((i) => i.kind === 'abyssPortal') ? 'Claim your victory, or descend into the Abyss' : 'Step through the portal to ascend';
     else obj = 'Find the way to the guardian\'s lair';
     if (obj !== this._obj) { this._obj = obj; h.obj.textContent = obj; }
@@ -577,6 +601,20 @@ export class UI {
     h.clickHint.classList.toggle('hidden', this.input.locked || this.modalOpen || game.ended || !!this.pauseEl);
     this._minimap(game);
     this._draw2d(dt, game);
+  }
+
+  // party scores: while the key is held, each wizard's damage, kills and gold, the most damage first
+  // (the teammates' come with their state messages)
+  _scores(dt, game) {
+    const el = this.h.scores, on = this.input.is('scores') && !this.modalOpen && !this.pauseEl;
+    if (this._scOn !== on) { this._scOn = on; el.classList.toggle('hidden', !on); this._scT = 0; }
+    if (!on || (this._scT -= dt) > 0) return;
+    this._scT = 0.25;
+    const all = [game.player, ...game.remotes.values()].sort((a, b) => (b.damageDealt ?? 0) - (a.damageDealt ?? 0));
+    const num = (n) => Math.round(n ?? 0).toLocaleString('en-US');
+    el.innerHTML = `<div class="sc-title">${all.length > 1 ? 'The party' : 'Your run'}</div>
+      <div class="sc-row sc-head"><span></span><span>Wizard</span><span>Damage</span><span>Kills</span><span>Gold</span></div>`
+      + all.map((w) => `<div class="sc-row${w === game.player ? ' me' : ''}" style="--pc:${hex(w.meta.color)}"><span class="tmedal">${classEmblem(w.classId, hex(w.meta.color), 16)}</span><span class="sc-name">${esc(w.name)}<i>${w.meta.name}</i></span><span>${num(w.damageDealt)}</span><span>${num(w.kills)}</span><span>${num(w.gold)}</span></div>`).join('');
   }
 
   // ---------------------------------------------------------------- minimap
@@ -785,6 +823,37 @@ export class UI {
     g.drawImage(b.c, b.sx, b.sy, b.w, b.h, x - w / 2, y - h * 0.62, w, h);
   }
 
+  // The HUD's corners that text drawn over the world must not land on: the minimap, the realm and objective
+  // panel, (in a fight) the boss bar and a banner while it shows, measured twice a second (not every frame: a layout read each).
+  _hudKeepOut() {
+    const K = (this._ko ??= { n: 0, r: new Float32Array(16), t: 0 });
+    const now = performance.now();
+    if (now - K.t < 500) return K;
+    K.t = now; K.n = 0;
+    const h = this.h;
+    for (const el of [h.minimap, h.fname?.parentElement, h.boss, h.banner]) {
+      if (!el || el.classList.contains('hidden') || (el === h.banner && !el.classList.contains('show'))) continue;
+      const b = el.getBoundingClientRect();
+      if (!b.width) continue;
+      const o = K.n * 4; K.r[o] = b.left - 6; K.r[o + 1] = b.top - 6; K.r[o + 2] = b.right + 6; K.r[o + 3] = b.bottom + 6; K.n++;
+    }
+    return K;
+  }
+  // nudge a label (centre x, y; half-size hw, hh) off any keep-out: straight down under a panel that spans
+  // the top (the boss bar), sideways out of a corner one (the minimap, the objective). Writes _koOut.
+  _clearHud(x, y, hw, hh) {
+    const K = this._hudKeepOut(), O = (this._koOut ??= { x: 0, y: 0 });
+    for (let i = 0; i < K.n; i++) {
+      const o = i * 4, l = K.r[o], t = K.r[o + 1], r = K.r[o + 2], b = K.r[o + 3];
+      if (x + hw < l || x - hw > r || y + hh < t || y - hh > b) continue;
+      if (l > innerWidth * 0.5) x = l - hw; // (right corner: to its left)
+      else if (r < innerWidth * 0.5) x = r + hw; // (left corner: to its right)
+      else y = b + hh; // (top centre: below it)
+    }
+    O.x = x; O.y = y;
+    return O;
+  }
+
   _draw2d(dt, game) {
     const g = this.ctx;
     // nothing drawn last frame and nothing to draw now: leave the canvas alone
@@ -867,7 +936,8 @@ export class UI {
       // bigger hits read bigger; the size is rounded so a merged number only
       // re-renders its bitmap when it visibly grows, and the pop is a scale
       const size = Math.round(n.dot ? 13 : (n.crit ? 22 : 15) + Math.min(10, Math.log2(1 + n.amount / 12) * 2.5));
-      this._blitNumber(g, n.text, `${n.crit ? 700 : 600} ${size}px Cinzel, serif`, n.color, s.x + n.ox, s.y, pop);
+      const c = this._clearHud(s.x + n.ox, s.y, size * 1.2, size * 0.6);
+      this._blitNumber(g, n.text, `${n.crit ? 700 : 600} ${size}px Cinzel, serif`, n.color, c.x, c.y, pop);
       g.globalAlpha = 1;
     }
     // floating texts (reactions etc.)
@@ -887,19 +957,21 @@ export class UI {
       const b = this._textBitmap(f.text, `700 ${f.big ? 22 : 15}px Cinzel, serif`, f.color, { stroke: 'rgba(0,0,0,0.9)', lw: 4, glow: 12 });
       const hw = b.w * 0.36, hh = b.h * 0.3; // (the lettering, not the glow around it)
       let y = Math.max(s.y, hh + 34);
+      const c0 = this._clearHud(s.x, y, hw, hh), x = c0.x;
+      y = c0.y;
       for (let pass = 0; pass < 4; pass++) {
         let moved = false;
         for (let j = 0; j < nr; j++) {
           const o = j * 4;
-          if (s.x + hw < FR[o] || s.x - hw > FR[o + 2] || y + hh < FR[o + 1] || y - hh > FR[o + 3]) continue;
+          if (x + hw < FR[o] || x - hw > FR[o + 2] || y + hh < FR[o + 1] || y - hh > FR[o + 3]) continue;
           y = FR[o + 1] - hh - 2; moved = true;
         }
         if (!moved) break;
       }
-      if (nr < 24) { const o = nr * 4; FR[o] = s.x - hw; FR[o + 1] = y - hh; FR[o + 2] = s.x + hw; FR[o + 3] = y + hh; nr++; }
+      if (nr < 24) { const o = nr * 4; FR[o] = x - hw; FR[o + 1] = y - hh; FR[o + 2] = x + hw; FR[o + 3] = y + hh; nr++; }
       g.globalAlpha = f.t > 1 ? 1 - (f.t - 1) / 0.4 : 1;
       const pop = f.t < 0.15 ? 1 + (1 - f.t / 0.15) * 0.8 : 1;
-      this._blitText(g, b, s.x, y, pop);
+      this._blitText(g, b, x, y, pop);
       g.globalAlpha = 1;
     }
     this.floats.length = keep;
@@ -1107,6 +1179,8 @@ export class UI {
     h.boss.style.setProperty('--gc', L.color);
     setText(h.bossGateName, L.name);
     setText(h.bossGateLeft, L.left(G.n));
+    // (a narrow screen puts what it asks under its name: the banner then sits a line lower)
+    h.boss.classList.toggle('gwrap', h.bossGateLeft.offsetTop > h.bossGateName.offsetTop + 4);
   }
 
   bossIntro(a) {
@@ -1118,6 +1192,10 @@ export class UI {
     h.bossTitle.textContent = a.def.title ?? '';
     const marks = h.boss.querySelector('.phase-marks');
     marks.innerHTML = (a.phaseAts ?? [0.33, 0.66]).map((f) => `<i style="left:${f * 100}%"></i>`).join('');
+    // the line under the bar as this boss stands now: a gate that rose before its name came up (bossGate
+    // only speaks for the boss on the bar) shows, and the last boss's line doesn't linger on this one's
+    this._bossEx = undefined;
+    this.bossGate(a);
     this.banner(a.def.name, a.def.title ?? '', '#ff7050', 4);
   }
 
@@ -1244,7 +1322,7 @@ export class UI {
         <div class="subtitle" style="margin-bottom:6px">Your build</div>
         <div>${tomes || '<span style="color:var(--text-dim)">No tomes bound yet.</span>'}</div>
         ${relics ? `<div class="relic-pause">${relics}</div>` : ''}
-        <div style="margin-top:8px;color:var(--text-dim);font-size:13px">Damage ×${st.dmgMult.toFixed(2)} · Crit ${Math.round(st.critChance * 100)}% (×${st.critMult.toFixed(2)}) · Cooldowns −${Math.round(st.cdr * 100)}% · Armor ${Math.round(st.armor * 100)}% · Speed ${st.moveSpeed.toFixed(1)}</div>
+        <div style="margin-top:8px;color:var(--text-dim);font-size:13px">Damage ×${st.dmgMult.toFixed(2)} · Crit ${Math.round(st.critChance * 100)}% (×${st.critMult.toFixed(2)}) · Cooldowns ${((c) => (c > 0 ? '−' : c < 0 ? '+' : '') + Math.abs(c))(Math.round(st.cdr * 100))}% · Armor ${Math.round(st.armor * 100)}% · Speed ${st.moveSpeed.toFixed(1)}</div>
       </div>`;
     }
     const m = this._modal(`
@@ -1310,6 +1388,28 @@ export class UI {
   fadeIn(t) {
     this.fadeEl.style.transition = `opacity ${t}s`;
     this.fadeEl.style.opacity = 0;
+  }
+
+  // a boss's name as it makes its entrance: a title card over the letterboxed shot (outside the HUD, which
+  // is dimmed through the cinematic), a rule drawn out under it, gone after a few seconds
+  cineTitle(name, title, color = '#ff7050', life = 3.2) {
+    if (!this._ct) {
+      const d = this._ct = document.createElement('div');
+      d.style.cssText = 'position:fixed;left:0;right:0;bottom:calc(11vh + 3vh);z-index:16;text-align:center;pointer-events:none;opacity:0;transition:opacity 0.6s';
+      d.innerHTML = '<div class="ct-n" style="font-family:\'Cinzel Decorative\',var(--serif);font-size:clamp(28px,5.2vw,64px);letter-spacing:0.12em;text-shadow:0 0 28px rgba(0,0,0,0.9),0 0 18px currentColor,0 3px 0 #000;transform:scale(1.08);transition:transform 3.4s cubic-bezier(.2,.7,.2,1)"></div>'
+        + '<div class="ct-r" style="margin:6px auto 8px;height:2px;width:0;transition:width 1.1s cubic-bezier(.2,.8,.2,1) .15s;background:linear-gradient(90deg,transparent,currentColor,transparent)"></div>'
+        + '<div class="ct-t" style="font-family:var(--serif);font-size:clamp(11px,1.4vw,17px);letter-spacing:0.42em;text-transform:uppercase;color:#d8c8b0;text-shadow:0 2px 6px #000;opacity:0;transition:opacity 0.8s .45s"></div>';
+      document.body.appendChild(d);
+    }
+    const d = this._ct, n = d.querySelector('.ct-n'), r = d.querySelector('.ct-r'), t = d.querySelector('.ct-t');
+    clearTimeout(this._ctT);
+    n.textContent = name; t.textContent = title ?? '';
+    d.style.color = color;
+    n.style.transition = 'none'; n.style.transform = 'scale(1.1)'; r.style.width = '0'; t.style.opacity = '0';
+    void d.offsetWidth;
+    n.style.transition = 'transform 3.4s cubic-bezier(.2,.7,.2,1)';
+    d.style.opacity = '1'; n.style.transform = 'scale(1)'; r.style.width = 'min(520px,60vw)'; t.style.opacity = '1';
+    this._ctT = setTimeout(() => { d.style.opacity = '0'; }, life * 1000);
   }
 
   letterbox(on) {

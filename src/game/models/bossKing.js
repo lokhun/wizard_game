@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { G, xf, lathe, shell, tube, extrude, deform, bumpy, mergeRaw, chainSkin, panel, spikeRing, rng, vnoise, fbm3, clamp, lerp, smooth, bump, easeOut, easeIn, easeInOut, TAU } from './core.js';
 import { humanSkeleton, humanoidPose, act2 } from './humanoid.js';
 import { addPlate, addTabard, hood, pauldron, twoSided, HDR, GOLDTRIM } from './parts.js';
-import { addFx, fxOf, fxSet, fxPos, fxRot, paint, softRing, softDisc, softColumn, Rope, aimChain, boneWorld, boneModel, snapRot, setBone, springTo, glowLevel, wield, swingTrailGeo, aimTrail } from './bossKit.js';
+import { wounds, strikeLayer, coil } from './bossKit.js';
+import { addFx, fxOf, fxSet, fxPos, fxRot, paint, softRing, softDisc, softColumn, Rope, aimChain, boneWorld, boneModel, snapRot, setBone, springTo, glowLevel, wield, swingTrailGeo, aimTrail, panelBand, embroideryOf } from './bossKit.js';
 
 // ================================================================= The Hollow King ==
 // The last lord of the Ashen Keep: a towering suit of blackened, gold-chased plate with
@@ -55,6 +56,12 @@ const B_BEAM_S = { chest: [0.05, 0.25, 0], spine: [0.05, 0.1, 0], head: [0, -0.2
 // the leap: crouched under the reversed sword, then airborne, knees drawn up, the point held down for the plunge
 const B_LEAP_W = { chest: [0.45, 0, 0], spine: [0.28, 0, 0], head: [-0.3, 0, 0], hips: [0, 0, 0, 0, -0.45, -0.05], thighL: [-1.25, 0, 0.1], shinL: [1.7, 0, 0], footL: [-0.4, 0, 0], thighR: [-1.1, 0, -0.1], shinR: [1.6, 0, 0], footR: [-0.4, 0, 0] };
 const B_LEAP_S = { chest: [-0.2, 0, 0], spine: [-0.1, 0, 0], head: [0.3, 0, 0], hips: [0, 0, 0, 0, 0.1, 0], thighL: [-1.1, 0, 0.12], shinL: [1.6, 0, 0], thighR: [-0.7, 0, -0.12], shinR: [1.3, 0, 0], footL: [0.3, 0, 0], footR: [0.3, 0, 0] };
+// the void spiral: the blade held point-up before his face, the body turning slowly under it
+const B_SPIRAL = { chest: [-0.1, 0, 0], spine: [-0.04, 0, 0], neck: [0.1, 0, 0], head: [0.12, 0, 0], hips: [0, 0, 0, 0, -0.06, 0], thighL: [-0.2, 0, 0.12], thighR: [0.1, 0, -0.12], shinL: [0.3, 0, 0], shinR: [0.2, 0, 0] };
+// judgment: the sword raised to the sky in both hands, held, trembling, then brought down
+const B_JUDGE_UP = { chest: [-0.38, 0, 0], spine: [-0.2, 0, 0], neck: [-0.15, 0, 0], head: [-0.4, 0, 0], hips: [0, 0, 0, 0, 0.03, 0], thighL: [0.05, 0, 0.16], thighR: [0.05, 0, -0.16] };
+// the shadow step: gathered low into his cloak before he goes
+const B_VANISH = { chest: [0.5, 0.2, 0], spine: [0.3, 0, 0], neck: [0.2, 0, 0], head: [0.1, -0.2, 0], hips: [0, 0, 0, 0, -0.32, -0.05], thighL: [-0.95, 0, 0.12], shinL: [1.15, 0, 0], thighR: [-0.75, 0, -0.12], shinR: [1.05, 0, 0], armL: [-0.6, 0, 0.9], foreL: [-1.2, 0, 0] };
 const SEAT = (D) => ({ hips: [0, 0, 0, 0, -D.thigh, -D.thigh * 0.85], thighL: [-1.5, 0, 0.12], thighR: [-1.5, 0, -0.12], shinL: [1.45, 0, 0], shinR: [1.45, 0, 0], spine: [0.05, 0, 0], chest: [0.05, 0, 0], head: [0.15, 0, 0] });
 
 const AX = {
@@ -69,7 +76,53 @@ const AX = {
   plungeS: { th: 0, ph: -1.5, ps: 0, gx: 0, gy: -0.12, gz: 0.48, wL: 1 },
   roar: { th: 0.1, ph: 1.45, ps: 0, gx: -0.3, gy: 1.0, gz: 0.12, wL: 0 },
   beam: { th: 0.1, ph: 0.35, ps: 0, gx: -0.3, gy: 0.15, gz: 0.52, wL: 0 },
+  spiral: { th: 0, ph: 1.52, ps: 0, gx: -0.05, gy: 0.3, gz: 0.42, wL: 1 },
+  judgeUp: { th: 0, ph: 1.62, ps: 0, gx: -0.02, gy: 1.15, gz: 0.08, wL: 1 },
+  judgeDn: { th: 0, ph: 0.12, ps: Math.PI, gx: 0, gy: 0.0, gz: 0.62, wL: 1 },
+  vanish: { th: -1.9, ph: -0.55, ps: 1.4, gx: -0.4, gy: -0.25, gz: -0.05, wL: 0 },
 };
+// his blows' weight (bossKit.strikeLayer)
+const BLOWS = {
+  sweep: { hit: 0.3, rel: [0.3, 3.0, 0], imp: [0.5, 1.5, 0.4], sink: 0.1 },
+  thrust: { hit: 0.22, rel: [1.4, 1.2, 0.2], imp: [1.2, 0, 0.5], sink: 0.12 },
+  slam: { hit: 0.25, rel: [1.0, 0, 0], imp: [2.8, 0, 1.4], sink: 0.14, rec: 0.8 },
+  leap: { hit: 2, rel: [-1.2, 0, -0.8], sink: 0.2 },
+  roar: { hit: 2, rel: [-1.8, 0, -0.5], rec: 0.75 },
+  summon: { hit: 0.35, rel: [-0.8, 0, -0.2], rec: 0.8 },
+  beam: { hit: 2, rel: [-0.6, 0, 0] },
+  spiral: { hit: 2, rel: [-0.6, 0, -0.3] },
+  judgment: { hit: 0.93, imp: [3.0, 0, 1.4], rec: 0.96 },
+  vanish: { hit: 2, rel: [1.8, 0, 1.0] },
+};
+const BLOW_O = { types: BLOWS, chain: [['spine', 0.35, 0.3], ['chest', 0.65, 0.6]], head: 'head', root: 'hips', chest: 'chest', sink: 0.08 };
+const GRASPS = [0.02, 0.33, 0.64];
+// seated, the sword planted: his left hand does the work. Each spell has its own gesture.
+function seatGesture(P, an, at, p, m) {
+  const T = m.time;
+  const k = an === 'windup' ? smooth(0, 1, p) : smooth(0, 0.18, p) * (1 - smooth(0.85, 1, p));
+  if (at === 'seatedBeams') {
+    // a slow sweep of the open hand across the hall, marking each of you; a clench as the beams fall
+    const sw = smooth(0.12, 0.72, p), cl = bump(0.7, 0.95, p);
+    P.apply({ armL: [-1.45, 0, lerp(-0.55, 0.65, sw)], foreL: [-0.2 - 0.5 * cl, 0, 0], handL: [-0.9 + 1.2 * cl, 0, 0], head: [-0.1, lerp(-0.35, 0.4, sw), 0], chest: [0.12 * cl, lerp(-0.12, 0.12, sw), 0] }, k);
+  } else if (at === 'seatedRain') {
+    // the hand lifts palm-up to the vault, then is dragged down: and the rain comes
+    const r = smooth(0.05, 0.55, p), d = smooth(0.58, 0.7, p);
+    P.apply({ armL: [-1.2 - 1.45 * r + 1.6 * d, 0, 0.3 + 0.2 * r], foreL: [-0.7 * (1 - r) - 0.1 - 0.5 * d, 0, 0], handL: [0.7 * r - 0.9 * d, 0, 0], head: [-0.4 * r + 0.5 * d, 0, 0], neck: [-0.15 * r + 0.15 * d, 0, 0], chest: [-0.06 * r + 0.16 * d, 0, 0] }, k);
+  } else if (at === 'seatedGuard') {
+    // a beckoning hand; the sword lifted and struck down on the dais to call his guard
+    P.apply({ armL: [-1.0, 0, 0.25], foreL: [-1.1 - 0.45 * Math.max(0, Math.sin(T * 9)), 0, 0], handL: [0.5, 0, 0], head: [-0.15, 0.15, 0] }, k);
+    P.r('chest', 0.14 * bump(0.68, 0.95, p));
+  } else if (at === 'seatedVolley') {
+    // drawn back across his chest, then flicked out at you
+    const f = smooth(0.62, 0.72, p);
+    P.apply({ armL: [lerp(-0.9, -1.5, f), 0, lerp(-0.75, 0.35, f)], foreL: [lerp(-1.7, -0.1, f), 0, 0], handL: [lerp(0.6, -0.8, f), 0, 0], chest: [0, lerp(-0.25, 0.2, f), 0], head: [0, lerp(0.2, -0.1, f), 0] }, k);
+  } else if (at === 'seatedGrasp') {
+    // the hand reaches out and closes, three times: each time the ground closes on you
+    let cl = 0;
+    for (const g of GRASPS) cl += bump(g, g + 0.2, p);
+    P.apply({ armL: [-1.45 + 0.12 * cl, 0, 0.1], foreL: [-0.2 - 0.7 * cl, 0, 0], handL: [-0.4 + 1.1 * cl, 0, 0], chest: [0.18 + 0.06 * cl, 0, 0], head: [0.05, 0, 0] }, k);
+  } else P.apply({ armL: [-1.4, 0, 0.1], foreL: [-0.3, 0, 0], handL: [-1.0, 0, 0], head: [-0.25, 0, 0] }, k);
+}
 const AXK = ['th', 'ph', 'ps', 'gx', 'gy', 'gz', 'wL'];
 const setAx = (o, a) => { for (const k of AXK) o[k] = a[k]; return o; };
 const mixAx = (o, a, b, u) => { for (const k of AXK) o[k] = lerp(a[k], b[k], u); return o; };
@@ -77,7 +130,9 @@ const GRIPS = [{ side: -1, y: 0.2, w: 1, flip: false }, { side: 1, y: 0.04, w: 1
 const POLES = [[1, -0.6, -0.5], [-1, -0.6, -0.5]];
 
 export const hollowKing = {
-  id: 'hollowKing', height: 5.3, radius: 1.3, boss: true, eyeColor: HOLLOW, magicColor: HOLLOW, defaultAttack: 'slam', attackTypes: ['seated', 'slam', 'sweep', 'thrust', 'summon', 'roar', 'beam', 'leap'], flutter: 0.03, orbSize: 0.14,
+  lookAt: 0, recoil: 0, // (its own rig: the head turns on other axes; see EnemyInstance._layers)
+  look: { bones: [['neck', 0.35], ['head', 0.65]], yaw: 1.0, pitch: 0.5 }, // (his eyes on his foe: EnemyInstance._lookWorld)
+  id: 'hollowKing', height: 5.3, radius: 1.3, boss: true, eyeColor: HOLLOW, magicColor: HOLLOW, defaultAttack: 'slam', attackTypes: ['seated', 'seatedBeams', 'seatedRain', 'seatedGuard', 'seatedVolley', 'seatedGrasp', 'spiral', 'judgment', 'vanish', 'slam', 'sweep', 'thrust', 'summon', 'roar', 'beam', 'leap'], flutter: 0.03, orbSize: 0.14,
   build(rig) {
     rig.scale = 2.15;
     const D = humanSkeleton(rig, { thigh: 0.52, shin: 0.5, ankle: 0.08, hipW: 0.12, spine: 0.2, chest: 0.4, neck: 0.1, shoulderW: 0.26, upper: 0.37, fore: 0.35 });
@@ -92,11 +147,11 @@ export const hollowKing = {
     rig.add('hips', 'cloth', tors, {}, { c: [0.05, 0.04, 0.05], skin: chainSkin([['hips', 0.0], ['spine', 0.05 + D.spine * 0.45], ['chest', 0.05 + D.spine + D.chest * 0.25]], (v) => v.y) });
     for (const S of ['L', 'R']) { rig.add('arm' + S, 'cloth', G.cyl(0.05, 0.04, D.upper, 8), { y: -D.upper / 2 }, { c: [0.05, 0.04, 0.05] }); rig.add('thigh' + S, 'cloth', G.cyl(0.08, 0.06, D.thigh, 8), { y: -D.thigh / 2 }, { c: [0.05, 0.04, 0.05] }); }
     const BK = [0.3, 0.29, 0.34];
-    addPlate(rig, D, { mat: 'steel', c: BK, bulk: 1.2, pauldron: 0.18, trim: true, mailC: [0.35, 0.35, 0.4] });
+    addPlate(rig, D, { mat: 'steel', c: BK, bulk: 1.2, pauldron: 0.18, trim: true, fine: true, mailC: [0.35, 0.35, 0.4] });
     // great layered pauldrons with gold edges and a crest of spikes
     for (const S of ['L', 'R']) {
       const sx = S === 'L' ? 1 : -1;
-      rig.add('arm' + S, 'steel', pauldron(0.25, 4), { x: sx * 0.03, y: 0.02, rz: sx * 0.5, sy: 0.8 }, { c: BK });
+      rig.add('arm' + S, 'steel', pauldron(0.25, 4, 32), { x: sx * 0.03, y: 0.02, rz: sx * 0.5, sy: 0.8 }, { c: BK });
       rig.add('arm' + S, 'gold', mergeRaw([0, 1, 2, 3].map((i) => xf(G.tor(0.25 * (1.04 + i * 0.07), 0.008, 3, 20), { rx: Math.PI / 2, y: -0.025 - i * 0.04 }))), { x: sx * 0.03, y: 0.02, rz: sx * 0.5, sy: 0.8 }, { c: GOLDTRIM });
       rig.add('arm' + S, 'gold', mergeRaw([0, 1, 2, 3, 4].map((i) => xf(G.cone(0.028, 0.26 - Math.abs(i - 2) * 0.05, 4), { x: sx * (0.0 + i * 0.045), y: 0.2 - Math.abs(i - 2) * 0.02, z: (i - 2) * 0.05, rz: -sx * (0.15 + i * 0.18) }))), {}, { c: GOLDTRIM });
     }
@@ -114,16 +169,34 @@ export const hollowKing = {
       ...[-1, 0, 1].map((i) => onPlate(G.cone(0.022, i === 0 ? 0.11 : 0.08, 4), i * 0.06, HY + 0.06)),
       onPlate(G.tor(0.05, 0.008, 4, 14), 0, D.chest * 0.33),
     ]), {}, { c: GOLDTRIM });
+    // gold filigree: mirrored scrolls curling out from a stem down the breastplate's middle
+    const fil = [];
+    const onP = (x, y) => [x, y, plateZ(x, y) + 0.005];
+    for (const sx of [1, -1]) for (const [cy, sc] of [[HY - 0.11, 1], [HY - 0.27, 0.8], [HY - 0.42, 0.65]]) {
+      const pts = [];
+      for (let k = 0; k <= 26; k++) { const th = k / 26 * 3.4 * Math.PI; const r = 0.06 * sc * Math.exp(-0.16 * th); pts.push(onP(sx * (0.012 + 0.06 * sc - Math.cos(th) * r), cy + Math.sin(th) * r * 0.9)); }
+      fil.push(tube(pts, (u) => 0.0045 * (1 - u * 0.5), 40, 4));
+      for (let k = 1; k < 4; k++) { const th = k * 0.9 + 0.4; const r = 0.06 * sc * Math.exp(-0.16 * th); const x0 = sx * (0.012 + 0.06 * sc - Math.cos(th) * r), y0 = cy + Math.sin(th) * r * 0.9; fil.push(tube([onP(x0, y0), onP(x0 + sx * 0.012, y0 + 0.016), onP(x0 + sx * 0.026, y0 + 0.014)], (u) => 0.003 * (1 - u * 0.6), 8, 3)); }
+    }
+    fil.push(tube(Array.from({ length: 12 }, (_, k) => onP(0, HY - 0.06 - k * 0.04)), 0.005, 24, 4));
+    rig.add('chest', 'gold', mergeRaw(fil), {}, { c: GOLDTRIM });
     const cracks = [];
     const RC = rng(12);
     for (let i = 0; i < 5; i++) { let x = (RC() - 0.5) * 0.2, y = D.chest * (0.15 + RC() * 0.6); for (let k = 0; k < 4; k++) { const nx = x + (RC() - 0.5) * 0.06, ny = y - 0.03 - RC() * 0.04; const d = Math.hypot(nx - x, ny - y); cracks.push(onPlate(G.box(0.006, d, 0.004), (x + nx) / 2, (y + ny) / 2, { rz: Math.atan2(-(nx - x), ny - y) })); x = nx; y = ny; } }
     rig.add('chest', 'glow', mergeRaw(cracks), {}, { c: HDR(HOLLOW, 4.5) });
     // cold light in the joints of the empty armour
     for (const S of ['L', 'R']) { rig.add('fore' + S, 'glow', xf(G.tor(0.045, 0.006, 3, 12), { rx: Math.PI / 2 }), { y: 0.0 }, { c: HDR(HOLLOW, 2.2) }); rig.add('shin' + S, 'glow', xf(G.tor(0.06, 0.006, 3, 12), { rx: Math.PI / 2 }), { y: 0.02 }, { c: HDR(HOLLOW, 2.2) }); }
-    addTabard(rig, D, { c: [0.2, 0.03, 0.1], tatter: 0.35, seed: 9, top: -D.spine * 0.62, depth: plateZ(0, -D.spine * 0.62) / (W * 0.62) + 0.06, len: 0.95, w: 0.75, emblem: mergeRaw([xf(G.box(0.16, 0.035, 0.01), {}), ...[-1, 0, 1].map((i) => xf(G.cone(0.025, i === 0 ? 0.1 : 0.07, 4), { x: i * 0.055, y: 0.05 }))]) });
+    addTabard(rig, D, { detail: true, c: [0.2, 0.03, 0.1], tatter: 0.35, seed: 9, top: -D.spine * 0.62, depth: plateZ(0, -D.spine * 0.62) / (W * 0.62) + 0.06, len: 0.95, w: 0.75, emblem: mergeRaw([xf(G.box(0.16, 0.035, 0.01), {}), ...[-1, 0, 1].map((i) => xf(G.cone(0.025, i === 0 ? 0.1 : 0.07, 4), { x: i * 0.055, y: 0.05 }))]) });
     // ---- the cape: hung from three ropes, it drags on the floor behind him
-    const capeG = panel(0.95, CAPE_L * CAPE_N, { ws: 10, hs: 16, tatter: 0.35, seed: 13, curve: 0.18, taperBot: 1.5 });
-    xf(capeG, { y: D.chest - 0.01, z: -0.2, ry: Math.PI, rx: 0.06 });
+    // (heavy velvet in deep pipe folds, a border of gold-worked crowns and lozenges down both
+    // edges and above the ragged hem)
+    const capeG = panel(0.95, CAPE_L * CAPE_N, { ws: 46, hs: 50, tatter: 0.35, seed: 13, curve: 0.18, taperBot: 1.5, folds: 8, foldAmp: 0.055 });
+    const capeXf = { y: D.chest - 0.01, z: -0.2, ry: Math.PI, rx: 0.06 };
+    const royal = embroideryOf('diamond', GOLDTRIM, [0.3, 0.02, 0.08], 0.09);
+    const capeBands = [];
+    for (const su of [-1, 1]) capeBands.push(panelBand(capeG, Array.from({ length: 41 }, (_, i) => [su * 0.93, 0.01 + (i / 40) * 0.8]), 0.07, royal));
+    capeBands.push(panelBand(capeG, Array.from({ length: 49 }, (_, i) => [-0.93 + (i / 48) * 1.86, 0.8]), 0.07, royal));
+    xf(capeG, capeXf);
     const capeSkin = (v) => {
       const d = clamp((D.chest - 0.01 - v.y) / CAPE_L, 0, CAPE_N - 1.001);
       const i0 = Math.floor(d), f = d - i0;
@@ -131,6 +204,7 @@ export const hollowKing = {
       return [[`cape${c0}_${i0}`, (1 - f) * (1 - g)], [`cape${c0}_${i0 + 1}`, f * (1 - g)], [`cape${c0 + 1}_${i0}`, (1 - f) * g], [`cape${c0 + 1}_${i0 + 1}`, f * g]];
     };
     rig.add('chest', 'cloth', capeG, {}, { cfn: (v) => { const n = vnoise(v.x * 8, v.y * 3, 1, 4); const k = 0.7 + n * 0.4; const hem = smooth(0.9, 1.6, D.chest - v.y); return [0.24 * k * (1 - hem * 0.5), 0.02 * k, 0.07 * k]; }, anim: (v) => clamp((D.chest - v.y) / 2) * 0.6, skin: capeSkin });
+    for (const cb of capeBands) rig.add('chest', 'cloth', xf(cb.geo, capeXf), {}, { vcol: cb.vcol, anim: (v) => clamp((D.chest - v.y) / 2) * 0.6, skin: capeSkin });
     rig.add('chest', 'fur', bumpy(xf(G.tor(0.27, 0.085, 8, 24), { rx: Math.PI / 2, sz: 0.8 }), 0.014, 14, 7), { y: D.chest + 0.03 }, { cfn: (v) => (vnoise(v.x * 30, v.y * 30, v.z * 30, 3) > 0.82 ? [0.04, 0.04, 0.04] : [0.9, 0.88, 0.82]) });
     rig.add('chest', 'gold', mergeRaw([xf(G.tor(0.035, 0.01, 4, 12), { x: 0.18, y: D.chest + 0.02, z: 0.16 }), xf(G.tor(0.035, 0.01, 4, 12), { x: -0.18, y: D.chest + 0.02, z: 0.16 }), xf(G.cyl(0.006, 0.006, 0.36, 4), { y: D.chest + 0.0, z: 0.19, rz: Math.PI / 2 })]), {}, { c: GOLDTRIM });
     // ---- the hollow helm: a void with two cold eyes, soul-light seeping from the gorget
@@ -182,7 +256,7 @@ export const hollowKing = {
     const st = m.state, T = m.time, D = m.spec.dims;
     if (st.born === undefined) st.born = T;
     const an = s.anim, at = s.attackType, p = s.progress, dead = an === 'death';
-    const seated = at === 'seated' && (an === 'idle' || an === 'cast' || an === 'windup');
+    const seated = at.startsWith('seated') && (an === 'idle' || an === 'cast' || an === 'windup');
     const rate = humanoidPose(m, s, P, dt);
     // hit flinch
     if (m._flash > (st.lastFlash ?? 0) + 0.2) st.hitT = T;
@@ -199,20 +273,41 @@ export const hollowKing = {
       P.r('head', Math.sin(T * 43) * 0.04 * bump(0.5, 1, rt));
     }
     // seated: a slow regal tilt of the hollow head; casts raise the left hand
-    if (seated && (an === 'cast' || an === 'windup')) {
-      const k = an === 'windup' ? smooth(0, 1, p) : smooth(0, 0.2, p) * (1 - smooth(0.8, 1, p));
-      P.apply({ armL: [-1.4, 0, 0.1], foreL: [-0.3, 0, 0], handL: [-1.0, 0, 0], head: [-0.25, 0, 0] }, k);
-    }
+    if (seated && (an === 'cast' || an === 'windup')) seatGesture(P, an, at, p, m);
     // ---- weapon target
     const tgt = st.axT ?? (st.axT = setAx({}, AX.seat));
     let om = 6, ze = 1;
     const w = st.moveW ?? 0;
-    if (seated) setAx(tgt, AX.seat);
-    else if (an === 'windup' || an === 'attack' || an === 'cast') {
-      const wu = an === 'windup';
-      if (at === 'sweep') { setAx(tgt, wu ? AX.sweepW : AX.sweepS); om = wu ? 7 : 20; ze = wu ? 1 : 0.62; if (!wu && p > 0.7) { mixAx(tgt, AX.sweepS, AX.rest, smooth(0.7, 1, p) * 0.5); om = 6; } }
-      else if (at === 'thrust') { setAx(tgt, wu ? AX.thrustW : AX.thrustS); om = wu ? 8 : 26; ze = wu ? 1 : 0.6; }
-      else if (at === 'slam') { setAx(tgt, wu ? AX.plungeW : AX.plungeS); om = wu ? 6 : 24; ze = wu ? 1 : 0.7; }
+    if (seated) {
+      setAx(tgt, AX.seat);
+      // a seated spell: the left hand leaves the pommel to make its gesture (else the grip holds it there)
+      if (an === 'cast' || an === 'windup') tgt.wL = an === 'windup' ? 1 - smooth(0, 0.3, p) : smooth(0.88, 1, p);
+      // calling his guard: the planted sword lifted and struck down on the dais
+      if (an === 'cast' && at === 'seatedGuard') { tgt.gy += 0.22 * smooth(0.15, 0.6, p) * (1 - smooth(0.68, 0.75, p)); om = 14; ze = 0.7; }
+    } else if (an === 'windup' || an === 'attack' || an === 'cast') {
+      const wu = an === 'windup', cl = wu ? smooth(0.5, 1, p) : 0;
+      if (at === 'sweep') {
+        setAx(tgt, wu ? AX.sweepW : AX.sweepS); om = wu ? 7 : 20; ze = wu ? 1 : 0.62;
+        if (wu) coil(tgt, AX.sweepW, AX.sweepS, 0.15 * cl);
+        else { tgt.th += 0.45 * bump(0.15, 0.7, p); if (p > 0.7) { mixAx(tgt, tgt, AX.rest, smooth(0.7, 1, p) * 0.5); om = 6; } }
+      } else if (at === 'thrust') {
+        // drawn far back, driven home, given a twist, then pulled free
+        setAx(tgt, wu ? AX.thrustW : AX.thrustS); om = wu ? 8 : 26; ze = wu ? 1 : 0.6;
+        if (wu) coil(tgt, AX.thrustW, AX.thrustS, 0.2 * cl);
+        else { tgt.ps += 1.2 * smooth(0.3, 0.42, p) * (1 - smooth(0.6, 0.8, p)); if (p > 0.6) { mixAx(tgt, tgt, AX.rest, smooth(0.6, 1, p) * 0.7); om = 9; } }
+      } else if (at === 'slam') {
+        // the plunge: driven point-first into the floor, left there while the dark pours out, then pulled free
+        setAx(tgt, wu ? AX.plungeW : AX.plungeS); om = wu ? 6 : 24; ze = wu ? 1 : 0.7;
+        if (wu) coil(tgt, AX.plungeW, AX.plungeS, 0.1 * cl);
+        else { if (p > 0.25) tgt.gy -= 0.06 * (1 - smooth(0.6, 0.7, p)); const pull = smooth(0.62, 0.78, p); tgt.gy += 0.35 * pull * (1 - smooth(0.8, 1, p)); if (pull > 0) om = 12; if (p > 0.8) mixAx(tgt, tgt, AX.rest, smooth(0.8, 1, p)); }
+      } else if (at === 'spiral') {
+        setAx(tgt, AX.spiral); om = 8; tgt.th += Math.sin(T * 2.4) * 0.12;
+      } else if (at === 'judgment') {
+        const dn = smooth(0.9, 0.94, p);
+        mixAx(tgt, AX.judgeUp, AX.judgeDn, dn); tgt.gy += 0.06 * smooth(0.1, 0.85, p) * (1 - dn);
+        tgt.ps += Math.sin(T * 39) * 0.03 * smooth(0.5, 0.9, p) * (1 - dn);
+        if (p > 0.97) mixAx(tgt, tgt, AX.rest, smooth(0.97, 1, p)); om = dn > 0 && dn < 1 ? 26 : 6; ze = dn > 0 ? 0.6 : 1;
+      } else if (at === 'vanish') { setAx(tgt, AX.vanish); om = 12; }
       else if (at === 'leap') { setAx(tgt, AX.plungeW); om = 8; ze = 0.85; }
       else if (at === 'roar') { setAx(tgt, AX.roar); om = 7; ze = 0.8; }
       else if (at === 'beam') { setAx(tgt, AX.beam); om = 8; }
@@ -221,6 +316,8 @@ export const hollowKing = {
     if (rising) { mixAx(tgt, AX.seat, AX.roar, smooth(0.35, 0.65, rt)); om = 7; }
     const ax = st.ax ?? (st.ax = setAx({}, AX.seat));
     if (!dead) springTo(ax, tgt, AXK, dt, om, ze);
+    if (!dead && !seated && !rising) strikeLayer(m, s, P, dt, BLOW_O);
+    wounds(m, s, P, dt, { hunch: [['spine', 0.16], ['chest', 0.07], ['neck', 0.1], ['head', 0.06]], breath: [['chest', 0.05], ['spine', 0.02]], shoulders: ['armL', 'armR'], spasm: ['chest', 'head'] }); // (near his end: bossKit.wounds)
     P.damp(dt, rate);
     if (dead) kingDeathSword(m, s, ax);
     else {
@@ -238,8 +335,11 @@ export const hollowKing = {
     // (the throne's seat stands higher than a man's knee: sit up on it, feet forward on its step)
     seated: (P, m) => { P.apply({ head: [0.25, 0, 0], neck: [0.1, 0, 0], hips: [0, 0, 0, 0, 0.12, 0.02], thighL: [-0.08, 0, 0], thighR: [-0.08, 0, 0], shinL: [-0.3, 0, 0], shinR: [-0.3, 0, 0] }); P.r('head', 0, Math.sin(m.time * 0.2) * 0.15, 0); },
     actions: {
-      sweep: act2(B_SWEEP_W, B_SWEEP_S, { hit: 0.3, recover: 0.7, recoverAmt: 0.6 }),
-      thrust: act2(B_THRUST_W, B_THRUST_S, { hit: 0.22, recover: 0.7, recoverAmt: 0.6 }),
+      sweep: act2(B_SWEEP_W, B_SWEEP_S, { hit: 0.3, recover: 0.7, recoverAmt: 0.6, windupExtra: (P, p) => { const k = smooth(0.5, 1, p); P.r('hips', 0, -0.12 * k, 0); P.r('chest', 0, -0.12 * k, 0); }, strikeExtra: (P, p) => { const k = bump(0.15, 0.7, p); P.r('chest', 0, 0.22 * k, 0); P.r('hips', 0, 0.12 * k, 0); } }),
+      thrust: act2(B_THRUST_W, B_THRUST_S, { hit: 0.22, recover: 0.7, recoverAmt: 0.6, windupExtra: (P, p) => { const k = smooth(0.5, 1, p); P.r('chest', 0, -0.15 * k, 0); P.p('hips', 0, -0.04 * k, -0.06 * k); }, strikeExtra: (P, p) => { const k = bump(0.1, 0.55, p); P.p('hips', 0, -0.04 * k, 0.12 * k); P.r('footL', 0.25 * k); } }),
+      spiral: (P, ph, p, m) => { const k = smooth(0, 0.12, p) * (1 - smooth(0.9, 1, p)); P.apply(B_SPIRAL, k); P.r('hips', 0, Math.sin(m.time * 2.4) * 0.3 * k, 0); P.r('chest', 0, Math.sin(m.time * 2.4 - 0.6) * 0.15 * k, 0); return 8; },
+      judgment: (P, ph, p, m) => { const k = smooth(0, 0.2, p), dn = smooth(0.9, 0.94, p), out = smooth(0.97, 1, p); P.apply(B_JUDGE_UP, k * (1 - dn)); P.apply(B_PLUNGE_S, dn * (1 - out) * 0.8); const tr = smooth(0.5, 0.9, p) * (1 - dn) * 0.025; P.r('chest', Math.sin(m.time * 43) * tr, Math.sin(m.time * 37) * tr); P.r('head', Math.sin(m.time * 51) * tr * 2); return dn > 0 && dn < 1 ? 26 : 7; },
+      vanish: (P, ph, p) => { P.apply(B_VANISH, smooth(0, 0.5, p)); return 16; },
       leap: act2(B_LEAP_W, B_LEAP_S, { hit: 0.35, recover: 2, recoverAmt: 0, windupRate: 11 }),
       slam: act2(B_PLUNGE_W, B_PLUNGE_S, { hit: 0.25, recover: 0.75, recoverAmt: 0.55, tremble: 0.02 }),
       roar: act2(B_ROAR_W, B_ROAR_S, { hit: 0.15, recover: 0.8, tremble: 0.05, strikeExtra: (P, p, m) => { const k = bump(0.1, 0.8, p) * 0.04; P.r('chest', Math.sin(m.time * 45) * k, Math.sin(m.time * 38) * k); } }),
@@ -259,7 +359,7 @@ export const hollowKing = {
         const t = Math.max(s.t, s.progress * 1.1), f = smooth(1.0, 1.7, t), roll = smooth(1.6, 3.0, t);
         P.p('crown', 0.25 * f + 0.25 * roll, -1.05 * easeIn(f), 0.35 * f + 0.2 * roll); P.r('crown', 1.3 * f, 0.6 * f + 2 * roll, 0.4 * f + 0.25 * roll);
       }
-      if (s.anim === 'cast' && (s.attackType === 'beam' || s.attackType === 'summon')) m.setOrb(0.3 + 0.7 * smooth(0, 0.3, s.progress) - smooth(0.85, 1, s.progress));
+      if (s.anim === 'cast' && (s.attackType === 'beam' || s.attackType === 'summon' || s.attackType === 'spiral' || s.attackType === 'judgment')) m.setOrb(0.3 + 0.7 * smooth(0, 0.3, s.progress) - smooth(0.85, 1, s.progress));
     },
   },
 };

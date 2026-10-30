@@ -8,7 +8,7 @@ import '@fontsource/im-fell-english/400-italic.css';
 import './ui/styles.css';
 import * as THREE from 'three';
 import { Renderer } from './render/renderer.js';
-import { Input, applyBindings } from './core/input.js';
+import { Input, applyBindings, KEYS } from './core/input.js';
 import { UI } from './ui/ui.js';
 import { Chat } from './ui/chat.js';
 import { BUILD, newerBuild } from './core/version.js';
@@ -36,6 +36,15 @@ let saved = null;
 try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null'); settings = { ...defaults, ...(saved ?? {}) }; } catch { /* ignore */ }
 // First visit: start at a quality the GPU can carry. Integrated / mobile GPUs
 // begin on Medium, software renderers on Low; dynamic resolution handles the rest.
+// stored settings are taken on trust nowhere: a value of the wrong kind falls back to its default and the sliders'
+// values to their range (a stray fov of -5 had the world through a 5-degree slit)
+for (const k of Object.keys(defaults)) {
+  const d = defaults[k], v = settings[k];
+  if (typeof v !== typeof d || (typeof d === 'number' && !Number.isFinite(v)) || (k === 'keys' && (!v || Array.isArray(v)))) settings[k] = d;
+}
+for (const [k, lo, hi] of [['master', 0, 1], ['music', 0, 1], ['sfx', 0, 1], ['sensitivity', 0.2, 3], ['fov', 65, 105], ['shake', 0, 1.5], ['hudScale', 0.75, 1.3]]) settings[k] = Math.min(hi, Math.max(lo, settings[k]));
+settings.name = settings.name.slice(0, 16);
+if (!['low', 'medium', 'high', 'ultra'].includes(settings.quality)) delete saved?.quality;
 if (!saved?.quality) settings.quality = guessQuality();
 function guessQuality() {
   try {
@@ -140,6 +149,7 @@ function applyVolumes() {
   renderer.setCalm(settings.calm);
   if (game) game.contrastTele = !!settings.contrastTele;
   document.documentElement.style.setProperty('--hud-scale', String(settings.hudScale ?? 1));
+  ui?.layoutBar?.();
 }
 
 // first user gesture starts audio
@@ -290,8 +300,11 @@ function showMenu() {
     onHost: () => { audio?.init(); doHost(); },
     onJoin: () => { audio?.init(); mode = 'join'; const api = ui.showJoin({ onJoin: (c) => doJoin(c, api), onBack: () => { joinGen++; leaveNet(); showMenu(); } }); },
     onSettings: () => {
+      // a new quality takes a reload: once, on Done (it reloaded 150 ms after any change, so the panel shut
+      // under you mid-adjustment, and stepping through the list with the arrow keys reloaded every step)
       const q0 = settings.quality;
-      ui.showSettings(settings, (s) => { settings = s; saveSettings(); applyVolumes(); if (settings.quality !== q0 && mode !== 'run') setTimeout(() => location.reload(), 150); });
+      ui.showSettings(settings, (s) => { settings = s; saveSettings(); applyVolumes(); },
+        () => { if (settings.quality !== q0 && mode !== 'run') location.reload(); });
     },
     onHelp: () => ui.showHelp(),
   });
@@ -392,6 +405,7 @@ function beginRun(opts) {
   avatarGen++;
   dropMenuAvatar();
   nextAvatar?.av.dispose?.(); nextAvatar = null;
+  heldMsgs = [];
   ui.fadeOut(0.6, () => {
     game.menuMode = false;
     game.backdrop = null;
@@ -402,6 +416,8 @@ function beginRun(opts) {
     game.startRun({ ...opts, name: settings.name || 'Wizard', classId: selectedClass, floor: opts.floor ?? (+q.get('floor') || 0), abyss: opts.abyss ?? (+q.get('abyss') || 0) });
     if (opts.late) applyLateState(opts.late);
     if (opts.late && net && !net.isHost) net.send({ t: 'started' });
+    const held = heldMsgs ?? []; heldMsgs = null;
+    for (const [m, from] of held) handleGameMessage(game, m, from);
     ui.fadeIn(1.4);
     input.lock();
   });
@@ -442,7 +458,7 @@ async function doHost() {
     net.on(onLobbyMessage);
     net.on(onChatMessage);
     chat.setActive(true);
-    net.on((msg, from) => { if (mode === 'run' && game && !game.menuMode) handleGameMessage(game, msg, from); });
+    net.on(onGameMessage);
     net.onPeerLeft = (pid) => {
       lobby.players = lobby.players.filter((p) => p.id !== pid);
       pushRoster();
@@ -455,6 +471,16 @@ async function doHost() {
     alert('Could not open a co-op session: ' + (e.message ?? e.type ?? e) + '\nYou can still play solo.');
     showMenu();
   }
+}
+
+// The run's messages. Those that come while this peer is still fading into a run it just began (the
+// party may already be stepping through a portal, or a late joiner's floor changing under it) wait,
+// and are played once the run is up, in order.
+let heldMsgs = null;
+function onGameMessage(msg, from) {
+  if (mode !== 'run' || !game) return;
+  if (game.menuMode) { if (heldMsgs && heldMsgs.length < 4000) heldMsgs.push([msg, from]); return; }
+  handleGameMessage(game, msg, from);
 }
 
 let joinGen = 0;
@@ -474,11 +500,11 @@ async function doJoin(code, api) {
     net.on(onLobbyMessage);
     net.on(onChatMessage);
     chat.setActive(true);
-    net.on((msg, from) => { if (mode === 'run' && game && !game.menuMode) handleGameMessage(game, msg, from); });
+    net.on(onGameMessage);
     net.onDisconnect = () => {
       if (net !== myNet) return;
       if (mode === 'run') ui.banner('CONNECTION LOST', 'The host has left the party', '#c04030', 6);
-      setTimeout(() => { if (net !== myNet) return; leaveNet(); game.ended = true; startBackdrop(); showMenu(); }, mode === 'run' ? 4000 : 0);
+      setTimeout(() => { if (net !== myNet) return; if (mode === 'run' && game && !game.ended && !game.menuMode) game.events.emit('abandon'); leaveNet(); game.ended = true; startBackdrop(); showMenu(); }, mode === 'run' ? 4000 : 0); // (the run so far is kept, as one left)
     };
     net.send({ t: 'hello', name: settings.name || 'Wizard', cls: selectedClass, v: BUILD, p: PROTOCOL });
     showSelect({ isHost: false, code: net.code });
@@ -510,17 +536,21 @@ function onLobbyMessage(msg, from) {
       net.sendTo(from, { t: 'welcome', id: from, v: BUILD, p: PROTOCOL });
       pushRoster();
       audio?.play('ui_click');
-      if (mode === 'run' && game && !game.menuMode && !game.ended) {
-        // late join: bring them into the current floor; actors follow once they report 'started'
+      // late join: bring them into the current floor; actors follow once they report 'started'. Not in the
+      // middle of a floor change or of the host's own way into the run: it waits for the floor to settle.
+      const lateStart = () => {
+        if (mode !== 'run' || !game || game.ended || !lobby.players.includes(p)) return;
+        if (game.menuMode || game.transitioning || game.loadingFloor) { setTimeout(lateStart, 300); return; }
         net.sendTo(from, { t: 'start', seed: game.seed, players: lobby.players, floor: game.floorIndex, ab: game.abyss ?? 0, late: lateState(), pk: game.difficulty?.pacts ?? {} });
         game.addRemote(p);
-      }
+      };
+      if (mode === 'run' && game && !game.ended) lateStart();
     } else if (msg.t === 'started') {
       if (mode !== 'run' || !game || game.menuMode) return;
       for (const a of game.actors.list) {
         if (a.dead) continue;
-        net.sendTo(from, { t: 'spawn', id: a.id, ty: a.type, x: a.pos.x, z: a.pos.z, yaw: a.yaw, e: a.elite ? 1 : 0, hp: a.maxHp, f: a.faction === 'ally' ? 1 : 0, af: a.affix, af2: a.affix2, fly: a.brain?.data?.fly ? 1 : 0 });
-        if (a.boss) net.sendTo(from, { t: 'boss', id: a.id });
+        net.sendTo(from, { t: 'spawn', id: a.id, ty: a.type, x: a.pos.x, z: a.pos.z, yaw: a.yaw, e: a.elite ? 1 : 0, hp: a.maxHp, f: a.faction === 'ally' ? 1 : 0, af: a.affix, af2: a.affix2, fly: a.brain?.data?.fly ? 1 : 0, dm: a.dormant ? 1 : 0 });
+        if (a.boss) net.sendTo(from, { t: 'boss', id: a.id, late: 1 }); // (mid-fight: no entrance for them)
       }
       const act = game.director.active;
       if (act) net.sendTo(from, { t: 'tp', x: act.room.cx, z: act.room.cz });
@@ -559,7 +589,7 @@ function onLobbyMessage(msg, from) {
 }
 
 function hostStart() {
-  const seed = Math.floor(Math.random() * 1e9);
+  const seed = +new URLSearchParams(location.search).get('seed') || Math.floor(Math.random() * 1e9); // (?seed=: a test hook, as solo)
   const me = lobby.players.find((p) => p.host);
   me.classId = selectedClass;
   const pk = currentPacts();
@@ -576,6 +606,9 @@ function applyLateState(s) {
   if (s.active >= 0) game.setRoomLocked(s.active, true);
   for (const i of s.broken ?? []) game.breakProp(i, false);
 }
+
+// a closing tab says goodbye: its party sees it go at once, not when WebRTC notices (if ever)
+addEventListener('pagehide', (e) => { if (!e.persisted) net?.close(); });
 
 function leaveNet() {
   if (net) { net.close(); net = null; }
@@ -647,6 +680,11 @@ input.onLockChange = (locked) => {
     game.paused = false;
   }
 };
+// P (pause's other key; Escape is the browser's own: it releases the mouse) lets the mouse go too, which pauses
+window.addEventListener('keydown', (e) => {
+  if (e.repeat || e.code === 'Escape' || !KEYS.pause.includes(e.code) || e.target?.closest?.('input, textarea, [contenteditable]')) return;
+  if (mode === 'run' && game && !game.ended && input.locked) input.unlock();
+});
 // any click during a run takes the mouse back when nothing is asking for it
 // (not just one on the bare canvas: the HUD covers much of it)
 window.addEventListener('mousedown', () => {
@@ -657,6 +695,23 @@ window.addEventListener('mousedown', () => {
 // main loop
 // ---------------------------------------------------------------------------
 let last = performance.now();
+// A hidden tab gets no animation frames: a co-op run's world would stop for the whole party while the host
+// looked away (and a client would go quiet). While hidden, a timer steps the game unrendered instead.
+let rafAt = 0, hiddenAt = 0, hiddenTimer = null;
+document.addEventListener('visibilitychange', () => {
+  clearInterval(hiddenTimer); hiddenTimer = null;
+  if (!document.hidden) return;
+  input.down.clear(); input.mouse.left = input.mouse.right = false; // (no key is held in a tab no one is looking at)
+  hiddenAt = performance.now();
+  hiddenTimer = setInterval(() => {
+    const now = performance.now();
+    let dt = Math.min(1, (now - hiddenAt) / 1000);
+    hiddenAt = now;
+    if (now - rafAt < 250 || mode !== 'run' || !game || game.isSolo || game.menuMode || game.loadingFloor || game.ended || window.__freeze) return;
+    for (; dt > 0.001; dt -= 0.05) game.update(Math.min(0.05, dt));
+    input.endFrame();
+  }, 50);
+});
 const perf = { frames: 0, t: 0, warned: false, fps: 60 };
 const fpsEl = document.createElement('div');
 fpsEl.style.cssText = 'position:fixed;right:8px;top:4px;z-index:60;font:12px monospace;color:#9a8;pointer-events:none;text-shadow:0 1px 2px #000';
@@ -697,6 +752,7 @@ function loop(now) {
   requestAnimationFrame(loop);
   let dt = (now - last) / 1000;
   last = now;
+  rafAt = performance.now();
   perf.frames++; perf.t += dt;
   if (perf.t >= 1) {
     perf.fps = perf.frames / perf.t;
@@ -727,7 +783,7 @@ function loop(now) {
       const cam = renderer.camera;
       for (const f of game.built.flames) {
         const dx = f.x - cam.position.x, dz = f.z - cam.position.z;
-        if (dx * dx + dz * dz < 1300) game.vfx.flame(f, dt);
+        if (dx * dx + dz * dz < 1300 && f.gpu === undefined) game.vfx.flame(f, dt); // (candles burn on the GPU)
       }
       game.selfLight.intensity = 0;
       game.lights.update(dt, game.time, cam.position);
@@ -742,7 +798,7 @@ function loop(now) {
       if (!window.__freeze) game.update(dt);
     }
   }
-  if (!NORENDER) renderer.render(performance.now() / 1000);
+  if (!NORENDER) { game?.built?.cull?.(renderer.camera.position); renderer.render(performance.now() / 1000); }
   input.endFrame();
 }
 

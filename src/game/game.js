@@ -4,6 +4,12 @@ import { LightPool } from '../render/lights.js';
 import { Particles, SPR } from '../render/particles.js';
 import { VFX, fxOf } from '../render/vfx.js';
 import { ContactShadows } from '../render/contact.js';
+import { Storm } from '../render/storm.js';
+import { Debris } from '../render/debris.js';
+import { Hangers } from '../world/hangers.js';
+import { Flotsam } from '../world/flotsam.js';
+import { BossIntro } from './bossIntro.js';
+import { waterRipple } from '../world/materials.js';
 import { generateLevel, ROOM, T, K_ALT, K_WATER, WATER_Y } from '../world/levelgen.js';
 import { keyOf } from '../core/input.js';
 import { PACTS, PACT_BY_ID, difficultyFor, abyssLaws, lawAt } from '../meta/pacts.js';
@@ -36,6 +42,7 @@ import { clamp } from '../core/math.js';
 import { Emitter } from '../meta/emitter.js';
 
 const WADE_C = [0.16, 0.22, 0.22]; // ripple rings on channel water
+const _splashV = new THREE.Vector3();
 
 // ---------------------------------------------------------------------------
 // Game: owns the world for one run and wires every system together.
@@ -64,6 +71,18 @@ const STREAKS = [
 const _nmFog = new THREE.Color(0x2a0606);
 const DREAD_MAX = 12;
 const _gp = new THREE.Vector3(), _gq = new THREE.Vector3();
+// what flies off a struck foe, by what it is made of (its hit sound says): see hitActor
+const MAT_HIT = {
+  enemy_hit_armor: { count: 5, speed: 7, spread: 0.8, life: 0.3, size: 0.045, sprite: SPR.SPARK, gravity: 9, drag: 3, stretch: 0.03, color: [3.2, 2.4, 1.3], color2: [1.2, 0.4, 0.1], dir: null },
+  enemy_hit_bone: { count: 4, speed: 4, spread: 0.9, life: 0.6, size: 0.06, sprite: SPR.CHUNK, gravity: 14, drag: 1, solid: true, spin: 6, color: [0.75, 0.72, 0.62], color2: [0.55, 0.5, 0.42], dir: null },
+  slime_squish: { count: 5, speed: 3.5, spread: 0.9, life: 0.6, size: 0.08, sprite: SPR.DROP, gravity: 12, drag: 1, solid: true, stretch: 0.02, color: [0.3, 0.55, 0.1], color2: [0.15, 0.3, 0.05], dir: null },
+  enemy_hit: { count: 4, speed: 3.5, spread: 0.7, life: 0.55, size: 0.06, sprite: SPR.DROP, gravity: 14, drag: 1, solid: true, stretch: 0.03, color: [0.32, 0.02, 0.03], color2: [0.18, 0, 0.01], dir: null },
+};
+MAT_HIT.paper = { count: 4, speed: 3, spread: 1, life: 0.9, size: 0.07, sprite: SPR.FEATHER, gravity: 3, drag: 2, solid: true, spin: 5, color: [0.62, 0.55, 0.4], color2: [0.45, 0.38, 0.26], dir: null };
+MAT_HIT.ember = { count: 5, speed: 5, spread: 0.9, life: 0.5, size: 0.04, sprite: SPR.EMBER, gravity: -1, drag: 2, color: [3, 1.2, 0.3], color2: [0.8, 0.15, 0], dir: null };
+// (by type, where the hit sound doesn't say: spirits shed nothing, a book its pages, an imp embers)
+const MAT_OF = { wraith: null, specter: null, spiritWolf: null, slimeling: 'slime_squish', motherOfFilth: 'slime_squish', skeletonMinion: 'enemy_hit_bone', archivistLich: 'enemy_hit_bone', grimoire: 'paper', imp: 'ember', mimic: 'paper' };
+const _mdir = new THREE.Vector3();
 export class Game {
   constructor({ renderer, input, audio, ui, settings }) {
     this.renderer = renderer;
@@ -83,10 +102,20 @@ export class Game {
     this.contact = new ContactShadows(this.scene);
     this.spells = new SpellRuntime(this);
     this.actors = new ActorManager(this);
+    this.vfx.onBlast = (c, r) => this.actors.blastCorpses(c, r);
     this.director = new Director(this);
     this.encounters = new Encounters(this);
     this.relics = new RelicRuntime(this);
     this.time = 0;
+    this.storm = null;
+    this._hzBusy = false; // (inside the hazard loop: see cancelHazardsFrom)
+    this.debris = null; // (wreckage of smashed barrels and crates: render/debris.js)
+    this.rubble = null; // (and the same in stone: a broken wall's blocks)
+    this.hangers = null; // (the Oubliette's swinging cages and chains: world/hangers.js)
+    this.flotsam = null; // (wood riding the Sewers' channels: world/flotsam.js)
+    this._courtK = 0; // (the Hollow Throne's dead court fading out while a fight is on: 0..1)
+    this._gpD = new Float32Array(8); this._gpA = new Array(8).fill(null); // (_grassPush's nearest foes)
+    this._bolt = { a: new THREE.Vector3(), b: new THREE.Vector3(), o: { jag: 7, width: 0.55, life: 0.22, branches: 3, seg: 3.5, color: [2.2, 2.5, 3.4] } };
     this.remotes = new Map();
     this.hazards = [];
     this.pools = [];
@@ -124,7 +153,7 @@ export class Game {
     this._aimT = 0; // (the crosshair's weak-point probe: next run)
     this._learned = null; this._dashN = 0; // (once-ever tips: learn())
     this.events.on('dashJump', () => this.learn('dashjump'));
-    this.events.on('perfectDodge', () => { if (this.isHost) this._bossDodge(); else this.net?.send?.({ t: 'pdodge' }); });
+    this.events.on('perfectDodge', (from) => { if (!from?.boss) return; if (this.isHost) this._bossDodge(); else this.net?.send?.({ t: 'pdodge' }); });
     // (Nightmare) a chamber you leave untouched earns a Dread Mark: watch what the local player takes per fight
     this.events.on('roomLock', (room, on) => { if (on) { this._fightRoom = room; this._fightHurt = 0; } });
     this.events.on('hurt', (dmg) => { if (this._fightRoom) this._fightHurt += dmg; });
@@ -150,6 +179,7 @@ export class Game {
   // ======================================================================
   startRun({ seed, localId, name, classId, isHost, net, players = [], floor = 0, abyss = 0 }) {
     this.player?.endChannel();
+    this.runId = (this.runId ?? 0) + 1; // (a fade's callback checks it is still its own run)
     this.abyss = abyss; // the Abyss: how many times the party has descended past the Hollow King
     if (abyss) this.difficulty = abyssLaws(this.difficulty, abyss);
     this.cinematic = null;
@@ -199,12 +229,18 @@ export class Game {
     this.relics?.onPeerJoin();
     this.ui?.toast(`${p.name} joined as ${CLASS_META[p.classId].name}`);
   }
+  // which floor a peer's message was sent on (a prop index or a spot means nothing on the next one)
+  floorTag() { return { f: this.floorIndex, ab: this.abyss ?? 0 }; }
+  onFloor(msg) { return msg.f === undefined || (msg.f === this.floorIndex && (msg.ab ?? 0) === (this.abyss ?? 0) && !this.loadingFloor); }
   removeRemote(id) {
     const r = this.remotes.get(id);
     if (!r) return;
     r.dispose();
     this.remotes.delete(id);
     this._partyGen = (this._partyGen ?? 0) + 1;
+    // the last teammate gone: solo again (pause, a second wind...); a new one joining makes it a party again
+    // (the run's record keeps that it was played in co-op)
+    if (!this.remotes.size) this.isSolo = true;
     if (this.isHost) this.director?.rescaleBosses();
     this.ui?.toast(`${r.name} left the party`);
   }
@@ -223,8 +259,10 @@ export class Game {
 
   loadFloor(index) {
     this.player?.endChannel();
+    if (this.player) this.player.downsThisRoom = 0; // (falls in the boss's chamber don't shorten the next realm's bleed-out)
     // tear down
     if (this.built) { this.scene.remove(this.built.group); this.built.dispose(); }
+    if (this.storm) { this.storm.dispose(); this.storm = null; }
     for (const i of this.interactables) i.dispose?.();
     this.interactables = [];
     this.spells.clear();
@@ -235,6 +273,7 @@ export class Game {
     for (const h of this.hazards) h.wall?.end();
     this.hazards = [];
     this.pools = [];
+    this.pings = []; // (a ping marks a spot in the realm it was made in)
 
     this.floorIndex = index;
     // (each descent into the Abyss lays the realms out anew)
@@ -246,6 +285,22 @@ export class Game {
     this.texFactory.endFloor(); // the last realm's own wall and floor textures
     this.critters?.dispose();
     this.critters = this.settings?.quality === 'low' ? null : new Critters(this.scene, level);
+    this.hangers?.dispose();
+    this.hangers = level.biome.id === 'dungeon' ? new Hangers(this.scene, level, this.built.mats, { quality: this.settings?.quality }) : null;
+    this.built.wisps?.setEye(this.renderer.camera.position);
+    this.built.court?.setEye(this.renderer.camera.position);
+    this._courtK = 0;
+    if (this.cinematic) { this.cinematic.end?.(); this.cinematic = null; }
+    this.flotsam?.dispose();
+    this.flotsam = level.biome.id === 'sewers' ? new Flotsam(this.scene, level, this.built.mats, { quality: this.settings?.quality }) : null;
+    // the hanging lanterns burn and light the middle of their rooms
+    for (const l of this.hangers?.lanterns ?? []) {
+      this.lights.addTorch(new THREE.Vector3(l.x, l.y + 0.1, l.z), { color: level.biome.torchColor, intensity: 26, range: 15 });
+      this.built.flames.push({ x: l.x, y: l.y, z: l.z, size: 0.42, kind: 'fire', color: level.biome.torchColor });
+    }
+    this.debris?.dispose(); this.rubble?.dispose();
+    this.debris = new Debris(this.scene, this.built.mats.wood, this.collision);
+    this.rubble = new Debris(this.scene, this.built.mats.stone, this.collision);
     this.scene.add(this.built.group);
     this.built.onDoorSlam = (d) => {
       const door = d.door;
@@ -343,6 +398,13 @@ export class Game {
     this.ui?.deadline(this.deadline);
     if (index === 0 && !this.menuMode) this._tutorialTips();
     this.events.emit('floor', index);
+    // a storm over an open-air realm (before the prewarm, so the rain's program compiles with the rest)
+    if (b.storm) {
+      const q = this.settings.quality ?? 'high';
+      this.storm = new Storm(this.scene, { count: q === 'low' ? 900 : q === 'medium' ? 1700 : 2600 });
+      this.storm.onThunder = (delay) => this.audio?.play('thunder', { volume: 0.35 + 0.45 * (1 - delay / 2.4) });
+      this.storm.onStrike = (first) => this._skyBolt(first);
+    }
     this._prewarm(level);
   }
 
@@ -391,6 +453,9 @@ export class Game {
         f._opacity = 0.5; f._applyMats();
         place(f.root);
         hold.push(() => f.dispose?.());
+        // and a corpse burning away swaps to its dissolve programs: warm a half-burnt copy
+        const d = getEnemyModelSafe(t, this);
+        if (d?.setDissolve) { d.setDissolve(0.5); place(d.root); hold.push(() => d.dispose?.()); } else d?.dispose?.();
       }
       for (const o of menu ? [] : this.spells.warmObjects()) place(o);
       for (const o of menu ? [] : warmEruptionMeshes()) place(o);
@@ -541,12 +606,16 @@ export class Game {
     this.built.hideBreakable(b);
     const gy = this.groundY(b.x, b.z);
     const c = new THREE.Vector3(b.x, gy + 0.5, b.z);
-    this.vfx.burst(c, { count: 22, speed: 6, life: 1.1, size: 0.12, sprite: SPR.CHUNK, solid: true, color: [0.34, 0.22, 0.12], color2: [0.25, 0.16, 0.09], gravity: 16, spin: 8, upward: 0.8 });
+    this.vfx.burst(c, { count: 12, speed: 6, life: 1.1, size: 0.1, sprite: SPR.CHUNK, solid: true, color: [0.34, 0.22, 0.12], color2: [0.25, 0.16, 0.09], gravity: 16, spin: 8, upward: 0.8 });
+    // and real wreckage: staves and a lid off a barrel, planks and battens off a crate (a keg's blast flings them)
+    const D = this.debris, hard = b.type === 'keg' ? 1.8 : 1;
+    if (D && b.type === 'crate') { D.burst(b.x, gy + 0.5, b.z, 8, 0.6, 0.13, 0.025, 4 * hard, 3.5 * hard); D.burst(b.x, gy + 0.5, b.z, 3, 0.55, 0.07, 0.06, 3 * hard, 3 * hard); }
+    else if (D) { D.burst(b.x, gy + 0.5, b.z, 9, 0.12, 0.62, 0.025, 4 * hard, 3.5 * hard); D.burst(b.x, gy + 0.9, b.z, 2, 0.4, 0.4, 0.03, 2.5 * hard, 4.5 * hard, 0.1); }
     this.vfx.smoke(c, { count: 4, size: 0.6, color: [0.3, 0.26, 0.2], alpha: 0.4, life: 1.4 });
     if (b.type === 'barrel' && Math.random() < 0.5) this.vfx.burst(c, { count: 16, speed: 3, life: 0.8, size: 0.06, sprite: SPR.DROP, solid: true, color: [0.25, 0.12, 0.05], gravity: 12, upward: 1 });
     if (b.type === 'keg') this.spells.after(0.18, () => this._kegBlast(b, c, local));
     this.audio?.play('impact_earth', { pos: c, volume: 0.7 });
-    if (local) this.net?.broadcastOrSend({ t: 'brk', i });
+    if (local) this.net?.broadcastOrSend({ t: 'brk', i, ...this.floorTag() });
     if (this.isHost && Math.random() < 0.35) this.spawnDrop(Math.random() < 0.2 ? 'health' : 'gold', c, Math.random() < 0.2 ? 15 : 3 + this.floorIndex * 2);
   }
 
@@ -560,6 +629,7 @@ export class Game {
     const R = 3.6;
     this.vfx.explosion(c, 'fire', R, { groundY: c.y - 0.5 });
     this.critters?.startle(c, 14);
+    this.rattleHangers(c, R * 2.2, 1.4);
     this.vfx.addShake?.(0.35);
     this.audio?.play('explosion_big', { pos: c });
     const p = this.player;
@@ -584,13 +654,33 @@ export class Game {
     const rnd = (r) => (Math.random() - 0.5) * r;
     // dust motes everywhere (catch the torchlight)
     if (Math.random() < dt * 14) P.glow({ x: cam.x + rnd(16), y: cam.y + rnd(4), z: cam.z + rnd(16), vx: rnd(0.15), vy: rnd(0.08), vz: rnd(0.15), r: 0.5, g: 0.42, b: 0.32, life: 6, size: 0.025, sprite: SPR.GLOW, drag: 0.2 });
+    // dust hanging in the window light: motes drift slowly through each beam near you, bright in it
+    for (const sh of this.built.shafts) {
+      if (Math.random() > dt * 9 || (sh.x - cam.x) ** 2 + ((sh.z0 + sh.z1) * 0.5 - cam.z) ** 2 > 500) continue;
+      const t = Math.random() * 0.9;
+      const k = 5 + Math.random() * 3;
+      P.glow({ x: sh.x + rnd(sh.w * (1 + t * 0.3)), y: sh.top * (1 - t) + 0.05 * t, z: sh.z0 + (sh.z1 - sh.z0) * t + rnd(0.6), vx: rnd(0.08), vy: -0.02 + rnd(0.04), vz: rnd(0.08), r: sh.col.r * k + 0.15, g: sh.col.g * k + 0.13, b: sh.col.b * k + 0.12, life: 4 + Math.random() * 3, size: 0.024 + Math.random() * 0.016, sprite: SPR.GLOW, drag: 0.3 });
+    }
     if (id === 'sewers' && Math.random() < dt * 4) {
       const x = cam.x + rnd(14), z = cam.z + rnd(14);
       const c = this.level.ceilAt(x, z);
-      if (c < 50) P.solid({ x, y: c - 0.1, z, vy: -1, r: 0.35, g: 0.45, b: 0.4, a: 0.7, life: 1.2, size: 0.04, sprite: SPR.DROP, gravity: 12, stretch: 0.02 });
+      if (c < 50) {
+        // a drip from the vault, gone where it lands; into the channel it rings the water
+        const wet = this.level.kind[this.level.idx(Math.floor(x / T), Math.floor(z / T))] === K_WATER;
+        const h = c - 0.1 - (wet ? WATER_Y : this.groundY(x, z)), fall = (-1 + Math.sqrt(1 + 24 * Math.max(0, h))) / 12;
+        P.solid({ x, y: c - 0.1, z, vy: -1, r: 0.35, g: 0.45, b: 0.4, a: 0.7, life: fall, size: 0.04, sprite: SPR.DROP, gravity: 12, stretch: 0.02 });
+        if (wet) this.spells.after(fall, () => waterRipple(x, z, 0.55));
+      }
     }
     if (id === 'courtyard' && Math.random() < dt * 6) {
       P.glow({ x: cam.x + rnd(20), y: cam.y + rnd(2) - 0.5, z: cam.z + rnd(20), vx: rnd(0.6), vy: rnd(0.3), vz: rnd(0.6), r: 1.6, g: 2.2, b: 0.6, life: 4, size: 0.04, sprite: SPR.GLOW, drag: 0.1 });
+    }
+    // the storm's rain landing: a couple of flecks thrown up off the stones near you
+    if (this.storm && Math.random() < dt * 40) {
+      const x = cam.x + rnd(14), z = cam.z + rnd(14), gy = this.groundY(x, z);
+      const cell = this.level.cells[Math.floor(z / T) * this.level.W + Math.floor(x / T)];
+      if (cell === 1 && this.level.kind[Math.floor(z / T) * this.level.W + Math.floor(x / T)] === K_WATER) waterRipple(x, z, 0.4);
+      else if (cell === 1) for (let k = 0; k < 2; k++) P.glow({ x, y: gy + 0.04, z, vx: rnd(1), vy: 1 + Math.random() * 1.2, vz: rnd(1), r: 0.42, g: 0.48, b: 0.6, life: 0.24, size: 0.022, size2: 0.012, sprite: SPR.GLOW, gravity: 10 });
     }
     if (id === 'courtyard' && Math.random() < dt * 3) {
       P.solid({ x: cam.x + rnd(24), y: cam.y + 6, z: cam.z + rnd(24), vx: 1.2, vy: -0.6, vz: rnd(0.5), r: 0.25, g: 0.2, b: 0.12, a: 0.8, life: 7, size: 0.06, sprite: SPR.FEATHER, spin: 2 });
@@ -614,6 +704,11 @@ export class Game {
     if (this.abyss && Math.random() < dt * 8) {
       const c = ABYSS_TINT[(this.abyss - 1) % ABYSS_TINT.length].rc;
       P.glow({ x: cam.x + rnd(18), y: cam.y - 1.5 + rnd(2), z: cam.z + rnd(18), vx: rnd(0.2), vy: 0.35 + Math.random() * 0.3, vz: rnd(0.2), r: c[0] * 1.4, g: c[1] * 1.4, b: c[2] * 1.4, r2: c[0] * 0.2, g2: c[1] * 0.2, b2: c[2] * 0.2, life: 6, size: 0.05, sprite: SPR.EMBER, drag: 0.15 });
+    }
+    // the oubliettes breathe: cold mist welling up out of each shaft near you and spilling over the grate
+    for (const pit of this.level.pits) {
+      if ((pit.x - cam.x) ** 2 + (pit.z - cam.z) ** 2 > 900 || Math.random() > dt * 7) continue;
+      P.solid({ x: pit.x + rnd(1.4), y: pit.y - 1.2 - Math.random() * 1.2, z: pit.z + rnd(1.4), vx: rnd(0.2), vy: 0.55 + Math.random() * 0.35, vz: rnd(0.2), r: 0.3, g: 0.37, b: 0.42, a: 0.16, life: 4 + Math.random() * 2, size: 0.9, size2: 2.4, sprite: SPR.SMOKE, spin: 0.08, drag: 0.35 });
     }
     // the dungeon: grit sifting down from the vaults now and then
     if (id === 'dungeon' && Math.random() < dt * 1.5) {
@@ -640,8 +735,9 @@ export class Game {
       if (u >= 1) this.slow = null;
       else dt *= this.slow.k + (1 - this.slow.k) * u * u;
     }
-    this.time += dt;
-    if (!this.paused || !this.isSolo) this.stats.time += realDt; // a paused solo run isn't run time
+    // a paused solo run's clock stands still: a trial's limit, a boss's gate and exposed window, a buff's
+    // end are all moments on it (and it isn't run time)
+    if (!this.paused || !this.isSolo) { this.time += dt; this.stats.time += realDt; }
     const input = this.input;
     const p = this.player;
 
@@ -670,7 +766,16 @@ export class Game {
     this._ventTells(realDt);
     this._ambient(realDt);
     this.critters?.update(dt, this.time, this.renderer.camera.position, this.allPlayers());
+    this.debris?.update(dt, this.actors._floor);
+    this.hangers?.update(dt, this.time, this.renderer.camera.position);
+    this.flotsam?.update(dt, this.time, this.renderer.camera.position);
+    if (this.biome?.outdoor) this._grassPush();
+    this.rubble?.update(dt, this.actors._floor);
     this.contact.update(this);
+    if (this.storm) {
+      this.storm.calm = !!this.settings.calm; this.storm.update(realDt, this.time, this.renderer.camera.position);
+      if (this.built?.sky) this.built.sky.material.uniforms.uFlash.value = this.storm.flash;
+    }
     if (this._gated) this._gateFx(dt);
     // big boss arenas outgrow the light pool: lift the ambient a little while you stand in one
     if (this.baseHemi && !this.ended && !this._victoryLight) {
@@ -678,6 +783,13 @@ export class Game {
       const inArena = br && this.level.roomAt(pp.x, pp.z) === br && !this.biome.outdoor;
       const want = this.baseHemi * (inArena ? 1.9 : 1) * this.encounters.hemiK;
       this.hemi.intensity += (want - this.hemi.intensity) * Math.min(1, realDt * 1.5);
+      // lightning: the sky lights the whole bailey for an instant (set, not eased: then straight back)
+      const fl = this.storm?.flash ?? 0;
+      if (fl > 0 || this._flashing) {
+        this._flashing = fl > 0;
+        this.hemi.intensity = want * (1 + 3.2 * fl);
+        if (this.moon) this.moon.intensity = (this.biome.moon?.intensity ?? 0) * (1 + 2 * fl);
+      }
     }
 
     // camera & lighting
@@ -691,11 +803,17 @@ export class Game {
     const cx = cam.position.x, cz = cam.position.z;
     for (const f of this.built.flames) {
       const dx = f.x - cx, dz = f.z - cz;
-      if (dx * dx + dz * dz > 1300 || f.out) continue;
+      if (dx * dx + dz * dz > 1300 || f.out || f.gpu !== undefined) continue; // (candles burn on the GPU: built.candles)
       this.vfx.flame(f, realDt);
     }
     this.lights.update(realDt, this.time, cam.position);
     this.built.update(realDt, this.time);
+    // the dead court flees a hall while a fight is on in it
+    if (this.built.court?.list.length) {
+      let on = 0; for (const r of this.level.rooms) if (r._locked) { on = 1; break; }
+      this._courtK += (on - this._courtK) * Math.min(1, realDt * (on ? 2.5 : 0.6));
+      this.built.court.setFight(this._courtK);
+    }
     this.vfx.update(dt, this.time, realDt);
     this.particles.update(this.time);
     this._viewModel(realDt);
@@ -705,6 +823,13 @@ export class Game {
     const mx = Math.round(cx / snap) * snap, mz = Math.round(cz / snap) * snap;
     this.moon.target.position.set(mx, 0, mz);
     this.moon.position.set(mx + 30, 70, mz - 60);
+    // a lightning flash lights the bailey from the bolt: the moon's light (and every shadow) swings to it
+    // for the instant of the flash (the shadow map is redrawn each frame anyway)
+    if (this.storm && this.storm.flash > 0.15) {
+      const B = this._bolt.a;
+      _v.set(B.x - mx, 0, B.z - mz).setLength(60); _v.y = 70;
+      this.moon.position.set(mx + _v.x, _v.y, mz + _v.z);
+    }
     // audio listener
     this.audio?.setListener(cam.position, p.forward());
     this.audio?.setIntensity?.(p.alive && !p.downed ? clamp(1 - p.hp / p.maxHp - 0.4, 0, 1) * 1.6 : 1);
@@ -762,6 +887,7 @@ export class Game {
     const cam = this.renderer.camera.position;
     if ((cam.x - e.pos.x) ** 2 + (cam.z - e.pos.z) ** 2 > 600) return;
     this.vfx.ring({ x: e.pos.x, y: WATER_Y - 0.05, z: e.pos.z }, r + 0.45, WADE_C, 1.1, 0.07);
+    waterRipple(e.pos.x, e.pos.z, 0.9);
     if (Math.random() < 0.5) this.vfx.burst(new THREE.Vector3(e.pos.x, WATER_Y, e.pos.z), { count: 4, speed: 1.6, upward: 1, gravity: 9, life: 0.35, size: 0.045, sprite: SPR.DROP, color: [0.5, 0.6, 0.6], solid: true });
   }
 
@@ -802,6 +928,10 @@ export class Game {
       const k = Math.min(1, this.tint.t * 3);
       g.uTint.value.set(1 + (this.tint.rgb[0] - 1) * k, 1 + (this.tint.rgb[1] - 1) * k, 1 + (this.tint.rgb[2] - 1) * k);
     } else g.uTint.value.set(...this.encounters.tint); // room modifiers grade the view while you're in them
+    // a lightning flash: the view blooms cold and bright for the instant (calm mode's flash is already dimmed)
+    const fl = this.storm?.flash ?? 0;
+    if (fl > 0) { const t = g.uTint.value; t.set(t.x * (1 + 1.1 * fl), t.y * (1 + 1.25 * fl), t.z * (1 + 1.6 * fl)); }
+    g.uFlash.value.set(0.018 * fl, 0.022 * fl, 0.034 * fl);
   }
 
   screenTint(rgb, dur) { this.tint = { rgb, t: dur }; }
@@ -822,24 +952,87 @@ export class Game {
     this.ui?.prompt(`Spectating ${r.name} — you return when the chamber is cleared · [Space] next`);
   }
 
-  // boss intro: pull the camera's gaze to the boss for a moment
+  // a boss's entrance has the camera (game/bossIntro.js)
   _cinematicCam(cam, dt) {
-    const c = this.cinematic;
-    c.t += dt;
-    const a = c.target;
-    if (!a || a.dead || c.t >= c.dur) { this.cinematic = null; this.ui?.letterbox(false); return; }
-    const k = c.t < 0.5 ? c.t / 0.5 : c.t > c.dur - 0.5 ? (c.dur - c.t) / 0.5 : 1;
-    const e = k * k * (3 - 2 * k);
-    const look = new THREE.Vector3(a.pos.x, a.pos.y + a.height * 0.65, a.pos.z);
-    const m = new THREE.Matrix4().lookAt(cam.position, look, new THREE.Vector3(0, 1, 0));
-    const q = new THREE.Quaternion().setFromRotationMatrix(m);
-    cam.quaternion.slerp(q, e);
-    cam.fov = this.renderer.baseFov - 18 * e;
-    cam.updateProjectionMatrix();
-    if (c.t > 0.9 && !c.roared) { c.roared = true; this.vfx.addShake(0.5); this.audio?.play('boss_roar', { pos: a.pos }); }
+    if (!this.cinematic.update(cam, dt)) this.cinematic = null;
   }
 
   groundY(x, z) { return this.level ? this.level.floorAt(x, z) : 0; }
+
+  // the grass parts round the wizards and the foes nearest the eye (8 at most: see the grass shader)
+  _grassPush() {
+    const B = this.built, cam = this.renderer.camera.position, D = this._gpD, A = this._gpA;
+    let n = 0, m = 0;
+    for (const pl of this.allPlayers()) { if (n < 3 && !pl.dead) B.setGrassPush(n++, pl.pos.x, pl.pos.z, 0.9); }
+    const cap = 8 - n;
+    for (const a of this.actors.list) {
+      if (a.dead || a.flying) continue;
+      const d = (a.pos.x - cam.x) ** 2 + (a.pos.z - cam.z) ** 2;
+      if (d > 400 || (m === cap && d >= D[m - 1])) continue;
+      // (kept sorted, nearest first: insert, the farthest falling off the end)
+      let j = m < cap ? m++ : m - 1;
+      while (j > 0 && D[j - 1] > d) { D[j] = D[j - 1]; A[j] = A[j - 1]; j--; }
+      D[j] = d; A[j] = a;
+    }
+    for (let k = 0; k < m; k++) B.setGrassPush(n++, A[k].pos.x, A[k].pos.z, 0.55 + A[k].radius);
+    for (; n < 8; n++) B.setGrassPush(n, 0, 0, 0);
+  }
+  // an Oubliette room's cell doors fling open as its fight begins (the host decides; every peer opens them):
+  // their bars stop blocking at once, and the doors swing out one after another with a bang and grit
+  openCells(room, local) {
+    if (!room?.cells || room.cellsOpen) return;
+    room.cellsOpen = true;
+    const level = this.level;
+    room.cells.forEach((c, k) => {
+      this.collision.removeCollider(c.col);
+      c.open = true;
+      this.spells.after(k * 0.14 + Math.random() * 0.08, () => {
+        if (this.level !== level) return;
+        this.built.openCellDoor(c.bars);
+        const gy = this.groundY(c.bars.x, c.bars.z);
+        this.audio?.play('cell_open', { pos: _splashV.set(c.bars.x, gy + 1.5, c.bars.z), volume: 0.85 });
+        this.vfx.smoke(_splashV.set(c.bars.x, gy + 0.4, c.bars.z), { count: 4, size: 0.9, color: [0.3, 0.27, 0.24], alpha: 0.35, life: 1.6, spread: 1.6 });
+        for (let i = 0; i < 6; i++) this.particles.solid({ x: c.bars.x + (Math.random() - 0.5) * 3, y: gy + 3.3, z: c.bars.z + (Math.random() - 0.5) * 0.4, vy: -0.5, r: 0.3, g: 0.26, b: 0.22, a: 0.6, life: 1.4, size: 0.03, sprite: SPR.CHUNK, gravity: 7 });
+      });
+    });
+    if (local) this.net?.broadcast({ t: 'cells', r: room.id });
+  }
+  // a foe goes down an oubliette: its cry, the grate rattling, and the word over the pit (every peer)
+  pitFallFx(a, pit, local) {
+    this.audio?.play(a.def.sound ?? 'beast_growl', { pos: a.pos, volume: 0.9, pitch: 1.15 });
+    this.audio?.play('cage_rattle', { pos: _splashV.set(pit.x, pit.y, pit.z), volume: 0.8 });
+    this.ui?.floatText(new THREE.Vector3(pit.x, pit.y + 1.6, pit.z), 'FORGOTTEN', '#9ab8c8', true);
+    this.spells.after(0.9, () => this.audio?.play('impact_earth', { pos: _splashV.set(pit.x, pit.y - 3, pit.z), volume: 0.5 }));
+    if (local) this.net?.broadcast({ t: 'pitfall', id: a.id, i: pit.i });
+  }
+  // a blast swings the Oubliette's cages and chains overhead, and the one it shoved hardest rattles
+  rattleHangers(p, r, k) {
+    const h = this.hangers?.push(p, r, k);
+    if (h) this.audio?.play('cage_rattle', { pos: _splashV.set(h.x, h.y - h.bottom * 0.8, h.z), volume: 0.7 });
+  }
+  // channel water here (its surface is WATER_Y; the floor under it is the bed)
+  waterAt(x, z) { const L = this.level; return !!L && L.kind[L.idx(Math.floor(x / T), Math.floor(z / T))] === K_WATER; }
+  // something landed in the water: rings it and throws up a splash, sized k (a footfall ~1, a blast 2-3)
+  splash(x, z, k = 1) {
+    waterRipple(x, z, Math.min(2.2, 0.8 + k * 0.5));
+    const cam = this.renderer.camera.position;
+    if ((cam.x - x) ** 2 + (cam.z - z) ** 2 > 900) return;
+    this.vfx.burst(_splashV.set(x, WATER_Y, z), { count: Math.round(5 + k * 6), speed: 1.6 + k * 1.1, upward: 1.6, gravity: 9, life: 0.45 + k * 0.1, size: 0.05 + k * 0.012, sprite: SPR.DROP, color: [0.5, 0.6, 0.6], solid: true, jitter: 0.15 * k });
+  }
+
+  // a lightning bolt in the sky, 55-85 m off, ahead of the wizard where they'll see it; each flash of a
+  // strike redraws it down the same path, newly forked
+  _skyBolt(first) {
+    const c = this.renderer.camera.position, B = this._bolt;
+    if (first) {
+      const ang = (this.player?.yaw ?? 0) + Math.PI + (Math.random() - 0.5) * 1.3, d = 55 + Math.random() * 30;
+      const x = c.x + Math.sin(ang) * d, z = c.z + Math.cos(ang) * d;
+      B.a.set(x + (Math.random() - 0.5) * 24, c.y + 75 + Math.random() * 20, z + (Math.random() - 0.5) * 24);
+      B.b.set(x, c.y + 4, z);
+      this.built?.sky?.material.uniforms.uBolt.value.set(B.a.x - c.x, B.a.y - c.y, B.a.z - c.z).normalize(); // (the clouds light up round it)
+    }
+    this.vfx.lightning(B.a, B.b, B.o);
+  }
 
   footstepSurface(pos) {
     const L = this.level;
@@ -897,7 +1090,6 @@ export class Game {
     if (res.crit && st.critHeal) p.heal(st.critHeal, true);
     // statuses: scale by status power and add class/tome extras
     let stPayload = H.st;
-    if (stPayload && stPayload.poison && st.poisonBonus && H.tag !== 'dot') stPayload = { ...stPayload, poison: [stPayload.poison[0], stPayload.poison[1]] };
     // relic procs (lightning strikes, glyphs, overkill arcs...) and the statuses they add
     if (this.relics) {
       const sl = this.spells.slot; this.spells.slot = 'other'; // (a relic's proc, and its timers, are the relic's damage)
@@ -906,7 +1098,25 @@ export class Game {
     }
     // local feedback
     if (dmg > 0) {
-      if (H.tag !== 'dot') a.hitFlash = res.crit ? 0.6 : 0.4;
+      if (H.tag !== 'dot') {
+        a.hitFlash = res.crit ? 0.6 : 0.4;
+        // the body rocks the way the blow pushed (from the wizard if it carried no push), harder for a big hit
+        const kd = H.kbDir, pp = this.player.pos;
+        const k = Math.min(1, 0.3 + (dmg / Math.max(1, a.maxHp)) * 4 + (res.crit ? 0.2 : 0)) * (a.boss ? 0.35 : 1);
+        if (kd) a.model?.kick?.(kd[0], kd[1], k); else a.model?.kick?.(a.pos.x - pp.x, a.pos.z - pp.z, k);
+        // and something of what was struck flies off it, away from the blow: sparks from plate and stone,
+        // chips from bone, goo from an ooze, blood from flesh (a few at most, near the camera, not every tick)
+        const mk = a.type in MAT_OF ? MAT_OF[a.type] : a.def.hitSound;
+        const M = mk === null ? null : MAT_HIT[mk] ?? MAT_HIT.enemy_hit;
+        const cp = this.renderer.camera.position;
+        if (this._matF !== this.time) { this._matF = this.time; this._matN = 0; } // (at most 6 a frame, however big the fight)
+        if (M && this._matN < 6 && this.time >= (a._matT ?? 0) && (a.pos.x - cp.x) ** 2 + (a.pos.z - cp.z) ** 2 < 625 && !a.def.phase) {
+          a._matT = this.time + 0.07; this._matN++;
+          const dx = kd ? kd[0] : a.pos.x - pp.x, dz = kd ? kd[1] : a.pos.z - pp.z, dl = Math.hypot(dx, dz) || 1;
+          M.dir = _mdir.set(dx / dl, 0.55, dz / dl);
+          this.vfx.burst(pos, M);
+        }
+      }
       // shield-bearers turn frontal hits: show it, so players learn to flank or stun them
       if (a.def.frontShield && H.tag !== 'dot' && !(a.st.stun?.t > 0)) {
         const pp = this.player.pos, dx = pp.x - a.pos.x, dz = pp.z - a.pos.z, dl = Math.hypot(dx, dz) || 1;
@@ -1069,9 +1279,11 @@ export class Game {
     let n = 0;
     for (let i = this.hazards.length - 1; i >= 0; i--) {
       const h = this.hazards[i];
-      if (h.src !== id || h.t >= (h.delay ?? 0)) continue;
+      if (h.src !== id || h.cancelled || h.t >= (h.delay ?? 0)) continue;
       if (h.tele && this.vfx.active.includes(h.tele)) h.tele.t = Math.max(h.tele.t, h.tele.life - 0.15);
-      this.hazards.splice(i, 1);
+      // (from inside _updateHazards - a landing hazard's blow, parried or reflected, killed its caster - it
+      // is only marked: splicing under that loop shifted its indices, and it read past the end)
+      if (this._hzBusy) h.cancelled = true; else this.hazards.splice(i, 1);
       n++;
     }
     if (n && pos) this.ui?.floatText(pos, 'INTERRUPTED', '#e8c070');
@@ -1083,7 +1295,7 @@ export class Game {
     if (!p.alive || p.downed || p.dead) return null;
     let best = null;
     for (const h of this.hazards) {
-      if (!h.vis || h.t >= (h.delay ?? 0) || !h.delay) continue;
+      if (!h.vis || h.cancelled || h.t >= (h.delay ?? 0) || !h.delay) continue;
       const dx = p.pos.x - h.x, dz = p.pos.z - h.z, d = Math.hypot(dx, dz), R = 0.4;
       let inside = false;
       if (h.shape === 'circle') inside = d <= h.r + R;
@@ -1124,10 +1336,17 @@ export class Game {
   }
 
   _updateHazards(dt) {
-    const p = this.player;
     this._warnIncoming();
+    this._hzBusy = true;
+    try { this._stepHazards(dt); } finally { this._hzBusy = false; }
+  }
+
+  _stepHazards(dt) {
+    const p = this.player;
     for (let i = this.hazards.length - 1; i >= 0; i--) {
       const h = this.hazards[i];
+      if (!h) continue;
+      if (h.cancelled) { this.hazards.splice(i, 1); continue; }
       h.t += dt;
       if (h.shape === 'wave') {
         if (h.t < (h.delay ?? 0)) continue;
@@ -1172,7 +1391,11 @@ export class Game {
       const fx = Math.sin(h.rot), fz = Math.cos(h.rot);
       const t = Math.max(0, Math.min(h.len, (to.x - h.x) * fx + (to.z - h.z) * fz));
       ox = h.x + fx * t; oz = h.z + fz * t;
-      if (!this.collision.los(h.x, gy + 1.0, h.z, ox, gy + 1.0, oz)) return false; // (the lane itself runs into the wall)
+      // (the lane itself runs into the wall) - traced from where it first leaves the stone: a lane laid
+      // across a whole arena (Ward Surge, Gallows Blades) starts past its walls
+      let sx = h.x, sz = h.z;
+      for (let d = 0; d < t && this.collision.cellBlocked(Math.floor(sx / T), Math.floor(sz / T), gy + 0.5); d += 0.5) { sx = h.x + fx * d; sz = h.z + fz * d; }
+      if (!this.collision.los(sx, gy + 1.0, sz, ox, gy + 1.0, oz)) return false;
     }
     return this.collision.los(ox, gy + 1.0, oz, to.x, to.y + 1.0, to.z);
   }
@@ -1479,7 +1702,7 @@ export class Game {
     def.use(this, p, itemK(this), at);
     this.spells.slot = null;
     def.show(this, id === 'flask' ? at : { x: p.pos.x, y: p.pos.y, z: p.pos.z });
-    this.net?.broadcast({ t: 'itemfx', i: id, ...(id === 'flask' ? at : { x: p.pos.x, y: p.pos.y, z: p.pos.z }) });
+    this.net?.broadcastOrSend({ t: 'itemfx', i: id, ...(id === 'flask' ? at : { x: p.pos.x, y: p.pos.y, z: p.pos.z }) });
     this.vfx.addFovKick?.(2);
     this.events.emit('itemUsed', id);
   }
@@ -1544,7 +1767,7 @@ export class Game {
       const a = def.spawn(type, pos.x, pos.z, { life, owner, hp: undefined, faction: 'ally', yaw: this.player.yaw + Math.PI });
       a.maxHp *= 1 + this.floorIndex * 0.5; a.hp = a.maxHp;
       a.dmg *= 1 + this.floorIndex * 0.45;
-    } else this.net?.send({ t: 'summon', ty: type, x: pos.x, z: pos.z, l: life, o: owner });
+    } else this.net?.send({ t: 'summon', ty: type, x: pos.x, z: pos.z, l: life, o: owner, ...this.floorTag() });
   }
 
   requestTeleport(pid, x, z) {
@@ -1610,6 +1833,7 @@ export class Game {
     this.player.downsThisRoom = 0;
     // elite chambers offer a relic instead of a tome (a gold-ringed lectern)
     this.spawnPedestal(room, Math.max(enc?.rarity ?? 0, room.type === ROOM.TRIAL ? (room.trialWon ? 2 : 0) : room.type === ROOM.ELITE ? 3 : 0), room.type === ROOM.ELITE);
+    if (enc?.tome != null) this.spawnPedestal(room, enc.tome, false, 2.4, 0); // (a champion's epic tome, beside the elite's relic)
     if (this._ctxTips?.sigil) { this._tipQ?.unshift(this._ctxTips.sigil); this._ctxTips.sigil = null; }
     if (this.isHost) {
       const gold = Math.round((10 + this.floorIndex * 6) * (room.type === ROOM.ELITE ? 2.5 : room.type === ROOM.TRIAL && room.trialWon ? 3 : 1) * (enc?.gold ?? 1));
@@ -1635,7 +1859,8 @@ export class Game {
     const ante = main[0] ?? level.startRoom;
     for (const r of level.rooms) if (r !== boss) { r.cleared = true; r.visited = true; }
     this.interactables = this.interactables.filter((it) => {
-      const side = it.kind === 'chest' || it.kind === 'shrine' || it.kind === 'shop' || it.kind === 'altar' || it.kind === 'gambler';
+      const side = it.kind === 'chest' || it.kind === 'shrine' || it.kind === 'shop' || it.kind === 'altar' || it.kind === 'gambler' || it.kind === 'mimic';
+      if (it.kind === 'mimic' && it.room?._mimic) it.room._mimic.sprung = true; // (a vault's mimic sleeps on, unseen: no hoard in a rush)
       if (side) it.dispose?.();
       return !side;
     });
@@ -1656,7 +1881,8 @@ export class Game {
     p.spawnAt(ante.cx + sx, ante.cz + sz, Math.PI);
     for (const r of this.remotes.values()) { r.pos.set(ante.cx + sx, 0, ante.cz + sz); r.net.x = ante.cx + sx; r.net.z = ante.cz + sz; }
     p.heal(p.maxHp);
-    setTimeout(() => !this.ended && this.ui?.toast(`Boss Rush · ${index + 1} of ${BIOMES.length} — arm yourself, then face ${BOSS_DEFS[level.biome.boss]?.name ?? 'the guardian'}`, '#ffc060'), 4800);
+    // (only while this realm still stands: quitting to the menu starts the backdrop's own run, so `ended` alone won't do)
+    setTimeout(() => !this.ended && this.level === level && this.ui?.toast(`Boss Rush · ${index + 1} of ${BIOMES.length} — arm yourself, then face ${BOSS_DEFS[level.biome.boss]?.name ?? 'the guardian'}`, '#ffc060'), 4800);
   }
 
   onWave(n, of) {
@@ -1694,7 +1920,7 @@ export class Game {
     const a = aim.actor;
     if (a && a.faction === 'enemy' && !a.dead) {
       msg.k = 'foe'; msg.a = a.id;
-      msg.l = (a.boss || a.champion ? a.def.name : (a.elite ? 'Champion ' : '') + (a.def.name ?? a.type));
+      msg.l = (a.boss || a.champion ? a.def.name : (a.elite ? 'Elite ' : '') + (a.def.name ?? a.type)); // (an elite isn't a champion: those are named)
       return msg;
     }
     // the thing nearest the aim ray, short of whatever the ray struck (a little
@@ -1713,13 +1939,22 @@ export class Game {
     return msg;
   }
 
-  onBossSpawn(a) {
+  onBossSpawn(a, late = false) {
     // the bar's notches sit where this boss's phases turn (the Wrath pact brings them on sooner)
     const enr = this.difficulty?.bossEnrage ?? 0;
     a.phaseAts = (BOSS_SCRIPTS[a.type]?.phases ?? []).map((p) => p.at + enr).filter((f) => f > 0 && f < 1);
-    this.cinematic = { target: a, t: 0, dur: 2.6 };
+    // a wizard joining mid-fight has missed the entrance: the fight is on, so no shot of it (it took their
+    // camera for 6 s with the boss already swinging, and staged its rise all over again), just the bar
+    if (late) {
+      this.ui?.bossIntro(a);
+      this.audio?.setMusic(this._mus('boss'));
+      if (this.abyss) this.audio?.setMusicIntensity?.(1);
+      return;
+    }
+    // its entrance, staged (game/bossIntro.js): the name comes up as it arrives
+    this.cinematic?.end?.();
+    this.cinematic = new BossIntro(this, a);
     this.ui?.letterbox(true);
-    this.ui?.bossIntro(a);
     this.audio?.play('boss_intro');
     this.audio?.setMusic(this._mus('boss'));
     // in the Abyss a boss's theme starts a step harder
@@ -1813,7 +2048,9 @@ export class Game {
   }
 
   transitionToFloor(i) {
+    const run = this.runId;
     this.ui?.fadeOut(0.8, () => {
+      if (this.runId !== run) { this.ui?.fadeIn(0.6); return; } // (the party quit to the menu during the fade: its backdrop stays)
       this.loadFloor(i);
       this.transitioning = false;
       this.ui?.fadeIn(1.2);
@@ -1848,20 +2085,23 @@ export class Game {
     const law = lawAt(d);
     this.events.emit('abyss', d);
     this.audio?.play('boss_roar', { volume: 0.6 });
+    const run = this.runId;
     this.ui?.fadeOut(1.4, () => {
+      if (this.runId !== run) { this.ui?.fadeIn(0.6); return; }
       this.loadFloor(0);
       this.transitioning = false;
       const p = this.player;
       if (p.dead || p.downed) p.revive(1);
       p.heal(p.maxHp);
       this.ui?.fadeIn(1.6);
-      setTimeout(() => { if (!this.ended) { this.ui?.banner(`ABYSS ${d} · ${law.name.toUpperCase()}`, law.desc, law.color, 5); this.ui?.toast(`Abyssal law — ${law.name}: ${law.desc}`, law.color); } }, 2600);
-      if (this._curseNote) { const n = this._curseNote; this._curseNote = null; setTimeout(() => !this.ended && this.ui?.toast(n, '#ff5878'), 5200); }
+      const lvl = this.level, here = () => !this.ended && this.level === lvl; // (not on the menu's backdrop if the party quit)
+      setTimeout(() => { if (here()) { this.ui?.banner(`ABYSS ${d} · ${law.name.toUpperCase()}`, law.desc, law.color, 5); this.ui?.toast(`Abyssal law — ${law.name}: ${law.desc}`, law.color); } }, 2600);
+      if (this._curseNote) { const n = this._curseNote; this._curseNote = null; setTimeout(() => here() && this.ui?.toast(n, '#ff5878'), 5200); }
     });
   }
 
   victory() {
-    if (this.ended) return;
+    if (this.ended || (this.isHost && this.transitioning)) return; // (the party is already on its way down into the Abyss)
     this.ended = true;
     this.net?.broadcast({ t: 'victory' });
     this.audio?.setMusic('victory');
@@ -1892,6 +2132,7 @@ export class Game {
     this.ui?.recap(this.meta?.recap?.());
   }
   onLocalDied() {
+    this._specPos = null; // (the spectator's camera starts behind the teammate, not where it was the last time)
     this.ui?.banner('SLAIN', this.isSolo ? '' : 'You will return when the chamber is cleared', '#801010');
   }
 
@@ -2253,7 +2494,7 @@ export class Game {
         if (extra.on) {
           const gl = [];
           for (let i = 0; extra.gl && i + 1 < extra.gl.length; i += 2) gl.push({ x: extra.gl[i], z: extra.gl[i + 1], lit: false, t: 0 });
-          a.gate = { k: extra.k, n: extra.n ?? gl.length, dur: extra.dur ?? 15, until: this.time + (extra.dur ?? 15), gl, pulse: 0, tint: m?._tint ? [m._tintHex, m._tintK] : null };
+          a.gate = { k: extra.k, n: extra.n ?? gl.length, dur: extra.dur ?? 15, until: this.time + (extra.dur ?? 15), gl, ids: extra.ids ?? null, pulse: 0, tint: m?._tint ? [m._tintHex, m._tintK] : null };
           m?.setTint?.(G.tint, 0.4);
           this.vfx.ring({ x: a.pos.x, y: a.pos.y + 0.1, z: a.pos.z }, 3 + a.radius * 1.5, G.col, 0.8, 0.15);
           this.vfx.burst(at, { element: G.el, count: 40, speed: 5, upward: 0.6, life: 0.9, size: 0.22 });
@@ -2266,6 +2507,8 @@ export class Game {
           if (was.tint) m?.setTint?.(was.tint[0], was.tint[1]); else m?.setTint?.(null);
           if (extra.broken) {
             this.vfx.explosion(at, G.el, 4 + a.radius, { shakeScale: 0.4 });
+            // the Wyvern's stone shell comes off it in slabs
+            if (was.k === 'stone') this.rubble?.burst(a.pos.x, a.pos.y + (a.height ?? 4) * 0.5, a.pos.z, 16, 0.42, 0.3, 0.12, 5, 4, a.radius * 0.8);
             this.ui?.floatText(new THREE.Vector3(a.pos.x, a.pos.y + (a.height ?? 4) + 1.2, a.pos.z), `${G.name.toUpperCase()} BROKEN`, '#ffe090', true);
             this.screenTint([1.25, 1.15, 0.9], 0.5);
           } else this.vfx.ring({ x: a.pos.x, y: a.pos.y + 0.1, z: a.pos.z }, 2 + a.radius, G.col, 0.5, 0.1);
@@ -2322,6 +2565,8 @@ export class Game {
       if (beat) {
         this.vfx.ring(_gq.set(a.pos.x, a.pos.y + 0.1, a.pos.z), 1.6 + a.radius * 1.2, G.col, 0.6, 0.08);
         if (gt.k === 'stone') this.vfx.telegraph(_gq, { shape: 'cone', radius: 4 + a.radius, rot: a.yaw + Math.PI, angle: 1.2, dur: 0.5, color: [1.4, 1.05, 0.3] });
+        // her brood, each ringed in her colour: these are what shield her
+        if (gt.ids) for (const id of gt.ids) { const m = this.actors.byId.get(id); if (m && !m.dead) this.vfx.ring(_gq.set(m.pos.x, m.pos.y + 0.1, m.pos.z), 0.9 + m.radius, G.col, 0.55, 0.12); }
       }
       for (const q of gt.gl) {
         const y = this.groundY(q.x, q.z);
@@ -2452,7 +2697,8 @@ function makeShopStock(game, p) {
   const items = [];
   items.bought = 0;
   // (preview: the from -> to the shop shows; a `tome` is previewed from its stats)
-  items.push({ name: 'Healing Draught', desc: 'Restore 50% health.', icon: 'heart', base: 30 + f * 12, apply: (pl) => { pl.heal(pl.maxHp * 0.5); game.healPulse = 1; },
+  items.push({ name: 'Mending Tonic', desc: 'Drunk at the counter: restore 50% health.', // (not the Healing Draught item, which the merchant may also stock)
+    icon: 'heart', base: 30 + f * 12, apply: (pl) => { pl.heal(pl.maxHp * 0.5); game.healPulse = 1; },
     preview: (pl) => [['Health', `${Math.ceil(pl.hp)}`, `${Math.min(pl.maxHp, Math.ceil(pl.hp + pl.maxHp * 0.5))}`]] });
   const vigor = { def: TOMES.find((t) => t.id === 'vitality'), rarity: 0, mult: 1.25 };
   items.push({ name: 'Elixir of Vigor', desc: '+25 max health.', icon: 'heart', base: 70 + f * 22, tome: vigor, apply: (pl) => { pl.upgrades.push({ ...vigor }); pl.recomputeStats(); } });

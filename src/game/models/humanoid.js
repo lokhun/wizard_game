@@ -139,6 +139,38 @@ ACT.shoot = ACT.cast;
 
 const STAGGER = { spine: [-0.25, 0.12, 0.06], chest: [-0.22, 0.18, 0], neck: [-0.15, 0, 0], head: [-0.35, -0.25, 0.12], armL: [0.35, 0, 0.55], armR: [0.3, 0, -0.45], foreL: [-0.6, 0, 0], foreR: [-0.6, 0, 0], hips: [0, 0, 0, 0, -0.04, -0.1], thighL: [-0.25, 0, 0], shinL: [0.35, 0, 0], jaw: [0.5, 0, 0] };
 
+// ---------------------------------------------------------------- fidgets ----
+// A still body doesn't stay still: every 5-14 s one rolls its neck, rolls a shoulder, glances behind
+// it, hefts its weapon arm or shifts its feet. One gesture at a time, eased in and out, on top of the
+// idle pose and gone as soon as it walks (idleW). One squaring up to a foe (look) only hefts and shifts:
+// it doesn't take its eyes off them. A type lists its own (anim.fidgets: keys of FIDGET) or opts out
+// (fidgets: false).
+const FIDGET = {
+  neck: [1.6, (P, k, u, sd) => { const a = u * TAU * sd; P.r('neck', Math.sin(a) * 0.22 * k, 0, Math.cos(a) * 0.2 * k); P.r('head', Math.sin(a) * 0.14 * k, 0, Math.cos(a) * 0.16 * k); }],
+  shoulder: [1.2, (P, k, u, sd) => { const a = u * TAU; P.r(sd > 0 ? 'armR' : 'armL', -Math.sin(a) * 0.2 * k, 0, sd * (0.1 - Math.cos(a) * 0.1) * k); P.r('chest', 0, sd * Math.sin(a) * 0.06 * k, sd * 0.05 * k); }],
+  glance: [2.2, (P, k, u, sd) => { const h = k * k; P.r('spine', 0, sd * 0.14 * h, 0); P.r('chest', 0, sd * 0.24 * h, 0); P.r('neck', 0, sd * 0.4 * h, 0); P.r('head', -0.06 * h, sd * 0.5 * h, 0); }],
+  heft: [1.1, (P, k, u) => { const up = Math.sin(Math.min(1, u * 1.6) * Math.PI), bob = u > 0.55 ? Math.sin((u - 0.55) / 0.45 * Math.PI) * 0.5 : 0; P.r('armR', (-0.42 * up + 0.12 * bob) * k, 0, -0.08 * up * k); P.r('foreR', -0.45 * up * k); P.r('chest', -0.04 * up * k); P.r('head', 0.05 * bob * k); }],
+  shift: [0.9, (P, k, u, sd) => { const lift = Math.sin(u * Math.PI); const t = sd > 0 ? 'R' : 'L'; P.r('thigh' + t, -0.32 * lift * k, 0, 0); P.r('shin' + t, 0.6 * lift * k); P.r('foot' + t, -0.2 * lift * k); P.r('hips', 0, 0, -sd * 0.05 * lift * k); }],
+};
+const FIDGET_ALL = ['neck', 'shoulder', 'glance', 'heft', 'shift'], FIDGET_SQUARED = ['heft', 'shift'];
+function fidget(m, st, P, idleW, dt, A, engaged) {
+  if (st.fidI < 0) {
+    st.fidT -= dt;
+    if (st.fidT > 0 || idleW < 0.9) return;
+    const list = engaged ? (A.fidgets ?? FIDGET_ALL).filter((k) => FIDGET_SQUARED.includes(k)) : (A.fidgets ?? FIDGET_ALL);
+    st.fidT = 5 + Math.random() * 9;
+    if (!list.length) return;
+    st.fidI = FIDGET_ALL.indexOf(list[Math.floor(Math.random() * list.length)]);
+    st.fidU = 0; st.fidS = Math.random() < 0.5 ? -1 : 1;
+    if (st.fidI < 0 || (st.fidI === 4 && A.gait === 'float')) { st.fidI = -1; return; } // (no feet to shift)
+  }
+  const f = FIDGET[FIDGET_ALL[st.fidI]];
+  st.fidU += dt / f[0];
+  if (st.fidU >= 1 || idleW < 0.3) { st.fidI = -1; return; }
+  const u = st.fidU, k = smooth(0, 0.22, u) * (1 - smooth(0.75, 1, u)) * idleW;
+  f[1](P, k, u, st.fidS);
+}
+
 // ---------------------------------------------------------------- pose ----
 export function humanoidPose(m, s, P, dt) {
   const A = m.spec.anim;
@@ -149,7 +181,7 @@ export function humanoidPose(m, s, P, dt) {
   const sc = D.hipH / 0.97; // body scale relative to a human
   let rate = A.rate ?? 12;
   const dead = anim === 'death', spawning = anim === 'spawn';
-  const seated = s.attackType === 'seated' && (anim === 'idle' || anim === 'cast' || anim === 'windup');
+  const seated = s.attackType?.startsWith('seated') && (anim === 'idle' || anim === 'cast' || anim === 'windup'); // ('seated', or a seated gesture: 'seatedRain' ...)
   const action = anim === 'windup' || anim === 'attack' || anim === 'cast';
 
   // ---- locomotion phase driven by distance travelled
@@ -158,11 +190,27 @@ export function humanoidPose(m, s, P, dt) {
   const legLen = D.legLen;
   const ampL = Math.min(A.stride ?? 0.55, 0.18 + spd * (A.strideK ?? 0.16) / sc);
   const step = Math.max(0.12, 2 * legLen * Math.sin(ampL));
-  if (spd > 0.01) st.phase += (Math.PI * spd * dt) / step;
+  // which way it travels against where it faces (an archer strafing, a caster backing off): the legs and
+  // hips turn toward the way of travel, up to ~60 degrees, and the spine turns the chest back to its foe;
+  // going backward the stride runs in reverse. (Feet no longer skate sideways under a forward walk.)
+  let rel = s.dir ?? 0;
+  rel -= Math.round(rel / TAU) * TAU;
+  const back = spd > 0.3 && Math.abs(rel) > 1.95;
+  const twistTgt = spd > 0.3 ? clamp(back ? rel - Math.sign(rel) * Math.PI : rel, -1.05, 1.05) : 0;
+  st.twist = (st.twist ?? 0) + (twistTgt - (st.twist ?? 0)) * (1 - Math.exp(-9 * dt));
+  if (spd > 0.01) st.phase += ((back ? -1 : 1) * Math.PI * spd * dt) / step;
+  // weight: a body pitches into its push as it sets off and rocks back against its brake as it stops
+  // (eased, so a frame's jostle from a crowd doesn't show), the way it travels
+  const acc = dt > 1e-4 && st.prevSpd != null ? (spd - st.prevSpd) / dt : 0;
+  st.prevSpd = spd;
+  st.lean = (st.lean ?? 0) + (clamp(acc * 0.022 * (back ? -1 : 1) / sc, -0.2, 0.2) - (st.lean ?? 0)) * (1 - Math.exp(-5 * dt));
   const moveTgt = smooth(0.05, 0.6, spd);
   st.moveW = (st.moveW ?? 0) + (moveTgt - (st.moveW ?? 0)) * (1 - Math.exp(-8 * dt));
   const w = st.moveW;
   const ph = st.phase, sn = Math.sin(ph), cs = Math.cos(ph);
+  // a footfall (the legs pass each other as a foot takes the weight): the actor raises dust under heavy
+  // walkers (m.footfall: the side, read and cleared by Actors)
+  if (spd > 0.6 && w > 0.5) { const sg = sn >= 0 ? 1 : -1; if (st.stepSg && sg !== st.stepSg) m.footfall = sg; st.stepSg = sg; }
   const run = clamp((spd / sc - 2.2) / 2.5);
 
   // cloth secondary motion from movement
@@ -202,6 +250,13 @@ export function humanoidPose(m, s, P, dt) {
     P.r('spine', (0.06 + run * 0.18 + plod * 0.05) * w, -sn * 0.08 * w, -cs * plod * 0.05 * w);
     P.r('chest', 0, -sn * 0.1 * w, 0);
     P.r('head', -(0.04 + run * 0.12) * w, sn * 0.06 * w, -cs * plod * 0.04 * w);
+    // banking: a body on the move leans into its turn (harder the faster it runs) and keeps its head level
+    const bank = st.turnS * w * (0.35 + run * 0.65) * (A.bank ?? 1);
+    P.r('hips', 0, 0, -bank * 0.1); P.r('spine', 0, 0, -bank * 0.1); P.r('chest', 0, 0, -bank * 0.05); P.r('head', 0, 0, bank * 0.16);
+    if (Math.abs(st.lean) > 1e-3) { P.r('hips', st.lean * 0.35, 0, 0); P.r('spine', st.lean * 0.65, 0, 0); P.r('head', -st.lean * 0.5, 0, 0); }
+    // (the turn toward the way of travel: hips round, the spine and chest back, the head held on its foe)
+    const tw = st.twist * w * (A.twist ?? 1);
+    if (Math.abs(tw) > 1e-3) { P.r('hips', 0, tw, 0); P.r('spine', 0, -tw * 0.55, 0); P.r('chest', 0, -tw * 0.45, 0); }
     const armA = (A.armSwing ?? 0.45) * (1 + run * 0.5);
     if (!action) {
       P.r('armL', sn * armA * w); P.r('armR', -sn * armA * w);
@@ -227,6 +282,9 @@ export function humanoidPose(m, s, P, dt) {
       P.r('spine', 0, 0, sh * 0.025);
     }
   }
+  // ---- fidgets: now and then a body standing still does something with itself
+  if (!dead && !spawning && !seated && !action && anim !== 'stagger' && A.fidgets !== false) fidget(m, st, P, idleW, dt, A, s.look);
+  else st.fidI = -1;
   if (A.rest && !dead) P.apply(A.rest, action ? 0 : 1);
   if (!dead && !spawning) {
     P.r('armL', 0, 0, (A.armOut ?? 0.1)); P.r('armR', 0, 0, -(A.armOut ?? 0.1));
@@ -335,7 +393,8 @@ function spawnPose(m, s, P, D, A, sc) {
   const style = A.spawn ?? 'rise';
   if (typeof style === 'function') return style(P, p, m, s) ?? 14;
   if (style === 'materialize') {
-    m.setOpacity(smooth(0, 0.7, p));
+    // a ghost fades in; anything with a body burns into being behind an ember front (core.js setDissolve)
+    if (A.death === 'dissipate') m.setOpacity(smooth(0, 0.7, p)); else m.setDissolve(1 - smooth(0, 0.85, p));
     P.s('base', lerp(0.2, 1, easeOut(p)));
     P.r('base', 0, (1 - easeOut(p)) * 3, 0);
     P.apply({ armL: [-1.6, 0, 0.5], armR: [-1.6, 0, -0.5], head: [-0.3, 0, 0] }, 1 - smooth(0.5, 1, p));

@@ -78,44 +78,101 @@ export function lathe(profile, seg = 16, phiStart = 0, phiLen = Math.PI * 2) {
 }
 
 // Tapered segment with rounded ends along -Z from 0 to -L (finger bone)
+// paint: 'skin' or 'glove' adds vertex colours (multiplying the material's): skin warmer and darker over
+// the knuckle, a crease across the palm side of each joint, a pinker fingertip; a glove worn paler over
+// the knuckles, darker in the creases, a seam down each side
 const segCache = new Map();
-export function fingerSeg(L, r0, r1, rad = 8, flat = 0.85, tip = false) {
-  const key = `${L.toFixed(4)}:${r0.toFixed(4)}:${r1.toFixed(4)}:${rad}:${flat}:${tip}`;
+export function fingerSeg(L, r0, r1, rad = 8, flat = 0.85, tip = false, paint = null, wrinkleBase = true) {
+  const key = `${L.toFixed(4)}:${r0.toFixed(4)}:${r1.toFixed(4)}:${rad}:${flat}:${tip}:${paint}:${wrinkleBase}`;
   if (segCache.has(key)) return segCache.get(key);
-  // anatomical profile along the bone: rounded joint, knuckle swell, waist,
-  // a slight swell before the next joint, then a rounded end (a fuller pad on the last segment)
+  // anatomical profile along the bone: a rounded joint (a sphere centred on the joint, so two segments
+  // meet without a step however the finger bends), a slight swell, a gentle waist, the next joint's
+  // sphere (or a rounded end, a fuller pad, on the last segment)
   const prof = [];
   const n = rad >= 8 ? 5 : rad >= 6 ? 3 : 1; // rad < 6: low-poly avatar fingers
-  const rj = r0 * 1.0;
+  const CAP = 0.9;
   for (let i = 0; i <= n; i++) {
     const a = -Math.PI / 2 + (i / n) * Math.PI / 2;
-    prof.push([rj * Math.cos(a), rj * 0.9 * Math.sin(a)]);
+    prof.push([r0 * Math.cos(a), r0 * CAP * Math.sin(a)]);
   }
-  if (n > 1) prof.push([r0 * 1.04, L * 0.12]);
-  prof.push([r0 * 0.97, L * 0.28]);
-  if (n > 1) prof.push([(r0 + r1) * 0.455, L * 0.55]);
+  if (n > 1) prof.push([r0 * 1.01, L * 0.14]);
+  prof.push([r0 * 0.985, L * 0.3]);
+  if (n > 1) prof.push([(r0 + r1) * 0.48, L * 0.56]);
   if (n === 1) { prof.push([r1 * 1.0, L * 0.86]); prof.push([0, L + r1 * 0.7]); }
   else if (tip) {
     prof.push([r1 * 1.02, L * 0.8]);
     prof.push([r1 * 0.98, L * 0.92]);
     for (let i = 1; i <= n; i++) { const a = (i / n) * Math.PI / 2; prof.push([r1 * 0.98 * Math.cos(a), L * 0.92 + r1 * 1.05 * Math.sin(a)]); }
   } else if (n > 1) {
-    prof.push([r1 * 0.98, L * 0.82]);
-    prof.push([r1 * 1.0, L * 0.95]);
-    for (let i = 1; i <= n; i++) { const a = (i / n) * Math.PI / 2; prof.push([r1 * 1.0 * Math.cos(a), L * 0.95 + r1 * 0.85 * Math.sin(a)]); }
+    prof.push([r1 * 0.99, L * 0.84]);
+    for (let i = 0; i <= n; i++) { const a = (i / n) * Math.PI / 2; prof.push([r1 * Math.cos(a), L + r1 * CAP * Math.sin(a)]); }
   }
-  const g = lathe(prof, rad >= 6 ? Math.max(rad, 10) : 6);
+  // first-person fingers (rad >= 10) get their profile subdivided fine enough to carry the knuckle
+  // wrinkles below (the avatars' stay light)
+  // (only where the wrinkles are, 1-7 mm either side of a joint: the rest of the finger stays as it was)
+  if (rad >= 10 && paint) {
+    const dense = (y) => (wrinkleBase && y > 0.0008 && y < 0.0072) || (!tip && y > L - 0.0055 && y < L - 0.0012);
+    const fine = [prof[0]];
+    for (let i = 1; i < prof.length; i++) {
+      const [r0p, y0p] = prof[i - 1], [r1p, y1p] = prof[i];
+      const k = dense((y0p + y1p) / 2) || dense(y0p) || dense(y1p) ? Math.max(1, Math.ceil(Math.abs(y1p - y0p) / 0.0007)) : 1;
+      for (let j = 1; j <= k; j++) fine.push([r0p + (r1p - r0p) * j / k, y0p + (y1p - y0p) * j / k]);
+    }
+    prof.length = 0; prof.push(...fine);
+  }
+  const g = lathe(prof, rad >= 6 ? Math.max(rad, 12) : 6);
   g.rotateX(-Math.PI / 2); // +Y -> -Z
-  // cross-section: flatter back (+Y), fuller fleshy pad underneath (-Y), wider than deep
+  // cross-section: flatter back (+Y), fuller fleshy pad underneath (-Y), wider than deep; a low knuckle
+  // ridge across the back at the joint
   const p = g.getAttribute('position');
+  const col = paint ? new Float32Array(p.count * 3) : null;
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
     const u = Math.min(1, Math.max(0, -z / L));
+    const back = y > 0 ? y / r0 : 0, side = Math.abs(x) / r0;
     let ny = y * flat;
-    if (y > 0) ny *= 0.86;
+    if (y > 0) ny *= 0.86 * (1 + 0.1 * Math.exp(-Math.pow((u - 0.02) / 0.1, 2)) * back);
     else ny *= 1 + 0.16 * Math.sin(Math.PI * Math.min(1, u * 1.15)) + (tip ? 0.12 * Math.max(0, (u - 0.55) / 0.45) : 0);
-    p.setXYZ(i, x * 1.04, ny, z);
+    // knuckle wrinkles (fine first-person fingers): three fine folds across the back on each side of a
+    // joint, pressed in a hair; one deeper crease across the palm side
+    let wr = 0, cr = 0;
+    if (rad >= 10 && paint) {
+      const d0 = u * L, d1 = (1 - u) * L, across = Math.max(0, 1 - side * side * 0.8);
+      if (y > 0) {
+        if (wrinkleBase) for (const di of [0.0018, 0.0038, 0.006]) wr += Math.exp(-Math.pow((d0 - di) / 0.0006, 2));
+        if (!tip) for (const di of [0.0022, 0.0042]) wr += 0.7 * Math.exp(-Math.pow((d1 - di) / 0.0005, 2));
+        wr *= across * back;
+      } else {
+        cr = ((wrinkleBase ? Math.exp(-Math.pow((d0 - 0.0012) / 0.0008, 2)) : 0) + (tip ? 0 : Math.exp(-Math.pow((d1 - 0.0012) / 0.0008, 2)))) * across;
+      }
+      const s0 = Math.hypot(x, ny) || 1;
+      const k = 1 - (wr * 0.00022 + cr * 0.0004) / s0;
+      p.setXYZ(i, x * 1.04 * k, ny * k, z);
+    } else p.setXYZ(i, x * 1.04, ny, z);
+    if (col) {
+      const knuckle = Math.exp(-Math.pow((u - 0.0) / 0.13, 2)) * back;
+      const crease = y < 0 ? Math.exp(-Math.pow((u - 0.0) / 0.05, 2)) * (1 - side * 0.6) : 0;
+      let r = 1, gg = 1, b = 1;
+      if (paint === 'skin') {
+        // knuckle: redder and a touch darker, its wrinkles darker still; crease; a pink, fuller tip
+        r -= 0.03 * knuckle; gg -= 0.12 * knuckle; b -= 0.12 * knuckle;
+        r -= 0.12 * wr; gg -= 0.15 * wr; b -= 0.14 * wr;
+        r -= 0.2 * cr; gg -= 0.24 * cr; b -= 0.22 * cr;
+        r -= 0.25 * crease; gg -= 0.3 * crease; b -= 0.28 * crease;
+        if (tip) { const pk = Math.max(0, (u - 0.6) / 0.4); r += 0.03 * pk; gg -= 0.08 * pk; b -= 0.05 * pk; }
+      } else {
+        // leather: paler worn knuckles, dark creases, a stitched seam down each side
+        const wear = 0.16 * knuckle;
+        r += wear; gg += wear; b += wear;
+        r -= 0.35 * crease + 0.2 * wr; gg -= 0.35 * crease + 0.2 * wr; b -= 0.35 * crease + 0.2 * wr;
+        const seam = Math.exp(-Math.pow((side - 0.98) / 0.06, 2)) * (y < r0 * 0.3 ? 1 : 0);
+        const stitch = seam * (0.5 + 0.5 * Math.sign(Math.sin(u * 60)));
+        r -= 0.3 * seam - 0.15 * stitch; gg -= 0.3 * seam - 0.12 * stitch; b -= 0.3 * seam - 0.08 * stitch;
+      }
+      col[i * 3] = r; col[i * 3 + 1] = gg; col[i * 3 + 2] = b;
+    }
   }
+  if (col) g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.computeVertexNormals();
   g.userData.shared = true;
   segCache.set(key, g);
@@ -221,6 +278,8 @@ export function flat(geo) {
 
 // Merge geometries (normalises attributes to position/normal/uv, non-indexed)
 export function mergeGeos(geos) {
+  // (painted parts keep their vertex colours; unpainted ones in the same merge come out white)
+  const painted = geos.some((g) => g?.getAttribute('color'));
   const clean = geos.filter(Boolean).map((g) => {
     const gg = g.index ? g.toNonIndexed() : g;
     const out = new THREE.BufferGeometry();
@@ -228,6 +287,7 @@ export function mergeGeos(geos) {
     if (!gg.getAttribute('normal')) gg.computeVertexNormals();
     out.setAttribute('normal', gg.getAttribute('normal'));
     out.setAttribute('uv', gg.getAttribute('uv') ?? new THREE.Float32BufferAttribute(new Float32Array(gg.getAttribute('position').count * 2), 2));
+    if (painted) out.setAttribute('color', gg.getAttribute('color') ?? new THREE.Float32BufferAttribute(new Float32Array(gg.getAttribute('position').count * 3).fill(1), 3));
     return out;
   });
   if (!clean.length) return new THREE.BufferGeometry();

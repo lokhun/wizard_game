@@ -349,8 +349,13 @@ export const CLASSES = {
             } });
           for (let i = 0; i < 10; i++) {
             ctx.after(0.25 + i * 0.28, () => {
-              const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R;
-              let tx = c.x + Math.cos(a) * r, tz = c.z + Math.sin(a) * r;
+              // (on the ground the target can see: aimed at a wall, half the storm fell in the room behind it)
+              let tx = c.x, tz = c.z;
+              for (let k = 0; k < 6; k++) {
+                const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R;
+                const x = c.x + Math.cos(a) * r, z = c.z + Math.sin(a) * r;
+                if (ctx.g.collision.los(c.x, cg + 1, c.z, x, cg + 1, z)) { tx = x; tz = z; break; }
+              }
               const forge = aug(ctx, 'pyro_meteor');
               // augment: meteors seek out Burning foes in the storm
               if (forge) {
@@ -1141,7 +1146,7 @@ export const CLASSES = {
         },
       },
       ability1: {
-        name: 'Blood Pact', icon: 'pact', desc: 'Sacrifice 20% of current HP to gain +40% damage and attack speed for 6s.', cd: 14, style: 'snap', hand: 'left',
+        name: 'Blood Pact', icon: 'pact', desc: 'Sacrifice 20% of current HP to gain +40% damage and +25% attack speed for 6s.', cd: 14, style: 'snap', hand: 'left',
         cast(ctx) {
           const paid = ctx.hp() * 0.2;
           ctx.payHp(paid);
@@ -1310,7 +1315,7 @@ export const CLASSES = {
         },
       },
       secondary: {
-        name: 'Time Bomb', icon: 'bomb', desc: 'Lob a sticky bomb that detonates after 1.5s. 3 charges.', cd: 3.5, charges: 3, style: 'throw', hand: 'left',
+        name: 'Time Bomb', icon: 'bomb', desc: 'Lob a sticky bomb that clings to the first foe it hits and detonates 1.8s after the throw. 3 charges.', cd: 3.5, charges: 3, style: 'throw', hand: 'left',
         cast(ctx) {
           ctx.sound('cast_time');
           ctx.proj({ el: 'time', vel: ctx.dir.clone().multiplyScalar(22).add(v3(0, 4, 0)), gravity: 18, radius: 0.25, life: 1.8, core: 0.8, mesh: 'orb', light: 8, trail: 0.6, sticky: true,
@@ -1620,7 +1625,13 @@ export const CLASSES = {
             ctx.after(0.2 + i * 0.25, () => {
               const targets = ctx.rt.inRadius(c, R);
               const t = targets.length && Math.random() < 0.8 ? targets[Math.floor(Math.random() * targets.length)] : null;
-              const p = t ? v3(t.pos.x, c.y, t.pos.z) : v3(c.x + rand(-1, 1) * R, c.y, c.z + rand(-1, 1) * R);
+              let p = t ? v3(t.pos.x, c.y, t.pos.z) : null;
+              // (a stray one rises where the caller can see: aimed at a wall, they came up in the room behind it)
+              for (let k = 0; !p && k < 6; k++) {
+                const x = c.x + rand(-1, 1) * R, z = c.z + rand(-1, 1) * R;
+                if (ctx.g.collision.los(c.x, c.y + 1, c.z, x, c.y + 1, z)) p = v3(x, c.y, z);
+              }
+              p ??= c.clone();
               ctx.tentacle(p);
               ctx.after(0.3, () => ctx.area(v3(p.x, p.y + 1, p.z), 2.6, { dmg: 45, el: 'shadow', st: { root: 1.5, hex: 3 }, kb: 3 }));
             });
@@ -2020,7 +2031,7 @@ export const CLASSES = {
           ctx.vfx.ring(c, R, fxOf('poison').core, 0.5, 0.12);
           ctx.vfx.dustWave(c, R * 0.8, { color: [0.16, 0.15, 0.08], alpha: 0.4, count: 18, glow: [0.5, 0.9, 0.15] });
           for (let i = 0; i < 16; i++) { const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R; ctx.thorn(v3(c.x + Math.cos(a) * r, c.y, c.z + Math.sin(a) * r)); }
-          ctx.area(v3(c.x, c.y + 1, c.z), R, { dmg: 16, el: 'poison', st: { root: 2.5, poison: [2, 2.5] } });
+          ctx.area(v3(c.x, c.y + 1, c.z), R, { dmg: 16, el: 'poison', st: { root: 2.5, poison: [2 + (ctx.stats.poisonBonus ?? 0), 2.5] } });
           // augment: the roots stay as a briar thicket
           if (aug(ctx, 'druid_entangle')) {
             const m = augM(ctx, 'druid_entangle');
@@ -2075,7 +2086,7 @@ export const CLASSES = {
               ctx.vfx.ring(p, R, fxOf('poison').core, 0.5, 0.12);
               ctx.vfx.dustWave(p, R, { color: [0.12, 0.16, 0.06], alpha: 0.4, count: 18 + w * 8 });
               for (let i = 0; i < 18; i++) { const a = (i / 18) * Math.PI * 2 + w; ctx.thorn(v3(p.x + Math.cos(a) * R, p.y, p.z + Math.sin(a) * R)); }
-              ctx.area(v3(p.x, p.y + 1, p.z), R, { dmg: 38, el: 'poison', st: { poison: [3, 3], root: 1.2 }, kb: 5 });
+              ctx.area(v3(p.x, p.y + 1, p.z), R, { dmg: 38, el: 'poison', st: { poison: [3 + (ctx.stats.poisonBonus ?? 0), 3], root: 1.2 }, kb: 5 });
               ctx.sound('cast_earth_big', 0.7);
               ctx.kick(0.2, 2);
             });

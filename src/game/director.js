@@ -75,7 +75,7 @@ export class Director {
     room.sentriesPlaced = true;
     room.plannedWaves = this._planWaves(room);
     room.sentryIds = [];
-    const camp = room.camp;
+    const camp = room.cells?.length ? null : room.camp; // (an Oubliette room's squad is in its cells, not round a fire)
     let k = 0;
     for (const s of room.plannedWaves[0] ?? []) {
       // gathered round the camp brazier, facing the fire (archers and casters a step further out)
@@ -87,14 +87,18 @@ export class Director {
           if (this.level.roomAt(x, z) === room && !this.g.collision.pushOut(x, z, 0.6) && !this.g.collision.cellBlocked(Math.floor(x / T), Math.floor(z / T), 0.5)) p = { x, z };
         }
       }
+      // an Oubliette room's first squad waits locked in its cells, two to a cell, facing the bars
+      const cell = room.cells?.length && k < room.cells.length * 2 ? room.cells[k % room.cells.length] : null;
+      if (cell) p = { x: cell.x + (this.rng.next() - 0.5) * 1.4, z: cell.z + (this.rng.next() - 0.5) * 1.4 };
       p ??= this._spawnPoint(room, s.role);
-      const yaw = camp ? Math.atan2(camp.x - p.x, camp.z - p.z) : undefined;
+      const yaw = camp ? Math.atan2(camp.x - p.x, camp.z - p.z) : cell ? Math.atan2(cell.bars.x - p.x, cell.bars.z - p.z) : undefined;
       // one body every 20 ms, not the squad in one frame (each is ~0.5-1 ms
       // of model building: a squad was a visible hitch while exploring)
       const level = this.level;
       this.g.spells.after(k * 0.02, () => {
         if (this.level !== level || room.cleared) return;
         const a = this.spawnEnemy(s.type, p.x, p.z, { elite: s.elite, affix: s.affix, affix2: s.affix2, dormant: true, homeRoom: room, spawnFx: false, yaw, noCredit: true });
+        if (cell && !room.cellsOpen) a.caged = true;
         room.sentryIds.push(a.id);
         if (this.active?.room === room) this.active.spawned.add(a.id); // (the fight began meanwhile)
       });
@@ -261,6 +265,17 @@ export class Director {
       this._hoardFloor = this.floor;
       g.spells.after(3 + Math.random() * 3, () => { if (this.active?.room === room) this._spawnHoarder(room); });
     }
+    // the Oubliette's cells fling open and their prisoners stagger out after the doors, one by one
+    if (room.cells && !room.cellsOpen) {
+      g.openCells(room, true);
+      let k = 0;
+      for (const id of room.sentryIds ?? []) {
+        const a = g.actors.byId.get(id);
+        if (!a?.caged) continue;
+        a.caged = false;
+        a.wakeAt = g.time + 0.7 + k++ * 0.18;
+      }
+    }
     if (room.type === ROOM.BOSS) this._startBoss(room);
     else if (room.sentriesPlaced) {
       // the sentries are the first wave
@@ -397,8 +412,10 @@ export class Director {
     if (!wave) return;
     const room = A.room;
     // stagger spawns for drama
+    A.pending = (A.pending ?? 0) + wave.length;
     wave.forEach((s, i) => {
       this.g.spells.after(i * 0.12 + Math.random() * 0.2, () => {
+        A.pending--;
         if (this.active !== A) return;
         const p = this._spawnPoint(room, s.role);
         const a = this.spawnEnemy(s.type, p.x, p.z, { elite: s.elite, affix: s.affix, affix2: s.affix2 });
@@ -434,7 +451,8 @@ export class Director {
     const g = this.g;
     A.t += dt;
     const R = A.room;
-    if (R.type === ROOM.TRIAL && R.trialWon === null && g.time > R.trialEnd) {
+    // (not once the last foe has fallen: the room is only declared clear 0.6 s later)
+    if (R.type === ROOM.TRIAL && R.trialWon === null && g.time > R.trialEnd && !(A.clearT > 0)) {
       R.trialWon = false;
       g.net?.broadcast({ t: 'trial', r: R.id, won: 0 });
       g.onTrialResult?.(R, false);
@@ -480,10 +498,11 @@ export class Director {
     const stall = A.t - (A.progT ?? 0);
     if (alive > 0 && stall > 20 && A.t - (A.pullT ?? -99) > 20) { A.pullT = A.t; this._pullStragglers(A); }
     if (alive > 0 && !A.boss && stall > 65) { A.progT = A.t; this._banish(A); }
-    if (alive === 0 && A.t > 2) {
+    // (clear only with no foe standing for 0.6 s together, and none of the last wave still to appear)
+    if (alive === 0 && !A.pending && A.t > 2) {
       A.clearT += dt;
       if (A.clearT > 0.6) this.clearRoom();
-    }
+    } else A.clearT = 0;
   }
 
   // a fight room's trap vents erupt by turns (half at a time, every 4.5 s, after a

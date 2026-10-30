@@ -67,6 +67,9 @@ export function migrate(raw, legacy) {
     p.deaths = Math.max(0, p.runs - p.wins);
     for (const [id, w] of Object.entries(obj(l.classWins))) if (CLASS_IDS.includes(id)) p.classes[id] = { ...blankClass(), wins: num(w), runs: num(w) };
   }
+  // (realms reached are 1..5: the codex names the realm, and a stored 7 had no name)
+  p.bestFloor = Math.min(5, Math.floor(p.bestFloor));
+  for (const c of Object.values(p.classes)) c.bestFloor = Math.min(5, Math.max(0, Math.floor(c.bestFloor)));
   p.v = PROFILE_VERSION;
   return p;
 }

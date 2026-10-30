@@ -155,6 +155,7 @@ export class BossBrain {
         const ang = Math.random() * Math.PI * 2;
         const x = a.pos.x + Math.cos(ang) * radius, z = a.pos.z + Math.sin(ang) * radius;
         if (g.collision.cellBlocked(Math.floor(x / 2), Math.floor(z / 2), a.pos.y + 0.5)) continue;
+        if (this.data.room && g.level.roomAt(x, z) !== this.data.room) continue; // (not through a door, outside the arena)
         const m = g.director.spawnEnemy(type, x, z, { noCredit: true });
         if (m) out.push(m);
         break;
@@ -228,7 +229,9 @@ export class BossBrain {
   banner(text, sub, color) { this.g.net?.broadcast({ t: 'banner', a: text, b: sub, c: color }); this.g.ui?.banner(text, sub, color); }
   shake(k) { this.g.net?.broadcast({ t: 'shake', k }); this.g.vfx.addShake(k); }
   sound(name, vol = 1) { this.g.net?.broadcast({ t: 'snd', n: name, x: this.a.pos.x, y: this.a.pos.y, z: this.a.pos.z, v: vol }); this.g.audio?.play(name, { pos: this.a.pos, volume: vol }); }
-  fx(kind, extra = {}) { this.g.net?.broadcast({ t: 'bfx', k: kind, id: this.a.id, ...extra }); this.g.bossFx(kind, this.a, extra); }
+  // (extra rides nested: spread into the message, an extra's t / k / id overwrote the header and clients
+  // dropped it, as they did 'exposed' { t } and 'lob' { t }, and every gate)
+  fx(kind, extra = {}) { this.g.net?.broadcast({ t: 'bfx', k: kind, id: this.a.id, x: extra }); this.g.bossFx(kind, this.a, extra); }
 
   _dread() {
     const n = 12 + 2 * this.phase, off = Math.random() * Math.PI * 2, step = Math.PI * 2 / n;
@@ -261,6 +264,8 @@ export class BossBrain {
     while (this.phase < phases.length - 1 && (this.hpf <= phases[this.phase + 1].at || (phases[this.phase + 1].after && this.fightT >= phases[this.phase + 1].after))) {
       this.phase++;
       this.events.length = 0;
+      // (a phase that turns while she's under the bile wipes her surfacing: she surfaces where she is)
+      if (this.a.hiddenT) this.fx('emerge');
       if (this.gate) this.closeGate(false); // (one gate at a time: a new phase brings its own)
       this.moveVel = null;
       this.spinT = 0;
@@ -404,11 +409,11 @@ SCRIPTS.motherOfFilth = {
         } },
         // a gout of bile in a cone before her, leaving a pool where it lands
         { name: 'belch', w: 2, cd: 5, range: [0, 11], track: 2, run(B, t) {
-          B.anim('windup', 'spit', 0.9);
+          B.anim('windup', 'belch', 0.9);
           const yaw = B.yawTo(t.pos);
           B.hazard({ shape: 'cone', x: B.a.pos.x, y: B.a.pos.y, z: B.a.pos.z, r: 10, rot: yaw, angle: 0.55, delay: 0.95, dmg: B.dmg * 0.9, el: 'enemyGreen', kb: 6 });
           B.at(0.9, () => {
-            B.anim('attack', 'spit', 0.6);
+            B.anim('attack', 'belch', 0.6);
             B.sound('boss_roar', 0.5);
             const x = B.a.pos.x + Math.sin(yaw) * 6, z = B.a.pos.z + Math.cos(yaw) * 6;
             B.circle(x, z, 2.6, 0.35, 0.3, 'enemyGreen', { pool: [3, 4, B.dmg * 0.3] });
@@ -424,7 +429,7 @@ SCRIPTS.motherOfFilth = {
         B.banner('THE FILTH RISES', 'Her brood shields her — cut it down!', '#9adf3a'); B.sound('boss_roar');
         B.anim('cast', 'summon', 1.2);
         const brood = B.summon('slime', 3 + B.players().length, 6);
-        B.openGate('brood', 18, { ids: brood.map((m) => m.id), left: brood.length, fx: { n: brood.length } });
+        B.openGate('brood', 18, { ids: brood.map((m) => m.id), left: brood.length, fx: { n: brood.length, ids: brood.map((m) => m.id) } });
       },
       speed: 1.15,
       moves: [
@@ -466,8 +471,8 @@ SCRIPTS.motherOfFilth = {
       speed: 1.3,
       moves: [
         { name: 'tide', w: 3, cd: 4, run(B) {
-          B.anim('windup', 'slam', 0.8);
-          B.at(0.8, () => { B.anim('attack', 'slam', 0.5); B.wave(2, 8, 22, 0.7, 'enemyGreen'); B.at(0.7, () => B.wave(2, 8, 22, 0.7, 'enemyGreen')); B.shake(0.4); B.sound('boss_slam'); });
+          B.anim('windup', 'tide', 0.8);
+          B.at(0.8, () => { B.anim('attack', 'tide', 1.2); B.wave(2, 8, 22, 0.7, 'enemyGreen'); B.at(0.7, () => B.wave(2, 8, 22, 0.7, 'enemyGreen')); B.shake(0.4); B.sound('boss_slam'); });
           return 2.0;
         } },
         { name: 'rain', w: 2, cd: 5, run(B) {
@@ -477,8 +482,8 @@ SCRIPTS.motherOfFilth = {
         } },
         // rings of bile burst outward from her, each with a gap that wanders
         { name: 'ripple', w: 2, cd: 7, run(B) {
-          B.anim('windup', 'slam', 0.8);
-          B.at(0.8, () => { B.anim('attack', 'slam', 0.5); B.shake(0.4); B.sound('boss_slam'); });
+          B.anim('windup', 'ripple', 0.8);
+          B.at(0.8, () => { B.anim('attack', 'ripple', 1.6); B.shake(0.4); B.sound('boss_slam'); });
           const ax = B.a.pos.x, az = B.a.pos.z;
           let gap = Math.random() * Math.PI * 2;
           for (let k = 1; k <= 3; k++) {
@@ -496,8 +501,8 @@ SCRIPTS.motherOfFilth = {
         // last stand: the Deluge, three tides in a row
         { name: 'deluge', w: 50, cd: 999, when: (B) => B.hpf < 0.12, run(B) {
           B.lastStand('THE DELUGE', 'Three tides — JUMP them all!', '#9adf3a');
-          B.anim('windup', 'slam', 1.0);
-          for (let i = 0; i < 3; i++) B.at(1.0 + i * 0.9, () => { B.anim('attack', 'slam', 0.5); B.wave(2, 9 + i, 26, 0.7, 'enemyGreen'); B.shake(0.4); B.sound('boss_slam'); });
+          B.anim('windup', 'pound', 1.0);
+          for (let i = 0; i < 3; i++) B.at(1.0 + i * 0.9, () => { B.anim('attack', 'pound', 0.9); B.wave(2, 9 + i, 26, 0.7, 'enemyGreen'); B.shake(0.4); B.sound('boss_slam'); });
           B.at(3.6, () => B.expose(1.8));
           return 3.8;
         } },
@@ -559,9 +564,9 @@ SCRIPTS.executioner = {
             const p = B.target ?? t;
             const rot = B.yawTo(p.pos);
             B.a.yaw = rot;
-            B.anim('windup', 'sweep', 0.55);
+            B.anim('windup', 'backhand', 0.55);
             B.hazard({ shape: 'cone', x: B.a.pos.x, y: B.a.pos.y, z: B.a.pos.z, r: 6.5, rot, angle: 1.3, delay: 0.55, dmg: B.dmg, el: 'physical', kb: 12 });
-            B.at(0.55, () => { B.anim('attack', 'sweep', 0.5); B.sound('swing'); });
+            B.at(0.55, () => { B.anim('attack', 'backhand', 0.5); B.sound('swing'); });
           });
           return 2.6;
         } },
@@ -575,13 +580,13 @@ SCRIPTS.executioner = {
         { name: 'chop', w: 3, cd: 2, range: [0, 7], track: 3, run(B, t) { return SCRIPTS.executioner.phases[0].moves[0].run(B, t); } },
         { name: 'sweep', w: 2, cd: 3.5, range: [0, 6], run(B, t) { return SCRIPTS.executioner.phases[0].moves[1].run(B, t); } },
         { name: 'guillotines', w: 2, cd: 6, run(B) {
-          B.anim('cast', 'roar', 1.2);
+          B.anim('cast', 'gallows', 1.2);
           B.sound('boss_roar', 0.8);
           for (const p of B.players()) for (let i = 0; i < 4; i++) B.circle(p.pos.x + rand(-3, 3), p.pos.z + rand(-3, 3), 1.8, 1.0 + i * 0.35, 1.0, 'physical', { blade: 1 });
           return 1.6;
         } },
         { name: 'charge', w: 1, cd: 6, range: [6, 40], run(B, t) { return SCRIPTS.executioner.phases[0].moves[2].run(B, t); } },
-        { name: 'guards', w: 1, cd: 18, run(B) { B.anim('cast', 'roar', 1.2); B.at(0.8, () => B.summon('skeleton', 2 + B.players().length, 5)); return 1.5; } },
+        { name: 'guards', w: 1, cd: 18, run(B) { B.anim('cast', 'knock', 1.2); B.at(0.8, () => B.summon('skeleton', 2 + B.players().length, 5)); return 1.5; } },
         // from across the yard he leaps, axe overhead, and splits the ground where you stood
         { name: 'leap', w: 2, cd: 7, range: [7, 40], run(B, t) {
           B.leap(t.pos.x, t.pos.z, { crouch: 0.7, air: 0.85, h: 5, r: 4.5, el: 'physical', dmg: 1.4, kb: 16,
@@ -607,14 +612,14 @@ SCRIPTS.executioner = {
       moves: [
         { name: 'quake', w: 3, cd: 3.5, run(B) {
           B.anim('windup', 'slam', 0.9);
-          B.at(0.9, () => { B.anim('attack', 'slam', 0.5); B.shake(0.5); B.sound('boss_slam'); B.wave(1.5, 10, 24, 0.7, 'enemyFire'); });
+          B.at(0.9, () => { B.anim('attack', 'quake', 0.6); B.shake(0.5); B.sound('boss_slam'); B.wave(1.5, 10, 24, 0.7, 'enemyFire'); });
           B.at(1.5, () => { B.anim('attack', 'slam', 0.5); B.wave(1.5, 12, 24, 0.7, 'enemyFire'); B.sound('boss_slam'); });
           return 2.2;
         } },
         { name: 'chop', w: 2, cd: 1.8, range: [0, 7], track: 4, run(B, t) { return SCRIPTS.executioner.phases[0].moves[0].run(B, t); } },
         { name: 'brand', w: 2, cd: 4, run(B) {
-          B.anim('windup', 'sweep', 0.7);
-          B.at(0.7, () => { B.anim('attack', 'sweep', 0.4); for (const p of B.players()) B.aimed(p, 5, 0.5, 18, 'enemyFire', 0.5, { aoe: 1.8 }); });
+          B.anim('windup', 'brand', 0.7);
+          B.at(0.7, () => { B.anim('attack', 'brand', 0.4); for (const p of B.players()) B.aimed(p, 5, 0.5, 18, 'enemyFire', 0.5, { aoe: 1.8 }); });
           return 1.4;
         } },
         // a whirlwind of burning steel down a marked lane
@@ -718,7 +723,7 @@ SCRIPTS.stoneWyvern = {
           return 2.0;
         } },
         { name: 'rocks', w: 2, cd: 6, run(B) {
-          B.anim('cast', 'roar', 1.0);
+          B.anim('cast', 'rocks', 1.0);
           B.sound('boss_roar', 0.8);
           for (let i = 0; i < 8; i++) { const p = B.roomRandom(2); B.circle(p.x, p.z, 2.6, 1.2 + i * 0.1, 0.9, 'earth', { boulder: 1 }); }
           for (const p of B.players()) B.circle(p.pos.x, p.pos.z, 2.6, 1.3, 0.9, 'earth', { boulder: 1 });
@@ -746,11 +751,11 @@ SCRIPTS.stoneWyvern = {
         } },
         // a beat of its great wings: a gale that throws you back across the yard
         { name: 'gust', w: 2, cd: 6, range: [0, 14], track: 2, run(B, t) {
-          B.anim('windup', 'roar', 0.9);
+          B.anim('windup', 'gust', 0.9);
           const yaw = B.yawTo(t.pos);
           B.hazard({ shape: 'cone', x: B.a.pos.x, y: B.a.pos.y, z: B.a.pos.z, r: 13, rot: yaw, angle: 0.8, delay: 0.9, dmg: B.dmg * 0.45, el: 'physical', kb: 26 });
           B.at(0.9, () => {
-            B.anim('attack', 'fly', 0.7); B.sound('boss_roar', 0.6); B.shake(0.3);
+            B.anim('attack', 'gust', 0.7); B.sound('boss_roar', 0.6); B.shake(0.3);
             for (let i = 0; i < 6; i++) { const yy = yaw + (i / 5 - 0.5) * 1.4; B.g.vfx.smoke(new THREE.Vector3(B.a.pos.x + Math.sin(yy) * 4, B.a.pos.y + 0.6, B.a.pos.z + Math.cos(yy) * 4), { count: 3, size: 2, color: [0.4, 0.36, 0.3], alpha: 0.45, speed: 9 }); }
           });
           return 1.7;
@@ -775,8 +780,8 @@ SCRIPTS.stoneWyvern = {
         } },
         // it drives its claws into the stone: a fault runs out toward each of you, bursting as it goes
         { name: 'fault', w: 2, cd: 5, run(B) {
-          B.anim('windup', 'slam', 0.7);
-          B.at(0.7, () => { B.anim('attack', 'slam', 0.5); B.shake(0.45); B.sound('boss_slam'); });
+          B.anim('windup', 'fault', 0.7);
+          B.at(0.7, () => { B.anim('attack', 'fault', 0.6); B.shake(0.45); B.sound('boss_slam'); });
           for (const p of B.players()) {
             const yaw = B.yawTo(p.pos), n = 11;
             for (let i = 1; i <= n; i++) {
@@ -817,7 +822,7 @@ SCRIPTS.stoneWyvern = {
           B.anim('windup', 'breath', 1.0);
           const base = B.yawTo(t.pos), dir = Math.random() < 0.5 ? 1 : -1, n = 12;
           for (let i = 0; i < n; i++) B.hazard({ shape: 'cone', x: B.a.pos.x, y: B.a.pos.y, z: B.a.pos.z, r: 16, rot: base + dir * i * (Math.PI * 2 / n), angle: 0.3, delay: 1.2 + i * 0.22, teleDur: 0.8 + i * 0.22, dmg: B.dmg * 0.8, el: 'enemyFire', st: { burn: [3, 6] } });
-          B.at(1.0, () => { B.anim('attack', 'breath', n * 0.22 + 0.4); B.fx('breath', { yaw: base, sweep: dir * Math.PI * 2, dur: n * 0.22 + 0.2 }); });
+          B.at(1.0, () => { B.anim('attack', 'breath', n * 0.22 + 0.4); B.a.yaw = base; B.spin = dir * Math.PI * 2 / (n * 0.22 + 0.2); B.spinT = n * 0.22 + 0.2; B.fx('breath', { yaw: base, sweep: dir * Math.PI * 2, dur: n * 0.22 + 0.2 }); });
           B.at(1.4 + n * 0.22, () => B.expose(1.8));
           return 1.6 + n * 0.22;
         } },
@@ -851,7 +856,7 @@ SCRIPTS.courtArchmage = {
   keepDist: 10,
   // Nightmare: a ring of runes closes on each wizard with one gap, then the centre detonates
   nightmare: { name: 'prison', title: 'Rune Prison', hint: 'Leave through the gap', w: 2, cd: 9, minPhase: 1, run(B) {
-    B.anim('cast', 'cast', 1.2);
+    B.anim('cast', 'prison', 1.2);
     B.sound('enemy_cast', 1);
     for (const p of B.players()) {
       const cx = p.pos.x, cz = p.pos.z, gapA = Math.random() * Math.PI * 2;
@@ -869,14 +874,14 @@ SCRIPTS.courtArchmage = {
       at: 1,
       moves: [
         { name: 'volley', w: 3, cd: 2, range: [0, 40], run(B, t) {
-          B.anim('cast', 'cast', 0.7);
+          B.anim('cast', 'volley', 0.7);
           const els = ['enemyFire', 'arcane', 'frost', 'enemyPurple'];
           const el = els[(B.data.el = ((B.data.el ?? 0) + 1) % 4)];
           B.at(0.6, () => { for (const p of B.players()) B.aimed(p, 5, 0.3, 20, el, 0.5); });
           return 1.2;
         } },
         { name: 'runes', w: 2, cd: 4, run(B) {
-          B.anim('cast', 'cast', 1.0);
+          B.anim('cast', 'runes', 1.0);
           for (const p of B.players()) for (let i = 0; i < 3; i++) B.circle(p.pos.x + rand(-4, 4), p.pos.z + rand(-4, 4), 3, 1.2 + i * 0.2, 0.9, 'arcane');
           return 1.6;
         } },
@@ -886,13 +891,13 @@ SCRIPTS.courtArchmage = {
           return 1.8;
         } },
         { name: 'blink', w: 1, cd: 5, run(B) {
-          B.anim('cast', 'cast', 0.4);
+          B.anim('cast', 'blink', 0.4);
           B.at(0.35, () => { const p = B.roomRandom(3); B.g.actors.blinkFx(B.a.pos); B.g.net?.broadcast({ t: 'blinkfx', x: B.a.pos.x, y: B.a.pos.y, z: B.a.pos.z }); B.a.pos.x = p.x; B.a.pos.z = p.z; B.a.net.x = p.x; B.a.net.z = p.z; B.g.actors.blinkFx(B.a.pos); });
           return 0.8;
         } },
         // slow seeking orbs that burst where they catch you: keep moving, or bait them into a wall
         { name: 'orbs', w: 2, cd: 6, run(B) {
-          B.anim('cast', 'summon', 1.0);
+          B.anim('cast', 'orbs', 1.0);
           B.at(0.8, () => { for (const p of B.players()) B.aimed(p, 3, 0.9, 6.5, 'enemyPurple', 0.6, { homing: 1.4, aoe: 2.4 }); });
           return 1.4;
         } },
@@ -923,7 +928,7 @@ SCRIPTS.courtArchmage = {
             B.a.pos.x = x; B.a.pos.z = z; B.a.net.x = x; B.a.net.z = z;
             B.g.actors.blinkFx(B.a.pos); B.g.net?.broadcast({ t: 'blinkfx', x, y: B.a.pos.y, z });
             B.face(p);
-            B.anim('cast', 'cast', 0.7);
+            B.anim('cast', 'flick', 0.7);
             B.at(0.45, () => { const q = B.target; if (q) B.aimed(q, 3, 0.22, 19, ['enemyFire', 'arcane', 'frost'][i], 0.45); });
           };
           step(0); B.at(0.85, () => step(1)); B.at(1.7, () => step(2));
@@ -958,7 +963,7 @@ SCRIPTS.courtArchmage = {
       speed: 1.25,
       moves: [
         { name: 'beams', w: 3, cd: 4, run(B, t) {
-          B.anim('cast', 'beam', 1.6);
+          B.anim('cast', 'beams', 1.6);
           const base = B.yawTo(t.pos);
           for (let i = 0; i < 4; i++) {
             const rot = base + (i - 1.5) * 0.7;
@@ -986,7 +991,7 @@ SCRIPTS.courtArchmage = {
         } },
         // starfall: a cross of beams, then the cross turned an eighth: stand where the second won't fall
         { name: 'starfall', w: 2, cd: 6, run(B) {
-          B.anim('cast', 'beam', 2.0);
+          B.anim('cast', 'starfall', 2.0);
           B.sound('enemy_cast', 1);
           const base = Math.random() * Math.PI;
           for (let k = 0; k < 2; k++) for (let i = 0; i < 4; i++) {
@@ -1038,7 +1043,7 @@ SCRIPTS.hollowKing = {
       at: 1,
       moves: [
         { name: 'crownBeams', w: 3, cd: 3, run(B, t) {
-          B.anim('cast', 'seated', 1.2);
+          B.anim('cast', 'seatedBeams', 1.2);
           for (const p of B.players()) {
             const rot = B.yawTo(p.pos);
             B.hazard({ shape: 'rect', x: B.a.pos.x, y: B.a.pos.y, z: B.a.pos.z, rot, len: 30, w: 2.0, delay: 1.0, teleDur: 0.9, dmg: B.dmg * 0.8, el: 'enemyPurple', beam: 1 });
@@ -1046,25 +1051,25 @@ SCRIPTS.hollowKing = {
           return 1.6;
         } },
         { name: 'rain', w: 2, cd: 4, run(B) {
-          B.anim('cast', 'seated', 1.0);
+          B.anim('cast', B.data.seated ? 'seatedRain' : 'summon', 1.0);
           for (let i = 0; i < 8; i++) { const p = B.roomRandom(3); B.circle(p.x, p.z, 2.6, 1.2 + i * 0.1, 0.8, 'enemyPurple'); }
           for (const p of B.players()) B.circle(p.pos.x, p.pos.z, 2.6, 1.4, 0.8, 'enemyPurple');
           return 1.6;
         } },
         { name: 'guard', w: 1, cd: 12, run(B) {
-          B.anim('cast', 'seated', 1.0);
+          B.anim('cast', 'seatedGuard', 1.0);
           B.sound('boss_roar', 0.6);
           B.at(0.8, () => B.summon(Math.random() < 0.6 ? 'royalGuard' : 'wraith', 1 + Math.ceil(B.players().length / 2), 7));
           return 1.4;
         } },
         { name: 'volley', w: 2, cd: 2.4, run(B, t) {
-          B.anim('cast', 'seated', 0.8);
+          B.anim('cast', 'seatedVolley', 0.8);
           B.at(0.6, () => { for (const p of B.players()) B.aimed(p, 3, 0.25, 18, 'enemyPurple', 0.5, { homing: 1 }); });
           return 1.2;
         } },
         // the king's hand: the floor closes under you three times, each a beat behind
         { name: 'grasp', w: 2, cd: 6, run(B) {
-          B.anim('cast', 'seated', 1.6);
+          B.anim('cast', 'seatedGrasp', 1.6);
           B.sound('enemy_cast', 0.9);
           for (let k = 0; k < 3; k++) B.at(k * 0.5, () => { for (const p of B.players()) B.circle(p.pos.x, p.pos.z, 2.4, 0.95, 0.8, 'enemyPurple'); });
           return 2.0;
@@ -1134,14 +1139,14 @@ SCRIPTS.hollowKing = {
       speed: 1.25,
       moves: [
         { name: 'voidSpiral', w: 2, cd: 5, run(B) {
-          B.anim('cast', 'beam', 2.6);
+          B.anim('cast', 'spiral', 2.6);
           for (let i = 0; i < 18; i++) B.at(0.3 + i * 0.13, () => B.ring(5, 10, 'enemyPurple', 0.45, i * 0.22));
           return 2.8;
         } },
         { name: 'sweep', w: 2, cd: 2.2, range: [0, 7], run(B, t) { return SCRIPTS.hollowKing.phases[1].moves[0].run(B, t); } },
         { name: 'thrust', w: 2, cd: 2.8, range: [0, 14], run(B, t) { return SCRIPTS.hollowKing.phases[1].moves[1].run(B, t); } },
         { name: 'judgment', w: 1, cd: 16, when: (B) => B.hpf < 0.25, run(B) {
-          B.anim('cast', 'roar', 4);
+          B.anim('cast', 'judgment', 4);
           B.banner('THE KING\'S JUDGMENT', 'Break line of sight!', '#ff40ff');
           B.hazard({ shape: 'los', x: B.a.pos.x, y: B.a.pos.y + 3, z: B.a.pos.z, r: 60, delay: 4, dmg: B.dmg * 2.5, el: 'enemyPurple', vis: 1 });
           B.fx('judgment');
@@ -1150,7 +1155,7 @@ SCRIPTS.hollowKing = {
         { name: 'rain', w: 2, cd: 4, run(B) { return SCRIPTS.hollowKing.phases[0].moves[1].run(B); } },
         // he steps into shadow and out of it behind you, blade already moving
         { name: 'shadowStep', w: 2, cd: 6, run(B, t) {
-          B.anim('cast', 'roar', 0.5);
+          B.anim('cast', 'vanish', 0.5);
           B.at(0.45, () => {
             const p = B.target ?? t;
             if (!p) return;

@@ -52,7 +52,7 @@ export class RelicRuntime {
   reset() {
     this.t = {}; this.kills = []; this.first = new WeakSet(); this.casts = 0; this.abil = 0;
     this.breathUsed = false; this.inFight = false; this.kindleT = 0; this.fever = 0; this.howl = false; this.stillT = 0; this.die = 0;
-    this._fb = null;
+    this._fb = new Set(); // (foes whose first hit is landing: a chain inside it may first-hit another)
   }
 
   get p() { return this.g.player; }
@@ -126,7 +126,7 @@ export class RelicRuntime {
   dmgMod(a, H) {
     if (H.tag === 'dot' || !this.has('firstblood') || this.first.has(a)) return 0;
     this.first.add(a);
-    this._fb = a;
+    this._fb.add(a);
     return 0.6;
   }
 
@@ -134,8 +134,7 @@ export class RelicRuntime {
   onHit(a, H, res, dmg, pos, stp) {
     const p = this.p, s = p.stats, g = this.g;
     const proc = H.tag !== 'dot' && !H.relic;
-    if (this._fb === a) {
-      this._fb = null;
+    if (this._fb.delete(a)) {
       stp = { ...(stp ?? {}), mark: 4 };
       this._emit('imp', { a: pk(pos), e: 'blood', s: 1.4 });
     }
@@ -284,7 +283,8 @@ export class RelicRuntime {
       this._emit('meteor', { a: [r2(x), r2(g.groundY(x, z)), r2(z)] });
     }
     // Arcanum set (3): every 4th ability cast refunds its charge
-    if (this.set('arcanum') >= 3 && slot !== 'ultimate' && ++this.abil % 4 === 0) {
+    // (not past the spell's charges: an Arcane Echo on the same cast may have refunded it already)
+    if (this.set('arcanum') >= 3 && slot !== 'ultimate' && ++this.abil % 4 === 0 && p.chargesLeft[slot] < (p.cls.spells[slot]?.charges ?? 1)) {
       p.chargesLeft[slot]++;
       g.ui?.floatText(p.eye.add(p.forward().multiplyScalar(2)), 'ARCANUM', SETS.arcanum.color);
     }
@@ -414,11 +414,12 @@ export class RelicRuntime {
         vfx.decal(at, 'glyph', 2.8, 1.1, 0xff5010);
         vfx.ring(at, 1.3, fxOf('fire').mid, 0.7, 0.18);
         au?.play('burn_tick', { pos: at, volume: 0.6 });
+        const id = this._cur; // (its ascension: _cur is gone by the time a delayed blow lands)
         g.spells.after(0.7, () => {
           const c = V(at.x, at.y + 0.6, at.z);
           vfx.explosion(c, 'fire', 2.2, { groundY: at.y, shakeScale: 0.4 });
           au?.play('explosion', { pos: c, volume: 0.6 });
-          if (local) this._area(c, 2.4, this.pd(30), 'fire', { burn: [3, this.pd(5)] });
+          if (local) this._area(c, 2.4, this.pd(30, id), 'fire', { burn: [3, this.pd(5, id)] });
         });
         break;
       }
@@ -445,7 +446,7 @@ export class RelicRuntime {
             if (!local) return;
             for (const a of g.actors.hostiles()) {
               const d2 = segPointDist2(ax, 0, az, bx, 0, bz, a.pos.x, 0, a.pos.z);
-              if (d2 < (1.1 + a.radius) ** 2 && a.pos.y < g.groundY(a.pos.x, a.pos.z) + 1.5) this._hit(a, this.pd(7), 'fire', { burn: [2, this.pd(6)] });
+              if (d2 < (1.1 + a.radius) ** 2 && a.pos.y < g.groundY(a.pos.x, a.pos.z) + 1.5) this._hit(a, this.pd(7, 'emberstride'), 'fire', { burn: [2, this.pd(6, 'emberstride')] });
             }
           } });
         break;
@@ -465,11 +466,12 @@ export class RelicRuntime {
         const start = V(at.x + rand(-3, 3), at.y + 15, at.z + rand(-3, 3)), T = 0.55;
         g.spells.spawn({ local: false, faction: 'neutral', el: 'fire', pos: start, vel: V((at.x - start.x) / T, (at.y - start.y) / T, (at.z - start.z) / T), radius: 0.3, life: T, core: 0.8, mesh: 'meteor', meshScale: 0.75, light: 12, trail: 1.6, noWall: true });
         au?.play('cast_fire_big', { pos: at, volume: 0.5 });
+        const id = this._cur;
         g.spells.after(T, () => {
           const c = V(at.x, at.y + 0.5, at.z);
           vfx.explosion(c, 'fire', 3.2, { groundY: at.y });
           au?.play('explosion_big', { pos: c, volume: 0.8 });
-          if (local) this._area(c, 3.4, this.pd(70), 'fire', { burn: [4, this.pd(6)] }, { kb: 8 });
+          if (local) this._area(c, 3.4, this.pd(70, id), 'fire', { burn: [4, this.pd(6, id)] }, { kb: 8 });
         });
         break;
       }
@@ -667,7 +669,7 @@ export class RelicRuntime {
       const c = V(e.pos.x, e.pos.y + 1, e.pos.z);
       g.vfx.explosion(c, 'arcane', 3, { groundY: e.pos.y, shakeScale: 0.4 });
       g.audio?.play('explosion', { pos: c, volume: 0.6 });
-      if (e.local && g.player.id === e.pid) this._area(c, 3.2, this.pd(45), 'arcane', null, { kb: 7 });
+      if (e.local && g.player.id === e.pid) this._area(c, 3.2, this.pd(45, 'afterimage'), 'arcane', null, { kb: 7 });
     }
   }
 

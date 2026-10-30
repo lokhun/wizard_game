@@ -85,6 +85,55 @@ export class Net {
     this.snapT = 0;
     this.closed = false;
     this.rx = {};
+    this.heard = new Map(); // host: playerId -> when last heard from (performance.now)
+    this.hostHeard = 0;     // client: when the host was last heard from
+    this.away = new Set();  // who last said their tab was in the background (host: playerIds; client: 'host')
+    this._hb = null;
+  }
+
+  // A tab that just closes may never close its WebRTC channels (the browser can take minutes, or forever,
+  // to notice): every side says something every 2 s, and one not heard from in 45 s is taken to have left
+  // (loads and alt-tabs stay well inside that). A page that goes away closes its peer at once (main.js).
+  // A tab left in the background has its timers slowed to one a minute after five minutes (Chrome), so its
+  // beats say so (h) and it is given longer; and a side whose own timer slept can't judge who went quiet.
+  _startBeat() {
+    clearInterval(this._hb);
+    const beat = () => {
+      const m = { t: 'hb', h: document.hidden ? 1 : 0 };
+      if (this.isHost) { for (const c of this.conns.values()) if (c.open) c.send(m); }
+      else if (this.hostConn?.open) this.hostConn.send(m);
+    };
+    if (this._onVis) document.removeEventListener('visibilitychange', this._onVis);
+    this._onVis = () => { if (!this.closed) beat(); };
+    document.addEventListener('visibilitychange', this._onVis);
+    let last = performance.now();
+    this._hb = setInterval(() => {
+      if (this.closed) return;
+      const now = performance.now(), slept = now - last > 10000;
+      last = now;
+      beat();
+      const quiet = (id, t) => !slept && now - t > (this.away.has(id) ? HB_TIMEOUT_AWAY : HB_TIMEOUT);
+      if (this.isHost) {
+        for (const pid of [...this.conns.keys()]) {
+          if (slept) this.heard.set(pid, now);
+          else if (quiet(pid, this.heard.get(pid) ?? now)) this._drop(pid);
+        }
+      } else if (this.hostHeard) {
+        if (slept) this.hostHeard = now;
+        else if (quiet('host', this.hostHeard)) this._lost();
+      }
+    }, 2000);
+  }
+  _heardAway(id, msg) { if (msg.t === 'hb') { if (msg.h) this.away.add(id); else this.away.delete(id); } else this.away.delete(id); }
+  _lost() { if (this._gone) return; this._gone = true; this.hostHeard = 0; this.onDisconnect?.(); } // (client: once)
+  _drop(pid) {
+    const c = this.conns.get(pid);
+    this.conns.delete(pid);
+    this.heard.delete(pid); this.away.delete(pid);
+    try { c?.close(); } catch { /* ignore */ }
+    try { this.fast.get(pid)?.close(); } catch { /* ignore */ }
+    this.fast.delete(pid);
+    this.onPeerLeft?.(pid);
   }
 
   on(fn) { this.handlers.add(fn); return () => this.handlers.delete(fn); }
@@ -113,6 +162,7 @@ export class Net {
           this.isHost = true;
           this.code = code;
           this.id = 'host';
+          this._startBeat();
           resolve(code);
         });
         peer.on('error', (err) => {
@@ -133,6 +183,9 @@ export class Net {
     const pid = 'p' + conn.peer.slice(-6);
     const onData = (msg) => {
       if (!msg || typeof msg !== 'object') return;
+      this.heard.set(pid, performance.now());
+      this._heardAway(pid, msg);
+      if (msg.t === 'hb') return;
       // routing: targeted messages from clients
       if (msg.to && msg.to !== 'host') {
         const c = this.conns.get(msg.to);
@@ -156,11 +209,14 @@ export class Net {
     }
     conn.on('open', () => {
       this.conns.set(pid, conn);
+      this.heard.set(pid, performance.now());
       conn.pid = pid;
     });
     conn.on('data', onData);
     conn.on('close', () => {
+      if (this.conns.get(pid) !== conn) return; // (already dropped as silent)
       this.conns.delete(pid);
+      this.heard.delete(pid); this.away.delete(pid);
       this.onPeerLeft?.(pid);
     });
     conn.on('error', (e) => console.warn('conn error', e));
@@ -182,11 +238,19 @@ export class Net {
           this.hostConn = conn;
           this.code = code.toUpperCase();
           this.id = 'p' + peer.id.slice(-6);
+          this.hostHeard = performance.now();
+          this._startBeat();
           resolve();
         });
-        const onData = (msg) => { if (msg && typeof msg === 'object' && !this._stale(msg, msg.from ?? 'host')) this._emit(msg, msg.from ?? 'host'); };
+        const onData = (msg) => {
+          if (!msg || typeof msg !== 'object') return;
+          if (this.hostHeard) this.hostHeard = performance.now();
+          this._heardAway('host', msg);
+          if (msg.t === 'hb' || this._stale(msg, msg.from ?? 'host')) return;
+          this._emit(msg, msg.from ?? 'host');
+        };
         conn.on('data', onData);
-        conn.on('close', () => { if (!this.closed) this.onDisconnect?.(); });
+        conn.on('close', () => { if (!this.closed) this._lost(); });
         conn.on('error', (e) => console.warn('conn error', e));
         // the unordered state channel; until (unless) it opens, state goes over the reliable one
         const fast = peer.connect(PREFIX + code.toUpperCase(), { reliable: false, serialization: 'json', metadata: { fast: 1 } });
@@ -259,7 +323,7 @@ export class Net {
     if (this.stateT >= 1 / 20 && p) {
       this.stateT = 0;
       const s = { t: 'ps', id: p.id, p: [r2(p.pos.x), r2(p.pos.y), r2(p.pos.z)], y: r3(p.yaw), pi: r3(p.pitch), hp: Math.ceil(p.hp), mh: p.maxHp, sh: Math.ceil(p.shield),
-        dn: p.downed ? 1 : 0, dd: p.dead ? 1 : 0, u: Math.floor(p.ult), g: Math.floor(p.gold), lv: game.floorIndex };
+        dn: p.downed ? 1 : 0, dd: p.dead ? 1 : 0, u: Math.floor(p.ult), g: Math.floor(p.gold), lv: game.floorIndex, dm: Math.round(p.damageDealt), k: p.kills };
       this.sendState(s);
     }
     if (this.isHost) {
@@ -274,6 +338,8 @@ export class Net {
 
   close() {
     this.closed = true;
+    clearInterval(this._hb);
+    if (this._onVis) document.removeEventListener('visibilitychange', this._onVis);
     try { this.peer?.destroy(); } catch { /* ignore */ }
     this.conns.clear();
     this.fast.clear();
@@ -282,5 +348,7 @@ export class Net {
   }
 }
 
+const HB_TIMEOUT = 45000;
+const HB_TIMEOUT_AWAY = 180000; // (a background tab beats once a minute at worst)
 const r2 = (x) => Math.round(x * 100) / 100;
 const r3 = (x) => Math.round(x * 1000) / 1000;

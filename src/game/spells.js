@@ -4,6 +4,8 @@ import { FX, fxOf, nearFade, clampHDR, orbMaterial } from '../render/vfx.js';
 import { SPR } from '../render/particles.js';
 import { rand } from '../core/rng.js';
 import { segPointDist2 } from '../core/math.js';
+import { GeoBuilder } from '../render/geo.js';
+import { WATER_Y } from '../world/levelgen.js';
 
 // ---------------------------------------------------------------------------
 // Spell runtime: projectiles, zones, delayed actions and channel beams.
@@ -119,9 +121,71 @@ function magmaTexture() {
 }
 
 const _hp = { x: 0, z: 0 };
+const _wp = new THREE.Vector3();
+// Arrows that miss stay where they land: stuck in the wall or the floor, quivering a moment, gone after a
+// few seconds. A pool of 24 in one instanced mesh of the arrow (count kept at one zero-sized arrow, so its
+// program compiles with the level's).
+const ARROWS = 24, ARROW_LIFE = 6, _aq = new THREE.Quaternion(), _aw = new THREE.Quaternion(), _ap = new THREE.Vector3(), _ad = new THREE.Vector3(), _as = new THREE.Vector3(), _am = new THREE.Matrix4(), _az = new THREE.Vector3(0, 0, 1);
+// what a shot leaves on the wall it strikes, by element (and how big): scorched, rimed or cracked stone
+const WALL_MARK = { fire: ['scorch', 1.3], enemyFire: ['scorch', 1.1], lightning: ['scorch', 0.8], frost: ['frost', 1.2], earth: ['crack', 1.1], physical: ['crack', 0.8] };
+const _wmP = new THREE.Vector3();
+
+class StuckArrows {
+  constructor(def) {
+    this.mesh = new THREE.InstancedMesh(def.geo, def.mat, ARROWS);
+    this.mesh.frustumCulled = false;
+    this.mesh.name = 'stuckArrows';
+    _am.makeScale(0, 0, 0);
+    for (let i = 0; i < ARROWS; i++) this.mesh.setMatrixAt(i, _am);
+    this.mesh.count = 1;
+    this.tip = new Float32Array(ARROWS * 3); this.q = new Float32Array(ARROWS * 4); this.ax = new Float32Array(ARROWS * 3);
+    this.age = new Float32Array(ARROWS).fill(ARROW_LIFE + 1);
+    this.next = 0; this.live = 0;
+  }
+  // stuck at pos, having flown along dir: its head buried a hand's width in
+  add(pos, dir) {
+    const i = this.next; this.next = (this.next + 1) % ARROWS;
+    _ad.copy(dir).normalize();
+    if (_ad.lengthSq() < 0.5) return;
+    this.tip[i * 3] = pos.x + _ad.x * 0.18; this.tip[i * 3 + 1] = pos.y + _ad.y * 0.18; this.tip[i * 3 + 2] = pos.z + _ad.z * 0.18;
+    _aq.setFromUnitVectors(_az, _ad);
+    this.q[i * 4] = _aq.x; this.q[i * 4 + 1] = _aq.y; this.q[i * 4 + 2] = _aq.z; this.q[i * 4 + 3] = _aq.w;
+    // it quivers about an axis across its shaft
+    _ap.set(-_ad.z, 0, _ad.x); if (_ap.lengthSq() < 1e-4) _ap.set(1, 0, 0);
+    _ap.normalize(); this.ax[i * 3] = _ap.x; this.ax[i * 3 + 1] = _ap.y; this.ax[i * 3 + 2] = _ap.z;
+    this.age[i] = 0;
+    this.live = ARROW_LIFE + 0.5;
+  }
+  update(dt) {
+    if (this.live <= -0.5) return;
+    this.live -= dt;
+    let top = 0;
+    for (let i = 0; i < ARROWS; i++) {
+      const age = (this.age[i] += dt);
+      if (age > ARROW_LIFE) { if (age - dt <= ARROW_LIFE) { _am.makeScale(0, 0, 0); this.mesh.setMatrixAt(i, _am); } continue; }
+      top = i + 1;
+      // (settled and not yet fading: its matrix stands)
+      if (age > 0.45 && age < ARROW_LIFE - 0.6) continue;
+      const wob = Math.sin(age * 48) * Math.exp(-age * 9) * 0.22;
+      _aw.setFromAxisAngle(_ap.set(this.ax[i * 3], this.ax[i * 3 + 1], this.ax[i * 3 + 2]), wob);
+      _aq.set(this.q[i * 4], this.q[i * 4 + 1], this.q[i * 4 + 2], this.q[i * 4 + 3]).premultiply(_aw);
+      // pivoting on its buried head; drawn back out as it fades
+      const f = age > ARROW_LIFE - 0.6 ? (ARROW_LIFE - age) / 0.6 : 1;
+      _ad.copy(_az).applyQuaternion(_aq);
+      _ap.set(this.tip[i * 3], this.tip[i * 3 + 1], this.tip[i * 3 + 2]).addScaledVector(_ad, -0.4 * f);
+      _as.setScalar(f);
+      _am.compose(_ap, _aq, _as);
+      this.mesh.setMatrixAt(i, _am);
+    }
+    this.mesh.count = Math.max(1, top);
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+}
+
 export class SpellRuntime {
   constructor(game) {
     this.g = game;
+    this._eye = { x: 0, y: 0, z: 0, open: true }; // (an area's centre, as _seeFrom last set it)
     this.projectiles = [];
     this.zones = [];
     this.timers = [];
@@ -135,7 +199,13 @@ export class SpellRuntime {
     this.hostileMats = new Map();
     this.spriteMats = new Map();
     this.meshCache = {};
+    this.arrows = null; // (missed arrows stuck in walls and floors: StuckArrows)
+    this._wmT = -1; // (the last wall mark: see _wallMark)
     this._buildMeshes();
+    // (the stuck-arrow pool lives in the scene for good, from before the first prewarm, so its program
+    // compiles with the level's and the prewarm's sweep of what it added leaves it be)
+    this.arrows = new StuckArrows(this.meshCache.arrow);
+    game.scene.add(this.arrows.mesh);
     // fast projectiles draw a streak along their path so they read in flight
     this.tracerGeo = new THREE.PlaneGeometry(1, 1).translate(-0.5, 0, 0);
     this.tracerTex = streakTexture();
@@ -190,9 +260,15 @@ export class SpellRuntime {
     const blade = new THREE.BoxGeometry(0.06, 0.012, 1.1);
     blade.translate(0, 0, 0.2);
     M.blade = { geo: blade, mat: nearFade(new THREE.MeshBasicMaterial({ color: new THREE.Color(0.5, 1.1, 1.8), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })) };
-    const arrow = new THREE.CylinderGeometry(0.015, 0.015, 0.8, 4);
-    arrow.rotateX(Math.PI / 2);
-    M.arrow = { geo: arrow, mat: new THREE.MeshStandardMaterial({ color: 0x4a3018, roughness: 0.8 }) };
+    // an arrow, head first along +z (the way it flies): a shaft, an iron head and three vanes of fletching
+    const ab = new GeoBuilder(), am = new THREE.Matrix4();
+    ab.addGeometry(new THREE.CylinderGeometry(0.013, 0.013, 0.74, 5).rotateX(Math.PI / 2), am.makeTranslation(0, 0, -0.03));
+    ab.addGeometry(new THREE.ConeGeometry(0.028, 0.11, 4).rotateX(Math.PI / 2), am.makeTranslation(0, 0, 0.39));
+    for (let k = 0; k < 3; k++) {
+      const a = k / 3 * Math.PI * 2;
+      ab.addGeometry(new THREE.BoxGeometry(0.003, 0.045, 0.13).translate(0, 0.03, 0).rotateZ(a), am.makeTranslation(0, 0, -0.32));
+    }
+    M.arrow = { geo: ab.build(), mat: new THREE.MeshStandardMaterial({ color: 0x4a3018, roughness: 0.8 }) };
     // wind blade: a thicker crescent tapered toward the horns, bulging forward
     const cres = new THREE.TorusGeometry(0.62, 0.075, 6, 24, Math.PI * 0.9);
     {
@@ -288,6 +364,7 @@ export class SpellRuntime {
       data: p.data ?? {},
       hitPlayers: p.hitPlayers ?? true,
       noWall: p.noWall ?? false,
+      meshKind: p.mesh ?? null,
     };
     const fx = fxOf(proj.el);
     proj.lightColor = fx.light;
@@ -346,8 +423,11 @@ export class SpellRuntime {
 
   explode(proj, pos) {
     const a = proj.aoe;
-    if (a.vfx !== false) this.g.vfx.explosion(pos, a.el ?? proj.el, a.radius, { groundY: this.g.groundY(pos.x, pos.z) });
+    const wet = this.g.waterAt(pos.x, pos.z), gy = this.g.groundY(pos.x, pos.z);
+    if (a.vfx !== false) this.g.vfx.explosion(pos, a.el ?? proj.el, a.radius, { groundY: wet ? Math.max(gy, WATER_Y) : gy });
     if (a.sound !== false) this.g.audio?.play(a.radius > 3 ? 'explosion_big' : 'explosion', { pos });
+    this.g.rattleHangers(pos, a.radius * 1.8 + 1.5, Math.min(1.5, 0.4 + a.radius * 0.25)); // (cages and chains overhead swing)
+    if (wet && pos.y < WATER_Y + 1.2) this.g.splash(pos.x, pos.z, Math.min(3, 1 + a.radius * 0.4)); // (a blast on the water throws it up)
     if (proj.local) {
       if (proj.faction === 'player') {
         this.damageArea(pos, a.radius, { dmg: a.dmg, el: a.el ?? proj.el, st: a.st, kb: a.kb ?? 4, tag: a.tag, src: proj.owner }, proj.hitIds, a.excludeDirect ? proj.hitIds : null);
@@ -361,6 +441,7 @@ export class SpellRuntime {
     const hits = [];
     pos = new THREE.Vector3(pos.x, pos.y, pos.z);
     this.g.smashAt?.(pos, radius * 0.8);
+    this._seeFrom(pos);
     for (const a of this.g.actors.hostiles()) {
       if (exclude && exclude.has(a.id)) continue;
       const c = hitPoint(a, pos.x, pos.z, _hp); // (a blast reaches a long body's nearest part)
@@ -368,6 +449,7 @@ export class SpellRuntime {
       const dy = (a.pos.y + a.height * 0.5) - pos.y;
       const r = radius + a.hitR;
       if (dx * dx + dz * dz > r * r || Math.abs(dy) > radius + a.hitH * 0.6) continue;
+      if (!this._sees(a, c)) continue;
       const d = Math.sqrt(dx * dx + dz * dz);
       const fall = H.falloff ? Math.max(0.4, 1 - d / r) : 1;
       this.g.hitActor(a, { ...H, dmg: H.dmg * fall, kbDir: d > 0.01 ? [dx / d, dz / d] : [0, 1] }, new THREE.Vector3(a.pos.x, a.pos.y + a.height * 0.5, a.pos.z));
@@ -380,6 +462,7 @@ export class SpellRuntime {
     const g = this.g;
     const col = g.collision;
     this.orbTime.value = g.time;
+    this.arrows?.update(dt);
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
       if (p.dead) { this._remove(i); continue; }
@@ -488,6 +571,7 @@ export class SpellRuntime {
             g.hitActor(a, { ...p.hit, src: p.owner, kbDir: [p.vel.x / vlen, p.vel.z / vlen], weak, dmg: p.hit.dmg * (weak ? WEAK_MULT : 1) }, hp);
           }
           p.onHit?.(p, a, hp);
+          if (p.stuck) break; // (a sticky one clings to the foe and goes off when its time is up: Time Bomb)
           if (!p.aoe || p.pierce > 0) g.vfx.impact(hp, p.el, 0.7);
           if (p.pierce > 0) { p.pierce--; continue; }
           this.kill(p, hp, a);
@@ -526,6 +610,8 @@ export class SpellRuntime {
         }
       }
       if (wallHit) {
+        if (p.meshKind === 'arrow') this.arrows?.add(p.pos, p.vel);
+        else this._wallMark(p);
         if (p.onWall) p.onWall(p, p.pos);
         g.encounters?.wallHit(p); // secret walls crack under spells
         if (!p.aoe) g.vfx.impact(p.pos, p.el, 0.8);
@@ -534,13 +620,15 @@ export class SpellRuntime {
         this._remove(i);
         continue;
       }
-      // floor hit for arcing projectiles
-      const gy = g.groundY(p.pos.x, p.pos.z);
+      // floor hit for arcing projectiles (over a channel, the water's surface: it splashes)
+      const wet = g.waterAt(p.pos.x, p.pos.z), gy = wet ? Math.max(WATER_Y, g.groundY(p.pos.x, p.pos.z)) : g.groundY(p.pos.x, p.pos.z);
       if (p.pos.y < gy + 0.05 && !p.noWall) {
         p.pos.y = gy + 0.05;
+        if (wet && !p.sticky) g.splash(p.pos.x, p.pos.z, p.aoe ? 0.6 : 0.8);
         if (p.sticky) { p.stuck = true; p.vel.set(0, 0, 0); }
         else if (p.bounce > 0) { p.bounce--; p.vel.y = Math.abs(p.vel.y) * 0.5; }
         else {
+          if (p.meshKind === 'arrow' && !wet) this.arrows?.add(p.pos, p.vel);
           p.onWall?.(p, p.pos);
           if (!p.aoe) g.vfx.impact(p.pos, p.el, 0.8);
           this.kill(p, p.pos);
@@ -620,6 +708,24 @@ export class SpellRuntime {
     t.matrixWorldNeedsUpdate = true;
   }
 
+  // the mark a shot leaves where it struck a wall (on the wall's face: the cells are 2 m, faces on their
+  // edges); none on a pillar or prop, and a few a second at most however fast the volley
+  _wallMark(p) {
+    const mk = WALL_MARK[p.el], g = this.g;
+    if (!mk || g.time - this._wmT < 0.12) return;
+    const v = p.vel, l = v.length();
+    if (l < 1) return;
+    const ix = p.pos.x + v.x / l * 0.15, iz = p.pos.z + v.z / l * 0.15, cx = Math.floor(ix / 2), cz = Math.floor(iz / 2);
+    if (!g.collision.cellBlocked(cx, cz, p.pos.y)) return;
+    const bx = ix - v.x / l * 0.5, bz = iz - v.z / l * 0.5;
+    let nx = 0, nz = 0, sx = p.pos.x, sz = p.pos.z;
+    if (Math.floor(bx / 2) !== cx) { nx = v.x > 0 ? -1 : 1; sx = (cx + (nx > 0 ? 1 : 0)) * 2; }
+    else if (Math.floor(bz / 2) !== cz) { nz = v.z > 0 ? -1 : 1; sz = (cz + (nz > 0 ? 1 : 0)) * 2; }
+    else return;
+    this._wmT = g.time;
+    g.vfx.wallDecal(_wmP.set(sx, Math.max(p.pos.y, g.groundY(sx + nx * 0.5, sz + nz * 0.5) + 0.35), sz), nx, nz, mk[0], mk[1] * (0.8 + Math.random() * 0.4), 9);
+  }
+
   _remove(i) {
     const p = this.projectiles[i];
     this.g.scene.remove(p.group);
@@ -643,6 +749,8 @@ export class SpellRuntime {
     }
     for (const z of this.zones) { z.local = false; z.dmg = 0; z.healAllies = 0; try { z.onEnd?.(z); } catch { /* ignore */ } }
     this.zones.length = 0;
+    // (an end callback above may have spawned a parting shot: Singularity's collapsing star; it goes too)
+    for (let i = this.projectiles.length - 1; i >= 0; i--) this._remove(i);
     this.timers.length = 0;
   }
 
@@ -696,6 +804,15 @@ export class SpellRuntime {
       if (bp) out.push({ actor: a, t: best, point: new THREE.Vector3(bp[0], bp[1], bp[2]) });
     }
     out.sort((a, b) => a.t - b.t);
+    // a local wizard's bolt or beam that stops on a wall cracks a secret wall there, as a spell striking it does
+    if (this.localCast) {
+      const end = out.length ? out[0].t : wall;
+      if (wall < maxDist && end > wall - 0.05) this.g.encounters?.smash(_wp.set(origin.x + dir.x * wall, origin.y + dir.y * wall, origin.z + dir.z * wall), 0.4);
+      // and the barrels and crates it passes through on its way
+      for (let t = 0.5; t < Math.min(end, maxDist); t += 0.5) {
+        for (const b of this.g.breakablesNear(_wp.set(origin.x + dir.x * t, origin.y + dir.y * t, origin.z + dir.z * t), 0.25)) this.g.breakProp(b.i, true);
+      }
+    }
     return { hits: out, wall };
   }
 
@@ -706,20 +823,41 @@ export class SpellRuntime {
       if (filter && !filter(a)) continue;
       const dx = a.pos.x - pos.x, dz = a.pos.z - pos.z, dy = a.pos.y + a.height * 0.5 - pos.y;
       const d2 = dx * dx + dz * dz + dy * dy;
-      if (d2 < bd) { bd = d2; best = a; }
+      // (a chain's next link or a seeker's quarry must be in sight: a bounce leapt through walls)
+      if (d2 < bd && this.g.collision.los(pos.x, pos.y, pos.z, a.pos.x, a.pos.y + a.height * 0.5, a.pos.z)) { bd = d2; best = a; }
     }
     return best;
   }
 
   inRadius(pos, r) {
     const out = [];
+    this._seeFrom(pos);
     for (const a of this.g.actors.hostiles()) {
       const c = hitPoint(a, pos.x, pos.z, _hp);
       const dx = c.x - pos.x, dz = c.z - pos.z;
       const rr = r + a.hitR;
-      if (dx * dx + dz * dz <= rr * rr) out.push(a);
+      if (dx * dx + dz * dz <= rr * rr && this._sees(a, c)) out.push(a);
     }
     return out;
+  }
+
+  // An area reaches only what it can see from its heart: a rift, a nova or a blast ate through walls before
+  // (scripts/walls.js: Transfusion and Void Rift reached foes behind 6 m of stone, and most ultimates). Seen
+  // from just above the centre to the middle of the body. A centre in the stone (a star that burst on a wall)
+  // looks from the nearest open point within a metre; with none, it sees everything, as before.
+  _seeFrom(pos) {
+    const g = this.g, E = this._eye, C = g.collision;
+    E.x = pos.x; E.z = pos.z; E.y = Math.max(pos.y ?? 0, g.groundY(pos.x, pos.z)) + 0.8;
+    E.open = !C.pointSolid(E.x, E.y, E.z);
+    for (let k = 0; k < 16 && !E.open; k++) {
+      const a = (k % 8) * (Math.PI / 4), r = k < 8 ? 0.6 : 1.1;
+      const x = pos.x + Math.cos(a) * r, z = pos.z + Math.sin(a) * r;
+      if (!C.pointSolid(x, E.y, z)) { E.x = x; E.z = z; E.open = true; }
+    }
+  }
+  _sees(a, c) {
+    const E = this._eye;
+    return !E.open || this.g.collision.los(E.x, E.y, E.z, c.x, a.pos.y + a.height * 0.5, c.z);
   }
 
   inCone(origin, dir, range, halfAngle) {
@@ -727,6 +865,16 @@ export class SpellRuntime {
     const cosA = Math.cos(halfAngle);
     const hl = Math.hypot(dir.x, dir.z) || 1;
     const fx = dir.x / hl, fz = dir.z / hl;
+    // a local wizard's blade (a short arc) that reaches a wall cracks a secret wall there
+    if (this.localCast && range <= 6) {
+      const w = this.g.collision.raycast(origin.x, origin.y, origin.z, fx, 0, fz, range, 0.2);
+      if (w < range) this.g.encounters?.smash(_wp.set(origin.x + fx * w, origin.y, origin.z + fz * w), 0.5);
+      // and the barrels and crates in its arc
+      for (const b of this.g.breakablesNear(_wp.set(origin.x + fx * range * 0.5, origin.y, origin.z + fz * range * 0.5), range * 0.6)) {
+        const dx = b.x - origin.x, dz = b.z - origin.z, d = Math.hypot(dx, dz) || 1;
+        if (d - b.r <= range && (dx * fx + dz * fz) / d >= cosA) this.g.breakProp(b.i, true);
+      }
+    }
     for (const a of this.g.actors.hostiles()) {
       const c = hitPoint(a, origin.x, origin.z, _hp);
       const dx = c.x - origin.x, dz = c.z - origin.z;

@@ -127,6 +127,8 @@ export function quadPose(m, s, P, dt) {
     P.r('body', 0, Math.sin(ph) * 0.04 * w, Math.sin(ph) * 0.03 * w);
   }
   P.r('body', (A.lean ?? 0.05) * w);
+  // banking: a running beast leans into its turn and leads it with its head
+  if (!dead) { const bank = st.turnS * w; P.r('body', 0, 0, -bank * 0.14); P.r('neck', 0, bank * 0.3, 0); P.r('head', 0, bank * 0.15, bank * 0.1); }
   // breathing + idle head motion
   const br = Math.sin(T * (A.breath ?? 2.2) + m.seed * 5);
   P.r('front', br * 0.02); P.p('body', 0, br * 0.004, 0);

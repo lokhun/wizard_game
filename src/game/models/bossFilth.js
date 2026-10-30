@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { G, xf, taper, lathe, tube, deform, bumpy, shaggy, robe, mergeRaw, chainSkin, spikeRing, rng, vnoise, fbm3, clamp, lerp, smooth, bump, easeOut, easeIn, easeInOut, TAU } from './core.js';
 import { twoSided, HDR, RUSTY } from './parts.js';
 import { skullGeo } from '../../world/props.js';
+import { wounds, strikeLayer } from './bossKit.js';
 import { addFx, fxOf, fxSet, fxPos, softRing, softDisc, softColumn, Rope, aimChain, boneWorld, setBone, glowLevel, polyParam } from './bossKit.js';
 
 // ============================================================ Mother of Filth ==
@@ -48,7 +49,9 @@ function fleshC(v, seed, base = [0.34, 0.2, 0.2], vein = [0.12, 0.05, 0.08]) {
 }
 
 export const motherOfFilth = {
-  id: 'motherOfFilth', height: 4.6, radius: 2.4, boss: true, eyeColor: FILTH, magicColor: FILTH, defaultAttack: 'slam', attackTypes: ['slam', 'spit', 'summon', 'submerge'], wobble: true, orbSize: 0.3, length: 5, flutter: 0.04,
+  lookAt: 0, recoil: 0, // (its own rig: the head turns on other axes; see EnemyInstance._layers)
+  look: { bones: [['neck0', 0.3], ['neck1', 0.3], ['head', 0.4]], yaw: 0.9, pitch: 0.45, offAt: ['submerge'] }, // (her eyes on her foe: EnemyInstance._lookWorld)
+  id: 'motherOfFilth', height: 4.6, radius: 2.4, boss: true, eyeColor: FILTH, magicColor: FILTH, defaultAttack: 'slam', attackTypes: ['slam', 'spit', 'summon', 'submerge', 'tide', 'pound', 'ripple', 'belch'], wobble: true, orbSize: 0.3, length: 5, flutter: 0.04,
   build(rig) {
     rig.bone('base', null);
     rig.bone('pool', null);
@@ -410,6 +413,67 @@ export const motherOfFilth = {
           ring = (1 - r) * smooth(0.12, 0.18, p); ringR = 0.8 + r * 4.2; ringZ = 3.6;
           glowK = 1 + 0.8 * (1 - p);
         }
+      } else if (at === 'tide' || at === 'pound') {
+        const tide = at === 'tide';
+        if (anim === 'windup') {
+          // tide: the four great tentacles lifted high and wide; pound: reared over her as for the slam
+          const k = smooth(0, 0.7, p), tr = smooth(0.6, 1, p);
+          for (let t = 0; t < 4; t++) tent(P, T, t, -1.0 * k, 0.3, -0.6 * k, (tide ? 1.0 : 0.75) * k);
+          for (let t = 4; t < 8; t++) tent(P, T, t, 0.2 * k, 0.6, 0.2 * k, 0.15 * k);
+          P.r('mass', -0.12 * k); P.p('mass', 0, 0.18 * k, -0.2 * k);
+          P.r('neck0', -0.35 * k); P.r('head', -0.45 * k, 0, Math.sin(T * 40) * 0.03 * tr); P.r('jaw', 0.8 * k);
+          sy *= 1 + 0.12 * k; sxz *= 1 - 0.05 * k; wob = 0.14 + tr * 0.06; glowK = 1 + k;
+        } else {
+          // tide: down flat on the pool to either side, up, and down again for the second wave;
+          // pound: down, and hauled straight back up for the next (the deluge is three of them)
+          const sl = tide ? smooth(0, 0.06, p) * (1 - smooth(0.2, 0.42, p)) + smooth(0.5, 0.57, p) * (1 - smooth(0.78, 1, p)) : smooth(0, 0.1, p) * (1 - smooth(0.42, 0.85, p));
+          const up = tide ? (1 - sl) * (1 - smooth(0.75, 1, p)) : smooth(0.42, 0.85, p);
+          for (let t = 0; t < 4; t++) tent(P, T, t, 2.5 * sl - 1.0 * up, 0.3, -0.4 * sl - 0.6 * up, (tide ? 1.0 : 0.75) * up + (tide ? 0.7 : -0.1) * sl);
+          for (let t = 4; t < 8; t++) tent(P, T, t, 0.6 * sl, 1.4, 0.3, 0.3 * sl, 2);
+          const sq = tide ? bump(0.05, 0.3, p) + bump(0.55, 0.8, p) : bump(0.08, 0.4, p);
+          P.p('mass', 0, -0.12 * sq + 0.15 * up, 0.25 * sq); P.r('mass', 0.14 * sq - 0.1 * up);
+          P.r('neck0', 0.3 * sl - 0.3 * up); P.r('head', 0.25 * sl - 0.4 * up); P.r('jaw', 0.9);
+          sy *= 1 - 0.14 * sq; sxz *= 1 + 0.07 * sq; wob = 0.26;
+          const rr = tide ? (p < 0.5 ? smooth(0.06, 0.45, p) : smooth(0.57, 0.95, p)) : smooth(0.1, 0.6, p);
+          const lit = tide ? (p < 0.5 ? smooth(0.05, 0.08, p) : smooth(0.56, 0.59, p)) : smooth(0.09, 0.13, p);
+          ring = (1 - rr) * lit; ringR = 1.5 + rr * 6; ringZ = 0;
+          glowK = 1 + 0.8 * sl;
+        }
+      } else if (at === 'ripple') {
+        if (anim === 'windup') {
+          // every tentacle lifts at once, opening round her like a flower
+          const k = smooth(0, 0.8, p), tr = smooth(0.6, 1, p);
+          for (let t = 0; t < TENT.length; t++) tent(P, T, t, -0.9 * k, 0.4, -0.5 * k, 0, 1.5);
+          P.p('mass', 0, 0.2 * k, 0); P.r('neck0', -0.3 * k); P.r('head', -0.5 * k, 0, Math.sin(T * 38) * 0.03 * tr); P.r('jaw', 0.7 * k);
+          sy *= 1 + 0.14 * k; sxz *= 1 - 0.06 * k; wob = 0.14 + tr * 0.08; glowK = 1 + k;
+        } else {
+          // all down at once, then the sac heaves three times, a ring of bile bursting from each heave
+          const k = smooth(0, 0.05, p) * (1 - smooth(0.92, 1, p));
+          let hv = 0, rr = 1, lit = 0;
+          for (const h of [0.05, 0.34, 0.62, 0.9]) { const b = bump(h - 0.02, h + 0.18, p); hv = Math.max(hv, b); if (p >= h) { rr = smooth(h, h + 0.28, p); lit = smooth(h, h + 0.03, p); } }
+          for (let t = 0; t < TENT.length; t++) tent(P, T, t, (1.6 + 0.5 * hv) * k, 1.2, 0.3, 0, 2);
+          P.p('mass', 0, -0.2 * hv * k, 0); P.r('neck0', 0.2 * hv - 0.2 * (1 - hv) * k); P.r('head', -0.3 * k + 0.2 * hv, 0, Math.sin(T * 30) * 0.04 * k); P.r('jaw', 0.9 * k);
+          sy *= 1 - 0.16 * hv; sxz *= 1 + 0.09 * hv; wob = 0.2 + 0.15 * hv;
+          ring = (1 - rr) * lit; ringR = 1.5 + rr * 7; ringZ = 0; glowK = 1 + 1.2 * hv;
+        }
+      } else if (at === 'belch') {
+        if (anim === 'windup') {
+          // she gulps: the sac swells and the throat pumps, the skull drawn back with its cheeks full
+          const k = smooth(0, 1, p), g = Math.max(0, Math.sin(T * 9)) * k;
+          P.r('neck0', -0.35 * k); P.r('neck1', -0.25 * k); P.r('head', -0.4 * k + 0.08 * g); P.r('jaw', 0.15 * k + 0.1 * g);
+          P.s('throat', 1 + 0.7 * k + 0.12 * g);
+          for (let t = 4; t < 8; t++) tent(P, T, t, 0.35 * k, 0.5, 0.6 * k, 0);
+          sy *= 1 + 0.1 * k + 0.03 * g; sxz *= 1 + 0.1 * k; orb = 0.3 + 0.7 * p; glowK = 1 + 0.8 * k; wob = 0.14 + 0.08 * g;
+        } else {
+          // and out it comes: the skull thrust forward, jaws gaping, the whole sac emptying and shuddering
+          const k = smooth(0, 0.1, p) * (1 - smooth(0.8, 1, p));
+          P.r('neck0', 0.45 * k); P.r('neck1', 0.25 * k); P.r('head', 0.2 * k, Math.sin(T * 11) * 0.12 * k, Math.sin(T * 23) * 0.05 * k); P.r('jaw', 1.15 * k);
+          P.p('neck0', 0, 0, 0.3 * k); P.p('mass', 0, 0, 0.2 * k);
+          P.s('throat', 1 + 0.6 * (1 - smooth(0, 0.6, p)) - 0.25 * k);
+          for (let t = 0; t < 4; t++) tent(P, T, t, 0.4 * k, 1.8, 0.2, 0.2 * k, 2.5);
+          sy *= 1 + 0.1 * (1 - smooth(0, 0.7, p)) - 0.12 * smooth(0.2, 0.8, p) * k + Math.sin(T * 26) * 0.02 * k;
+          orb = 1 - smooth(0.1, 0.6, p); wob = 0.3;
+        }
       } else if (emerging) {
         // up through the geyser, tentacles flung wide, then down
         const u = easeOut(smooth(0, 0.35, p));
@@ -505,11 +569,25 @@ export const motherOfFilth = {
     st.glowK = glowK;
     st.fxv = st.fxv ?? { aura: 0, ring: 0, ringR: 1, ringX: 0, ringZ: 0, gey: 0, geyS: 1 };
     const fv = st.fxv; fv.aura = aura; fv.ring = ring; fv.ringR = ringR; fv.ringX = ringX; fv.ringZ = ringZ; fv.gey = gey; fv.geyS = geyS;
+    if (!dead) strikeLayer(m, s, P, dt, BLOW_O);
+    wounds(m, s, P, dt, { hunch: [['mass', 0.06], ['neck0', 0.12], ['neck1', 0.06], ['head', 0.1]], breath: [['mass', 0.04], ['neck0', 0.03]], spasm: ['mass', 'head'] }); // (near her end: bossKit.wounds)
     P.damp(dt, rate);
     secondary(m, s, dt);
     return 0;
   },
 };
+
+// her blows' weight (bossKit.strikeLayer): the sac lurches and drops as the tentacles land
+const BLOWS = {
+  slam: { hit: 0.15, rel: [0.8, 0, 0], imp: [1.6, 0, 1.4], sink: 0.15, rec: 0.7 },
+  tide: { hit: 0.06, hits: [0.56], imp: [1.0, 0, 1.4], sink: 0.15, rec: 0.8 },
+  pound: { hit: 0.1, imp: [1.5, 0, 1.5], sink: 0.15, rec: 2 },
+  ripple: { hit: 0.05, hits: [0.34, 0.62, 0.9], imp: [0.6, 0, 1.3], sink: 0.15, rec: 2 },
+  belch: { hit: 2, rel: [1.4, 0, 0.4], sink: 0.1, rec: 0.8 },
+  spit: { hit: 2, rel: [1.0, 0, 0.2], sink: 0.08 },
+  summon: { hit: 0.65, imp: [-1.0, 0, -0.6], rec: 0.85 },
+};
+const BLOW_O = { types: BLOWS, chain: [['mass', 0.35, 0.3], ['neck0', 0.4, 0.3]], head: 'head', root: 'mass', sink: 0.12 };
 
 // tentacle t: droop > 0 bends down/outward, < 0 lifts; curl coils the tip; spread fans the root sideways
 function tent(P, T, t, droop, wave = 1, curl = 0, spread = 0, speed = 1) {

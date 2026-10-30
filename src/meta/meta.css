@@ -19,6 +19,7 @@
 /* everything between the title and the buttons scrolls if a long co-op run outgrows the screen */
 .rs-main { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #4a3a28 transparent; display: flex; flex-direction: column; gap: 14px; padding-top: 8px; pointer-events: auto; }
 @keyframes rsIn { from { opacity: 0; transform: translateY(18px) scale(0.985); } }
+.rs-main > * { flex-shrink: 0; } /* (taller than the window: the column scrolls; its sections squeezed would overlap) */
 .rs-head { display: flex; align-items: center; gap: 22px; }
 .rs-emb { flex: 0 0 auto; animation: rsEmb 1.2s ease; }
 @keyframes rsEmb { from { opacity: 0; transform: scale(0.6) rotate(-30deg); } }

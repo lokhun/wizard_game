@@ -36,7 +36,7 @@ export function showCodex(ui, { tab = 0, onClose } = {}) {
   const tabs = ['Feats', 'Wizards', 'Bestiary', 'Records'];
   const m = ui._modal(`
     <div class="cx panel">
-      <div class="cx-head"><div class="title">The Codex</div><div class="meta">${earned} / ${FEATS.length} feats · ${p.runs} runs · ${p.wins} victories</div></div>
+      <div class="cx-head"><div class="title">The Codex</div><div class="meta">${earned} / ${FEATS.length} feats · ${p.runs} run${p.runs === 1 ? '' : 's'} · ${p.wins} victor${p.wins === 1 ? 'y' : 'ies'}</div></div>
       <div class="cx-tabs">${tabs.map((t, i) => `<div class="cx-tab" data-t="${i}">${t}<span class="k">${i + 1}</span></div>`).join('')}</div>
       <div class="cx-body"></div>
       <div class="cx-foot"><div class="hint">${storageOk ? 'Your codex is kept in this browser.' : 'Browser storage is unavailable: progress this session will not be kept.'} · 1–4 or ←/→ to turn the page · Esc to close</div><button class="btn small" id="cxClose">Close</button></div>
@@ -108,7 +108,7 @@ function recordsPage(p) {
   const nemesis = Object.entries(p.killedBy).sort((a, b) => b[1] - a[1])[0];
   const d = p.daily;
   return `<div class="cx-grp">Lifetime</div><div class="cx-recs">
-    ${t('Runs', fmtNum(p.runs), `${fmtNum(p.wins)} victories · ${fmtNum(p.deaths)} deaths`)}
+    ${t('Runs', fmtNum(p.runs), `${fmtNum(p.wins)} victor${p.wins === 1 ? 'y' : 'ies'} · ${fmtNum(p.deaths)} death${p.deaths === 1 ? '' : 's'}`)}
     ${t('Deepest realm', p.bestFloor ? `${p.bestFloor} / ${BIOMES.length}` : '—', p.bestFloor ? esc(BIOMES[p.bestFloor - 1].name) : '')}
     ${t('Foes slain', fmtNum(p.kills))}
     ${t('Damage dealt', fmtNum(p.damage))}
@@ -127,7 +127,7 @@ function recordsPage(p) {
     ${t('Deepest Abyss', p.records.deepestAbyss ? `depth ${p.records.deepestAbyss}` : '—')}
     ${t('Co-op victories', fmtNum(p.coopWins))}
     ${t('Nemesis', nemesis ? esc((ENEMY_DEFS[nemesis[0]] ?? BOSS_DEFS[nemesis[0]])?.name ?? nemesis[0]) : '—', nemesis ? `ended ${nemesis[1]} run${nemesis[1] > 1 ? 's' : ''}` : '')}
-    ${t('Daily Rite streak', d.streak ? `${d.streak} day${d.streak > 1 ? 's' : ''}` : '—', `best ${d.bestStreak} · ${d.runs} rites`)}
+    ${t('Daily Rite streak', d.streak && (d.last === utcDay() || d.last === prevKey()) ? `${d.streak} day${d.streak > 1 ? 's' : ''}` : '—', `best ${d.bestStreak} · ${d.runs} rite${d.runs === 1 ? '' : 's'}`)}
   </div>`;
 }
 

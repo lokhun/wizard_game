@@ -8,6 +8,7 @@ import { V, withLOD } from './shapes.js';
 import { grp } from './common.js';
 import { wob } from './fx.js';
 import { Cloth } from './cloth.js';
+import { setRotXYZ } from '../../../render/rot.js';
 import { probeDynamic, bakeAvatar, cloneShared } from './batch.js';
 import { BODY_Y, SHOULDER_X, HIP_X, SKIRT_TOP, smoothstep as sstep, ringPt, TAU } from './garments.js';
 import { getCostume, dress } from './costumes.js';
@@ -30,8 +31,8 @@ class Joint {
   set(x = 0, y = 0, z = 0) { this.t.set(x, y, z); return this; }
   add(x = 0, y = 0, z = 0) { this.t.x += x; this.t.y += y; this.t.z += z; return this; }
   mix(x, y, z, w) { const t = this.t; t.x += (x - t.x) * w; t.y += (y - t.y) * w; t.z += (z - t.z) * w; return this; }
-  step(k) { this.c.lerp(this.t, k); this.g.rotation.set(this.c.x, this.c.y, this.c.z); }
-  snap() { this.c.copy(this.t); this.g.rotation.set(this.c.x, this.c.y, this.c.z); }
+  step(k) { this.c.lerp(this.t, k); setRotXYZ(this.g, this.c.x, this.c.y, this.c.z); }
+  snap() { this.c.copy(this.t); setRotXYZ(this.g, this.c.x, this.c.y, this.c.z); }
 }
 
 export function createAvatar(classId, ctx) {
@@ -212,6 +213,7 @@ export function createAvatar(classId, ctx) {
   // ---------------- hat ----------------
   const hat = withLOD(0.5, () => buildHat(classId, kit, meta, glows, { mantle: false }));
   hat.group.name = 'hat';
+  if (ctx.noHat) hat.group.clear(); // (the model viewer: a look at the head beneath)
   head.add(hat.group);
 
   // ---------------- costume ----------------

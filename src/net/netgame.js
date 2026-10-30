@@ -27,7 +27,7 @@ export function handleGameMessage(game, msg, from) {
       break;
     }
     case 'summon': {
-      if (!game.isHost) return;
+      if (!game.isHost || !game.onFloor(msg)) return;
       game.requestSummon(msg.ty, new THREE.Vector3(msg.x, 0, msg.z), msg.l, msg.o ?? from);
       break;
     }
@@ -42,7 +42,9 @@ export function handleGameMessage(game, msg, from) {
     // ------------------------------------------------ shared events
     case 'pick': game.removeDrop(msg.id); break;
     case 'bat': { const a = game.actors.byId.get(msg.id); if (a) { a.brainAttackType = msg.a; a.attackType = msg.a; } break; }
-    case 'brk': game.breakProp(msg.i, false); break;
+    case 'brk': if (game.onFloor(msg)) game.breakProp(msg.i, false); break;
+    case 'cells': game.openCells(game.level?.rooms.find((r) => r.id === msg.r), false); break;
+    case 'pitfall': { const a = game.actors.byId.get(msg.id), pit = game.level?.pits.find((q) => q.i === msg.i); if (a && pit) game.pitFallFx(a, pit, false); break; }
     case 'chest': {
       const it = game.interactables.find((i) => i.id === msg.id);
       it?.open?.();
@@ -81,17 +83,17 @@ export function handleGameMessage(game, msg, from) {
       if (game.isHost || game.actors.byId.has(msg.id)) return;
       const a = game.actors.spawn(msg.ty, msg.x, msg.z, { id: msg.id, yaw: msg.yaw, elite: !!msg.e, hp: msg.hp, faction: msg.f ? 'ally' : 'enemy', affix: msg.af, affix2: msg.af2 ?? null, life: msg.life, silent: true, spawnFx: msg.nf ? false : undefined, dormant: !!msg.dm, homeRoom: msg.hr >= 0 ? game.level.rooms[msg.hr] : null });
       a.net.x = msg.x; a.net.z = msg.z; a.net.yaw = msg.yaw;
-      if (msg.fly) a.model?.setFlying?.(true);
+      if (msg.fly !== undefined) a.model?.setFlying?.(!!msg.fly); // (a late joiner's Gravemaw may have landed: its init says it flies)
       break;
     }
     case 'die': {
       if (game.isHost) return;
       const a = game.actors.byId.get(msg.id);
       if (a && !a.dead) {
-        a.dead = true; a.deadT = 0; a.anim = 'death'; a.animT = 0; a.mask = 0;
+        a.dead = true; a.deadT = 0; a.anim = 'death'; a.animT = 0; a.mask = 0; a.deathYaw = msg.fy ?? null;
         game.actors._rebuildLists();
         game.actors.deathFx(a, msg.el);
-        game.stats.kills++;
+        if (a.faction === 'enemy') game.stats.kills++; // (a summon's end isn't a kill, as on the host)
       }
       break;
     }
@@ -127,18 +129,18 @@ export function handleGameMessage(game, msg, from) {
     case 'wave': game.ui?.wave(msg.n, msg.of); break;
     case 'boss': {
       const a = game.actors.byId.get(msg.id);
-      if (a) game.onBossSpawn(a);
-      else setTimeout(() => { const b = game.actors.byId.get(msg.id); if (b) game.onBossSpawn(b); }, 300);
+      if (a) game.onBossSpawn(a, !!msg.late);
+      else setTimeout(() => { const b = game.actors.byId.get(msg.id); if (b) game.onBossSpawn(b, !!msg.late); }, 300);
       break;
     }
     case 'bossdead': if (!game.isHost) game.bossDefeated(!!msg.ab); break;
     case 'abyss': if (!game.isHost) game.enterAbyss(+msg.d || 1, typeof msg.c === 'string' ? msg.c : null); break;
-    case 'claimVictory': if (game.isHost && game.floorIndex >= 4 && game.interactables.some((i) => i.kind === 'victoryPortal')) game.victory(); break;
+    case 'claimVictory': if (game.isHost && !game.transitioning && !game.ended && game.floorIndex >= 4 && game.interactables.some((i) => i.kind === 'victoryPortal')) game.victory(); break;
     case 'descend': if (game.isHost && game.interactables.some((i) => i.kind === 'abyssPortal')) game.descendAbyss(); break;
     case 'banner': game.ui?.banner(msg.a, msg.b, msg.c); break;
     case 'shake': game.vfx.addShake(msg.k); break;
     case 'snd': game.audio?.play(msg.n, { pos: new THREE.Vector3(msg.x, msg.y, msg.z), volume: msg.v }); break;
-    case 'bfx': game.bossFx(msg.k, game.actors.byId.get(msg.id), msg); break;
+    case 'bfx': game.bossFx(msg.k, game.actors.byId.get(msg.id), msg.x ?? {}); break;
     case 'blinkfx': game.actors.blinkFx(new THREE.Vector3(msg.x, msg.y, msg.z)); break;
     case 'eair': { const a = game.actors.byId.get(msg.id); if (a) { a.airT = 0; a.airDur = msg.d; a.airH = msg.h; } break; } // a foe's leap: its arc (Actors._strike 'leap')
     case 'hoard': game.hoarderNews(msg.k, game.actors.byId.get(msg.id)); break; // a Hoarder appears / is caught
