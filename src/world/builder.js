@@ -323,7 +323,7 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     if (PROP_FLAMES[p.type]) {
       for (const [ox, oy, oz, s] of PROP_FLAMES[p.type]) {
         const c = Math.cos(rot), sn = Math.sin(rot);
-        flames.push({ x: p.x + ox * c + oz * sn, y: fy + oy, z: p.z - ox * sn + oz * c, size: s, kind: 'fire' });
+        flames.push({ x: p.x + ox * c + oz * sn, y: fy + oy, z: p.z - ox * sn + oz * c, size: s, kind: 'fire', src: p.type });
       }
     }
     if (p.type === 'chandelier') {
@@ -458,12 +458,12 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     if (t.type === 'sconce') {
       const rot = Math.atan2(t.nx, t.nz);
       addParts(PROPS.sconce(), t.x, t.y, t.z, rot);
-      flames.push({ x: t.x + t.nx * 0.06, y: t.y + 0.05, z: t.z + t.nz * 0.06, size: 0.9, kind: 'fire', color: t.color });
+      flames.push({ x: t.x + t.nx * 0.06, y: t.y + 0.05, z: t.z + t.nz * 0.06, size: 0.9, kind: 'fire', color: t.color, src: 'sconce' });
       lightPool.addTorch(new THREE.Vector3(t.x + t.nx * 0.5, t.y + 0.2, t.z + t.nz * 0.5), { color: t.color ?? biome.torchColor, intensity: 30, range: 16 });
     } else if (t.type === 'brazier') {
       lightPool.addTorch(new THREE.Vector3(t.x, t.y + 0.4, t.z), { color: t.color ?? biome.torchColor, intensity: t.intensity ?? 40, range: t.range ?? 18, priority: t.priority, flicker: t.noFlame ? 0.08 : 1 });
       if (t.noFlame) continue;
-      if (!flames.some((f) => Math.abs(f.x - t.x) < 0.1 && Math.abs(f.z - t.z) < 0.1)) flames.push({ x: t.x, y: t.y - 0.1, z: t.z, size: 1.6, kind: 'fire', color: t.color });
+      if (!flames.some((f) => Math.abs(f.x - t.x) < 0.1 && Math.abs(f.z - t.z) < 0.1)) flames.push({ x: t.x, y: t.y - 0.1, z: t.z, size: 1.6, kind: 'fire', color: t.color, src: 'brazier' });
       else flames.forEach((f) => { if (Math.abs(f.x - t.x) < 0.1 && Math.abs(f.z - t.z) < 0.1) f.color = t.color; });
     } else if (t.type === 'fungus') {
       lightPool.addTorch(new THREE.Vector3(t.x, t.y, t.z), { color: t.color, intensity: t.intensity, range: t.range, flicker: 0.2 });
@@ -964,6 +964,7 @@ export function buildLevel(level, factory, lightPool, { quality = 'high' } = {})
     mats,
     doors,
     flames,
+    outfalls: dressed.outfalls, // (where water falls from the walls: game/soundscape.js)
     candles,
     pages,
     wisps,

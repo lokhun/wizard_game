@@ -157,7 +157,7 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
   const id = biome.id;
   const runs = buildRuns(level, wallEdges);
   const rng = new RNG(level.seed * 131 + level.floorIndex * 17 + 9);
-  const out = { shafts: [], streams: null, flames: [] };
+  const out = { shafts: [], streams: null, flames: [], outfalls: [] }; // (outfalls: where water falls, for game/soundscape.js)
   const cache = new Map();
   const G = (key, make) => { let g = cache.get(key); if (!g) cache.set(key, (g = make())); return g; };
   const box = (w, h, d) => G(`box${w.toFixed(3)},${h.toFixed(3)},${d.toFixed(3)}`, () => worldBox(w, h, d));
@@ -606,6 +606,7 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
   if (id === 'sewers') {
     // outfall: a pipe mouth spilling a sheet of foul water down the wall
     const outfall = (run, s, y, floor = true) => {
+      { const [ox, , oz] = W3(run, s, 0.5, y); out.outfalls.push({ x: ox, y, z: oz }); }
       put('iron', G('ofp', () => { const c = cylG(0.2, 0.2, 0.46, lo ? 6 : 10, true); c.rotateX(Math.PI / 2); return c; }), run, s, 0.23, y, 0.9);
       put('iron', G('ofr', () => new THREE.TorusGeometry(0.21, 0.04, 4, lo ? 6 : 10)), run, s, 0.46, y);
       put('trim', box(0.7, 0.7, 0.08), run, s, 0.04, y, 0.7);

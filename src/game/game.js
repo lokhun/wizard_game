@@ -4,6 +4,7 @@ import { LightPool } from '../render/lights.js';
 import { Particles, SPR } from '../render/particles.js';
 import { VFX, fxOf } from '../render/vfx.js';
 import { TorchHalos } from '../render/halos.js';
+import { Soundscape } from './soundscape.js';
 import { ContactShadows } from '../render/contact.js';
 import { Storm } from '../render/storm.js';
 import { Debris } from '../render/debris.js';
@@ -301,6 +302,8 @@ export class Game {
     }
     // the air round every open fire catches its light (render/halos.js)
     (this.halos ??= new TorchHalos(this.scene)).build(this.built.flames, level.biome, level.biome.fog.density);
+    // and every fire crackles, every channel runs (game/soundscape.js)
+    (this.soundscape ??= new Soundscape(this)).build(level, this.built);
     this.debris?.dispose(); this.rubble?.dispose();
     this.debris = new Debris(this.scene, this.built.mats.wood, this.collision);
     this.rubble = new Debris(this.scene, this.built.mats.stone, this.collision);
@@ -836,6 +839,7 @@ export class Game {
     }
     // audio listener
     this.audio?.setListener(cam.position, p.forward());
+    this.soundscape?.update(realDt, cam.position);
     this.audio?.setIntensity?.(p.alive && !p.downed ? clamp(1 - p.hp / p.maxHp - 0.4, 0, 1) * 1.6 : 1);
     // net
     if (this.net) this.net.tick(realDt, this);

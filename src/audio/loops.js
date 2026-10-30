@@ -75,3 +75,37 @@ def('loop_draft', 0.5, (v) => {
   v.noise({ buf: 'pink', a: 1.5, peak: 0.35, filt: { type: 'bp', f: 700, q: 9, lfo: { rate: 0.13, depth: 260 } }, trem: { rate: 0.21, depth: 0.6 } });
   v.noise({ buf: 'white', a: 1.5, peak: 0.1, filt: { type: 'bp', f: 2300, q: 14, lfo: { rate: 0.31, depth: 500 } }, trem: { rate: 0.17, depth: 0.8 } });
 });
+
+// ---------------------------------------------------------------- the world's own sounds (game/soundscape.js)
+// a hearth or a campfire: logs crackling and spitting, the low breath of the fire drawing
+def('loop_hearth', 0.25, (v) => {
+  v.noise({ buf: 'crackle', a: 0.6, peak: 0.6, rate: 0.75, filt: { type: 'hp', f: 1300 } });
+  v.noise({ buf: 'crackle', a: 0.6, peak: 0.25, rate: 0.45, filt: { type: 'bp', f: 700, q: 1.2 } });
+  v.noise({ buf: 'brown', a: 0.8, peak: 0.5, filt: { type: 'lp', f: 360, lfo: { rate: 0.31, depth: 120 } }, trem: { rate: 0.23, depth: 0.35 } });
+  v.noise({ buf: 'pink', a: 0.8, peak: 0.1, filt: { type: 'bp', f: 1100, q: 0.9, lfo: { rate: 0.17, depth: 300 } }, trem: { rate: 1.3, depth: 0.5 } });
+});
+// a brazier's bowl of coals: a lighter crackle, the flame's rush in the draught
+def('loop_brazier', 0.25, (v) => {
+  v.noise({ buf: 'crackle', a: 0.6, peak: 0.42, rate: 0.95, filt: { type: 'hp', f: 1700 } });
+  v.noise({ buf: 'brown', a: 0.8, peak: 0.32, filt: { type: 'lp', f: 520, lfo: { rate: 0.41, depth: 160 } }, trem: { rate: 0.37, depth: 0.4 } });
+  v.noise({ buf: 'pink', a: 0.8, peak: 0.12, filt: { type: 'bp', f: 1500, q: 0.8 }, trem: { rate: 2.1, depth: 0.55 } });
+});
+// a torch on the wall: the flame fluttering, an odd snap of pitch
+def('loop_torch', 0.2, (v) => {
+  v.noise({ buf: 'pink', a: 0.6, peak: 0.26, filt: { type: 'bp', f: 650, q: 1.1, lfo: { rate: 0.6, depth: 260 } }, trem: { rate: 2.7, depth: 0.55 } });
+  v.noise({ buf: 'crackle', a: 0.6, peak: 0.18, rate: 1.2, filt: { type: 'hp', f: 2600 } });
+  v.noise({ buf: 'brown', a: 0.8, peak: 0.16, filt: { type: 'lp', f: 300 }, trem: { rate: 0.5, depth: 0.4 } });
+});
+// a sewer channel running: the body of the water, its chuckle over the stones, a hiss of spray
+def('loop_stream', 0.45, (v) => {
+  v.noise({ buf: 'brown', a: 1.0, peak: 0.42, filt: { type: 'lp', f: 280, lfo: { rate: 0.13, depth: 80 } } });
+  v.noise({ buf: 'pink', a: 1.0, peak: 0.3, filt: { type: 'bp', f: 950, q: 1.6, lfo: { rate: 0.29, depth: 380 } }, trem: { rate: 3.1, depth: 0.35 } });
+  v.noise({ buf: 'pink', a: 1.0, peak: 0.16, filt: { type: 'bp', f: 2300, q: 3, lfo: { rate: 0.71, depth: 700 } }, trem: { rate: 5.3, depth: 0.6 } });
+  v.noise({ buf: 'white', a: 1.0, peak: 0.04, filt: { type: 'hp', f: 5000 } });
+});
+// an outfall: a sheet of water falling from a pipe and slapping into the channel below
+def('loop_outfall', 0.4, (v) => {
+  v.noise({ buf: 'pink', a: 0.8, peak: 0.45, filt: { type: 'bp', f: 1700, q: 0.7, lfo: { rate: 0.43, depth: 400 } } });
+  v.noise({ buf: 'white', a: 0.8, peak: 0.12, filt: { type: 'bp', f: 3600, q: 1.5 }, trem: { rate: 11, depth: 0.45 } });
+  v.noise({ buf: 'brown', a: 0.8, peak: 0.45, filt: { type: 'lp', f: 420 }, trem: { rate: 0.9, depth: 0.3 } });
+});

@@ -37,7 +37,10 @@
     foe.maxHp = foe.hp = 1e7;
     const dmg = {}; let slot = 'none', thru = 0;
     const dm = g.actors.damage.bind(g.actors);
-    g.actors.damage = (a, H) => { const b = a.hp; const r = dm(a, H); if (a === foe && b - a.hp > 0) { const src = g.actors.byId.get(H.src)?.faction === 'ally' ? 'summon' : (H.tag ? H.tag + '/' : '') + (H.el ?? '?'); (dmg[slot] ??= {})[src] = Math.round(((dmg[slot] ?? {})[src] ?? 0) + b - a.hp); } return r; };
+    // (a summon's own blow names it in H.by, and a status its bite left ticks on for a few seconds after:
+    // both are the summon's, which walked round the wall, not the spell's)
+    let sumT = -1e9;
+    g.actors.damage = (a, H) => { const b = a.hp; const r = dm(a, H); if (a === foe && b - a.hp > 0) { const ally = g.actors.byId.get(H.by ?? H.src)?.faction === 'ally'; if (ally) sumT = g.time; const src = ally || (H.tag === 'dot' && g.time - sumT < 6) ? 'summon' : (H.tag ? H.tag + '/' : '') + (H.el ?? '?'); (dmg[slot] ??= {})[src] = Math.round(((dmg[slot] ?? {})[src] ?? 0) + b - a.hp); } return r; };
     const onHurt = (d) => { thru += d; };
     g.events.on('hurt', onHurt);
     const pin = () => { foe.pos.x = ex; foe.pos.z = pz; foe.kb.x = foe.kb.z = 0; p.pos.x = px; p.pos.z = pz; p.hp = p.maxHp; if (p.downed) p.revive(1); const dx = ex - px; p.yaw = Math.atan2(-dx, 0); p.pitch = Math.atan2(foe.pos.y + 1 - (p.pos.y + 1.6), dx); };

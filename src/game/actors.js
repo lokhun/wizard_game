@@ -1447,7 +1447,7 @@ export class ActorManager {
           const d = Math.hypot(dx, dz);
           if (d > reach + e.radius) continue;
           if (d > 0.5 && (dx * fx + dz * fz) / d < Math.cos(at.arc ?? 1.4)) continue;
-          this.damage(e, { dmg, el: at.el ?? 'physical', st: at.st, kb: 4, kbDir: [dx / (d || 1), dz / (d || 1)], src: a.owner });
+          this.damage(e, { dmg, el: at.el ?? 'physical', st: at.st, kb: 4, kbDir: [dx / (d || 1), dz / (d || 1)], src: a.owner, by: a.id }); // (by: the summon that struck)
           g.vfx.impact(new THREE.Vector3(e.pos.x, e.pos.y + e.height * 0.5, e.pos.z), 'physical', 0.6);
         }
       });
