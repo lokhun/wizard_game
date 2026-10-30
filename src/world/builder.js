@@ -1300,7 +1300,8 @@ function makeNightSky(storm = false) {
         // moon
         float md = dot(d, uMoonDir);
         float moon = smoothstep(0.9993, 0.9996, md);
-        float crater = fbm(d * 120.) * 0.35;
+        // (the craters only where the moon is: five octaves for every pixel of sky was most of its cost)
+        float crater = moon > 0.0 ? fbm(d * 120.) * 0.35 : 0.0;
         col += vec3(0.85,0.88,1.0) * moon * (2.8 - crater * 2.);
         col += vec3(0.25,0.3,0.5) * pow(max(md, 0.), 300.) * 1.4;
         col += vec3(0.08,0.1,0.18) * pow(max(md, 0.), 12.);
@@ -1317,7 +1318,9 @@ function makeNightSky(storm = false) {
       }`,
   });
   const m = new THREE.Mesh(geo, mat);
-  m.renderOrder = -10;
+  // drawn after the rest of the opaque scene, at the far plane: the depth test then turns away every
+  // pixel the walls and towers already cover, so its noise runs only on the sky that shows
+  m.renderOrder = 50;
   m.frustumCulled = false;
   m.onBeforeRender = (r, s, cam) => { m.position.copy(cam.position); };
   return m;

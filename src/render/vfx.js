@@ -74,6 +74,7 @@ export function clampHDR(c, max = 1.5, out = [0, 0, 0]) {
 const _sc = [0, 0, 0], _sc2 = [0, 0, 0], _rc = [0, 0, 0], _gp = new THREE.Vector3();
 const _flameC = new THREE.Color();
 const _shv = new THREE.Vector3();
+const LIT_DECALS = 18; // (lit floor marks alive at once: see decal)
 const scaleC = (c, k, out) => { out[0] = c[0] * k; out[1] = c[1] * k; out[2] = c[2] * k; return out; };
 
 // The view vector of a vertex sitting at the eye (a beam or aim line ending
@@ -1271,8 +1272,25 @@ export class VFX {
 
   decal(pos, type, size = 2, life = 8, color) {
     if (!pos) return; // (no floor in reach)
-    const m = this.decalPool.get();
     const look = DECAL_LOOK[type] ?? DECAL_LOOK.scorch;
+    // Lit marks are the dearest thing on the floor (each is a full lit, see-through quad, and a fight
+    // stacks them blast on blast). A mark landing mostly on a fresh one of its kind renews that one
+    // instead of laying another over it, and past LIT_DECALS the oldest lit mark fades out quickly.
+    const lits = (this._litDecals ??= []);
+    if (!look.additive) {
+      for (let i = lits.length - 1; i >= 0; i--) {
+        const e = lits[i];
+        if (!e.mesh.visible || e.t >= e.life || e.mesh.userData.trk !== e) { lits.splice(i, 1); continue; }
+        if (e.type !== type || e.t > e.life * 0.5) continue;
+        const r = e.mesh.scale.x * 2;
+        const dx = e.mesh.position.x - pos.x, dz = e.mesh.position.z - pos.z;
+        if (dx * dx + dz * dz < (r * 0.35) ** 2 && size <= r * 1.25 && Math.abs(e.mesh.position.y - (pos.y ?? 0)) < 0.5) {
+          e.t = Math.min(e.t, e.life * 0.1); // (as fresh as it was laid)
+          return e.mesh;
+        }
+      }
+    }
+    const m = this.decalPool.get();
     const mat = look.additive ? m.userData.glow : m.userData.lit;
     m.material = mat;
     mat.map = this.decalTex[type] ?? this.decalTex.scorch;
@@ -1294,6 +1312,18 @@ export class VFX {
     this.drape(m, 0.03 + Math.random() * 0.01); // (a hair apart, so overlapping marks don't flicker)
     mat.opacity = 1;
     this._track(m, life, (k) => { mat.opacity = k > 0.75 ? 1 - (k - 0.75) / 0.25 : Math.min(1, k * 20); });
+    if (!look.additive) {
+      const e = this.active[this.active.length - 1];
+      e.type = type;
+      m.userData.trk = e; // (the mesh's live entry: one whose mesh the pool stole is dropped)
+      lits.push(e);
+      let live = 0;
+      for (let i = lits.length - 1; i >= 0; i--) {
+        const o = lits[i];
+        if (!o.mesh.visible || o.t >= o.life || o.mesh.userData.trk !== o) { lits.splice(i, 1); continue; }
+        if (++live > LIT_DECALS) o.t = Math.max(o.t, o.life * 0.94);
+      }
+    }
     return m;
   }
 
