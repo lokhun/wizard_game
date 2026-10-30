@@ -905,6 +905,8 @@ export class Game {
 
   _postFx(dt) {
     const g = this.renderer.grade.uniforms;
+    // the blasts' shockwaves bend the view (scaled with the screen-shake setting: off when it is)
+    this.vfx.shockUniforms(g, this.settings.shake ?? 1);
     const p = this.player;
     const lowHp = p.alive && !p.downed ? clamp(1 - p.hp / p.maxHp, 0, 1) : 1;
     if (p.downed) {
