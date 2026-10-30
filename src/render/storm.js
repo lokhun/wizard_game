@@ -10,7 +10,7 @@ import * as THREE from 'three';
 const VERT = /* glsl */ `
 attribute vec4 aSeed;
 uniform vec3 uCam; uniform float uTime; uniform vec3 uBox; uniform float uSpeed; uniform vec2 uWind; uniform float uLen; uniform float uWidth;
-varying float vA;
+varying float vA; varying float vX;
 void main(){
   float sp = uSpeed * (0.85 + aSeed.w * 0.3);
   vec3 drift = vec3(uWind.x, 0.0, uWind.y) * uTime;
@@ -25,13 +25,18 @@ void main(){
   // thin at the head, fading up the tail; gone near the box's edges (no pop as streaks wrap) and close up
   float d = length(p.xz - uCam.xz);
   vA = (1.0 - position.y) * (1.0 - smoothstep(uBox.x * 0.32, uBox.x * 0.5, d)) * smoothstep(1.4, 4.5, length(p - cameraPosition));
+  // some streaks catch the light and most barely do, and the far ones sink into the night: rain with depth,
+  // not a screen of equal lines
+  vA *= (0.35 + 0.85 * fract(aSeed.x * 37.31 + aSeed.z * 11.7)) * mix(1.0, 0.4, smoothstep(5.0, 15.0, length(p - cameraPosition)));
+  vX = position.x * 2.0;
   gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
 }`;
 const FRAG = /* glsl */ `
 uniform vec3 uColor; uniform float uFlash;
-varying float vA;
+varying float vA; varying float vX;
 void main(){
-  float a = vA * (0.5 + uFlash * 0.9);
+  // (soft across its width: a streak, not a hard-edged line)
+  float a = vA * (0.5 + uFlash * 0.9) * (1.0 - vX * vX);
   if (a < 0.004) discard;
   gl_FragColor = vec4(uColor * a, a);
 }`;
@@ -56,7 +61,7 @@ export class Storm {
     geo.setIndex(new THREE.BufferAttribute(idx, 1));
     this.U = {
       uCam: { value: new THREE.Vector3() }, uTime: { value: 0 }, uBox: { value: new THREE.Vector3(34, 16, 34) },
-      uSpeed: { value: 17 }, uWind: { value: new THREE.Vector2(1.6, 0.7) }, uLen: { value: 1.15 }, uWidth: { value: 0.024 },
+      uSpeed: { value: 17 }, uWind: { value: new THREE.Vector2(1.6, 0.7) }, uLen: { value: 1.15 }, uWidth: { value: 0.032 },
       uColor: { value: new THREE.Color(0.62, 0.7, 0.88) }, uFlash: { value: 0 },
     };
     this.mesh = new THREE.Mesh(geo, new THREE.ShaderMaterial({

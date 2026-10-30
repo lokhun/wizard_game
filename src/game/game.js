@@ -3,6 +3,7 @@ import { TextureFactory } from '../render/textures.js';
 import { LightPool } from '../render/lights.js';
 import { Particles, SPR } from '../render/particles.js';
 import { VFX, fxOf } from '../render/vfx.js';
+import { TorchHalos } from '../render/halos.js';
 import { ContactShadows } from '../render/contact.js';
 import { Storm } from '../render/storm.js';
 import { Debris } from '../render/debris.js';
@@ -298,6 +299,8 @@ export class Game {
       this.lights.addTorch(new THREE.Vector3(l.x, l.y + 0.1, l.z), { color: level.biome.torchColor, intensity: 26, range: 15 });
       this.built.flames.push({ x: l.x, y: l.y, z: l.z, size: 0.42, kind: 'fire', color: level.biome.torchColor });
     }
+    // the air round every open fire catches its light (render/halos.js)
+    (this.halos ??= new TorchHalos(this.scene)).build(this.built.flames, level.biome, level.biome.fog.density);
     this.debris?.dispose(); this.rubble?.dispose();
     this.debris = new Debris(this.scene, this.built.mats.wood, this.collision);
     this.rubble = new Debris(this.scene, this.built.mats.stone, this.collision);
@@ -806,6 +809,7 @@ export class Game {
       if (dx * dx + dz * dz > 1300 || f.out || f.gpu !== undefined) continue; // (candles burn on the GPU: built.candles)
       this.vfx.flame(f, realDt);
     }
+    this.halos?.update(this.time);
     this.lights.update(realDt, this.time, cam.position);
     this.built.update(realDt, this.time);
     // the dead court flees a hall while a fight is on in it
