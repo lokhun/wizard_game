@@ -1117,7 +1117,7 @@ export class ActorManager {
     // frames: scripts/collide.js), down one eased, a short hop off the edge
     const gy = g.groundY(a.pos.x, a.pos.z);
     a.pos.y += (gy - a.pos.y) * Math.min(1, dt * (gy > a.pos.y ? 40 : 12));
-    if (!(a.introHold > 0)) a.progress = this._progress(a); // (an entrance drives its own)
+    if (!(a.introHold > 0) && !a.brain) a.progress = this._progress(a); // (an entrance drives its own; a boss's brain sets its own from the move's duration)
   }
 
   // Bombardier champions call a barrage down every few seconds: blasts

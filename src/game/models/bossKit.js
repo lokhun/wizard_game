@@ -495,3 +495,55 @@ export function wounds(m, s, P, dt, o) {
   const tr = smooth(0.2, 0.08, s.hpf ?? 1) * k;
   if (tr > 0 && o.spasm) P.r(o.spasm[0], Math.sin(T * 23) * 0.008 * tr, 0, Math.sin(T * 19 + 1) * 0.008 * tr);
 }
+
+// ------------------------------------------------ the weight of a blow ----
+// Shared by every boss, on top of its own attack poses: as a windup loads the body sinks and
+// draws breath; the blow's release snaps through the torso; when it lands a jolt runs down the
+// body and drops it; and a damped spring carries that through, so the body rocks and settles
+// rather than stopping dead (the head lagging behind the trunk). After the blow, an exhale.
+// o.types[attackType] = { hit, rel, imp, sink, rec }: rel / imp are [pitch, yaw, drop] kicks
+// (velocities, so the spring decides how far they carry), given as the blow is let go and as it
+// lands (progress crossing hit). o.chain = [[bone, pitch share, yaw share]], o.root is lowered by
+// the drop, o.head lags, o.chest takes the breath. o.side flips the yaw kicks (a mirrored move).
+export function strikeLayer(m, s, P, dt, o) {
+  const st = m.state, an = s.anim, at = s.attackType, p = s.progress;
+  const S = st.blow ?? (st.blow = { x: 0, vx: 0, y: 0, vy: 0, h: 0, vh: 0, lx: 0, ly: 0, an: '', at: '', p: 0, load: 0, out: 0 });
+  const ty = o.types[at] ?? o.types.default;
+  const act = an === 'attack' || an === 'cast';
+  if (ty && an !== 'death') {
+    // a fresh blow: the anim changed, or the same one restarted (a second slam)
+    const fresh = act && (S.an !== an || S.at !== at || p < S.p - 0.3);
+    const pp = fresh ? 0 : S.p;
+    if (fresh && ty.rel) kick(S, ty.rel, 1);
+    const hp = ty.hit ?? 0.25;
+    if (act && ty.imp && p >= hp && pp < hp) kick(S, ty.imp, 1);
+    // (several hits in one cast: ty.hits = [p, ...])
+    if (act && ty.hits) for (const h of ty.hits) if (p >= h && pp < h) kick(S, ty.imp ?? ty.rel, 0.7);
+  }
+  S.an = an; S.at = at; S.p = p;
+  // the spring: stiff enough to read as a jolt, loose enough to rock once or twice
+  const k = o.k ?? 120, c = o.c ?? 8;
+  const n = Math.max(1, Math.ceil(dt / 0.008)), h = dt / n;
+  for (let i = 0; i < n; i++) {
+    S.vx += (-k * S.x - c * S.vx) * h; S.x += S.vx * h;
+    S.vy += (-k * S.y - c * S.vy) * h; S.y += S.vy * h;
+    S.vh += (-k * S.h - c * S.vh) * h; S.h += S.vh * h;
+  }
+  const lag = 1 - Math.exp(-9 * dt);
+  S.lx += (S.x - S.lx) * lag; S.ly += (S.y - S.ly) * lag;
+  // load and exhale (eased, so a windup cut short does not pop)
+  const load = an === 'windup' && ty ? smooth(0.25, 1, p) : 0;
+  const out = act && ty ? bump(ty.rec ?? 0.6, 1.25, p) : 0;
+  S.load += (load - S.load) * (1 - Math.exp(-10 * dt));
+  S.out += (out - S.out) * (1 - Math.exp(-6 * dt));
+  const sink = (ty?.sink ?? o.sink ?? 0.08) * S.load + (o.sink ?? 0.08) * 0.6 * S.out;
+  if (o.root) P.p(o.root, 0, -sink - S.h, 0);
+  if (o.chest) P.r(o.chest, -0.06 * S.load + 0.08 * S.out);
+  for (const [b, wx, wy] of o.chain) P.r(b, S.x * wx, S.y * wy * (o.side ?? 1));
+  // the head is the last to arrive: it gets the trunk's motion a beat late
+  if (o.head) P.r(o.head, (S.lx - S.x) * 0.8, (S.ly - S.y) * 0.8 * (o.side ?? 1));
+}
+function kick(S, v, w) { S.vx += v[0] * w; S.vy += (v[1] ?? 0) * w; S.vh += (v[2] ?? 0) * w; }
+// Push a weapon target past its windup pose, away from the strike, as the windup tops out (the
+// last bit of coil before a blow): tgt += (W - S) * k on the listed keys.
+export function coil(tgt, W, S, k, keys = ['th', 'ph', 'gx', 'gy', 'gz']) { for (const key of keys) tgt[key] += (W[key] - S[key]) * k; }

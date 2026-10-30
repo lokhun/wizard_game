@@ -4,7 +4,7 @@ import { humanoidPose, act2, ACT } from './humanoid.js';
 import { twoSided, HDR, RUSTY, DARKSTEEL } from './parts.js';
 import { buildHeadsman, HEADSMAN_ANIM } from './dungeon.js';
 import { skullGeo } from '../../world/props.js';
-import { wounds } from './bossKit.js';
+import { wounds, strikeLayer, coil } from './bossKit.js';
 import { addFx, fxOf, fxSet, fxPos, aimTrail, swingTrailGeo, paint, softRing, softDisc, Rope, aimChain, boneWorld, boneModel, snapRot, setBone, gripIK, springTo, glowLevel, haftBasis, panelBand, embroideryOf } from './bossKit.js';
 
 // ================================================================ The Executioner ==
@@ -62,18 +62,53 @@ const B_LEAP_S = { chest: [-0.32, 0, 0], spine: [-0.16, 0, 0], head: [0.25, 0, 0
 // the whirl: low, wide, the axe held out at arm's length while the body turns under it
 const B_WHIRL = { chest: [0.12, 0.25, 0], spine: [0.1, 0.1, 0], head: [0.05, -0.3, 0], hips: [0, 0, 0, 0, -0.22, 0], thighL: [-0.45, 0, 0.3], shinL: [0.55, 0, 0], thighR: [-0.4, 0, -0.3], shinR: [0.5, 0, 0] };
 
+// the backhand: the return swing of the combo, left to right (the sweep mirrored)
+const B_BACK_W = { chest: [0.1, 0.65, 0], spine: [0.08, 0.3, 0], head: [0, -0.6, 0], hips: [0, 0.35, 0, 0, -0.14, -0.05], thighR: [-0.4, 0, -0.12], thighL: [0.25, 0, 0.12], shinR: [0.5, 0, 0], shinL: [0.4, 0, 0] };
+const B_BACK_S = { chest: [0.16, -0.65, 0], spine: [0.1, -0.32, 0], head: [0, 0.6, 0], hips: [0, -0.4, 0, 0, -0.16, 0.16], thighL: [-0.65, 0, 0], shinL: [0.5, 0, 0], thighR: [0.28, 0, 0] };
+// the brand: crouched and wound round to his right with the axe trailing low, then flung up and over
+const B_BRAND_W = { chest: [0.45, -0.7, 0], spine: [0.3, -0.35, 0], head: [-0.35, 0.75, 0], hips: [0, -0.35, 0, 0, -0.34, -0.1], thighL: [-0.9, 0, 0.15], shinL: [1.1, 0, 0], thighR: [-0.2, 0, -0.15], shinR: [0.9, 0, 0] };
+const B_BRAND_S = { chest: [-0.3, 0.35, 0], spine: [-0.18, 0.15, 0], head: [-0.3, -0.3, 0], hips: [0, 0.25, 0, 0, 0.04, 0.12], thighL: [0.2, 0, 0], thighR: [-0.45, 0, 0], shinR: [0.3, 0, 0], footL: [0.35, 0, 0] };
+// the gallows call: axe raised to the sky in one hand, then brought down to point out the condemned
+const B_CALL_UP = { chest: [-0.3, -0.15, 0], spine: [-0.15, 0, 0], neck: [-0.25, 0, 0], head: [-0.35, 0.1, 0], jaw: [0.6, 0, 0], armL: [-0.3, 0, -0.5], foreL: [-1.1, 0, 0], hips: [0, 0, 0, 0, 0.02, 0], thighL: [0, 0, 0.15], thighR: [0, 0, -0.15] };
+const B_CALL_DN = { chest: [0.32, -0.25, 0], spine: [0.2, -0.1, 0], neck: [0.1, 0, 0], head: [-0.25, 0.2, 0], jaw: [0.3, 0, 0], armL: [0.3, 0, 0.45], foreL: [-0.6, 0, 0], hips: [0, -0.1, 0, 0, -0.12, 0.12], thighL: [-0.6, 0, 0.05], shinL: [0.55, 0, 0], thighR: [0.25, 0, -0.05], shinR: [0.25, 0, 0] };
+// the knock: hunched over the axe, beating its head on the stones to wake the dead
+const B_KNOCK = { chest: [0.42, 0, 0], spine: [0.3, 0, 0], neck: [0.2, 0, 0], head: [0.25, 0, 0], hips: [0, 0, 0, 0, -0.16, -0.06], thighL: [-0.45, 0, 0.18], shinL: [0.6, 0, 0], thighR: [-0.4, 0, -0.18], shinR: [0.55, 0, 0] };
+
 // weapon poses: haft yaw th (0 = forward), pitch ph (+ up, past PI/2 = back over the head),
 // roll ps (0: edge toward the haft's 'up', PI: away), grip R position in chest space, left hand weight
 const AX = {
   rest: { th: 0.1, ph: -1.0, ps: 0, gx: 0.0, gy: 0.02, gz: 0.46, wL: 1 },
   drag: { th: -2.78, ph: -0.5, ps: 1.4, gx: -0.43, gy: -0.38, gz: 0.04, wL: 0 },
   slamW: { th: 0.05, ph: 2.4, ps: Math.PI, gx: 0.02, gy: 0.82, gz: -0.04, wL: 1 },
-  slamS: { th: 0.0, ph: 0.72, ps: Math.PI, gx: 0.0, gy: -0.3, gz: 0.56, wL: 1 },
+  slamS: { th: 0.0, ph: 1.12, ps: Math.PI, gx: 0.0, gy: -0.3, gz: 0.56, wL: 1 },
   sweepW: { th: -1.35, ph: 0.75, ps: -Math.PI / 2, gx: -0.4, gy: 0.12, gz: -0.02, wL: 1 },
   sweepS: { th: 0.95, ph: 0.08, ps: -Math.PI / 2, gx: 0.34, gy: 0.04, gz: 0.3, wL: 1 },
   chargeW: { th: 0.05, ph: 2.8, ps: Math.PI, gx: -0.28, gy: 0.52, gz: 0.04, wL: 1 },
   roar: { th: 0.25, ph: 1.1, ps: 0.2, gx: -0.36, gy: 0.98, gz: 0.12, wL: 0 },
+  backW: { th: 1.3, ph: 0.6, ps: Math.PI / 2, gx: 0.38, gy: 0.12, gz: 0.0, wL: 1 },
+  backS: { th: -1.1, ph: 0.08, ps: Math.PI / 2, gx: -0.36, gy: 0.04, gz: 0.3, wL: 1 },
+  brandW: { th: -2.45, ph: -0.4, ps: 0.3, gx: -0.42, gy: -0.3, gz: -0.08, wL: 1 },
+  brandS: { th: 0.25, ph: 1.35, ps: 0.2, gx: -0.12, gy: 0.78, gz: 0.32, wL: 0.4 },
+  callUp: { th: 0.1, ph: 1.55, ps: 0, gx: -0.4, gy: 1.08, gz: 0.12, wL: 0 },
+  callDn: { th: 0.05, ph: 0.12, ps: Math.PI, gx: -0.32, gy: 0.32, gz: 0.6, wL: 0 },
+  knock: { th: 0.0, ph: -0.12, ps: Math.PI / 2, gx: -0.02, gy: -0.05, gz: 0.55, wL: 1 },
 };
+// his blows' weight (bossKit.strikeLayer): [pitch, yaw, drop] kicks as each is let go and as it lands
+const BLOWS = {
+  slam: { hit: 0.24, rel: [1.0, 0, 0], imp: [1.8, 0, 1.1], sink: 0.12, rec: 0.75 },
+  quake: { hit: 0.24, rel: [1.0, 0, 0], imp: [1.8, 0, 1.2], sink: 0.12, rec: 2 },
+  sweep: { hit: 0.3, rel: [0.3, 3.2, 0], imp: [0.5, 1.6, 0.4], sink: 0.1 },
+  backhand: { hit: 0.3, rel: [0.3, -3.2, 0], imp: [0.5, -1.6, 0.4], sink: 0.1 },
+  brand: { hit: 0.3, rel: [-1.8, 1.4, -0.6], imp: [-0.6, 0, 0], sink: 0.16 },
+  charge: { hit: 0.82, rel: [1.6, 0, -0.4], imp: [2.8, 0, 1.2], sink: 0.16, rec: 0.9 },
+  leap: { hit: 2, rel: [-1.2, 0, -0.8], sink: 0.2 },
+  whirl: { hit: 2, rel: [0.6, 0, 0.3] },
+  gallows: { hit: 0.5, rel: [-1.4, 0, -0.3], imp: [2.2, 0, 0.6], rec: 0.8 },
+  knock: { hit: 0.3, hits: [0.48, 0.66], imp: [1.5, 0, 0.8], rec: 0.8 },
+  roar: { hit: 2, rel: [-1.8, 0, -0.5], rec: 0.75 },
+};
+const BLOW_O = { types: BLOWS, chain: [['spine', 0.35, 0.3], ['chest', 0.65, 0.6]], head: 'head', root: 'hips', chest: 'chest', sink: 0.08 };
+const KNOCKS = [0.3, 0.48, 0.66];
 const AXK = ['th', 'ph', 'ps', 'gx', 'gy', 'gz', 'wL'];
 function mixAx(out, a, b, u) { for (const k of AXK) out[k] = lerp(a[k], b[k], u); return out; }
 function setAx(out, a) { for (const k of AXK) out[k] = a[k]; return out; }
@@ -81,7 +116,7 @@ function setAx(out, a) { for (const k of AXK) out[k] = a[k]; return out; }
 export const executioner = {
   lookAt: 0, recoil: 0, // (its own rig: the head turns on other axes; see EnemyInstance._layers)
   look: { bones: [['neck', 0.35], ['head', 0.65]], yaw: 1.0, pitch: 0.5, offAt: ['whirl'] }, // (his eyes on his foe: EnemyInstance._lookWorld)
-  id: 'executioner', height: 4.6, radius: 1.2, boss: true, eyeColor: EYE, magicColor: 0xff5020, defaultAttack: 'slam', attackTypes: ['slam', 'sweep', 'charge', 'roar', 'leap', 'whirl'], orbSize: 0.16,
+  id: 'executioner', height: 4.6, radius: 1.2, boss: true, eyeColor: EYE, magicColor: 0xff5020, defaultAttack: 'slam', attackTypes: ['slam', 'sweep', 'charge', 'roar', 'leap', 'whirl', 'quake', 'backhand', 'brand', 'gallows', 'knock'], orbSize: 0.16,
   build(rig) {
     rig.scale = 1.8;
     const D = buildHeadsman(rig, { boss: true, noAxe: true });
@@ -195,16 +230,50 @@ export const executioner = {
     const dead = an === 'death';
     if (an === 'windup' || an === 'attack' || an === 'cast') {
       const wu = an === 'windup';
-      if (at === 'sweep') { setAx(tgt, wu ? AX.sweepW : AX.sweepS); om = wu ? 7 : 20; ze = wu ? 1 : 0.62; if (!wu && p > 0.7) { mixAx(tgt, AX.sweepS, AX.rest, smooth(0.7, 1, p) * 0.6); om = 6; } }
-      else if (at === 'charge') {
-        if (wu) { setAx(tgt, AX.chargeW); om = 8; }
-        else { setAx(tgt, AX.chargeW); if (p > 0.7) { setAx(tgt, AX.slamS); om = 22; ze = 0.6; } }
+      const cl = wu ? smooth(0.5, 1, p) : 0; // the last of the coil as a windup tops out
+      if (at === 'sweep' || at === 'backhand') {
+        // the axe carries on round past the strike before he can check it, then swings back to guard
+        const fw = at === 'sweep', W = fw ? AX.sweepW : AX.backW, S = fw ? AX.sweepS : AX.backS;
+        setAx(tgt, wu ? W : S); om = wu ? 7 : 20; ze = wu ? 1 : 0.62;
+        if (wu) coil(tgt, W, S, 0.16 * cl);
+        else { tgt.th += (fw ? 0.5 : -0.5) * bump(0.15, 0.7, p); tgt.gy -= 0.1 * bump(0.15, 0.7, p); if (p > 0.7) { mixAx(tgt, tgt, AX.rest, smooth(0.7, 1, p) * 0.6); om = 6; } }
+      } else if (at === 'brand') {
+        // dragged low behind him, then flung up and over in one heave, the brands flying off the edge
+        setAx(tgt, wu ? AX.brandW : AX.brandS); om = wu ? 7 : 19; ze = wu ? 1 : 0.6;
+        if (wu) coil(tgt, AX.brandW, AX.brandS, 0.12 * cl);
+        else if (p > 0.65) { mixAx(tgt, AX.brandS, AX.rest, smooth(0.65, 1, p) * 0.7); om = 6; }
+      } else if (at === 'charge') {
+        if (wu) { setAx(tgt, AX.chargeW); coil(tgt, AX.chargeW, AX.slamS, 0.08 * cl); om = 8; }
+        else {
+          setAx(tgt, AX.chargeW); tgt.gy += Math.sin(m.time * 15) * 0.05 * (1 - smooth(0.6, 0.72, p)); // bobbing as he runs
+          if (p > 0.7) { setAx(tgt, AX.slamS); om = 22; ze = 0.6; if (p > 0.82) tgt.ph -= 0.1; }
+        }
       } else if (at === 'leap') { setAx(tgt, wu ? AX.chargeW : AX.slamW); om = 8; ze = 0.85; }
-      else if (at === 'whirl') { setAx(tgt, wu ? AX.sweepW : AX.sweepS); om = wu ? 7 : 16; ze = 0.8; }
-      else if (at === 'roar' || an === 'cast') { setAx(tgt, AX.roar); om = 8; ze = 0.8; }
+      else if (at === 'whirl') { setAx(tgt, wu ? AX.sweepW : AX.sweepS); if (wu) coil(tgt, AX.sweepW, AX.sweepS, 0.16 * cl); om = wu ? 7 : 16; ze = 0.8; }
+      else if (at === 'gallows') {
+        // raised to the sky in one fist, held there, then brought down to point out the condemned
+        const dn = smooth(0.42, 0.56, p), back = smooth(0.85, 1, p);
+        mixAx(tgt, AX.callUp, AX.callDn, dn); mixAx(tgt, tgt, AX.rest, back);
+        tgt.gy += 0.08 * bump(0.25, 0.42, p); om = dn > 0 && dn < 1 ? 18 : 8; ze = 0.7;
+      } else if (at === 'knock') {
+        // three knocks of the axe head, laid flat, on the flagstones: a slow lift, a sharp drop
+        setAx(tgt, AX.knock); let up = 0;
+        for (const kt of KNOCKS) up += smooth(kt - 0.15, kt - 0.03, p) * (1 - smooth(kt - 0.03, kt, p));
+        tgt.ph += 0.9 * up * smooth(0, 0.15, p) + 0.5 * (1 - smooth(0, 0.2, p)); tgt.gy += 0.12 * up;
+        if (p > 0.72) mixAx(tgt, tgt, AX.rest, smooth(0.72, 0.95, p));
+        om = 22; ze = 0.7;
+      } else if (at === 'roar' || an === 'cast') { setAx(tgt, AX.roar); om = 8; ze = 0.8; }
       else { // slam / chop / quake
-        if (wu) { setAx(tgt, AX.slamW); om = 6.5 + p * 2; }
-        else { setAx(tgt, AX.slamS); om = 24; ze = 0.55; if (p > 0.72) { mixAx(tgt, AX.slamS, AX.rest, smooth(0.72, 1, p) * 0.7); om = 5; ze = 1; } }
+        if (wu) { setAx(tgt, AX.slamW); coil(tgt, AX.slamW, AX.slamS, 0.12 * cl); om = 6.5 + p * 2; }
+        else if (at === 'quake' && p > 0.45) { setAx(tgt, AX.slamW); om = 9; ze = 0.8; } // wrenched straight back up for the second blow
+        else {
+          // it bites into the stone, he wrenches it free, then it comes back to guard
+          setAx(tgt, AX.slamS); om = 24; ze = 0.55;
+          if (p > 0.24) tgt.ph -= 0.05 * (1 - smooth(0.5, 0.62, p));
+          const wr = bump(0.5, 0.72, p);
+          if (wr > 0) { tgt.gy += 0.22 * wr; tgt.ph += 0.3 * wr; tgt.ps += Math.sin(m.time * 31) * 0.12 * wr; om = 14; }
+          if (p > 0.72) { mixAx(tgt, tgt, AX.rest, smooth(0.72, 1, p) * 0.7); om = 5; ze = 1; }
+        }
       }
     } else {
       mixAx(tgt, AX.rest, AX.drag, smooth(0.15, 0.7, w));
@@ -213,7 +282,12 @@ export const executioner = {
     if (ph < 1) { mixAx(tgt, tgt, AX.roar, smooth(0, 0.15, ph) * (1 - smooth(0.75, 1, ph))); om = 9; }
     if (an === 'idle' && age < 2.6) mixAx(tgt, AX.rest, AX.roar, bump(0.35, 0.95, age / 2.4));
     const ax = st.ax ?? (st.ax = { ...AX.rest });
+    // the haft rings when the blade strikes stone
+    const impP = at === 'charge' ? 0.82 : 0.24;
+    if (an === 'attack' && (at === 'slam' || at === 'quake' || at === 'charge') && p >= impP && (st.twP ?? 1) < impP && ax._v) { ax._v.ps = (ax._v.ps ?? 0) + (Math.random() < 0.5 ? -6 : 6); ax._v.ph = (ax._v.ph ?? 0) + 2.5; }
+    st.twP = an === 'attack' ? p : 1;
     if (!dead) springTo(ax, tgt, AXK, dt, om, ze);
+    if (!dead) strikeLayer(m, s, P, dt, BLOW_O);
     wounds(m, s, P, dt, { hunch: [['spine', 0.16], ['chest', 0.07], ['neck', 0.1], ['head', 0.06]], breath: [['chest', 0.05], ['spine', 0.02]], shoulders: ['armL', 'armR'], spasm: ['chest', 'head'] }); // (near his end: bossKit.wounds)
     P.damp(dt, rate);
     weapon(m, s, dt, ax, wR, dead);
@@ -231,9 +305,14 @@ export const executioner = {
     rest: { armL: [-0.4, 0, -0.1], foreL: [-1.0, 0, 0], armR: [-0.4, 0, 0.1], foreR: [-1.0, 0, 0] },
     stance: (P, m, s) => { HEADSMAN_ANIM.stance(P, m, s); if (s.anim === 'idle' || s.anim === 'move') P.apply(B_REST, 1 - (m.state.moveW ?? 0)); },
     actions: {
-      slam: act2(B_SLAM_W, B_SLAM_S, { hit: 0.24, recover: 0.72, recoverAmt: 0.6, tremble: 0.02, windupExtra: (P, p, m) => { const k = smooth(0.6, 1, p); P.r('chest', Math.sin(m.time * 31) * 0.015 * k); } }),
-      sweep: act2(B_SWEEP_W, B_SWEEP_S, { hit: 0.3, recover: 0.7, recoverAmt: 0.6 }),
-      charge: act2(B_CHARGE_W, B_CHARGE_S, { hit: 0.15, recover: 0.85, recoverAmt: 0.25 }),
+      slam: act2(B_SLAM_W, B_SLAM_S, { hit: 0.24, recover: 0.72, recoverAmt: 0.6, tremble: 0.02, windupExtra: slamCoil, strikeExtra: wrench }),
+      quake: quakeAct,
+      sweep: act2(B_SWEEP_W, B_SWEEP_S, { hit: 0.3, recover: 0.7, recoverAmt: 0.6, windupExtra: (P, p) => twistCoil(P, p, -1), strikeExtra: (P, p) => carry(P, p, 1) }),
+      backhand: act2(B_BACK_W, B_BACK_S, { hit: 0.3, recover: 0.7, recoverAmt: 0.6, windupExtra: (P, p) => twistCoil(P, p, 1), strikeExtra: (P, p) => carry(P, p, -1) }),
+      brand: act2(B_BRAND_W, B_BRAND_S, { hit: 0.3, recover: 0.65, recoverAmt: 0.6, windupExtra: (P, p) => twistCoil(P, p, -1), strikeExtra: (P, p) => { const k = bump(0.15, 0.6, p); P.p('hips', 0, 0.06 * k, 0); P.r('footL', 0.3 * k); P.r('footR', 0.3 * k); } }),
+      charge: act2(B_CHARGE_W, B_CHARGE_S, { hit: 0.15, recover: 0.85, recoverAmt: 0.25, strikeExtra: run }),
+      gallows: (P, ph, p, m) => { const dn = smooth(0.42, 0.56, p), k = smooth(0, 0.2, p) * (1 - smooth(0.85, 1, p)); P.apply(B_CALL_UP, k * (1 - dn)); P.apply(B_CALL_DN, k * dn); P.r('head', Math.sin(m.time * 47) * 0.04 * k * (1 - dn)); return dn > 0 && dn < 1 ? 22 : 10; },
+      knock: (P, ph, p, m) => { const k = smooth(0, 0.15, p) * (1 - smooth(0.72, 0.95, p)); P.apply(B_KNOCK, k); P.r('head', -0.5 * bump(0.68, 0.9, p), 0, 0); P.r('jaw', 0.8 * bump(0.68, 0.9, p)); return 12; },
       leap: act2(B_LEAP_W, B_LEAP_S, { hit: 0.35, recover: 2, recoverAmt: 0, windupRate: 11 }),
       whirl: act2(B_SWEEP_W, B_WHIRL, { hit: 0.15, recover: 2, recoverAmt: 0 }),
       roar: act2(B_ROAR_W, B_ROAR_S, { hit: 0.18, recover: 0.78, tremble: 0.05, strikeExtra: (P, p, m) => { const k = bump(0.1, 0.8, p) * 0.05; P.r('chest', Math.sin(m.time * 45) * k, Math.sin(m.time * 38) * k); P.r('head', Math.sin(m.time * 51) * k * 2, Math.sin(m.time * 33) * k * 2); } }),
@@ -242,6 +321,28 @@ export const executioner = {
     spawn: (P, p, m) => { introPose(P, m.time, p); return 12; },
   },
 };
+
+// the coil at the top of the chop: he rises onto the balls of his feet and arches a touch further
+function slamCoil(P, p, m) { const k = smooth(0.55, 1, p); P.r('chest', -0.1 * k + Math.sin(m.time * 31) * 0.015 * k); P.r('spine', -0.06 * k); P.p('hips', 0, 0.04 * k, 0); P.r('footL', 0.15 * k); P.r('footR', 0.15 * k); }
+// after the bite: braced, he leans back and wrenches the blade out of the stone
+function wrench(P, p) { const k = bump(0.48, 0.74, p); P.r('chest', -0.3 * k); P.r('spine', -0.15 * k); P.p('hips', 0, 0.05 * k, -0.06 * k); P.r('head', 0.15 * k); }
+// two blows: down, then the axe is hauled straight back up overhead for the next
+function quakeAct(P, ph, p, m, s) {
+  if (ph === 'windup') { P.apply(B_SLAM_W); slamCoil(P, p, m); return 9; }
+  const down = easeOut(clamp(p / 0.24)), up = smooth(0.45, 0.85, p);
+  P.blend(B_SLAM_W, B_SLAM_S, down * (1 - up)); P.apply(B_SLAM_W, up);
+  return up > 0 && up < 1 ? 14 : 26;
+}
+// a sweep's windup winds the hips further round as it tops out; its strike carries the trunk on past
+function twistCoil(P, p, sd) { const k = smooth(0.5, 1, p); P.r('hips', 0, 0.12 * sd * k, 0); P.r('chest', 0, 0.12 * sd * k, 0); }
+function carry(P, p, sd) { const k = bump(0.15, 0.7, p); P.r('chest', 0, 0.25 * sd * k, 0); P.r('spine', 0, 0.1 * sd * k, 0); P.r('hips', 0, 0.12 * sd * k, 0); }
+// the charge: real strides under the raised axe (the dash moves him; the legs keep up)
+function run(P, p, m) {
+  const k = 1 - smooth(0.62, 0.75, p), r = m.time * 15, sn = Math.sin(r), cs = Math.cos(r);
+  P.r('thighL', -0.75 * sn * k - 0.3 * k); P.r('thighR', 0.75 * sn * k - 0.3 * k);
+  P.r('shinL', (0.5 + 0.6 * Math.max(0, cs)) * k); P.r('shinR', (0.5 + 0.6 * Math.max(0, -cs)) * k);
+  P.p('hips', 0, Math.abs(cs) * 0.05 * k, 0); P.r('chest', 0, sn * 0.08 * k, 0);
+}
 
 function introPose(P, T, u) {
   u = clamp(u);
@@ -375,7 +476,7 @@ function effects(m, s, dt, ax, eyeK) {
   fxSet(F, 'trail', st.trailA * 0.9);
   // slam impact: ring + dust where the blade meets the floor
   const an = s.anim, at = s.attackType, p = s.progress;
-  const chop = an === 'attack' && (at === 'slam' || at === 'charge');
+  const chop = an === 'attack' && (at === 'slam' || at === 'quake' || at === 'charge');
   const impactP = at === 'charge' ? 0.82 : 0.22;
   if (chop && p >= impactP && (st.lastP ?? 1) < impactP) {
     boneModel(m, m.bones.axe, _Mw);

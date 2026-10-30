@@ -181,7 +181,7 @@ export function humanoidPose(m, s, P, dt) {
   const sc = D.hipH / 0.97; // body scale relative to a human
   let rate = A.rate ?? 12;
   const dead = anim === 'death', spawning = anim === 'spawn';
-  const seated = s.attackType === 'seated' && (anim === 'idle' || anim === 'cast' || anim === 'windup');
+  const seated = s.attackType?.startsWith('seated') && (anim === 'idle' || anim === 'cast' || anim === 'windup'); // ('seated', or a seated gesture: 'seatedRain' ...)
   const action = anim === 'windup' || anim === 'attack' || anim === 'cast';
 
   // ---- locomotion phase driven by distance travelled
