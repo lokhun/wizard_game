@@ -516,7 +516,8 @@ export function strikeLayer(m, s, P, dt, o) {
     const pp = fresh ? 0 : S.p;
     if (fresh && ty.rel) kick(S, ty.rel, 1);
     const hp = ty.hit ?? 0.25;
-    if (act && ty.imp && p >= hp && pp < hp) kick(S, ty.imp, 1);
+    // the blow lands: it jolts the body and holds it there a beat (hit-pause), so its weight reads
+    if (act && ty.imp && p >= hp && pp < hp) { kick(S, ty.imp, 1); P.stop = Math.max(P.stop, ty.stop ?? o.stop ?? 0.07); }
     // (several hits in one cast: ty.hits = [p, ...])
     if (act && ty.hits) for (const h of ty.hits) if (p >= h && pp < h) kick(S, ty.imp ?? ty.rel, 0.7);
   }

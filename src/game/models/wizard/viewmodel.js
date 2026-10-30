@@ -103,6 +103,8 @@ const FIDGETS = {
   regrip: { hand: 'right', keys: [[0, ZERO6], [0.3, [0.01, -0.035, 0.02, -0.12, 0, 0.06]], [0.55, [0.012, -0.03, 0.02, -0.1, 0, 0.05]], [1.0, ZERO6]] },
 };
 const FIDGET_ORDER = ['palm', 'twirl', 'regrip', 'palm', 'regrip'];
+// how hard each style's release jolts the view rig (velocity into the sway spring)
+const KICK = { flick: 0.45, thrust: 0.85, slam: 1.25, raise: 0.35, channel: 0.25, swing: 0.55, swing2: 0.55, throw: 0.75, snap: 0.4 };
 const STIFF = { swing: 2400, swing2: 2400, flick: 1500, thrust: 1100, slam: 1300, throw: 1300, snap: 1200 };
 
 function sampleKeys(keys, t, out) {
@@ -390,7 +392,7 @@ export function createViewModel(classId, ctx) {
 
   // ---------------- state ----------------
   const sR = new Spring(6, 700, 0.42), sL = new Spring(6, 700, 0.42);
-  const sSway = new Spring(5, 120, 0.5); // x,y offsets + yaw,pitch,roll
+  const sSway = new Spring(6, 120, 0.5); // x,y offsets + yaw,pitch,roll + z (toward the eye)
   const sLand = new Spring(1, 160, 0.35);
   let bobPhase = 0, bobAmp = 0;
   let wasGrounded = true;
@@ -407,6 +409,10 @@ export function createViewModel(classId, ctx) {
   const tmpV = V();
   const tmpV2 = V(), UPV = V(0, 1, 0);
   let first = true;
+  // the body's motion last frame (view terms) and its eased acceleration: the hands carry its inertia
+  let pvr = 0, pvf = 0, pvy = 0, accVR = 0, accVF = 0;
+  // each cast plays its keys a little differently (size, a turn of the wrist), so a held primary never loops
+  const castVar = { amp: 1, ry: 0, rz: 0, py: 0 };
   const st = { charge: 0, power: 0, glow: 1, castK: 0, accelR: accR, accelL: accL, view: true, up: root };
 
   function freePose(hand, pose, rest, name, k, dt) {
@@ -436,8 +442,22 @@ export function createViewModel(classId, ctx) {
     const bx2 = wob(t * 0.35, 1) * 0.002, by2 = Math.sin(t * 1.6) * 0.0035;
 
     // --- landing ---
-    if (grounded && !wasGrounded) sLand.v[0] -= 0.9;
+    // (the harder the fall, the deeper the hands dip and the longer they settle)
+    if (grounded && !wasGrounded) {
+      const k = THREE.MathUtils.clamp(-pvy / 7, 0.45, 1.9);
+      sLand.v[0] -= 0.9 * k;
+      sSway.v[3] -= 0.35 * k; sSway.v[5] += 0.12 * k;
+    }
     wasGrounded = grounded;
+    // --- body inertia: start a strafe and the hands trail it, run and they ride back toward you,
+    // rise off a jump and they sink, fall and they float
+    const vr = s.vr ?? 0, vf = s.vf ?? 0, vy = s.vy ?? 0;
+    if (!first && dt > 1e-4) {
+      const e = 1 - Math.exp(-dt * 9);
+      accVR += (THREE.MathUtils.clamp((vr - pvr) / dt, -60, 60) - accVR) * e;
+      accVF += (THREE.MathUtils.clamp((vf - pvf) / dt, -60, 60) - accVF) * e;
+    }
+    pvr = vr; pvf = vf; pvy = grounded ? 0 : vy;
     sLand.target[0] = 0; sLand.step(dt);
 
     // --- look sway (hands lag behind rotation) ---
@@ -447,9 +467,17 @@ export function createViewModel(classId, ctx) {
     sSway.target[2] = THREE.MathUtils.clamp(-lx * 0.0012, -0.12, 0.12);
     sSway.target[3] = THREE.MathUtils.clamp(-ly * 0.0009, -0.1, 0.1);
     sSway.target[4] = THREE.MathUtils.clamp(lx * 0.0012, -0.1, 0.1);
+    const C = THREE.MathUtils.clamp;
+    sSway.target[0] += C(-vr * 0.0017 - accVR * 0.0006, -0.03, 0.03);
+    sSway.target[4] += C(-vr * 0.007 - accVR * 0.0012, -0.08, 0.08);
+    sSway.target[5] = C(vf * 0.0016 + accVF * 0.0007, -0.02, 0.035);
+    sSway.target[3] += C(accVF * 0.0011, -0.05, 0.05);
+    sSway.target[1] += grounded ? 0 : C(-vy * 0.0026, -0.03, 0.03);
     sSway.step(dt);
-    sway.position.set(bx + bx2 + sSway.x[0], by + by2 + sSway.x[1] + sLand.x[0] * 0.06, 0);
-    sway.rotation.set(sSway.x[3], sSway.x[2], broll + sSway.x[4]);
+    // each footfall nods the hands a touch
+    const nod = -Math.abs(Math.cos(bobPhase)) * 0.014 * bobAmp;
+    sway.position.set(bx + bx2 + sSway.x[0], by + by2 + sSway.x[1] + sLand.x[0] * 0.06, sSway.x[5]);
+    sway.rotation.set(sSway.x[3] + nod, sSway.x[2], broll + sSway.x[4]);
 
     // --- hurt flinch ---
     const hurt = s.hurt ?? 0;
@@ -468,9 +496,17 @@ export function createViewModel(classId, ctx) {
       castT = cast.t ?? 0;
       const key = `${cast.slot}:${cast.style}:${cast.hand}`;
       const isNew = castT < lastCastT - 1e-4 || key !== lastCastKey || lastCastT < 0;
-      if (isNew) flare = 1;
       lastCastT = castT; lastCastKey = key;
       const style = STYLES[cast.style] ? cast.style : 'flick';
+      if (isNew) {
+        flare = 1;
+        castVar.amp = 0.88 + Math.random() * 0.24; castVar.ry = (Math.random() - 0.5) * 0.14;
+        castVar.rz = (Math.random() - 0.5) * 0.16; castVar.py = (Math.random() - 0.5) * 0.014;
+        // recoil through the whole view rig: the spell leaves, the hands jolt back and up
+        const kick = KICK[style] ?? 0.5;
+        sSway.v[3] += kick * (0.9 + Math.random() * 0.3); sSway.v[5] += kick * 0.22;
+        sSway.v[0] += (Math.random() - 0.5) * kick * 0.12; sSway.v[4] += (Math.random() - 0.5) * kick * 0.8;
+      }
       const hand = cast.hand ?? (style === 'throw' || style === 'snap' ? 'left' : 'right');
       if (hand === 'right' || hand === 'both') castR = style;
       if (hand === 'left' || hand === 'both') castL = style;
@@ -517,7 +553,9 @@ export function createViewModel(classId, ctx) {
         let tt = castT;
         if (S.hold) tt = Math.min(castT, S.keys[S.keys.length - 1][0]);
         sampleKeys(S.keys, tt, tmp6);
-        for (let i = 0; i < 6; i++) tg[i] += tmp6[i];
+        const env = S.hold ? 1 : Math.sin(Math.PI * THREE.MathUtils.clamp(tt / S.keys[S.keys.length - 1][0], 0, 1));
+        for (let i = 0; i < 6; i++) tg[i] += tmp6[i] * castVar.amp;
+        tg[1] += castVar.py * env; tg[4] += castVar.ry * env; tg[5] += castVar.rz * env;
         if (castStyle === 'channel') {
           tg[0] += wob(t * 23, 1) * 0.004; tg[1] += wob(t * 29, 2) * 0.004; tg[3] += wob(t * 19, 3) * 0.025; tg[5] += wob(t * 17, 4) * 0.025;
         }
@@ -532,6 +570,9 @@ export function createViewModel(classId, ctx) {
       tg[0] += downedK * wob(t * 37, isRight ? 9 : 10) * 0.004; tg[1] += downedK * wob(t * 41, isRight ? 11 : 12) * 0.004;
       // jump: hands float up while airborne
       if (!grounded) { tg[1] += 0.015; tg[3] += 0.06; }
+      // walking, the hands pump in counter-time like arms do (eased off while a spell is cast)
+      const pump = bobAmp * (castStyle ? 0.3 : 1) * (isRight ? 1 : -1);
+      tg[1] += Math.sin(bobPhase) * 0.0055 * pump; tg[2] += Math.cos(bobPhase) * 0.009 * pump; tg[3] += Math.sin(bobPhase) * 0.03 * pump;
       sp.k = castStyle ? (STIFF[castStyle] ?? 700) : fid ? 160 : 700;
       sp.c = 2 * 0.42 * Math.sqrt(sp.k);
       sp.step(dt);
@@ -668,6 +709,7 @@ export function createViewModel(classId, ctx) {
   bobPhase = bobAmp = 0; wasGrounded = true; lastCastT = -1; lastCastKey = ''; prevHurt = 0;
   stillT = 0; fidget = null; fidgetT = 0; fidgetN = 0; nextFidget = 6;
   power = downedK = dashK = chargeK = flare = 0; first = true;
+  pvr = pvf = pvy = accVR = accVF = 0;
   for (const [p, r] of [[poseR, restPoseR], [poseL, restPoseL]]) { r.f.forEach((row, i) => p.f[i].splice(0, row.length, ...row)); p.t.splice(0, r.t.length, ...r.t); }
   for (const it of sigils.items) it.m.visible = false;
   sigils.chargeK = 0; sigils.charge.visible = false;

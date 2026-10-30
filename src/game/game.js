@@ -847,8 +847,11 @@ export class Game {
     const p = this.player;
     const ca = p.castAnim;
     vm.root.visible = !p.dead && !this.cinematic && this.settings.showHands !== false;
+    // the body's velocity in the view's own terms (right, forward, up): the hands carry its inertia
+    const cy = Math.cos(p.yaw), sy = Math.sin(p.yaw);
     vm.update(dt, {
       t: this.time, speed: p.speedNorm ?? 0, grounded: p.grounded, look: p.lookDelta,
+      vr: p.vel.x * cy - p.vel.z * sy, vf: -p.vel.x * sy - p.vel.z * cy, vy: p.vel.y,
       cast: ca ? { slot: ca.slot, hand: ca.hand, t: ca.t, style: p.channel ? 'channel' : ca.style } : null,
       charge: p.channel ? Math.min(1, p.channel.t / p.channel.max) : 0, dash: p.dashT > 0, hurt: p.hurtPulse, downed: p.downed,
     });

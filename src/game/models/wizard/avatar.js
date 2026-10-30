@@ -26,13 +26,51 @@ import { getCostume, dress } from './costumes.js';
 
 const SKIRT_N = 12, SKIRT_SEG = 4;
 
+// Follow-through, as the enemies' rigs have it (models/core.js PoseBuf): each joint's eased angles drive a
+// light spring, kicked by every change in its angular speed and a share of its parent's, so a cast's thrust
+// whips out to the wrist and a stop rocks the head and hands past and back. Shown on the joint only.
+const FT_W = 16, FT_Z = 0.38, FT_MAX = 0.35, FT_DRIVE = 18;
+const FC = [0, 0, 0, 0];
+let fcDt = -1;
+function followCoef(dt) {
+  if (dt === fcDt) return;
+  fcDt = dt;
+  const wd = FT_W * Math.sqrt(1 - FT_Z * FT_Z), e = Math.exp(-FT_Z * FT_W * dt), c = Math.cos(wd * dt), s = Math.sin(wd * dt);
+  FC[0] = e * (c + (FT_Z * FT_W / wd) * s); FC[1] = e * (s / wd); FC[2] = -e * (FT_W * FT_W / wd) * s; FC[3] = e * (c - (FT_Z * FT_W / wd) * s);
+}
 class Joint {
-  constructor(group) { this.g = group; this.t = new THREE.Vector3(); this.c = new THREE.Vector3(); }
+  constructor(group, gain = 0, par = null) {
+    this.g = group; this.t = new THREE.Vector3(); this.c = new THREE.Vector3();
+    this.fg = gain; this.par = par;
+    this.fj = new Float32Array(3); this.fv = new Float32Array(3); this.fw = new Float32Array(3); this.fd = new Float32Array(3);
+  }
   set(x = 0, y = 0, z = 0) { this.t.set(x, y, z); return this; }
   add(x = 0, y = 0, z = 0) { this.t.x += x; this.t.y += y; this.t.z += z; return this; }
   mix(x, y, z, w) { const t = this.t; t.x += (x - t.x) * w; t.y += (y - t.y) * w; t.z += (z - t.z) * w; return this; }
-  step(k) { this.c.lerp(this.t, k); setRotXYZ(this.g, this.c.x, this.c.y, this.c.z); }
-  snap() { this.c.copy(this.t); setRotXYZ(this.g, this.c.x, this.c.y, this.c.z); }
+  step(k, dt = 0) {
+    const c = this.c, px = c.x, py = c.y, pz = c.z;
+    c.lerp(this.t, k);
+    const { fj, fv, fw, fd } = this;
+    if (dt > 1e-5) {
+      followCoef(dt);
+      const pd = this.par?.fd;
+      for (let i = 0; i < 3; i++) {
+        const dc = (i === 0 ? c.x - px : i === 1 ? c.y - py : c.z - pz);
+        if (dc > 0.9 || dc < -0.9) { fw[i] = fd[i] = 0; continue; } // (a snap, not a swing)
+        const w = dc / dt;
+        let d = w - fw[i];
+        fw[i] = w;
+        if (pd) d += pd[i] * 0.65;
+        fd[i] = d = d > FT_DRIVE ? FT_DRIVE : d < -FT_DRIVE ? -FT_DRIVE : d;
+        if (this.fg <= 0) continue;
+        const x = fj[i], v = fv[i] - this.fg * d, nx = FC[0] * x + FC[1] * v;
+        fv[i] = FC[2] * x + FC[3] * v;
+        fj[i] = nx / (1 + Math.abs(nx) / FT_MAX);
+      }
+    }
+    setRotXYZ(this.g, c.x + fj[0], c.y + fj[1], c.z + fj[2]);
+  }
+  snap() { this.c.copy(this.t); this.fj.fill(0); this.fv.fill(0); this.fw.fill(0); this.fd.fill(0); setRotXYZ(this.g, this.c.x, this.c.y, this.c.z); }
 }
 
 export function createAvatar(classId, ctx) {
@@ -61,18 +99,21 @@ export function createAvatar(classId, ctx) {
     const thigh = grp(hips, { x: s * HIP_X, y: BODY_Y.hipJ - BODY_Y.hips }); thigh.name = 'thigh';
     const knee = grp(thigh, { y: BODY_Y.knee - BODY_Y.hipJ }); knee.name = 'knee';
     const ankle = grp(knee, { y: BODY_Y.ankle - BODY_Y.knee }); ankle.name = 'ankle';
-    return { s, thigh, knee, ankle, jT: new Joint(thigh), jK: new Joint(knee), jA: new Joint(ankle) };
+    const jT = new Joint(thigh, 0.02), jK = new Joint(knee, 0.03, jT), jA = new Joint(ankle, 0.04, jK);
+    return { s, thigh, knee, ankle, jT, jK, jA };
   });
   const arms = [1, -1].map((s) => {
     const shoulder = grp(chest, { x: s * SHOULDER_X, y: BODY_Y.shoulder - BODY_Y.chest, z: -0.01 }); shoulder.name = 'shoulder';
     shoulder.rotation.order = 'YXZ'; // yaw last: pans a raised arm toward the aim
     const elbow = grp(shoulder, { y: -0.28 }); elbow.name = 'elbow';
     const wrist = grp(elbow, { y: -0.25 }); wrist.name = 'wrist';
-    return { s, shoulder, elbow, wrist, jS: new Joint(shoulder), jE: new Joint(elbow), jW: new Joint(wrist) };
+    const jS = new Joint(shoulder, 0.16), jE = new Joint(elbow, 0.26, jS), jW = new Joint(wrist, 0.38, jE);
+    return { s, shoulder, elbow, wrist, jS, jE, jW };
   });
   const [armL, armR] = arms;
   const [legL, legR] = legs;
-  const jHips = new Joint(hips), jSpine = new Joint(spine), jChest = new Joint(chest), jNeck = new Joint(neck), jHead = new Joint(head);
+  const jHips = new Joint(hips), jSpine = new Joint(spine, 0.06, jHips), jChest = new Joint(chest, 0.1, jSpine), jNeck = new Joint(neck, 0.18, jChest), jHead = new Joint(head, 0.28, jNeck);
+  for (const a of arms) a.jS.par = jChest; // (the shoulders ride the chest's motion)
   const allJoints = [jHips, jSpine, jChest, jNeck, jHead, ...legs.flatMap((l) => [l.jT, l.jK, l.jA]), ...arms.flatMap((a) => [a.jS, a.jE, a.jW])];
   root.updateMatrixWorld(true);
 
@@ -482,7 +523,7 @@ export function createAvatar(classId, ctx) {
     hips.position.z += downK * 0.06;
 
     const kk = 1 - Math.exp(-dt * 13);
-    for (let i = 0; i < allJoints.length; i++) allJoints[i].step(kk);
+    for (let i = 0; i < allJoints.length; i++) allJoints[i].step(kk, dt);
     // no full-tree update before aiming: aimFocus refreshes the arm chain it
     // reads itself, and the pass below brings every node up to date (each
     // full pass over ~150 nodes was a third of an avatar's frame)
