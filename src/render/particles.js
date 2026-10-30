@@ -89,7 +89,8 @@ function makeAtlas() {
       // density: full at the root, threaded with gaps toward the tips
       const n = fbm(i / 9 + 3.3, j / 5 + 7.1);
       const dens = Math.min(1, (0.5 + 0.9 * n) * (1 - up * 0.25) + Math.max(0, py) * 0.6);
-      const alpha = Math.min(1, Math.pow(a, 0.75) * dens * 1.25);
+      // (x0.78: the same light in all as the old single tongue, so every torch and brazier burns as bright as before)
+      const alpha = Math.min(1, Math.pow(a, 0.75) * dens * 1.25) * 0.78;
       const k = (j * S + i) * 4;
       img.data[k] = 255; img.data[k + 1] = 255; img.data[k + 2] = 255;
       img.data[k + 3] = Math.min(255, alpha * 255);
@@ -317,7 +318,8 @@ void main(){
 #ifdef ADDITIVE
   // born white-hot: the first moments burn brighter and toward white, then cool into their colour
   // (sparks, flames, glows and embers all read as heat, not as flat tinted cards)
-  float heat = pow(1.0 - f, 6.0);
+  // (flame sprites barely: a torch or brazier burns them without end, and its fire went to a white blob)
+  float heat = pow(1.0 - f, 6.0) * (abs(spr - 3.0) < 0.5 ? 0.25 : 1.0);
   float lum = dot(col, vec3(0.3, 0.5, 0.2));
   col = mix(col, vec3(lum) * 1.25 + col * 0.35, heat * 0.5) * (1.0 + heat * 0.7);
 #endif
