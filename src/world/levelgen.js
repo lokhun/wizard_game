@@ -1,5 +1,6 @@
 import { RNG } from '../core/rng.js';
 import { BIOMES } from './biomes.js';
+import { carveBays, furnishBays, raiseScreen, placeHearths, corridorLanding, vignette } from './setpieces.js';
 
 // ---------------------------------------------------------------------------
 // Level generation. A floor is a grid of 2m cells. Rooms are placed on a
@@ -16,7 +17,7 @@ export const K_MAIN = 0, K_ALT = 1, K_WATER = 2, K_DAIS = 3;
 // channel water surface height (the bed sits below it)
 export const WATER_Y = -0.25;
 
-const BLOCKSZ = 20; // macro block size in cells
+export const BLOCKSZ = 20; // macro block size in cells
 
 export const ROOM = {
   START: 'start', COMBAT: 'combat', ELITE: 'elite', TREASURE: 'treasure',
@@ -44,6 +45,8 @@ export class Level {
     this.breakables = []; // barrels/crates {i,type,x,z,r,alive}
     this.pits = []; // the Oubliette's grated shafts {i (cell), x, z, y (the floor round it)}
     this.grates = []; // street drains in the Sewers' vaults, moonlight falling through them {x, z}
+    this.screenCells = new Set(); // the cells of the rooms' screen walls (setpieces.js)
+    this.arches = []; // arched openings that are not doorways (bay mouths, a screen wall's arches): built by the dressing
   }
   idx(x, y) { return y * this.W + x; }
   inb(x, y) { return x >= 0 && y >= 0 && x < this.W && y < this.H; }
@@ -348,6 +351,10 @@ function wallTorches(level, room, rng, spacing, colorOverride) {
 }
 
 function addPillar(level, wx, wz, r, kind = 'pillar', extra = {}) {
+  const pcx = Math.floor(wx / T), pcy = Math.floor(wz / T);
+  if (level.get(pcx, pcy) === SOLID) return; // (a screen wall or a cut corner took the spot)
+  // (nor right beside a screen wall: a pillar a metre off its face leaves a slot a body wedges in)
+  if (level.screenCells.size && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => level.screenCells.has(level.idx(pcx + dx, pcy + dy)))) return;
   level.colliders.push({ x: wx, z: wz, r });
   level.props.push({ type: kind, x: wx, z: wz, r, ...extra });
 }
@@ -362,6 +369,9 @@ function decorateRoom(level, room, rng) {
   const cx = x + w / 2, cy = y + h / 2;
   const isBoss = room.type === ROOM.BOSS;
   room.layout = 'plain';
+  // the room's shape first: alcoves out of its walls, a dividing wall across a big hall (setpieces.js)
+  carveBays(level, room, rng);
+  raiseScreen(level, room, rng);
   const P = (type, wx, wz, extra = {}) => {
     const prop = { type, x: wx, z: wz, rot: extra.rot ?? rng.range(0, Math.PI * 2), ...extra };
     if (type === 'barrel' || type === 'crate') {
@@ -373,8 +383,11 @@ function decorateRoom(level, room, rng) {
       level.colliders.push(c);
       level.breakables.push({ i: prop.breakable, type, x: wx, z: wz, r: c.r, collider: c, alive: true, rot: prop.rot });
       // sometimes a stack of two crates / cluster of barrels
-      if (rng.chance(0.3)) {
-        const ox = wx + Math.cos(prop.rot) * 0.9, oz = wz - Math.sin(prop.rot) * 0.9;
+      const ox = wx + Math.cos(prop.rot) * 0.9, oz = wz - Math.sin(prop.rot) * 0.9;
+      const oc = Math.floor(ox / T), oy = Math.floor(oz / T);
+      // (its neighbour only on the room's own floor, clear of doorways: it is placed without the first one's checks)
+      const roomy = level.get(oc, oy) === FLOOR && level.roomId[level.idx(oc, oy)] === room.id && level.corrId[level.idx(oc + 1, oy)] < 0 && level.corrId[level.idx(oc - 1, oy)] < 0 && level.corrId[level.idx(oc, oy + 1)] < 0 && level.corrId[level.idx(oc, oy - 1)] < 0;
+      if (rng.chance(0.3) && roomy) {
         const i2 = level.breakables.length;
         const c2 = { x: ox, z: oz, r: c.r, h: c.h, breakable: i2 };
         level.colliders.push(c2);
@@ -396,11 +409,14 @@ function decorateRoom(level, room, rng) {
     // a spot hugging a wall (for clutter)
     const side = rng.int(0, 3);
     let fx, fy, rot;
-    if (side === 0) { fx = rng.int(x, x + w - 1); fy = y; rot = 0; }
-    else if (side === 1) { fx = rng.int(x, x + w - 1); fy = y + h - 1; rot = Math.PI; }
-    else if (side === 2) { fx = x; fy = rng.int(y, y + h - 1); rot = Math.PI / 2; }
-    else { fx = x + w - 1; fy = rng.int(y, y + h - 1); rot = -Math.PI / 2; }
+    // (never the corner cell: a barrel there leaves a pocket between itself and the two walls a body wedges in)
+    if (side === 0) { fx = rng.int(x + 1, x + w - 2); fy = y; rot = 0; }
+    else if (side === 1) { fx = rng.int(x + 1, x + w - 2); fy = y + h - 1; rot = Math.PI; }
+    else if (side === 2) { fx = x; fy = rng.int(y + 1, y + h - 2); rot = Math.PI / 2; }
+    else { fx = x + w - 1; fy = rng.int(y + 1, y + h - 2); rot = -Math.PI / 2; }
     const i = level.idx(fx, fy);
+    // (against real wall: not across a bay's mouth)
+    if (level.get(fx + (side === 2 ? -1 : side === 3 ? 1 : 0), fy + (side === 0 ? -1 : side === 1 ? 1 : 0)) !== SOLID) return null;
     // avoid doorways
     const nearDoor = [[0, -1], [0, 1], [-1, 0], [1, 0]].some(([dx, dy]) => level.corrId[level.idx(fx + dx, fy + dy)] >= 0 ||
       level.corrId[level.idx(fx + dx * 2, fy + dy * 2)] >= 0);
@@ -489,9 +505,15 @@ function decorateRoom(level, room, rng) {
           const aw = horiz ? 2 : 2, ah = 2;
           // only carve into solid rock not used by anything else
           let free = true;
-          setRect(level, ax - 1, ay - 1, aw + 2, ah + 2, (ii) => {
-            if (level.cells[ii] !== SOLID && level.roomId[ii] !== room.id) free = false;
+          setRect(level, ax - 1, ay - 1, aw + 2, ah + 2, (ii, qx, qy) => {
+            const inRoom = qx >= x && qy >= y && qx < x + w && qy < y + h; // (a bay is the room's, but no place for a cell)
+            if (level.cells[ii] !== SOLID && (level.roomId[ii] !== room.id || !inRoom)) free = false;
           });
+          // the room's floor in front of its bars (a screen wall may meet the wall here)
+          for (let k = 0; k < 2 && free; k++) {
+            const fx = horiz ? ax + k : (s === 0 ? x : x + w - 1), fy = horiz ? (s === 0 ? y : y + h - 1) : ay + k;
+            if (level.get(fx, fy) !== FLOOR) free = false;
+          }
           if (!free) continue;
           setRect(level, ax, ay, aw, ah, (ii) => {
             if (level.cells[ii] !== SOLID) return;
@@ -569,6 +591,7 @@ function decorateRoom(level, room, rng) {
     }
     // lamp posts / braziers at the corners
     for (const [px, py] of [[x + 1, y + 1], [x + w - 2, y + 1], [x + 1, y + h - 2], [x + w - 2, y + h - 2]]) {
+      if (level.get(px, py) !== FLOOR) continue; // (an L-shaped yard's cut corner)
       const [wx, wz] = level.center(px, py);
       addPillar(level, wx, wz, 0.4, 'brazier');
       level.torches.push({ x: wx, y: 1.6, z: wz, type: 'brazier' });
@@ -578,7 +601,7 @@ function decorateRoom(level, room, rng) {
 
   // ---------------- KEEP: halls, library shelves, chandeliers
   if (b.id === 'keep') {
-    const library = !isBoss && rng.chance(0.5);
+    const library = !isBoss && !room.screen && rng.chance(0.5);
     if (library && w >= 10 && h >= 10) {
       room.layout = 'library';
       // rows of bookshelves (blocking) with aisles
@@ -621,7 +644,7 @@ function decorateRoom(level, room, rng) {
           addPillar(level, (x + w - 2) * T, (y + i + 0.5) * T, 0.55, 'pillarRound');
         }
       }
-      if (!isBoss && rng.chance(0.6)) {
+      if (!isBoss && !room.screen && rng.chance(0.6)) {
         const s = [cx * T + (horiz ? 0 : 3), cy * T + (horiz ? 3 : 0)];
         addPillar(level, s[0], s[1], 1.0, 'longTable', { rot: horiz ? 0 : Math.PI / 2 });
       }
@@ -707,7 +730,7 @@ function decorateRoom(level, room, rng) {
   }
 
   // ---------------- raised daises for verticality (indoor combat rooms)
-  if ((b.id === 'dungeon' || b.id === 'keep') && (room.type === ROOM.COMBAT || room.type === ROOM.ELITE || room.type === ROOM.TRIAL) && w >= 10 && h >= 10 && rng.chance(0.4) && room.layout !== 'library') {
+  if ((b.id === 'dungeon' || b.id === 'keep') && (room.type === ROOM.COMBAT || room.type === ROOM.ELITE || room.type === ROOM.TRIAL) && w >= 10 && h >= 10 && rng.chance(0.4) && room.layout !== 'library' && !room.screen) {
     const side = rng.int(0, 3);
     const depth = 3;
     const hh = b.id === 'sewers' ? 0.55 : 0.7;
@@ -720,7 +743,7 @@ function decorateRoom(level, room, rng) {
   }
 
   // ---------------- battlefields: terraces, sunken pits and plateaus (see elevate)
-  if ((room.type === ROOM.COMBAT || room.type === ROOM.ELITE || room.type === ROOM.TRIAL) && ['plain', 'cells', 'colonnade', 'hall', 'deadTree', 'statue'].includes(room.layout) && room.dais === undefined && w >= 10 && h >= 10 && rng.chance(0.55)) elevate(level, room, rng);
+  if ((room.type === ROOM.COMBAT || room.type === ROOM.ELITE || room.type === ROOM.TRIAL) && ['plain', 'cells', 'colonnade', 'hall', 'deadTree', 'statue'].includes(room.layout) && room.dais === undefined && !room.screen && w >= 10 && h >= 10 && rng.chance(0.55)) elevate(level, room, rng);
 
   // ---------------- trap vents: grates that erupt on a rhythm while the doors are shut,
   // burning foes as readily as wizards (Director._vents fires them)
@@ -793,6 +816,9 @@ function decorateRoom(level, room, rng) {
       if (!sp) continue;
       const i = level.idx(Math.floor(sp[0] / T), Math.floor(sp[1] / T));
       if (level.kind[i] === K_ALT || level.kind[i] === K_WATER) continue;
+      // (out on the open floor: an L-shaped room's cut corner can stand within the margin)
+      const qx = Math.floor(sp[0] / T), qy = Math.floor(sp[1] / T);
+      if ([[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]].some(([dx, dy]) => level.get(qx + dx, qy + dy) === SOLID)) continue;
       if (level.colliders.some((c) => Math.hypot((c.x ?? 1e9) - sp[0], (c.z ?? 1e9) - sp[1]) < (c.r || 0.5) + 2.6)) continue;
       addPillar(level, sp[0], sp[1], 0.5, 'brazierFloor');
       level.torches.push({ x: sp[0], y: level.hgt[i] + 1.1, z: sp[1], type: 'brazier', intensity: 26, range: 13, priority: 0.6 });
@@ -815,11 +841,20 @@ function decorateRoom(level, room, rng) {
       const i = level.idx(Math.floor(sp[0] / T), Math.floor(sp[1] / T));
       if ((level.kind[i] === K_ALT && !powder) || level.kind[i] === K_WATER) continue;
       if (Math.hypot(sp[0] - cx * T, sp[1] - cy * T) < 3) continue;
+      // (not in a doorway: an L-shaped room's corridor can run in through its cut corner, past the margin)
+      const kx = Math.floor(sp[0] / T), ky = Math.floor(sp[1] / T);
+      // (nor against a wall: out on the open floor, never a slot between it and the stone)
+      if ([[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]].some(([dx, dy]) => level.corrId[level.idx(kx + dx, ky + dy)] >= 0 || level.get(kx + dx, ky + dy) === SOLID)) continue;
       if (level.colliders.some((c) => Math.hypot((c.x ?? 1e9) - sp[0], (c.z ?? 1e9) - sp[1]) < (c.r || 0.5) + (powder ? 1.1 : 1.6))) continue;
       P('barrel', sp[0], sp[1], { keg: true });
       placed++;
     }
   }
+
+  // ---------------- what fills the bays, a furnished corner, a hearth (setpieces.js)
+  furnishBays(level, room, rng);
+  vignette(level, room, rng);
+  placeHearths(level, room, rng);
 
   // ---------------- room-type set pieces
   const mid = [cx * T, cy * T];
@@ -921,6 +956,8 @@ function decorateCorridor(level, corr, rng) {
       level.props.push({ type: rng.pick(['rubble', 'bones', 'puddle']), x: wx + rng.range(-0.5, 0.5), z: wz + rng.range(-0.5, 0.5), rot: rng.range(0, 6.28) });
     }
   }
+  // a side chamber off the middle of a long one (setpieces.js)
+  corridorLanding(level, corr, rng);
 }
 
 // ---------------------------------------------------------------------------

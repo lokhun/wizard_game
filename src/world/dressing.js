@@ -193,7 +193,7 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
   };
   // wall-mounted props the level already placed (banners, paintings, the throne's rose window):
   // bays that hold one are left to it
-  const wallProps = level.props.filter((p) => p.type === 'banner' || p.type === 'painting' || p.type === 'chains' || p.type === 'stainedGlass');
+  const wallProps = level.props.filter((p) => p.type === 'banner' || p.type === 'painting' || p.type === 'chains' || p.type === 'stainedGlass' || p.type === 'fireplace');
   const bays = (run, st, pad = 0.55) => {
     const xs = [run.a0 - pad + 0.2, ...st, run.a1 + pad - 0.2];
     const out = [];
@@ -203,7 +203,7 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
       const mid = (s0 + s1) / 2;
       runPos(run, mid, 0.5);
       const half = (s1 - s0) / 2;
-      if (wallProps.some((p) => Math.hypot(p.x - _p.x, p.z - _p.z) < (p.type === 'stainedGlass' ? 3.4 : 0.9) + half)) continue;
+      if (wallProps.some((p) => Math.hypot(p.x - _p.x, p.z - _p.z) < (p.type === 'stainedGlass' ? 3.4 : p.type === 'fireplace' ? 1.6 : 0.9) + half)) continue;
       out.push({ s0, s1, mid, w: s1 - s0, i, n: xs.length - 1 });
     }
     return out;
@@ -430,15 +430,19 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
   // DOOR PORTALS: arched openings with voussoirs and a keystone
   // ======================================================================
   {
-    const doorH = Math.min(biome.outdoor ? 6 : biome.ceilCorr, 6);
     const pointed = id === 'keep' || id === 'throne';
-    for (const door of level.doors) {
-      // door.cells can list a cell twice (overlapping corridor brush strokes): measure the real opening
-      const width = new Set(door.cells).size * T;
+    // the doorways, and the arches that are not (a bay's mouth, the arches of a screen wall): each an
+    // opening on a wall plane at (bx, bz), local +z pointing into the room it opens on, doorH tall
+    const openings = level.doors.map((door) => ({
+      // (door.cells can list a cell twice, overlapping corridor brush strokes: measure the real opening)
+      width: new Set(door.cells).size * T, y0: level.hgt[door.cells[0]],
+      bx: door.x - door.nx * T / 2, bz: door.z - door.ny * T / 2, yaw: Math.atan2(-door.nx, -door.ny),
+      h: Math.min(biome.outdoor ? 6 : biome.ceilCorr, 6),
+    }));
+    for (const a of level.arches ?? []) openings.push({ width: a.width, y0: a.y0, bx: a.x, bz: a.z, yaw: Math.atan2(a.nx, a.nz), h: a.h });
+    for (const o of openings) {
+      const { width, y0, bx, bz, yaw, h: doorH } = o;
       const hw = width / 2;
-      const y0 = level.hgt[door.cells[0]];
-      const bx = door.x - door.nx * T / 2, bz = door.z - door.ny * T / 2;
-      const yaw = Math.atan2(-door.nx, -door.ny); // local +z points into the room
       const P = (lx, ly, lz) => { const c = Math.cos(yaw), s = Math.sin(yaw); return [bx + lx * c + lz * s, y0 + ly, bz - lx * s + lz * c]; };
       const place = (key, geo, lx, ly, lz, col = 1) => { const [x, y, z] = P(lx, ly, lz); putW(key, geo, x, y, z, yaw, col); };
       // jambs: plinth, pier, impost
@@ -600,6 +604,27 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
 
   // ---------------------------------------------------------------- sewers
   if (id === 'sewers') {
+    // outfall: a pipe mouth spilling a sheet of foul water down the wall
+    const outfall = (run, s, y, floor = true) => {
+      put('iron', G('ofp', () => { const c = cylG(0.2, 0.2, 0.46, lo ? 6 : 10, true); c.rotateX(Math.PI / 2); return c; }), run, s, 0.23, y, 0.9);
+      put('iron', G('ofr', () => new THREE.TorusGeometry(0.21, 0.04, 4, lo ? 6 : 10)), run, s, 0.46, y);
+      put('trim', box(0.7, 0.7, 0.08), run, s, 0.04, y, 0.7);
+      const [ax, , az] = W3(run, s - 0.14, 0.5, 0), [bx, , bz] = W3(run, s + 0.14, 0.5, 0);
+      sheet(ax, az, bx, bz, y - 0.12, run.h0 + 0.02, false, 1);
+      const [cx, , cz] = W3(run, s, 0.36, 0), [dx2, , dz2] = W3(run, s, 0.64, 0);
+      sheet(cx, cz, dx2, dz2, y - 0.12, run.h0 + 0.02, false, 0.8);
+      wallDecal(run, s, 0.9, run.h0 + 0.05, y - 0.05, 1, 0.018, 1);
+      if (floor) floorDecal(run, s, 1.3, 0.05, 1.5, 1, 0.9);
+    };
+    // every cistern bay is fed by one, in the middle of its back wall (and nothing else hangs there)
+    const basins = [];
+    for (const room of level.rooms) for (const bay of room.bays ?? []) {
+      if (bay.feature !== 'basin') continue;
+      basins.push(bay.back);
+      const n = [bay.nx, 0, bay.nz], alongZ = n[0] !== 0;
+      const run = { axis: alongZ ? 'z' : 'x', line: alongZ ? bay.back.x : bay.back.z, n, yaw: Math.atan2(n[0], n[2]), h0: -0.7 };
+      outfall(run, alongZ ? bay.back.z : bay.back.x, rng.range(1.4, 1.9), false);
+    }
     for (const run of runs) {
       if (!tall(run)) continue;
       const st = runStops.get(run) ?? [];
@@ -619,6 +644,8 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
       for (const bay of bays(run, st)) {
         const r = rng.next();
         const s = bay.mid;
+        runPos(run, s, 0);
+        if (basins.some((q) => Math.hypot(q.x - _p.x, q.z - _p.z) < 1.6 + bay.w / 2)) continue;
         if (isRoom(run) && r < 0.22 && bay.w >= 1.9) {
           // culvert: a barred, arched drain mouth at the foot of the wall
           wallDecal(run, s, 1.5, run.h0, run.h0 + 1.75, 5, 0.025, 1);
@@ -629,17 +656,7 @@ export function dressLevel({ level, biome, mats, B, wallEdges, decal, quality = 
           put('iron', box(1.3, 0.05, 0.05), run, s, 0.09, run.h0 + 0.75);
           if (walkRun(run, s, 0.8)) floorDecal(run, s, 1.6, 0.1, 1.7, 1, 0.8);
         } else if (r < 0.42) {
-          // outfall: a pipe mouth spilling a sheet of foul water down the wall
-          const y = run.h0 + rng.range(1.3, 2.2);
-          put('iron', G('ofp', () => { const c = cylG(0.2, 0.2, 0.46, lo ? 6 : 10, true); c.rotateX(Math.PI / 2); return c; }), run, s, 0.23, y, 0.9);
-          put('iron', G('ofr', () => new THREE.TorusGeometry(0.21, 0.04, 4, lo ? 6 : 10)), run, s, 0.46, y);
-          put('trim', box(0.7, 0.7, 0.08), run, s, 0.04, y, 0.7);
-          const [ax, , az] = W3(run, s - 0.14, 0.5, 0), [bx, , bz] = W3(run, s + 0.14, 0.5, 0);
-          sheet(ax, az, bx, bz, y - 0.12, run.h0 + 0.02, false, 1);
-          const [cx, , cz] = W3(run, s, 0.36, 0), [dx2, , dz2] = W3(run, s, 0.64, 0);
-          sheet(cx, cz, dx2, dz2, y - 0.12, run.h0 + 0.02, false, 0.8);
-          wallDecal(run, s, 0.9, run.h0 + 0.05, y - 0.05, 1, 0.018, 1);
-          floorDecal(run, s, 1.3, 0.05, 1.5, 1, 0.9);
+          outfall(run, s, run.h0 + rng.range(1.3, 2.2));
         } else if (r < 0.66) {
           // downpipe from the vault to the floor, strapped to the wall, with a shoe at the foot
           const x = s + rng.range(-0.4, 0.4), top = run.h1 - 0.1, bot = run.h0 + 0.42;
