@@ -1565,7 +1565,7 @@ export class Game {
   }
   spawnPoolLocal(pos, radius, dur, dps, el = 'enemyGreen') {
     const gy = this.groundY(pos.x, pos.z);
-    this.vfx.decal(new THREE.Vector3(pos.x, gy, pos.z), el === 'enemyPurple' ? 'scorch' : 'slime', radius * 2.2, dur + 1, el === 'enemyPurple' ? 0x6020a0 : undefined);
+    this.vfx.decal(new THREE.Vector3(pos.x, gy, pos.z), el === 'enemyPurple' ? 'scorch' : 'slime', radius * 2.2, dur + 1, el === 'enemyPurple' ? 0x6020a0 : undefined, true); // (kept: the mark is the pool)
     this.pools.push({ x: pos.x, y: gy, z: pos.z, r: radius, t: dur, dps, el, acc: 0 });
   }
   _updatePools(dt) {

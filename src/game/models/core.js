@@ -908,8 +908,8 @@ const K = 9;
 // Laid over the drawn bones only: P.cur stays the clean pose that types read and write. The body's top and
 // the legs (which carry the weight and the foot plant) barely take it; tails, heads, jaws, hands, chains,
 // wings and cloth take the most.
-const FT_W = 17, FT_Z = 0.36, FT_MAX = 0.4, FT_DRIVE = 18, FT_CUT = 0.9;
-const FT_LOOSE = /tail|ear|jaw|tongue|chain|cape|cloak|hair|tent|wing|horn|beard|plume|fin|strand|rope|banner|tassel|robe|skirt|hood|flail|whip|lantern|censer|tusk|antenna|mandible|feeler/i;
+const FT_W = 17, FT_Z = 0.36, FT_MAX = 0.4, FT_CAP = 1.2, FT_DRIVE = 18, FT_CUT = 0.9;
+const FT_LOOSE = /tail|^ear|jaw|tongue|chain|cape|cloak|hair|tent|wing|horn|beard|plume|fin|strand|rope|banner|tassel|robe|skirt|hood|flail|whip|lantern|censer|tusk|antenna|mandible|feeler/i;
 const FT_FIRM = /foot|toe|shin|thigh|leg|calf|heel|sole|ankle|knee/i;
 const FT_CORE = /^(root|base|hips|pelvis|body|torso)$|^fx_/i;
 function followGain(b, depth, maxDepth) {
@@ -940,6 +940,7 @@ export class PoseBuf {
     this.par = Int16Array.from(bones, (b) => this.idx.get(b.parent?.name) ?? -1);
     this.gain = Float32Array.from(bones, (b, i) => followGain(b, depth[i], maxD));
     this.follow = 1; // (a type's own scale: spec.follow)
+    this.followK = 1; // (and the moment's: a body ending its fall lets it go, so no swing is frozen into a corpse)
     this.ftW = FT_W; // (its spring's pace: the bosses' great bodies swing slower and wider)
     this.fj = new Float32Array(this.n * 3); this.fv = new Float32Array(this.n * 3);
     this.fw = new Float32Array(this.n * 3); this.fd = new Float32Array(this.n * 3);
@@ -989,19 +990,22 @@ export class PoseBuf {
       const W = this.ftW, wd = W * Math.sqrt(1 - FT_Z * FT_Z), e = Math.exp(-FT_Z * W * dt), c = Math.cos(wd * dt), s = Math.sin(wd * dt);
       C[0] = e * (c + (FT_Z * W / wd) * s); C[1] = e * (s / wd); C[2] = -e * (W * W / wd) * s; C[3] = e * (c - (FT_Z * W / wd) * s);
     }
-    const idt = live ? 1 / dt : 0, fol = this.follow;
+    const idt = live ? 1 / dt : 0, fol = this.follow * this.followK;
     for (let i = 0; i < this.n; i++) {
       const ri = this.rate[i];
       if (ri !== 1 && ri !== rr) { rr = ri; ra = 1 - Math.exp(-rate * ri * dt); }
       const a = ri === 1 ? a1 : ra;
       const o = i * K, j3 = i * 3;
-      // written by its type since last frame (snapped, wrapped, roped): no swing carried over
-      if (live && (cur[o] !== last[j3] || cur[o + 1] !== last[j3 + 1] || cur[o + 2] !== last[j3 + 2])) {
+      // written by its type since the last pass (snapped, wrapped, roped, set by IK after its own damp):
+      // that bone is pinned - no swing on it this frame, and none carried over. (The engine's second,
+      // rate-0 pass after a self-damping type is where an IK write shows: it is caught there too.)
+      const pinned = cur[o] !== last[j3] || cur[o + 1] !== last[j3 + 1] || cur[o + 2] !== last[j3 + 2];
+      if (pinned) {
         fj[j3] = fj[j3 + 1] = fj[j3 + 2] = fv[j3] = fv[j3 + 1] = fv[j3 + 2] = fw[j3] = fw[j3 + 1] = fw[j3 + 2] = 0;
-        last[j3] = cur[o]; last[j3 + 1] = cur[o + 1]; last[j3 + 2] = cur[o + 2];
+        fd[j3] = fd[j3 + 1] = fd[j3 + 2] = 0;
       }
       for (let k = 0; k < K; k++) cur[o + k] += (tgt[o + k] - cur[o + k]) * a;
-      if (live) {
+      if (live && !pinned) {
         const g = gain[i] * fol, p3 = par[i] * 3;
         for (let k = 0; k < 3; k++) {
           const dc = cur[o + k] - last[j3 + k];
@@ -1013,17 +1017,20 @@ export class PoseBuf {
           if (p3 >= 0) d += fd[p3 + k] * 0.65;
           d = d > FT_DRIVE ? FT_DRIVE : d < -FT_DRIVE ? -FT_DRIVE : d;
           fd[j3 + k] = d;
-          if (g <= 0) continue;
-          const x = fj[j3 + k], v = fv[j3 + k] - g * d;
+          const x = fj[j3 + k];
+          if (g <= 0 && x === 0 && fv[j3 + k] === 0) continue;
+          const v = fv[j3 + k] - (g > 0 ? g * d : 0);
+          // (the spring itself stays linear, clamped well past its limit; only what is shown is eased into
+          // the limit below - easing the state each step made the swing depend on the frame rate)
           const nx = C[0] * x + C[1] * v;
           fv[j3 + k] = C[2] * x + C[3] * v;
-          // (eased into its limit, so a hard snap swings wide but never pins there)
-          fj[j3 + k] = nx / (1 + Math.abs(nx) / FT_MAX);
+          fj[j3 + k] = nx > FT_CAP ? FT_CAP : nx < -FT_CAP ? -FT_CAP : nx;
         }
-        last[j3] = cur[o]; last[j3 + 1] = cur[o + 1]; last[j3 + 2] = cur[o + 2];
       }
+      last[j3] = cur[o]; last[j3 + 1] = cur[o + 1]; last[j3 + 2] = cur[o + 2];
       const b = bones[i];
-      setRotXYZ(b, cur[o] + fj[j3], cur[o + 1] + fj[j3 + 1], cur[o + 2] + fj[j3 + 2]);
+      const j0 = fj[j3], j1 = fj[j3 + 1], j2 = fj[j3 + 2];
+      setRotXYZ(b, cur[o] + j0 / (1 + Math.abs(j0) / FT_MAX), cur[o + 1] + j1 / (1 + Math.abs(j1) / FT_MAX), cur[o + 2] + j2 / (1 + Math.abs(j2) / FT_MAX));
       b.position.set(rest[i].x + cur[o + 3], rest[i].y + cur[o + 4], rest[i].z + cur[o + 5]);
       b.scale.set(Math.max(1e-4, cur[o + 6]), Math.max(1e-4, cur[o + 7]), Math.max(1e-4, cur[o + 8]));
     }
@@ -1243,6 +1250,7 @@ export class EnemyInstance {
     const r = this.spec.pose(this, S, this.P, dt);
     if (typeof r === 'number') rate = r;
     this._layers(dt, S, s.look);
+    this.P.followK = S.anim === 'death' ? 1 - smooth(0.45, 0.8, S.progress) : 1;
     if (this._dissolving && S.anim !== 'death' && S.anim !== 'spawn') this.setDissolve(0); // (burnt in: whole again)
     this.P.damp(dt, rate);
     // (off in death and flight; a body rising out of the floor takes it up over the end of the rise, not in a pop)
@@ -1298,9 +1306,11 @@ export class EnemyInstance {
     }
     const K = this._kick;
     if (K.k > 0) { K.v = Math.min(K.v + K.k * 58, 80); K.k = 0; }
-    if (Math.abs(K.r) + Math.abs(K.v) > 2e-3 && dt > 0) {
+    // (during a hit-pause the recoil waits on the paused clock too: the jolt plays out as the pause ends)
+    const rdt = P.stop > 0 ? dt * 0.08 : dt;
+    if (Math.abs(K.r) + Math.abs(K.v) > 2e-3 && rdt > 0) {
       // the spring's exact step (w 20, zeta 0.38), so a long frame never blows it up
-      const W = 20, Z = 0.38, wd = W * 0.925, e = Math.exp(-Z * W * dt), c = Math.cos(wd * dt), sn = Math.sin(wd * dt);
+      const W = 20, Z = 0.38, wd = W * 0.925, e = Math.exp(-Z * W * rdt), c = Math.cos(wd * rdt), sn = Math.sin(wd * rdt);
       const r = K.r, v = K.v;
       K.r = e * (r * (c + (Z * W / wd) * sn) + v * (sn / wd));
       K.v = e * (v * (c - (Z * W / wd) * sn) - r * (W * W / wd) * sn);

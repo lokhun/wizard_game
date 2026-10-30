@@ -65,10 +65,11 @@ class Joint {
         if (this.fg <= 0) continue;
         const x = fj[i], v = fv[i] - this.fg * d, nx = FC[0] * x + FC[1] * v;
         fv[i] = FC[2] * x + FC[3] * v;
-        fj[i] = nx / (1 + Math.abs(nx) / FT_MAX);
+        fj[i] = nx > 1.2 ? 1.2 : nx < -1.2 ? -1.2 : nx; // (linear state; the limit is eased on what is shown)
       }
     }
-    setRotXYZ(this.g, c.x + fj[0], c.y + fj[1], c.z + fj[2]);
+    const s = (v) => v / (1 + Math.abs(v) / FT_MAX);
+    setRotXYZ(this.g, c.x + s(fj[0]), c.y + s(fj[1]), c.z + s(fj[2]));
   }
   snap() { this.c.copy(this.t); this.fj.fill(0); this.fv.fill(0); this.fw.fill(0); this.fd.fill(0); setRotXYZ(this.g, this.c.x, this.c.y, this.c.z); }
 }

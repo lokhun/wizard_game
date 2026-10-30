@@ -818,6 +818,7 @@ export class VFX {
   // the live shockwaves, onto the grade pass's uniforms (screen centre, radius in screen heights, strength)
   shockUniforms(u, scale = 1) {
     const cam = this.camera, list = u.uShock.value;
+    cam.updateMatrixWorld(); // (the camera was moved this frame; its matrices follow only at render)
     const tanH = Math.tan(THREE.MathUtils.degToRad((cam.fov ?? 78) * 0.5));
     let on = 0;
     for (let i = 0; i < 4; i++) {
@@ -1270,27 +1271,29 @@ export class VFX {
     return handle;
   }
 
-  decal(pos, type, size = 2, life = 8, color) {
+  // keep: a mark that must stay as long as asked (a pool that still burns or poisons): never merged or culled
+  decal(pos, type, size = 2, life = 8, color, keep = false) {
     if (!pos) return; // (no floor in reach)
     const look = DECAL_LOOK[type] ?? DECAL_LOOK.scorch;
     // Lit marks are the dearest thing on the floor (each is a full lit, see-through quad, and a fight
     // stacks them blast on blast). A mark landing mostly on a fresh one of its kind renews that one
     // instead of laying another over it, and past LIT_DECALS the oldest lit mark fades out quickly.
     const lits = (this._litDecals ??= []);
-    if (!look.additive) {
+    if (!look.additive && !keep) {
       for (let i = lits.length - 1; i >= 0; i--) {
         const e = lits[i];
         if (!e.mesh.visible || e.t >= e.life || e.mesh.userData.trk !== e) { lits.splice(i, 1); continue; }
-        if (e.type !== type || e.t > e.life * 0.5) continue;
+        if (e.type !== type || e.keep || e.color !== (color ?? null) || e.cull >= 0 || e.t > e.life * 0.5) continue;
         const r = e.mesh.scale.x * 2;
         const dx = e.mesh.position.x - pos.x, dz = e.mesh.position.z - pos.z;
         if (dx * dx + dz * dz < (r * 0.35) ** 2 && size <= r * 1.25 && Math.abs(e.mesh.position.y - (pos.y ?? 0)) < 0.5) {
-          e.t = Math.min(e.t, e.life * 0.1); // (as fresh as it was laid)
+          e.life = Math.max(e.life, life); e.t = Math.min(e.t, e.life * 0.1); // (as fresh as it was laid)
           return e.mesh;
         }
       }
     }
     const m = this.decalPool.get();
+    m.userData.trk = null; // (a mesh the pool stole from a lit mark is no longer that mark)
     const mat = look.additive ? m.userData.glow : m.userData.lit;
     m.material = mat;
     mat.map = this.decalTex[type] ?? this.decalTex.scorch;
@@ -1311,18 +1314,27 @@ export class VFX {
     m.scale.setScalar(size / 2);
     this.drape(m, 0.03 + Math.random() * 0.01); // (a hair apart, so overlapping marks don't flicker)
     mat.opacity = 1;
-    this._track(m, life, (k) => { mat.opacity = k > 0.75 ? 1 - (k - 0.75) / 0.25 : Math.min(1, k * 20); });
+    // (a culled mark fades from wherever it stood over a third of a second: see below)
+    const cs = { cull: -1, from: 1 };
+    this._track(m, life, (k, t) => {
+      let op = k > 0.75 ? 1 - (k - 0.75) / 0.25 : Math.min(1, k * 20);
+      if (cs.cull >= 0) { const f = 1 - (t - cs.cull) / 0.35; op = Math.min(op, cs.from * Math.max(0, f)); if (f <= 0) e.t = e.life; }
+      mat.opacity = op;
+    });
+    const e = this.active[this.active.length - 1];
     if (!look.additive) {
-      const e = this.active[this.active.length - 1];
-      e.type = type;
+      e.type = type; e.keep = keep; e.color = color ?? null;
+      Object.defineProperty(e, 'cull', { get: () => cs.cull });
       m.userData.trk = e; // (the mesh's live entry: one whose mesh the pool stole is dropped)
       lits.push(e);
       let live = 0;
       for (let i = lits.length - 1; i >= 0; i--) {
         const o = lits[i];
         if (!o.mesh.visible || o.t >= o.life || o.mesh.userData.trk !== o) { lits.splice(i, 1); continue; }
-        if (++live > LIT_DECALS) o.t = Math.max(o.t, o.life * 0.94);
+        if (o.keep || o.cull >= 0) continue;
+        if (++live > LIT_DECALS) o.startCull?.();
       }
+      e.startCull = () => { if (cs.cull < 0) { cs.cull = e.t; cs.from = mat.opacity; } };
     }
     return m;
   }
@@ -1330,7 +1342,7 @@ export class VFX {
   // A mark on a wall where a shot struck it: a decal laid flat (the drape grid flattened back to a plane)
   // and turned to face out of the wall along (nx, nz), spun at random about that face.
   wallDecal(pos, nx, nz, type, size = 1.2, life = 8, color) {
-    const m = this.decal(pos, type, size, life, color);
+    const m = this.decal(pos, type, size, life, color, true); // (a wall mark is never merged into a floor one)
     if (!m) return null;
     const P = m.geometry.attributes.position;
     for (let i = 0; i < P.count; i++) P.setY(i, 0);

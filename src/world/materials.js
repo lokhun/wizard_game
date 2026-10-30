@@ -214,6 +214,45 @@ export function getSharedMaterials(factory) {
   return m;
 }
 
+// Macro variation: a tiled surface repeats the same stones every couple of metres, and down a long hall
+// the repeat is what the eye finds. Two octaves of slow world-space noise lay broad patches over it -
+// lighter and darker, warmer and cooler, damper (glossier) and drier - metres across, so no two
+// stretches of wall or floor read alike. k: how strong (the darker realms take less, so they stay dark).
+const MACRO_V = /* glsl */ `
+  varying vec3 vMacroW;`;
+const MACRO_F = /* glsl */ `
+  uniform float uMacroK;
+  varying vec3 vMacroW;
+  float mHash(vec3 p) { p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3)); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+  float mNoise(vec3 x) {
+    vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(mHash(i), mHash(i + vec3(1, 0, 0)), f.x), mix(mHash(i + vec3(0, 1, 0)), mHash(i + vec3(1, 1, 0)), f.x), f.y),
+               mix(mix(mHash(i + vec3(0, 0, 1)), mHash(i + vec3(1, 0, 1)), f.x), mix(mHash(i + vec3(0, 1, 1)), mHash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+  }`;
+function macroVary(mat, k) {
+  if (!mat) return;
+  const K = { value: k };
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uMacroK = K;
+    sh.vertexShader = MACRO_V + '\n' + sh.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
+      #ifdef USE_INSTANCING
+        vMacroW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
+      #else
+        vMacroW = (modelMatrix * vec4(transformed, 1.0)).xyz;
+      #endif`);
+    sh.fragmentShader = MACRO_F + '\n' + sh.fragmentShader
+      .replace('#include <map_fragment>', `#include <map_fragment>
+      float macroA = mNoise(vMacroW * 0.13) * 0.62 + mNoise(vMacroW * 0.41 + 17.0) * 0.38;
+      float macroH = mNoise(vMacroW * 0.07 + 41.0);
+      diffuseColor.rgb *= mix(1.0, mix(0.74, 1.14, macroA), uMacroK);
+      diffuseColor.rgb *= mix(vec3(1.0), mix(vec3(1.05, 0.99, 0.93), vec3(0.95, 1.0, 1.05), macroH), uMacroK);`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+      roughnessFactor *= mix(1.0, mix(0.72, 1.06, macroA), uMacroK);`);
+  };
+  mat.customProgramCacheKey = () => 'macroVary';
+  mat.userData.macroK = K;
+}
+
 // (their textures are floor-scoped: freed when a floor that doesn't use them is built)
 export function getBiomeMaterials(factory, biome) {
   const S = (n, o) => makeSurfaceMaterial(factory, n, { ...o, scope: 'floor' });
@@ -228,6 +267,8 @@ export function getBiomeMaterials(factory, biome) {
   m.trim = S(biome.trimMat === 'gold' ? 'castleWall' : biome.trimMat, { vertexColors: true, color: biome.trimTint ?? (biome.trimMat === 'gold' ? 0xd8d0c0 : 0xffffff) });
   m.water = makeWaterMaterial(factory, biome.id === 'sewers' ? 0x14200c : 0x0a1418);
   m.channelBed = S('dirt', { vertexColors: true, color: 0x606850 });
+  const mk = biome.macro ?? (biome.outdoor ? 1 : 0.85);
+  for (const k of ['wall', 'floor', 'floorAlt', 'ceiling', 'trim', 'channelBed']) macroVary(m[k], mk);
   BANNER_K.value = biome.storm ? 2.2 : biome.outdoor ? 1.2 : 0.7;
   return m;
 }

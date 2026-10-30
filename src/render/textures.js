@@ -414,14 +414,17 @@ const SURFS = {
   plaster: /* glsl */ `
   void surf(vec2 uv, out vec3 col, out float h, out float rough, out float metal, out float ao){
     float n = fbm(uv, 5., 6);
-    float wm = fbm(uv + 3.3, 3., 6);
-    float worn = smoothstep(0.64, 0.69, wm);
-    float rim = smoothstep(0.6, 0.645, wm) * (1. - worn);
+    // (fewer, broader breaks in the plaster: many small dark-rimmed holes read as smudges down a hall)
+    float wm = fbm(uv + 3.3, 2., 6);
+    float worn = smoothstep(0.69, 0.73, wm);
+    float rim = smoothstep(0.655, 0.69, wm) * (1. - worn);
     vec4 b = bricks(uv, vec2(5., 12.), 0.5, 0.1);
     float brick = smoothstep(0.002, 0.008, b.x);
     vec3 brickC = mix(vec3(0.27, 0.15, 0.11), vec3(0.35, 0.21, 0.15), b.y) * mix(0.4, 1., brick);
-    vec3 plasterC = vec3(0.50, 0.45, 0.37) * (0.85 + 0.2 * fbm(uv, 40., 4));
-    plasterC = mix(plasterC, vec3(0.30, 0.26, 0.2), smoothstep(0.4, 0.9, n) * 0.65);
+    // lime plaster: trowel sweeps (long, faint, at a slant) over a fine grain, aged by broad soft patches
+    float trowel = fbm(vec2(uv.x * 3. + uv.y * 2., uv.y - uv.x), 9., 3); // (whole-number shear: still tiles)
+    vec3 plasterC = vec3(0.52, 0.47, 0.39) * (0.86 + 0.16 * fbm(uv, 40., 4)) * (0.94 + 0.12 * trowel);
+    plasterC = mix(plasterC, vec3(0.34, 0.29, 0.22), smoothstep(0.45, 0.95, n) * 0.38);
     // soot and damp run down the plaster; hairline cracks; a grubby rim where it has broken away
     float streak = smoothstep(0.5, 0.9, fbm(vec2(uv.x * 8., uv.y * 0.7), 8., 4));
     vec4 v = voronoi(uv, 5., 1.);

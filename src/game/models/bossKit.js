@@ -524,7 +524,9 @@ export function strikeLayer(m, s, P, dt, o) {
   S.an = an; S.at = at; S.p = p;
   // the spring: stiff enough to read as a jolt, loose enough to rock once or twice
   const k = o.k ?? 120, c = o.c ?? 8;
-  const n = Math.max(1, Math.ceil(dt / 0.008)), h = dt / n;
+  // (on the paused clock during a hit-pause, so the jolt plays out as the blow's beat ends)
+  const sdt = P.stop > 0 ? dt * 0.08 : dt;
+  const n = Math.max(1, Math.ceil(sdt / 0.008)), h = sdt / n;
   for (let i = 0; i < n; i++) {
     S.vx += (-k * S.x - c * S.vx) * h; S.x += S.vx * h;
     S.vy += (-k * S.y - c * S.vy) * h; S.y += S.vy * h;
