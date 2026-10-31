@@ -516,14 +516,17 @@ export function strikeLayer(m, s, P, dt, o) {
     const pp = fresh ? 0 : S.p;
     if (fresh && ty.rel) kick(S, ty.rel, 1);
     const hp = ty.hit ?? 0.25;
-    if (act && ty.imp && p >= hp && pp < hp) kick(S, ty.imp, 1);
+    // the blow lands: it jolts the body and holds it there a beat (hit-pause), so its weight reads
+    if (act && ty.imp && p >= hp && pp < hp) { kick(S, ty.imp, 1); P.stop = Math.max(P.stop, ty.stop ?? o.stop ?? 0.07); }
     // (several hits in one cast: ty.hits = [p, ...])
     if (act && ty.hits) for (const h of ty.hits) if (p >= h && pp < h) kick(S, ty.imp ?? ty.rel, 0.7);
   }
   S.an = an; S.at = at; S.p = p;
   // the spring: stiff enough to read as a jolt, loose enough to rock once or twice
   const k = o.k ?? 120, c = o.c ?? 8;
-  const n = Math.max(1, Math.ceil(dt / 0.008)), h = dt / n;
+  // (on the paused clock during a hit-pause, so the jolt plays out as the blow's beat ends)
+  const sdt = P.stop > 0 ? dt * 0.08 : dt;
+  const n = Math.max(1, Math.ceil(sdt / 0.008)), h = sdt / n;
   for (let i = 0; i < n; i++) {
     S.vx += (-k * S.x - c * S.vx) * h; S.x += S.vx * h;
     S.vy += (-k * S.y - c * S.vy) * h; S.y += S.vy * h;

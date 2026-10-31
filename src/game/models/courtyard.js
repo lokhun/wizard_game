@@ -403,7 +403,7 @@ export const battlePriest = {
   },
   pose: humanoidPose,
   anim: {
-    death: 'fallBack', spawn: 'rise', caster: true, idleOrb: 0.0, armSwing: 0.2, stride: 0.45, gait: 'plod',
+    death: 'fallBack', deathLift: 0.1, spawn: 'rise', caster: true, idleOrb: 0.0, // (deathLift: the heavy cope bunched under him sank into the floor) armSwing: 0.2, stride: 0.45, gait: 'plod',
     // a corpse lays its weapon flat instead of standing it 1 m+ out of the body or the floor (scripts/grip.js)
     deathGrip: [{ foreR: [0.4, 0, 0], handR: [1.6, 0, -0.4] }, { foreR: [0.4, 0, 0], handR: [-1.6, 0, 0.4] }],
     // staff held upright: hand bone local +Y maps up when the forearm is level, so the staff runs along hand +Y

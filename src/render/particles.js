@@ -63,15 +63,34 @@ function makeAtlas() {
   }
 
   // flame tongue
+  // flame: a main tongue and two lesser ones off its flanks, swayed and frayed by warped noise (more
+  // toward the tips), dense and even at the root, ragged and gappy above, so the particle shader's
+  // erosion tears it into licks as it rises instead of shrinking a smooth teardrop
   [x, y] = cell(SPR.FLAME);
   {
     const img = g.createImageData(S, S);
+    const fbm = (a, b) => noise(a, b) * 0.5 + noise(a * 2.03 + 5.2, b * 2.03 + 1.3) * 0.25 + noise(a * 4.1 + 9.7, b * 4.1 + 3.1) * 0.125;
+    const tongues = [[0, 1.0, 0.46], [-0.3, 0.6, 0.26], [0.29, 0.72, 0.24]];
     for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) {
-      const dx = (i - 64) / 64, dy = (j - 80) / 64;
-      const w = 0.55 * Math.max(0, 1 - Math.max(0, -dy) * 0.9);
-      let n = noise(i / 16, j / 12) * 0.5 + noise(i / 8, j / 6) * 0.25;
-      const d = Math.abs(dx) / Math.max(0.05, w) + Math.max(0, dy) * 1.6;
-      const alpha = Math.max(0, 1 - d - (n - 0.4) * 0.6);
+      const px = (i - 64) / 64, py = (j - 86) / 64; // (py < 0: up)
+      const up = Math.max(0, -py);
+      const wx = px + (fbm(i / 18, j / 9) - 0.44) * (0.12 + up * 0.5);
+      let a = 0;
+      for (const [ox, h, wd] of tongues) {
+        let d;
+        if (py > 0) d = Math.hypot((wx - ox) / wd, py / (wd * 0.85));
+        else {
+          const t = up / h;
+          d = t >= 1 ? 2 : Math.abs(wx - ox) / Math.max(0.015, wd * (1 - t) ** 0.65);
+        }
+        a = Math.max(a, 1 - d);
+      }
+      a = Math.max(0, a);
+      // density: full at the root, threaded with gaps toward the tips
+      const n = fbm(i / 9 + 3.3, j / 5 + 7.1);
+      const dens = Math.min(1, (0.5 + 0.9 * n) * (1 - up * 0.25) + Math.max(0, py) * 0.6);
+      // (x0.78: the same light in all as the old single tongue, so every torch and brazier burns as bright as before)
+      const alpha = Math.min(1, Math.pow(a, 0.75) * dens * 1.25) * 0.78;
       const k = (j * S + i) * 4;
       img.data[k] = 255; img.data[k + 1] = 255; img.data[k + 2] = 255;
       img.data[k + 3] = Math.min(255, alpha * 255);
@@ -97,9 +116,27 @@ function makeAtlas() {
   g.restore();
 
   // ring
+  // ring: a shock front, not a drawn circle - a bright crest that frays and breaks along its length,
+  // a soft wake behind it, and a faint haze filling the middle
   [x, y] = cell(SPR.RING);
-  g.fillStyle = radial(x + 64, y + 64, 62, [[0, 'rgba(255,255,255,0)'], [0.7, 'rgba(255,255,255,0)'], [0.86, 'rgba(255,255,255,1)'], [1, 'rgba(255,255,255,0)']]);
-  g.fillRect(x, y, S, S);
+  {
+    const img = g.createImageData(S, S);
+    for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) {
+      const dx = (i - 64) / 62, dy = (j - 64) / 62, r = Math.hypot(dx, dy), a0 = Math.atan2(dy, dx);
+      // (angle noise wrapped round the ring: 16 cells, so no seam)
+      const u = ((a0 / (Math.PI * 2)) + 1) % 1 * 16;
+      const n = noise(u, r * 6) * 0.65 + noise(u * 2 + 7, r * 11 + 3) * 0.35;
+      const crest = 0.86 + (n - 0.5) * 0.05;
+      const band = Math.exp(-(((r - crest) / 0.055) ** 2)) * (0.45 + 0.75 * n);
+      const wake = r < crest ? Math.exp(-(((r - crest) / 0.2) ** 2)) * 0.28 * (0.6 + 0.6 * n) : 0;
+      const haze = r < crest ? 0.05 * (1 - r) : 0;
+      const alpha = Math.min(1, band + wake + haze) * (r < 1 ? 1 : 0);
+      const k = (j * S + i) * 4;
+      img.data[k] = 255; img.data[k + 1] = 255; img.data[k + 2] = 255;
+      img.data[k + 3] = Math.min(255, alpha * 255);
+    }
+    g.putImageData(img, x, y);
+  }
 
   // rune glyph
   [x, y] = cell(SPR.RUNE);
@@ -239,6 +276,7 @@ attribute vec2 iMisc;   // sprite, rotation
 varying vec2 vUv;
 varying vec4 vColor;
 varying float vFog;
+varying float vErode;
 void main(){
   float age = uTime - iTime.x;
   float life = iTime.y;
@@ -276,7 +314,19 @@ void main(){
   vec2 cell = vec2(mod(spr, 4.0), 3.0 - floor(spr / 4.0));
   vUv = (cell + corner + 0.5) / 4.0;
   float a = iColor.a * smoothstep(0.0, 0.08, f) * (1.0 - smoothstep(0.55, 1.0, f)) * nearK;
-  vColor = vec4(mix(iColor.rgb, iColor2, f), a);
+  vec3 col = mix(iColor.rgb, iColor2, f);
+#ifdef ADDITIVE
+  // born white-hot: the first moments burn brighter and toward white, then cool into their colour
+  // (sparks, flames, glows and embers all read as heat, not as flat tinted cards)
+  // (flame sprites barely: a torch or brazier burns them without end, and its fire went to a white blob)
+  float heat = pow(1.0 - f, 6.0) * (abs(spr - 3.0) < 0.5 ? 0.25 : 1.0);
+  float lum = dot(col, vec3(0.3, 0.5, 0.2));
+  col = mix(col, vec3(lum) * 1.25 + col * 0.35, heat * 0.5) * (1.0 + heat * 0.7);
+#endif
+  vColor = vec4(col, a);
+  // smoke, flame and wisp sprites erode as they age: the thin parts burn away first, so a puff
+  // breaks up into tatters instead of fading out whole
+  vErode = (abs(spr - 2.0) < 0.5 || abs(spr - 3.0) < 0.5 || abs(spr - 10.0) < 0.5) ? f : 0.0;
   vFog = 1.0 - exp(-uFogDensity * uFogDensity * depth * depth);
 }
 `;
@@ -286,8 +336,10 @@ uniform sampler2D uAtlas;
 varying vec2 vUv;
 varying vec4 vColor;
 varying float vFog;
+varying float vErode;
 void main(){
   vec4 t = texture2D(uAtlas, vUv);
+  if (vErode > 0.0) { float th = vErode * vErode * 0.6; t.a *= smoothstep(th, th + 0.22, t.a); }
   float a = t.a * vColor.a * (1.0 - vFog);
   if (a < 0.002) discard;
   gl_FragColor = vec4(vColor.rgb * t.rgb * a, 1.0);
@@ -300,8 +352,10 @@ uniform vec3 uFogColor;
 varying vec2 vUv;
 varying vec4 vColor;
 varying float vFog;
+varying float vErode;
 void main(){
   vec4 t = texture2D(uAtlas, vUv);
+  if (vErode > 0.0) { float th = vErode * vErode * 0.5; t.a *= smoothstep(th, th + 0.25, t.a); }
   float a = t.a * vColor.a;
   if (a < 0.004) discard;
   vec3 c = mix(vColor.rgb * t.rgb, uFogColor, vFog);
@@ -321,6 +375,7 @@ function makeMaterial(atlas, additive, near, maxAng) {
   const mat = new THREE.ShaderMaterial({
     vertexShader: VERT,
     fragmentShader: additive ? FRAG_ADD : FRAG_ALPHA,
+    defines: additive ? { ADDITIVE: '' } : {},
     uniforms,
     transparent: true,
     depthWrite: false,

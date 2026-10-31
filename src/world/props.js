@@ -781,12 +781,224 @@ function stairsDown() {
 }
 function glowshrooms(rng) { return mushrooms(rng, true); }
 
+// ---------------------------------------------------------------------------
+// Set-piece props: the furniture of the realms' vignettes and alcoves. Wall pieces stand with
+// their back to -z and face +z, like every wall-hugging prop (rot from the level's edge spots).
+// ---------------------------------------------------------------------------
+
+// a hearth: stone jambs and mantel, a chimney breast to the vault, logs on the fire (its flame: PROP_FLAMES)
+function fireplace() {
+  const parts = [];
+  for (const s of [-1, 1]) {
+    parts.push(['trim', tf(box(0.42, 1.25, 0.72), { x: s * 0.86, y: 0.625, z: 0.06 })]);
+    parts.push(['trim', tf(box(0.52, 0.16, 0.8), { x: s * 0.86, y: 0.08, z: 0.08 })]);
+  }
+  parts.push(['trim', tf(box(2.3, 0.3, 0.86), { y: 1.4, z: 0.1 })]); // mantel
+  parts.push(['trim', tf(box(2.5, 0.09, 0.95), { y: 1.59, z: 0.12 })]); // shelf
+  parts.push(['trim', tf(box(1.9, 1.7, 0.5), { y: 2.48, z: -0.06 })]); // chimney breast
+  parts.push(['trim', tf(box(1.55, 2.2, 0.42), { y: 4.4, z: -0.1 })]);
+  parts.push(['decalDark', tf(new THREE.PlaneGeometry(1.32, 1.22), { y: 0.62, z: -0.27 })]); // the sooty firebox
+  parts.push(['rock', tf(box(1.4, 0.06, 0.62), { y: 0.03, z: 0.02 })]); // hearthstone
+  for (const [x, ry] of [[-0.2, 0.25], [0.18, -0.3]]) parts.push(['bark', tf(cyl(0.07, 0.08, 0.9, 6), { x, y: 0.12, z: -0.02, rz: Math.PI / 2, ry })]);
+  parts.push(['bark', tf(cyl(0.06, 0.07, 0.75, 6), { y: 0.24, z: 0.03, rz: Math.PI / 2, ry: 1.4 })]);
+  parts.push(['charcoal', tf(cyl(0.42, 0.48, 0.08, 9), { y: 0.05, z: -0.02 })]);
+  // andirons, and the things kept on the mantel
+  for (const s of [-1, 1]) parts.push(['iron', tf(box(0.04, 0.32, 0.5), { x: s * 0.46, y: 0.16, z: 0.02 })]);
+  parts.push(['candle', tf(cyl(0.035, 0.04, 0.22, 7), { x: -0.85, y: 1.75, z: 0.2 })]);
+  parts.push(['candle', tf(cyl(0.035, 0.04, 0.16, 7), { x: 0.9, y: 1.72, z: 0.2 })]);
+  parts.push(['bone', tf(skullGeo(), { x: 0.4, y: 1.72, z: 0.18, ry: -0.4 })]);
+  parts.flames = [[-0.85, 1.865, 0.2], [0.9, 1.805, 0.2]];
+  return parts;
+}
+
+// an iron maiden, its door hanging open on the spikes inside
+function ironMaiden(rng) {
+  const parts = [];
+  const pts = [];
+  for (let i = 0; i <= 8; i++) { const t = i / 8; pts.push(new THREE.Vector2(0.34 + Math.sin(t * Math.PI) * 0.12 - t * 0.06, t * 2.05)); }
+  const body = new THREE.LatheGeometry(pts, leanProps ? 8 : 12, Math.PI * 0.95, Math.PI * 1.1); // (the back half: open at the front)
+  parts.push(['iron', tf(body, { y: 0.1 })]);
+  const inner = body.clone(); inner.scale(-0.94, 1, 0.94);
+  parts.push(['iron', tf(inner, { y: 0.1 })]);
+  parts.push(['iron', tf(sph(0.27, 10, 6), { y: 2.3, sz: 0.8 })]); // the head
+  parts.push(['iron', tf(box(0.9, 0.1, 0.7), { y: 0.05 })]);
+  // spikes inside the back
+  for (let k = 0; k < (leanProps ? 6 : 12); k++) {
+    const y = 0.4 + (k % 6) * 0.3, x = (k < 6 ? -0.12 : 0.12) + (rng() - 0.5) * 0.04;
+    parts.push(['steel', tf(new THREE.ConeGeometry(0.025, 0.2, 4), { x, y: y + 0.1, z: -0.24, rx: Math.PI / 2 })]);
+  }
+  // the door, swung open about its left hinge, a face on it
+  const door = new THREE.LatheGeometry(pts, leanProps ? 6 : 10, -Math.PI * 0.15, Math.PI * 0.3);
+  parts.push(['iron', tf(door, { x: -0.5, y: 0.1, z: 0.55, ry: -1.9 })]);
+  parts.push(['iron', tf(box(0.18, 0.2, 0.05), { x: -0.88, y: 2.0, z: 0.52, ry: -0.35 })]);
+  parts.push(['decalBlood', tf(new THREE.CircleGeometry(0.45, 10), { y: 0.11, z: 0.05, rx: -Math.PI / 2 })]);
+  return parts;
+}
+
+// a pillory: two posts, a hinged board with a neck hole and two for the wrists
+function stocks() {
+  const parts = [];
+  for (const s of [-1, 1]) parts.push(['wood', tf(box(0.14, 1.7, 0.14), { x: s * 0.72, y: 0.85 })]);
+  parts.push(['wood', tf(box(1.6, 0.16, 0.12), { y: 1.62 })]);
+  parts.push(['wood', tf(box(1.44, 0.2, 0.1), { y: 1.3, z: 0.01 })]);
+  parts.push(['wood', tf(box(1.44, 0.2, 0.1), { y: 1.11, z: 0.01 })]);
+  for (const [x, r] of [[0, 0.11], [-0.42, 0.06], [0.42, 0.06]]) parts.push(['decalDark', tf(new THREE.CircleGeometry(r, 10), { x, y: 1.21, z: 0.065 })]);
+  for (const s of [-1, 1]) parts.push(['iron', tf(box(0.05, 0.42, 0.13), { x: s * 0.62, y: 1.21, z: 0.01 })]);
+  parts.push(['wood', tf(box(1.6, 0.1, 0.5), { y: 0.05 })]);
+  return parts;
+}
+
+// a stone coffin with a carved lid, the effigy worn smooth
+function sarcophagus(rng) {
+  const parts = [];
+  parts.push(['trim', tf(box(1.05, 0.22, 2.3), { y: 0.11 })]);
+  parts.push(['stone', tf(box(0.92, 0.66, 2.12), { y: 0.55 })]);
+  parts.push(['trim', tf(box(1.02, 0.14, 2.24), { y: 0.95 })]);
+  // the effigy: a body, folded hands, a head on a cushion
+  parts.push(['stone', tf(box(0.5, 0.18, 1.3), { y: 1.11, z: -0.1 })]);
+  parts.push(['stone', tf(sph(0.16, 8, 6), { y: 1.14, z: 0.75, sy: 0.8 })]);
+  parts.push(['stone', tf(box(0.46, 0.08, 0.3), { y: 1.06, z: 0.75 })]);
+  parts.push(['stone', tf(box(0.16, 0.12, 0.18), { y: 1.24, z: 0.18 })]);
+  parts.push(['stone', tf(box(0.14, 0.14, 0.4), { y: 1.11, z: -0.85 })]);
+  // a cracked corner: the lid has been shifted once
+  if (rng() < 0.5) parts.push(['rock', tf(box(0.3, 0.12, 0.26), { x: 0.48, y: 0.08, z: -1.25, ry: 0.6 })]);
+  for (const s of [-1, 1]) parts.push(['trim', tf(box(0.06, 0.4, 1.7), { x: s * 0.47, y: 0.55 })]);
+  return parts;
+}
+
+// a tall urn on a plinth
+function urn(rng) {
+  const parts = [];
+  const pts = [];
+  const k = 0.8 + rng() * 0.4;
+  for (let i = 0; i <= 10; i++) { const t = i / 10; pts.push(new THREE.Vector2(0.12 + Math.sin(t * Math.PI * 0.95) * 0.26 * k - (t > 0.8 ? (t - 0.8) * 0.6 : 0), t * 0.9)); }
+  parts.push(['stone', tf(new THREE.LatheGeometry(pts, leanProps ? 8 : 12), { y: 0.5 })]);
+  parts.push(['gold', tf(tor(0.15, 0.025, 4, 12), { y: 1.38, rx: Math.PI / 2 })]);
+  parts.push(['trim', tf(box(0.6, 0.5, 0.6), { y: 0.25 })]);
+  return parts;
+}
+
+// a soldier's tent: a canvas ridge on poles, the flap tied back, a bedroll inside
+function tent(rng) {
+  const parts = [];
+  // (a three-sided prism laid along x: its apex is the ridge, 1.95 m up)
+  const g = new THREE.CylinderGeometry(1.3, 1.3, 2.6, 3, 1, false);
+  g.rotateZ(Math.PI / 2); g.rotateX(-Math.PI / 2);
+  parts.push(['canvas', colorize(tf(g, { y: 0.65 }), rng() < 0.5 ? 0xb8a888 : 0x8a7a60)]);
+  for (const x of [-1.32, 1.32]) parts.push(['wood', tf(cyl(0.035, 0.035, 2.0, 5), { x, y: 1.0 })]);
+  parts.push(['wood', tf(cyl(0.03, 0.03, 2.9, 5), { y: 1.98, rz: Math.PI / 2 })]);
+  // guy ropes from the ridge's ends to pegs in the ground
+  for (const s of [-1, 1]) parts.push(['rope', tf(cyl(0.01, 0.01, 2.1, 3), { x: s * 1.65, y: 0.99, rz: s * 0.34 })]);
+  parts.push(['cloth', colorize(tf(cyl(0.2, 0.2, 1.6, 8), { y: 0.2, z: 1.5, rz: Math.PI / 2 }), 0x5a4030)]); // (a bedroll out in front)
+  return parts;
+}
+
+// a campfire: a ring of stones, crossed logs, embers (its flame: PROP_FLAMES)
+function campfire(rng) {
+  const parts = [];
+  for (let k = 0; k < 9; k++) {
+    const a = (k / 9) * Math.PI * 2 + rng() * 0.3;
+    parts.push(['rock', tf(jitter(sph(0.14, 6, 4), 0.03, rng), { x: Math.cos(a) * 0.55, y: 0.07, z: Math.sin(a) * 0.55, sy: 0.7 })]);
+  }
+  for (let k = 0; k < 4; k++) parts.push(['bark', tf(cyl(0.05, 0.06, 0.8, 6), { y: 0.12 + k * 0.02, rz: Math.PI / 2 - 0.25, ry: (k / 4) * Math.PI })]);
+  parts.push(['charcoal', tf(cyl(0.34, 0.4, 0.06, 9), { y: 0.03 })]);
+  // a spit over it
+  for (const s of [-1, 1]) parts.push(['wood', tf(cyl(0.025, 0.025, 1.0, 4), { x: s * 0.62, y: 0.45, rz: s * 0.15 })]);
+  parts.push(['iron', tf(cyl(0.015, 0.015, 1.4, 4), { y: 0.9, rz: Math.PI / 2 })]);
+  return parts;
+}
+
+// split logs stacked against a wall
+function woodpile(rng) {
+  const parts = [];
+  for (let row = 0; row < 4; row++) for (let k = 0; k < 6 - row; k++) {
+    const x = (k - (5 - row) / 2) * 0.22 + (rng() - 0.5) * 0.03;
+    parts.push(['bark', tf(cyl(0.1, 0.1, 0.7 + rng() * 0.15, 6), { x, y: 0.1 + row * 0.18, z: 0.05, rx: Math.PI / 2, ry: (rng() - 0.5) * 0.1 })]);
+  }
+  for (const s of [-1, 1]) parts.push(['wood', tf(box(0.08, 0.8, 0.08), { x: s * 0.72, y: 0.4, z: 0.05 })]);
+  parts.push(['iron', tf(box(0.04, 0.5, 0.12), { x: 0.95, y: 0.25, z: 0.2, rz: 0.35 })]); // an axe leant on it
+  parts.push(['wood', tf(cyl(0.02, 0.02, 0.8, 4), { x: 0.92, y: 0.4, z: 0.2, rz: 0.35 })]);
+  return parts;
+}
+
+// a scholar's writing desk: a sloped top, a stool, papers, an inkwell and a candle
+function desk(rng) {
+  const parts = [];
+  parts.push(['wood', tf(box(1.3, 0.06, 0.7), { y: 0.78 })]);
+  parts.push(['wood', tf(box(1.2, 0.04, 0.5), { y: 0.86, z: -0.06, rx: 0.22 })]);
+  for (const [x, z] of [[-0.58, -0.28], [0.58, -0.28], [-0.58, 0.28], [0.58, 0.28]]) parts.push(['wood', tf(box(0.06, 0.78, 0.06), { x, y: 0.39, z })]);
+  parts.push(['wood', tf(box(1.2, 0.3, 0.04), { y: 0.62, z: -0.32 })]);
+  parts.push(['wood', tf(box(1.3, 0.4, 0.22), { y: 1.0, z: -0.28 })]); // pigeonholes
+  parts.push(['bookRow', tf(box(1.1, 0.24, 0.16), { y: 1.0, z: -0.25 })]);
+  parts.push(['canvas', colorize(tf(box(0.32, 0.005, 0.42), { x: -0.15, y: 0.9, z: 0.02, rx: 0.22, ry: 0.15 }), 0xd8ccaa)]);
+  parts.push(['canvas', colorize(tf(box(0.3, 0.005, 0.4), { x: 0.2, y: 0.89, z: 0.04, rx: 0.22, ry: -0.3 }), 0xc8b890)]);
+  parts.push(['iron', tf(cyl(0.04, 0.045, 0.06, 7), { x: 0.48, y: 0.84, z: 0.18 })]);
+  parts.push(['candle', tf(cyl(0.035, 0.04, 0.2, 7), { x: -0.5, y: 0.91, z: 0.18 })]);
+  parts.flames = [[-0.5, 1.015, 0.18]];
+  // its stool
+  parts.push(['wood', tf(cyl(0.2, 0.2, 0.06, 10), { y: 0.5, z: 0.65 })]);
+  for (let k = 0; k < 3; k++) { const a = k * 2.1; parts.push(['wood', tf(cyl(0.025, 0.03, 0.5, 4), { x: Math.cos(a) * 0.14, y: 0.25, z: 0.65 + Math.sin(a) * 0.14 })]); }
+  void rng;
+  return parts;
+}
+
+// a terrestrial globe on a turned stand
+function globe() {
+  const parts = [];
+  parts.push(['wood', tf(cyl(0.32, 0.38, 0.06, 10), { y: 0.03 })]);
+  parts.push(['wood', tf(cyl(0.05, 0.08, 0.7, 8), { y: 0.4 })]);
+  parts.push(['leather', colorize(tf(sph(0.32, 14, 10), { y: 1.1, rz: 0.4 }), 0x8a7a50)]);
+  parts.push(['gold', tf(tor(0.36, 0.015, 4, 20), { y: 1.1, ry: Math.PI / 2, rx: 0.4 })]);
+  parts.push(['gold', tf(tor(0.36, 0.012, 4, 20, Math.PI), { y: 1.1, rx: Math.PI / 2 })]);
+  return parts;
+}
+
+// a heap of the dead: long bones and skulls
+function bonePile(rng) {
+  const parts = [];
+  const mound = jitter(sph(0.6, 9, 6), 0.08, rng);
+  mound.scale(1, 0.45, 1);
+  parts.push(['bone', tf(mound, { y: 0.06 })]);
+  for (let k = 0; k < (leanProps ? 5 : 9); k++) {
+    const a = rng() * Math.PI * 2, r = rng() * 0.5;
+    parts.push(['bone', tf(skullGeo(), { x: Math.cos(a) * r, y: 0.22 + (0.5 - r) * 0.3, z: Math.sin(a) * r, ry: rng() * 6, rx: (rng() - 0.5) * 0.8 })]);
+  }
+  for (let k = 0; k < (leanProps ? 6 : 12); k++) {
+    const a = rng() * Math.PI * 2, r = 0.3 + rng() * 0.5;
+    parts.push(['bone', tf(cyl(0.025, 0.03, 0.35 + rng() * 0.2, 5), { x: Math.cos(a) * r, y: 0.12 + rng() * 0.12, z: Math.sin(a) * r, rz: Math.PI / 2 + (rng() - 0.5) * 0.6, ry: rng() * 6 })]);
+  }
+  return parts;
+}
+
+// a plain wooden bench
+function bench() {
+  const parts = [];
+  parts.push(['wood', tf(box(1.8, 0.07, 0.4), { y: 0.46 })]);
+  for (const s of [-1, 1]) parts.push(['wood', tf(box(0.07, 0.46, 0.34), { x: s * 0.75, y: 0.23 })]);
+  parts.push(['wood', tf(box(1.5, 0.05, 0.05), { y: 0.18 })]);
+  return parts;
+}
+
+// an anvil on a stump, a quench tub and tongs
+function anvil() {
+  const parts = [];
+  parts.push(['bark', tf(cyl(0.32, 0.36, 0.55, 9), { y: 0.275 })]);
+  parts.push(['iron', tf(box(0.6, 0.12, 0.24), { y: 0.62 })]);
+  parts.push(['iron', tf(box(0.3, 0.12, 0.18), { y: 0.5 })]);
+  parts.push(['iron', tf(new THREE.ConeGeometry(0.1, 0.3, 6), { x: 0.42, y: 0.63, rz: -Math.PI / 2, sy: 1, sx: 0.8 })]);
+  parts.push(['wood', tf(cyl(0.3, 0.26, 0.45, 10, true), { x: -0.2, y: 0.225, z: 0.75 })]);
+  parts.push(['puddle', tf(new THREE.CircleGeometry(0.28, 10), { x: -0.2, y: 0.4, z: 0.75, rx: -Math.PI / 2 })]);
+  parts.push(['iron', tf(box(0.03, 0.03, 0.55), { x: 0.1, y: 0.7, z: 0.1, ry: 0.5 })]);
+  return parts;
+}
+
 export const PROPS = {
   barrel, keg, crate, rubble, bones, pillarSquare, pillarRound, pillarGrand, chains, sack, table, longTable, stool,
   bucket, hay, rack, cage, skeletonSit, bloodstain, puddle, grate, pitGrate, mushrooms, glowshrooms, pipe, sconce, brazier: () => brazier(false),
   brazierTall: () => brazier(true), brazierFloor, chandelier, candles, candelabra, bookPile, scrolls, armorStand, weaponRack, banner,
   painting, chest, statue, statueSmall: (r) => statue(r, true), well, fountain, tree, deadTree: (r) => tree(r, true), grave, hayCart, cart,
   ruinPillar, gallows, throne, stainedGlass, shrine, merchant: merchantStall, ladder, stairsDown, brokenWagon, trainingDummy, hayBales,
+  fireplace, ironMaiden, stocks, sarcophagus, urn, tent, campfire, woodpile, desk, globe, bonePile, bench, anvil,
 };
 export { cellBars, bookshelf };
 
@@ -796,4 +1008,6 @@ export const PROP_FLAMES = {
   brazierTall: [[0, 2.2, 0, 1.6]],
   brazierFloor: [[0, 1.45, 0, 1.6]],
   candelabra: [[-0.25, 1.82, 0, 0.3], [0, 1.84, 0, 0.3], [0.25, 1.82, 0, 0.3]],
+  fireplace: [[0, 0.32, -0.02, 1.05]],
+  campfire: [[0, 0.22, 0, 0.95]],
 };

@@ -149,30 +149,41 @@ export function makeBuffers(ctx) {
 }
 
 // Dungeon-ish stereo reverb IR: predelay, early reflections, damped diffuse tail.
-export function makeIR(ctx, sec = 2.8, rt60 = 2.5) {
-  const steps = irSteps(ctx, sec, rt60);
+export function makeIR(ctx, sec = 2.8, rt60 = 2.5, o = {}) {
+  const steps = irSteps(ctx, sec, rt60, o);
   let r;
   while (!(r = steps.next()).done);
   return r.value;
 }
 // the same, yielding every ~0.35 s of samples (a few ms each); returns the buffer
-export function* irSteps(ctx, sec = 2.8, rt60 = 2.5) {
+// o (a space's character, all optional): bright (how much of the top end the tail starts with, 0.9),
+// dark (how much of it is lost by 1.6 s, 0.82), early ({ n, t1, amp }: the first reflections, n of them
+// within t1 s), slap ([[t, amp], ...]: discrete echoes off far walls, e.g. an open yard's curtain walls)
+export function* irSteps(ctx, sec = 2.8, rt60 = 2.5, o = {}) {
   const sr = ctx.sampleRate, len = Math.floor(sec * sr);
   const buf = ctx.createBuffer(2, len, sr);
   const pre = Math.floor(0.014 * sr), slice = Math.floor(0.35 * sr);
+  const a0 = o.bright ?? 0.9, a1 = o.dark ?? 0.82, E = o.early ?? { n: 14, t1: 0.085, amp: 0.7 };
+  const k = Math.pow(10, -3 / (rt60 * sr)); // (the decay, per sample)
   for (let ch = 0; ch < 2; ch++) {
-    const d = buf.getChannelData(ch); let lp = 0;
+    const d = buf.getChannelData(ch); let lp = 0, env = 1;
     for (let i = pre; i < len; i++) {
       const t = (i - pre) / sr;
-      const env = Math.pow(10, (-3 * t) / rt60) * Math.min(1, t / 0.02);
-      const a = 0.9 - 0.82 * Math.min(1, t / 1.6); // brighter early, darker late
+      env *= k;
+      const a = a0 - a1 * Math.min(1, t / 1.6); // brighter early, darker late
       lp += a * (Math.random() * 2 - 1 - lp);
-      d[i] = lp * env * (1 / Math.sqrt(a + 0.05)) * 0.6;
+      d[i] = lp * env * Math.min(1, t / 0.02) * (1 / Math.sqrt(a + 0.05)) * 0.6;
       if ((i - pre) % slice === slice - 1) yield;
     }
-    for (let k = 0; k < 14; k++) {
-      const idx = pre + Math.floor(rnd(0.004, 0.085) * sr);
-      d[idx] += rnd(-0.7, 0.7) * (1 - k / 16);
+    for (let q = 0; q < E.n; q++) {
+      const idx = pre + Math.floor(rnd(0.004, E.t1) * sr);
+      d[idx] += rnd(-E.amp, E.amp) * (1 - q / (E.n + 2));
+    }
+    // a far wall's echo: a short smeared burst, darker than the sound that made it
+    for (const [t, amp] of o.slap ?? []) {
+      const i0 = pre + Math.floor((t + (ch ? 0.006 : 0)) * sr), n = Math.floor(0.03 * sr);
+      let l2 = 0;
+      for (let i = 0; i < n && i0 + i < len; i++) { l2 += 0.35 * (Math.random() * 2 - 1 - l2); d[i0 + i] += l2 * amp * (1 - i / n) * 2.2; }
     }
     const fade = Math.floor(0.1 * sr);
     for (let i = 0; i < fade; i++) d[len - 1 - i] *= i / fade;

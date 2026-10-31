@@ -3,6 +3,8 @@ import { TextureFactory } from '../render/textures.js';
 import { LightPool } from '../render/lights.js';
 import { Particles, SPR } from '../render/particles.js';
 import { VFX, fxOf } from '../render/vfx.js';
+import { TorchHalos } from '../render/halos.js';
+import { Soundscape } from './soundscape.js';
 import { ContactShadows } from '../render/contact.js';
 import { Storm } from '../render/storm.js';
 import { Debris } from '../render/debris.js';
@@ -298,6 +300,10 @@ export class Game {
       this.lights.addTorch(new THREE.Vector3(l.x, l.y + 0.1, l.z), { color: level.biome.torchColor, intensity: 26, range: 15 });
       this.built.flames.push({ x: l.x, y: l.y, z: l.z, size: 0.42, kind: 'fire', color: level.biome.torchColor });
     }
+    // the air round every open fire catches its light (render/halos.js)
+    (this.halos ??= new TorchHalos(this.scene)).build(this.built.flames, level.biome, level.biome.fog.density);
+    // and every fire crackles, every channel runs (game/soundscape.js)
+    (this.soundscape ??= new Soundscape(this)).build(level, this.built);
     this.debris?.dispose(); this.rubble?.dispose();
     this.debris = new Debris(this.scene, this.built.mats.wood, this.collision);
     this.rubble = new Debris(this.scene, this.built.mats.stone, this.collision);
@@ -806,6 +812,7 @@ export class Game {
       if (dx * dx + dz * dz > 1300 || f.out || f.gpu !== undefined) continue; // (candles burn on the GPU: built.candles)
       this.vfx.flame(f, realDt);
     }
+    this.halos?.update(this.time);
     this.lights.update(realDt, this.time, cam.position);
     this.built.update(realDt, this.time);
     // the dead court flees a hall while a fight is on in it
@@ -832,6 +839,7 @@ export class Game {
     }
     // audio listener
     this.audio?.setListener(cam.position, p.forward());
+    this.soundscape?.update(realDt, cam.position);
     this.audio?.setIntensity?.(p.alive && !p.downed ? clamp(1 - p.hp / p.maxHp - 0.4, 0, 1) * 1.6 : 1);
     // net
     if (this.net) this.net.tick(realDt, this);
@@ -847,8 +855,11 @@ export class Game {
     const p = this.player;
     const ca = p.castAnim;
     vm.root.visible = !p.dead && !this.cinematic && this.settings.showHands !== false;
+    // the body's velocity in the view's own terms (right, forward, up): the hands carry its inertia
+    const cy = Math.cos(p.yaw), sy = Math.sin(p.yaw);
     vm.update(dt, {
       t: this.time, speed: p.speedNorm ?? 0, grounded: p.grounded, look: p.lookDelta,
+      vr: p.vel.x * cy - p.vel.z * sy, vf: -p.vel.x * sy - p.vel.z * cy, vy: p.vel.y,
       cast: ca ? { slot: ca.slot, hand: ca.hand, t: ca.t, style: p.channel ? 'channel' : ca.style } : null,
       charge: p.channel ? Math.min(1, p.channel.t / p.channel.max) : 0, dash: p.dashT > 0, hurt: p.hurtPulse, downed: p.downed,
     });
@@ -902,6 +913,8 @@ export class Game {
 
   _postFx(dt) {
     const g = this.renderer.grade.uniforms;
+    // the blasts' shockwaves bend the view (scaled with the screen-shake setting: off when it is)
+    this.vfx.shockUniforms(g, this.settings.shake ?? 1);
     const p = this.player;
     const lowHp = p.alive && !p.downed ? clamp(1 - p.hp / p.maxHp, 0, 1) : 1;
     if (p.downed) {
@@ -1560,7 +1573,7 @@ export class Game {
   }
   spawnPoolLocal(pos, radius, dur, dps, el = 'enemyGreen') {
     const gy = this.groundY(pos.x, pos.z);
-    this.vfx.decal(new THREE.Vector3(pos.x, gy, pos.z), el === 'enemyPurple' ? 'scorch' : 'slime', radius * 2.2, dur + 1, el === 'enemyPurple' ? 0x6020a0 : undefined);
+    this.vfx.decal(new THREE.Vector3(pos.x, gy, pos.z), el === 'enemyPurple' ? 'scorch' : 'slime', radius * 2.2, dur + 1, el === 'enemyPurple' ? 0x6020a0 : undefined, true); // (kept: the mark is the pool)
     this.pools.push({ x: pos.x, y: gy, z: pos.z, r: radius, t: dur, dps, el, acc: 0 });
   }
   _updatePools(dt) {

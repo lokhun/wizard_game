@@ -309,7 +309,9 @@ export const CLASSES = {
           const start = ctx.casterPos();
           ctx.dash(9, 0.22, { invuln: 0.3 });
           const dir = ctx.flatDir();
-          for (let i = 0; i < 6; i++) {
+          // (the trail burns only where you went: it ends at the first wall, not on its far side)
+          const reach = ctx.g.collision.raycast(start.x, start.y + 0.8, start.z, dir.x, 0, dir.z, 9, 0.2);
+          for (let i = 0; i < 6 && i * 1.6 <= reach - 0.3; i++) {
             const p = v3(start.x + dir.x * i * 1.6, ctx.groundAt(start.x + dir.x * i * 1.6, start.z + dir.z * i * 1.6), start.z + dir.z * i * 1.6);
             ctx.after(i * 0.035, () => ctx.zone({ pos: p, radius: 1.3, life: 3, interval: 0.3, el: 'fire', dmg: 5, st: { burn: [2, 4] }, flames: true }));
           }
@@ -1075,7 +1077,9 @@ export const CLASSES = {
             ctx.vfx.decal(sp, 'glyph', 2.2, 2, 0x60ff60);
             ctx.after(i * 0.1, () => { raiseFx(ctx, sp); ctx.summon('skeletonMinion', sp, 18); });
           }
-          for (let k = 0; k < 10; k++) {
+          // (the tide rolls until it breaks on a wall: none of it carries on beyond)
+          const reach = ctx.g.collision.raycast(p.x, p.y + 1, p.z, d.x, 0, d.z, 18, 0.2);
+          for (let k = 0; k < 10 && 2 + k * 1.6 <= reach - 0.4; k++) {
             ctx.after(k * 0.07, () => {
               const c = v3(p.x + d.x * (2 + k * 1.6), p.y + 1, p.z + d.z * (2 + k * 1.6));
               ctx.vfx.burst(c, { element: 'necrotic', count: 18, speed: 3, upward: 1.5, life: 0.8, size: 0.5, sprite: SPR.WISP });
@@ -1842,10 +1846,12 @@ export const CLASSES = {
             ctx.after(0.05, () => step(1));
             return;
           }
+          // (the line runs until it meets a wall, and ends there: it doesn't carry on on the far side)
+          let blocked = false;
           for (let i = 1; i <= 8; i++) {
             ctx.after(i * 0.05, () => {
               const x = p.x + d.x * i * 1.7, z = p.z + d.z * i * 1.7;
-              if (ctx.g.collision.pointSolid(x, p.y + 0.5, z)) return;
+              if (blocked || ctx.g.collision.pointSolid(x, p.y + 0.5, z)) { blocked = true; return; }
               const sp = v3(x, ctx.groundAt(x, z), z);
               ctx.spike(sp, 1.0 + i * 0.05);
               ctx.area(v3(sp.x, sp.y + 0.8, sp.z), 1.6, { dmg: 24, el: 'earth', st: { stun: 0.6 }, kb: 3 });

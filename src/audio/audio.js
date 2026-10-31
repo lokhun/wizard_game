@@ -37,6 +37,18 @@ const PUMP_MS = 40;
 const MAX_VOICES = 96;    // global safety cap for one-shots
 const MAX_DIST = 44;      // positional one-shots beyond this are culled
 
+// Each realm's acoustics: the reverb every sound is sent into (makeIR's options, and how much of it
+// comes back). The Sewers' brick tunnels ring long and bright; the Oubliette's stone cells are darker
+// and closer; the Bailey is open air, a short tail and the slap of its curtain walls; the Keep's
+// timber and plaster halls are warm; the Hollow Throne's marble nave goes on and on.
+const ACOUSTICS = {
+  sewers: { sec: 3.4, rt60: 3.0, o: { bright: 0.95, dark: 0.8, early: { n: 22, t1: 0.06, amp: 0.8 } }, wet: 0.78 },
+  dungeon: { sec: 2.6, rt60: 2.1, o: { bright: 0.8, dark: 0.72, early: { n: 16, t1: 0.05, amp: 0.75 } }, wet: 0.7 },
+  courtyard: { sec: 2.0, rt60: 1.2, o: { bright: 0.85, dark: 0.7, early: { n: 5, t1: 0.03, amp: 0.4 }, slap: [[0.17, 0.4], [0.29, 0.22]] }, wet: 0.6 },
+  keep: { sec: 2.4, rt60: 1.8, o: { bright: 0.74, dark: 0.64, early: { n: 14, t1: 0.07, amp: 0.6 } }, wet: 0.66 },
+  throne: { sec: 4.2, rt60: 3.8, o: { bright: 0.95, dark: 0.8, early: { n: 10, t1: 0.12, amp: 0.55 } }, wet: 0.58 },
+};
+
 const NOOP_HANDLE = Object.freeze({ setPos() {}, setVolume() {}, setPitch() {}, stop() {}, alive: false });
 
 export class GameAudio {
@@ -136,6 +148,7 @@ export class GameAudio {
     this._conv = c.createConvolver(); this._conv.buffer = (own && P.ir) || makeIR(c);
     this._verbOut = c.createGain(); this._verbOut.gain.value = 0.7;
     this._verbIn.connect(hp); hp.connect(this._conv); this._conv.connect(this._verbOut); this._verbOut.connect(this._pre);
+    this._verbHp = hp; this._room = null;
     this._sfxSend = c.createGain(); this._musicSend = c.createGain(); this._ambSend = c.createGain();
     for (const s of [this._sfxSend, this._musicSend, this._ambSend]) s.connect(this._verbIn);
 
@@ -284,6 +297,7 @@ export class GameAudio {
     if (id === this._ambId) return;
     this._ambId = id;
     if (!this.ctx) return;
+    this._setRoom(id);
     const fade = 2, now = this.ctx.currentTime;
     if (this._amb) {
       const old = this._amb; old.alive = false;
@@ -301,6 +315,21 @@ export class GameAudio {
     try { A.bed(bed); } catch (e) { console.warn('[audio] ambience bed', e); }
     const details = (A.details || []).map((d) => ({ ...d, next: now + rnd(0.5, d.every[1]) }));
     this._amb = { id, gain: g, bed, details, alive: true };
+  }
+  // the realm's acoustics (ACOUSTICS): a new convolver for its space, wired in where the last one was
+  // (a realm changes behind the loading screen, so the old tail is not missed)
+  _setRoom(id) {
+    const A = ACOUSTICS[id] ?? null;
+    if (A === this._room || !this._verbHp) return;
+    this._room = A;
+    try {
+      const c = this.ctx, conv = c.createConvolver();
+      conv.buffer = A ? makeIR(c, A.sec, A.rt60, A.o) : makeIR(c);
+      this._verbHp.disconnect(); this._conv.disconnect();
+      this._verbHp.connect(conv); conv.connect(this._verbOut);
+      this._conv = conv;
+      this._verbOut.gain.setTargetAtTime(A ? A.wet : 0.7, c.currentTime, 0.1);
+    } catch (e) { console.warn('[audio] acoustics', e); }
   }
   _tickAmbience(now) {
     const amb = this._amb;

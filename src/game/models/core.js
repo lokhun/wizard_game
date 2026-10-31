@@ -902,6 +902,25 @@ export function soleProbe(root, names = ['footL', 'footR']) { // (a spec's soles
 // --------------------------------------------------------- pose buffer ----
 // Additive per-frame target pose. 9 floats per bone: rx ry rz px py pz sx sy sz
 const K = 9;
+// Follow-through: the eased pose drives a light spring per bone on its three angles, kicked by every change
+// in the bone's angular speed (its own, plus a share of its parent's, so a motion runs down a chain and
+// whips out at its end). A bone that starts to turn trails a little; one that stops swings past and settles.
+// Laid over the drawn bones only: P.cur stays the clean pose that types read and write. The body's top and
+// the legs (which carry the weight and the foot plant) barely take it; tails, heads, jaws, hands, chains,
+// wings and cloth take the most.
+const FT_W = 17, FT_Z = 0.36, FT_MAX = 0.4, FT_CAP = 1.2, FT_DRIVE = 18, FT_CUT = 0.9;
+const FT_LOOSE = /tail|^ear|jaw|tongue|chain|cape|cloak|hair|tent|wing|horn|beard|plume|fin|strand|rope|banner|tassel|robe|skirt|hood|flail|whip|lantern|censer|tusk|antenna|mandible|feeler/i;
+const FT_FIRM = /foot|toe|shin|thigh|leg|calf|heel|sole|ankle|knee/i;
+const FT_CORE = /^(root|base|hips|pelvis|body|torso)$|^fx_/i;
+function followGain(b, depth, maxDepth) {
+  if (b.userData.follow !== undefined) return b.userData.follow;
+  if (FT_CORE.test(b.name)) return 0;
+  if (FT_FIRM.test(b.name)) return 0.05;
+  const f = maxDepth > 0 ? Math.min(1, depth / maxDepth) : 0;
+  let g = 0.08 + 0.26 * f;
+  if (FT_LOOSE.test(b.name)) g *= 1.45;
+  return Math.min(0.5, g);
+}
 export class PoseBuf {
   constructor(bones) {
     this.bones = bones;
@@ -913,6 +932,21 @@ export class PoseBuf {
     this.rate = bones.map((b) => b.userData.rate ?? 1);
     this._pre = null; // (scratch for a pose blended in by weight: humanoidPose's dying stance)
     for (let i = 0; i < this.n; i++) this.cur[i * K + 6] = this.cur[i * K + 7] = this.cur[i * K + 8] = 1;
+    // follow-through state (see FT_*): each bone's parent and gain, its spring (offset, speed) on 3 angles,
+    // the eased pose's angular speed last frame, the kick each bone passed down, and the clean angles it
+    // was left with (a type that writes P.cur itself - a snapped bone, a rope - is seen and let be)
+    const depth = bones.map((b) => { let d = 0; for (let o = b.parent; o?.isBone; o = o.parent) d++; return d; });
+    const maxD = Math.max(1, ...depth);
+    this.par = Int16Array.from(bones, (b) => this.idx.get(b.parent?.name) ?? -1);
+    this.gain = Float32Array.from(bones, (b, i) => followGain(b, depth[i], maxD));
+    this.follow = 1; // (a type's own scale: spec.follow)
+    this.followK = 1; // (and the moment's: a body ending its fall lets it go, so no swing is frozen into a corpse)
+    this.ftW = FT_W; // (its spring's pace: the bosses' great bodies swing slower and wider)
+    this.fj = new Float32Array(this.n * 3); this.fv = new Float32Array(this.n * 3);
+    this.fw = new Float32Array(this.n * 3); this.fd = new Float32Array(this.n * 3);
+    this.last = new Float32Array(this.n * 3);
+    this._fdt = -1; this._fc = [0, 0, 0, 0];
+    this.stop = 0; // (hit-pause: seconds the pose all but halts - a heavy blow landing, or taken)
     this.reset();
   }
   reset() { this.tgt.fill(0); for (let i = 0; i < this.n; i++) this.tgt[i * K + 6] = this.tgt[i * K + 7] = this.tgt[i * K + 8] = 1; }
@@ -941,23 +975,72 @@ export class PoseBuf {
   // Every bone of every posed body, every frame: so the ease is worked out once per rate (nearly every bone
   // has the body's), and each bone's quaternion is written straight from its angles (setRotXYZ) instead of
   // through rotation.set and its change callback - the same numbers, a good part of the pose cost gone.
+  // (rate 0: a type that damped already this frame - the bones are only written again)
   damp(dt, rate) {
-    const { tgt, cur, bones, rest } = this;
+    const { tgt, cur, bones, rest, fj, fv, fw, fd, last, gain, par } = this;
+    // a hit-pause holds the pose a beat; it then catches up all at once, and the follow-through flings on
+    if (this.stop > 0 && rate > 0) { this.stop -= dt; dt *= 0.08; }
+    const live = rate > 0 && dt > 1e-5 && this.follow > 0;
     const a1 = 1 - Math.exp(-rate * dt);
     let rr = 1, ra = a1;
+    // the follow spring's exact step over dt (stable at any frame time), worked out once per dt
+    const C = this._fc;
+    if (live && dt !== this._fdt) {
+      this._fdt = dt;
+      const W = this.ftW, wd = W * Math.sqrt(1 - FT_Z * FT_Z), e = Math.exp(-FT_Z * W * dt), c = Math.cos(wd * dt), s = Math.sin(wd * dt);
+      C[0] = e * (c + (FT_Z * W / wd) * s); C[1] = e * (s / wd); C[2] = -e * (W * W / wd) * s; C[3] = e * (c - (FT_Z * W / wd) * s);
+    }
+    const idt = live ? 1 / dt : 0, fol = this.follow * this.followK;
     for (let i = 0; i < this.n; i++) {
       const ri = this.rate[i];
       if (ri !== 1 && ri !== rr) { rr = ri; ra = 1 - Math.exp(-rate * ri * dt); }
       const a = ri === 1 ? a1 : ra;
-      const o = i * K;
+      const o = i * K, j3 = i * 3;
+      // written by its type since the last pass (snapped, wrapped, roped, set by IK after its own damp):
+      // that bone is pinned - no swing on it this frame, and none carried over. (The engine's second,
+      // rate-0 pass after a self-damping type is where an IK write shows: it is caught there too.)
+      const pinned = cur[o] !== last[j3] || cur[o + 1] !== last[j3 + 1] || cur[o + 2] !== last[j3 + 2];
+      if (pinned) {
+        fj[j3] = fj[j3 + 1] = fj[j3 + 2] = fv[j3] = fv[j3 + 1] = fv[j3 + 2] = fw[j3] = fw[j3 + 1] = fw[j3 + 2] = 0;
+        fd[j3] = fd[j3 + 1] = fd[j3 + 2] = 0;
+      }
       for (let k = 0; k < K; k++) cur[o + k] += (tgt[o + k] - cur[o + k]) * a;
+      if (live && !pinned) {
+        const g = gain[i] * fol, p3 = par[i] * 3;
+        for (let k = 0; k < 3; k++) {
+          const dc = cur[o + k] - last[j3 + k];
+          // (a jump no damped bone makes in a frame: an angle wrapped or set outright - a cut, not a swing)
+          if (dc > FT_CUT || dc < -FT_CUT) { fw[j3 + k] = 0; fd[j3 + k] = 0; continue; }
+          const w = dc * idt;
+          let d = w - fw[j3 + k];
+          fw[j3 + k] = w;
+          if (p3 >= 0) d += fd[p3 + k] * 0.65;
+          d = d > FT_DRIVE ? FT_DRIVE : d < -FT_DRIVE ? -FT_DRIVE : d;
+          fd[j3 + k] = d;
+          const x = fj[j3 + k];
+          if (g <= 0 && x === 0 && fv[j3 + k] === 0) continue;
+          const v = fv[j3 + k] - (g > 0 ? g * d : 0);
+          // (the spring itself stays linear, clamped well past its limit; only what is shown is eased into
+          // the limit below - easing the state each step made the swing depend on the frame rate)
+          const nx = C[0] * x + C[1] * v;
+          fv[j3 + k] = C[2] * x + C[3] * v;
+          fj[j3 + k] = nx > FT_CAP ? FT_CAP : nx < -FT_CAP ? -FT_CAP : nx;
+        }
+      }
+      last[j3] = cur[o]; last[j3 + 1] = cur[o + 1]; last[j3 + 2] = cur[o + 2];
       const b = bones[i];
-      setRotXYZ(b, cur[o], cur[o + 1], cur[o + 2]);
+      const j0 = fj[j3], j1 = fj[j3 + 1], j2 = fj[j3 + 2];
+      setRotXYZ(b, cur[o] + j0 / (1 + Math.abs(j0) / FT_MAX), cur[o + 1] + j1 / (1 + Math.abs(j1) / FT_MAX), cur[o + 2] + j2 / (1 + Math.abs(j2) / FT_MAX));
       b.position.set(rest[i].x + cur[o + 3], rest[i].y + cur[o + 4], rest[i].z + cur[o + 5]);
       b.scale.set(Math.max(1e-4, cur[o + 6]), Math.max(1e-4, cur[o + 7]), Math.max(1e-4, cur[o + 8]));
     }
   }
-  snap() { this.cur.set(this.tgt); }
+  // (follow-through let go: the bones show the clean pose from here)
+  settle() {
+    this.fj.fill(0); this.fv.fill(0); this.fw.fill(0); this.fd.fill(0);
+    for (let i = 0; i < this.n; i++) { this.last[i * 3] = this.cur[i * K]; this.last[i * 3 + 1] = this.cur[i * K + 1]; this.last[i * 3 + 2] = this.cur[i * K + 2]; }
+  }
+  snap() { this.cur.set(this.tgt); this.settle(); }
 }
 
 // Never drawn as itself, only through the shadow pass's depth material,
@@ -996,7 +1079,7 @@ export class EnemyInstance {
     this.state = { phase: Math.random() * TAU, lastAnim: null, lastYaw: null, turnK: 0, turnS: 0, fidT: 2 + Math.random() * 10, fidI: -1, fidU: 0, fidS: 1 };
     this._flash = 0;
     this._look = { x: 0, y: 0 }; // (the head's turn toward its foe, eased: see _layers)
-    this._kick = { x: 0, z: 0, k: 0 };
+    this._kick = { x: 0, z: 0, k: 0, r: 0, v: 0 }; // (k: a blow waiting to land on the recoil spring r, v)
     this.footfall = 0; // (set by a walk cycle as a foot comes down: 1 / -1, the side) // (a blow's recoil: world push direction and its size, decaying)
     this._tint = null; this._tintK = 0;
     this._opacity = 1;
@@ -1047,6 +1130,9 @@ export class EnemyInstance {
     this.bones = {};
     bones.forEach((b) => (this.bones[b.name] = b));
     this.P = new PoseBuf(bones);
+    this.P.follow = spec.follow ?? spec.anim?.follow ?? (spec.boss ? 1.35 : 1);
+    if (spec.boss || spec.height > 3.4) this.P.ftW = 11.5;
+    this.P.settle();
     // feet kept out of the floor (see soleProbe): each sole's chain of bones, foot first, up to the body's top bone
     this._soles = template.soles && !spec.flying ? template.soles.map((s) => {
       const chain = [];
@@ -1164,6 +1250,7 @@ export class EnemyInstance {
     const r = this.spec.pose(this, S, this.P, dt);
     if (typeof r === 'number') rate = r;
     this._layers(dt, S, s.look);
+    this.P.followK = S.anim === 'death' ? 1 - smooth(0.45, 0.8, S.progress) : 1;
     if (this._dissolving && S.anim !== 'death' && S.anim !== 'spawn') this.setDissolve(0); // (burnt in: whole again)
     this.P.damp(dt, rate);
     // (off in death and flight; a body rising out of the floor takes it up over the end of the rise, not in a pop)
@@ -1189,11 +1276,16 @@ export class EnemyInstance {
     for (const o of this.shadowProxies) o.visible = k <= 0.5;
   }
   // a blow lands: (dx, dz) the way it pushed (world), k its size (0..1)
-  kick(dx, dz, k) { const K = this._kick, l = Math.hypot(dx, dz) || 1; K.x = dx / l; K.z = dz / l; K.k = Math.max(K.k, k); }
+  kick(dx, dz, k) {
+    const K = this._kick, l = Math.hypot(dx, dz) || 1; K.x = dx / l; K.z = dz / l; K.k = Math.max(K.k, k);
+    // a heavy blow pauses the body a beat (at most every quarter second, so a hail of bolts never stutters it)
+    if (k >= 0.7 && this.time - (this._stopT ?? -1) > 0.25) { this._stopT = this.time; this.P.stop = Math.max(this.P.stop, 0.03 + 0.05 * (k - 0.7) / 0.3); }
+  }
   // Two layers over every type's own pose, on the bones a rig has (spine/chest or body/front, neck, head):
   // - look: the head and neck turn toward the foe it fights (look: a world point), within a neck's reach,
   //   eased, and not while dying, rising, staggered or with the foe behind it;
-  // - recoil: a blow rocks the body the way it pushed and springs back over a quarter second.
+  // - recoil: a blow rocks the body the way it pushed, on a loose spring: it rebounds past upright and
+  //   settles over half a second, the head and chest a beat behind the spine.
   // A type opts down with lookAt / recoil on its spec or its anim (0 turns it off: the bosses whose rigs
   // turn the head on other axes).
   _layers(dt, S, look) {
@@ -1213,14 +1305,22 @@ export class EnemyInstance {
       P.r('head', L.x * 0.7 * lw, L.y * 0.65 * lw, 0);
     }
     const K = this._kick;
-    if (K.k > 0.01) {
+    if (K.k > 0) { K.v = Math.min(K.v + K.k * 58, 80); K.k = 0; }
+    // (during a hit-pause the recoil waits on the paused clock too: the jolt plays out as the pause ends)
+    const rdt = P.stop > 0 ? dt * 0.08 : dt;
+    if (Math.abs(K.r) + Math.abs(K.v) > 2e-3 && rdt > 0) {
+      // the spring's exact step (w 20, zeta 0.38), so a long frame never blows it up
+      const W = 20, Z = 0.38, wd = W * 0.925, e = Math.exp(-Z * W * rdt), c = Math.cos(wd * rdt), sn = Math.sin(wd * rdt);
+      const r = K.r, v = K.v;
+      K.r = e * (r * (c + (Z * W / wd) * sn) + v * (sn / wd));
+      K.v = e * (v * (c - (Z * W / wd) * sn) - r * (W * W / wd) * sn);
       const yaw = root.rotation.y, fx = Math.sin(yaw), fz = Math.cos(yaw);
-      const k = K.k * 1.4 * rk, f = (K.x * fx + K.z * fz) * k, sd = (K.x * fz - K.z * fx) * k;
+      const k = Math.max(-0.6, Math.min(1.6, K.r)) * rk, f = (K.x * fx + K.z * fz) * k, sd = (K.x * fz - K.z * fx) * k;
       P.r('spine', f * 0.14, 0, -sd * 0.1); P.r('chest', f * 0.18, -sd * 0.12, -sd * 0.12);
       P.r('front', f * 0.12, 0, -sd * 0.1); P.r('neck', f * 0.1, 0, -sd * 0.08);
       P.r('head', f * 0.22, -sd * 0.15, -sd * 0.16);
-      K.k *= Math.exp(-dt * 10);
-    }
+      P.r('armL', -f * 0.12, 0, sd * 0.08); P.r('armR', -f * 0.12, 0, sd * 0.08);
+    } else K.r = K.v = 0;
   }
   // A boss's eyes on its foe (spec.look: { bones: [[name, share]...], yaw, pitch, off: [anims] }): the
   // heads of the big rigs turn on axes of their own (a wyvern's neck runs along z, the Mother's is a stalk),

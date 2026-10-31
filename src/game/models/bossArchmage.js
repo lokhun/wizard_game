@@ -174,8 +174,9 @@ export const courtArchmage = {
     const hit = st.hitT !== undefined && m.time - st.hitT < 0.6 ? Math.exp(-(m.time - st.hitT) * 7) : 0;
     if (hit) { P.r('spine', -0.06 * hit); P.r('chest', -0.12 * hit, 0.1 * hit); P.r('head', -0.2 * hit, -0.08 * hit); }
     // the spin is counted in whole turns off the damped angle, so it never unwinds the long way back
-    const bi = P.idx.get('base') * 9 + 1;
-    if (P.cur[bi] > Math.PI) { P.cur[bi] -= TAU; P.tgt[bi] -= TAU; st.spinOff = (st.spinOff ?? 0) + TAU; }
+    const bi = P.idx.get('base') * 9 + 1, li = P.idx.get('base') * 3 + 1;
+    // (P.last too: the turn carries its follow-through across the wrap)
+    if (P.cur[bi] > Math.PI) { P.cur[bi] -= TAU; P.tgt[bi] -= TAU; P.last[li] -= TAU; st.spinOff = (st.spinOff ?? 0) + TAU; }
     if (!(s.anim === 'cast' && s.attackType === 'spin')) st.spinOff = 0;
     strikeLayer(m, s, P, dt, BLOW_O);
     wounds(m, s, P, dt, { hunch: [['spine', 0.16], ['chest', 0.07], ['neck', 0.1], ['head', 0.06]], breath: [['chest', 0.05], ['spine', 0.02]], shoulders: ['armL', 'armR'], spasm: ['chest', 'head'] }); // (near his end: bossKit.wounds)

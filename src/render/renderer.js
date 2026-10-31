@@ -15,19 +15,45 @@ const GRADE_MAIN = /* glsl */ `
     uniform float uTime, uVignette, uGrain, uDamage, uHeal, uAberration, uSaturation, uDesat, uDash, uDanger;
     uniform vec3 uLift, uGain, uTint, uFlash, uDashCol, uDangerCol;
     uniform vec2 uRes;
+    // shockwaves: up to 4 rings racing out from blasts and slams (xy: centre in uv, z: radius in screen
+    // heights, w: strength; uShockOn > 0 while any is live)
+    uniform vec4 uShock[4];
+    uniform float uShockOn;
     varying vec2 vUv;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
     void main(){
       vec2 uv = vUv;
+      // each ring is a lens: a thin band that bends the frame outward on its outer edge and inward on its
+      // inner one, and splits the colours along its normal, so the air itself seems to buckle
+      vec2 sh = vec2(0.0);
+      float rim = 0.0;
+      if (uShockOn > 0.5) {
+        vec2 asp = vec2(uRes.x / uRes.y, 1.0);
+        for (int i = 0; i < 4; i++) {
+          vec4 s = uShock[i];
+          if (s.w < 0.0005) continue;
+          vec2 d = (uv - s.xy) * asp;
+          float L = length(d);
+          float x = (L - s.z) / max(0.012, s.z * 0.22);
+          float prof = x * exp(-x * x * 1.6);
+          sh += (d / max(L, 1e-4)) * prof * s.w;
+          rim += abs(prof) * s.w;
+        }
+        sh /= asp;
+        uv -= sh;
+      }
       vec2 dc = uv - 0.5;
       float r2 = dot(dc, dc);
       float ab = uAberration + uDamage * 0.006;
+      vec2 fr = sh * 0.45;
       vec3 col;
       // (the split is of the sharp frame only: bloom is a soft blur, fetched once)
-      col.r = SHARP(uv - dc * ab * (1.0 + r2 * 4.0)).r;
+      col.r = SHARP(uv - dc * ab * (1.0 + r2 * 4.0) - fr).r;
       col.g = SHARP(uv).g;
-      col.b = SHARP(uv + dc * ab * (1.0 + r2 * 4.0)).b;
+      col.b = SHARP(uv + dc * ab * (1.0 + r2 * 4.0) + fr).b;
       col += BLOOM(uv);
+      // (the band catches a little light, so it reads in the dark too)
+      col *= 1.0 + min(rim * 18.0, 0.35);
       // dash: the edges of the view smear toward the centre and class-tinted
       // speed streaks race outward; the centre stays sharp so aim is kept
       float dashEdge = 0.0;
@@ -89,6 +115,8 @@ const GradeShader = {
     uDashCol: { value: new THREE.Vector3(1, 1, 1) },
     uDanger: { value: 0 },
     uDangerCol: { value: new THREE.Vector3(1, 0.2, 0.1) },
+    uShock: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
+    uShockOn: { value: 0 },
     uRes: { value: new THREE.Vector2(1, 1) },
   },
   vertexShader: /* glsl */ `

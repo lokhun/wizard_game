@@ -73,6 +73,8 @@ export function clampHDR(c, max = 1.5, out = [0, 0, 0]) {
 
 const _sc = [0, 0, 0], _sc2 = [0, 0, 0], _rc = [0, 0, 0], _gp = new THREE.Vector3();
 const _flameC = new THREE.Color();
+const _shv = new THREE.Vector3();
+const LIT_DECALS = 18; // (lit floor marks alive at once: see decal)
 const scaleC = (c, k, out) => { out[0] = c[0] * k; out[1] = c[1] * k; out[2] = c[2] * k; return out; };
 
 // The view vector of a vertex sitting at the eye (a beam or aim line ending
@@ -287,14 +289,26 @@ void main(){
   gl_FragColor = vec4(c, 1.0);
 }`;
 
+// A plasma membrane: its Fresnel rim is threaded with drifting noise (two octaves, wrapped round the
+// sphere so there is no seam), crested white-hot where it is thinnest to the eye; a blast's shell
+// (uErode: its age) tears apart as it fades, the thin strands going first. Shields keep uErode 0.
 const SHELL_FRAG = /* glsl */ `
-uniform vec3 uColor; uniform float uAlpha; uniform float uTime;
+uniform vec3 uColor; uniform float uAlpha; uniform float uTime; uniform float uErode;
 varying vec2 vUv; varying vec3 vN; varying vec3 vV; varying float vDepth;
+float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vn(vec2 p, float P){
+  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  float i0 = mod(i.x, P), i1 = mod(i.x + 1.0, P);
+  return mix(mix(h21(vec2(i0, i.y)), h21(vec2(i1, i.y)), f.x), mix(h21(vec2(i0, i.y + 1.0)), h21(vec2(i1, i.y + 1.0)), f.x), f.y);
+}
 void main(){
-  float f = 1.0 - abs(dot(vN, vV));
-  float rim = pow(max(f, 0.0), 2.5);
-  float hex = 0.6 + 0.4 * sin(vUv.x * 60.0 + uTime * 2.0) * sin(vUv.y * 40.0 - uTime * 1.5);
-  vec3 c = uColor * (rim * 0.75 + 0.02) * hex * uAlpha * smoothstep(0.5, 3.0, vDepth);
+  float f = max(1.0 - abs(dot(vN, vV)), 0.0);
+  vec2 q = vUv * vec2(14.0, 7.0);
+  float n = vn(q + vec2(uTime * 1.1, -uTime * 0.8), 14.0) * 0.62 + vn(q * 2.0 + vec2(-uTime * 1.9, uTime * 1.5), 28.0) * 0.38;
+  float rim = pow(f, 2.2) * (0.5 + n);
+  float keep = uErode > 0.0 ? smoothstep(uErode * 0.8, uErode * 0.8 + 0.22, n) : 1.0;
+  float hot = pow(f, 7.0) * n * n;
+  vec3 c = (uColor * (rim * 0.75 + 0.025 * n) + vec3(dot(uColor, vec3(0.33))) * hot * 0.9) * keep * uAlpha * smoothstep(0.5, 3.0, vDepth);
   gl_FragColor = vec4(c, 1.0);
 }`;
 
@@ -579,6 +593,8 @@ export class VFX {
     this.shake = 0;       // trauma 0..1
     this.fovKick = 0;
     this.hitstop = 0;
+    // screen shockwaves (the grade pass bends the frame along them): world centre, size, strength, age
+    this.shocks = [0, 1, 2, 3].map(() => ({ x: 0, y: 0, z: 0, r: 0, k: 0, t: 0, life: 1, on: false }));
     this.active = [];     // timed mesh effects
     this.floorAt = null;  // (x, z) -> floor height, set by the game: blasts put their ring and scorch on it
     this.waterY = null;   // the water's surface, set by the game (danger zones over water lie on it)
@@ -619,7 +635,7 @@ export class VFX {
     const shellGeo = new THREE.SphereGeometry(1, 24, 16);
     this.shellPool = this._pool(16, () => new THREE.Mesh(shellGeo, new THREE.ShaderMaterial({
       vertexShader: BEAM_VERT, fragmentShader: SHELL_FRAG,
-      uniforms: { uColor: { value: new THREE.Color() }, uAlpha: { value: 1 }, uTime: { value: 0 } },
+      uniforms: { uColor: { value: new THREE.Color() }, uAlpha: { value: 1 }, uTime: { value: 0 }, uErode: { value: 0 } },
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     })));
     // decals: every pooled quad owns a lit (standard) material for pools,
@@ -781,6 +797,7 @@ export class VFX {
         this.active.splice(i, 1);
       }
     }
+    for (const w of this.shocks) if (w.on && (w.t += dt) >= w.life) w.on = false;
     this.shake = Math.max(0, this.shake - dt * 1.6);
     this.fovKick *= Math.exp(-dt * 8);
     this.hitstop = Math.max(0, this.hitstop - realDt);
@@ -788,6 +805,40 @@ export class VFX {
 
   addShake(a) { this.shake = Math.min(1, this.shake + a); }
   addFovKick(a) { this.fovKick += a; }
+  // A shockwave through the air: a ring that races out from pos to about r metres, bending the view
+  // (k: strength, ~1 for a big blast). Four at most; a new one takes the weakest slot.
+  shockwave(pos, r, k = 1, life = 0.5) {
+    let w = this.shocks[0], best = Infinity;
+    for (const s of this.shocks) {
+      const left = s.on ? s.k * (1 - s.t / s.life) : -1;
+      if (left < best) { best = left; w = s; }
+    }
+    w.x = pos.x; w.y = pos.y; w.z = pos.z; w.r = r; w.k = k; w.t = 0; w.life = life; w.on = true;
+  }
+  // the live shockwaves, onto the grade pass's uniforms (screen centre, radius in screen heights, strength)
+  shockUniforms(u, scale = 1) {
+    const cam = this.camera, list = u.uShock.value;
+    cam.updateMatrixWorld(); // (the camera was moved this frame; its matrices follow only at render)
+    const tanH = Math.tan(THREE.MathUtils.degToRad((cam.fov ?? 78) * 0.5));
+    let on = 0;
+    for (let i = 0; i < 4; i++) {
+      const w = this.shocks[i], out = list[i];
+      out.w = 0;
+      if (!w.on) continue;
+      _shv.set(w.x, w.y, w.z).applyMatrix4(cam.matrixWorldInverse);
+      const depth = -_shv.z;
+      if (depth < 0.2) continue;
+      _shv.applyMatrix4(cam.projectionMatrix);
+      const u0 = w.t / w.life;
+      // the ring flies out fast and slows; it fades as it goes, and a far one is a small, faint ring
+      const rw = w.r * (0.15 + 0.85 * (1 - (1 - u0) ** 3));
+      const rs = Math.min(1.6, (rw / (depth * tanH)) * 0.5);
+      const fade = (1 - u0) ** 1.6 * Math.min(1, u0 * 12);
+      out.set(_shv.x * 0.5 + 0.5, _shv.y * 0.5 + 0.5, rs, 0.05 * w.k * fade * Math.min(1, scale) / (1 + depth * 0.04));
+      if (out.w > 0.0005) on = 1;
+    }
+    u.uShockOn.value = on;
+  }
 
   // ------------------------------------------------------------ primitives
   burst(pos, o = {}) {
@@ -1089,13 +1140,14 @@ export class VFX {
     if (o.follow) {
       // persistent shell following a target (shields, fields)
       m.visible = true;
+      u.uErode.value = 0;
       m.scale.setScalar(r1);
       return {
         mesh: m,
         update: (p, alpha = 1) => { m.position.copy(p); u.uAlpha.value = alpha * this.shellCamK(p, r1); u.uTime.value = this.time; },
         release: () => {
           const a0 = u.uAlpha.value;
-          this._track(m, 0.25, (k) => { m.scale.setScalar(r1 * (1 + k * 0.3)); u.uAlpha.value = a0 * (1 - k) * this.shellCamK(m.position, r1 * (1 + k * 0.3)); });
+          this._track(m, 0.25, (k) => { m.scale.setScalar(r1 * (1 + k * 0.3)); u.uErode.value = k; u.uAlpha.value = a0 * (1 - k * k) * this.shellCamK(m.position, r1 * (1 + k * 0.3)); });
         },
       };
     }
@@ -1103,7 +1155,8 @@ export class VFX {
       const e = 1 - Math.pow(1 - k, 3);
       const r = r0 + (r1 - r0) * e;
       m.scale.setScalar(r);
-      u.uAlpha.value = (1 - k) * (o.alpha ?? 1) * this.shellCamK(m.position, r);
+      u.uErode.value = Math.max(0.001, k);
+      u.uAlpha.value = (1 - k * k) * (o.alpha ?? 1) * this.shellCamK(m.position, r);
       u.uTime.value = this.time;
     });
     return null;
@@ -1218,10 +1271,29 @@ export class VFX {
     return handle;
   }
 
-  decal(pos, type, size = 2, life = 8, color) {
+  // keep: a mark that must stay as long as asked (a pool that still burns or poisons): never merged or culled
+  decal(pos, type, size = 2, life = 8, color, keep = false) {
     if (!pos) return; // (no floor in reach)
-    const m = this.decalPool.get();
     const look = DECAL_LOOK[type] ?? DECAL_LOOK.scorch;
+    // Lit marks are the dearest thing on the floor (each is a full lit, see-through quad, and a fight
+    // stacks them blast on blast). A mark landing mostly on a fresh one of its kind renews that one
+    // instead of laying another over it, and past LIT_DECALS the oldest lit mark fades out quickly.
+    const lits = (this._litDecals ??= []);
+    if (!look.additive && !keep) {
+      for (let i = lits.length - 1; i >= 0; i--) {
+        const e = lits[i];
+        if (!e.mesh.visible || e.t >= e.life || e.mesh.userData.trk !== e) { lits.splice(i, 1); continue; }
+        if (e.type !== type || e.keep || e.color !== (color ?? null) || e.cull >= 0 || e.t > e.life * 0.5) continue;
+        const r = e.mesh.scale.x * 2;
+        const dx = e.mesh.position.x - pos.x, dz = e.mesh.position.z - pos.z;
+        if (dx * dx + dz * dz < (r * 0.35) ** 2 && size <= r * 1.25 && Math.abs(e.mesh.position.y - (pos.y ?? 0)) < 0.5) {
+          e.life = Math.max(e.life, life); e.t = Math.min(e.t, e.life * 0.1); // (as fresh as it was laid)
+          return e.mesh;
+        }
+      }
+    }
+    const m = this.decalPool.get();
+    m.userData.trk = null; // (a mesh the pool stole from a lit mark is no longer that mark)
     const mat = look.additive ? m.userData.glow : m.userData.lit;
     m.material = mat;
     mat.map = this.decalTex[type] ?? this.decalTex.scorch;
@@ -1242,14 +1314,35 @@ export class VFX {
     m.scale.setScalar(size / 2);
     this.drape(m, 0.03 + Math.random() * 0.01); // (a hair apart, so overlapping marks don't flicker)
     mat.opacity = 1;
-    this._track(m, life, (k) => { mat.opacity = k > 0.75 ? 1 - (k - 0.75) / 0.25 : Math.min(1, k * 20); });
+    // (a culled mark fades from wherever it stood over a third of a second: see below)
+    const cs = { cull: -1, from: 1 };
+    this._track(m, life, (k, t) => {
+      let op = k > 0.75 ? 1 - (k - 0.75) / 0.25 : Math.min(1, k * 20);
+      if (cs.cull >= 0) { const f = 1 - (t - cs.cull) / 0.35; op = Math.min(op, cs.from * Math.max(0, f)); if (f <= 0) e.t = e.life; }
+      mat.opacity = op;
+    });
+    const e = this.active[this.active.length - 1];
+    if (!look.additive) {
+      e.type = type; e.keep = keep; e.color = color ?? null;
+      Object.defineProperty(e, 'cull', { get: () => cs.cull });
+      m.userData.trk = e; // (the mesh's live entry: one whose mesh the pool stole is dropped)
+      lits.push(e);
+      let live = 0;
+      for (let i = lits.length - 1; i >= 0; i--) {
+        const o = lits[i];
+        if (!o.mesh.visible || o.t >= o.life || o.mesh.userData.trk !== o) { lits.splice(i, 1); continue; }
+        if (o.keep || o.cull >= 0) continue;
+        if (++live > LIT_DECALS) o.startCull?.();
+      }
+      e.startCull = () => { if (cs.cull < 0) { cs.cull = e.t; cs.from = mat.opacity; } };
+    }
     return m;
   }
 
   // A mark on a wall where a shot struck it: a decal laid flat (the drape grid flattened back to a plane)
   // and turned to face out of the wall along (nx, nz), spun at random about that face.
   wallDecal(pos, nx, nz, type, size = 1.2, life = 8, color) {
-    const m = this.decal(pos, type, size, life, color);
+    const m = this.decal(pos, type, size, life, color, true); // (a wall mark is never merged into a floor one)
     if (!m) return null;
     const P = m.geometry.attributes.position;
     for (let i = 0; i < P.count; i++) P.setY(i, 0);
@@ -1264,6 +1357,7 @@ export class VFX {
   // shoved outward that slow and spread as they reach `radius`, so a nova reads
   // on the ground from any angle. o: { color:[r,g,b], alpha, count, glow:[r,g,b] }
   dustWave(pos, radius, o = {}) {
+    if (radius >= 2 && o.shock !== 0) this.shockwave(_gp.set(pos.x, pos.y + 0.4, pos.z), radius * 1.3, Math.min(1, 0.35 + radius * 0.07) * (o.shock ?? 1), 0.55);
     const n = o.count ?? Math.round(14 + radius * 2.5);
     const c = o.color ?? [0.22, 0.2, 0.18];
     const g = o.glow;
@@ -1310,7 +1404,9 @@ export class VFX {
     this.flash(pos, fx.light, 10 * scale * nk, 6 * scale, 0.15);
     switch (element) {
       case 'fire': case 'enemyFire':
-        this.burst(pos, { element, count: Math.round(4 * scale), speed: 1.8, life: 0.45, size: 0.3 * scale, sprite: SPR.FLAME, upward: 0.5, size2: 0.05, drag: 3, color: scaleC(fx.mid, 0.8, _sc), color2: fx.end });
+        // a splash of flame that blooms off the hit and burns away, embers kicked out of it, then smoke
+        this.burst(pos, { element, count: Math.round(5 * scale), speed: 2.2, life: 0.4, size: 0.28 * scale, size2: 0.5 * scale, sprite: SPR.FLAME, upward: 0.5, drag: 4, jitter: 0.08, color: scaleC(fx.mid, 0.85 * nk, _sc), color2: fx.end, spin: 1.5 });
+        this.burst(pos, { element, count: Math.round(5 * scale), speed: 6 * scale, life: 0.6, size: 0.025, size2: 0.008, sprite: SPR.EMBER, gravity: 6, drag: 1.5, upward: 0.3, stretch: 0.012, color: [1.5, 0.5, 0.08], color2: [0.5, 0.05, 0.0] });
         this.smoke(pos, { count: 2, size: 0.4 * scale, life: 1, color: fx.smoke });
         break;
       case 'frost':
@@ -1387,7 +1483,7 @@ export class VFX {
     this.P.glow({ x: pos.x, y: pos.y, z: pos.z, r: fx.mid[0] * gk, g: fx.mid[1] * gk, b: fx.mid[2] * gk, life: 0.2, size: radius * 0.85, size2: radius * 0.35, sprite: SPR.GLOW });
     // the moment of release: a white-hot heart for a blink, and a shock ring
     // standing up in the air (the ground ring alone only reads from above)
-    const ck = 0.5 * dim, rk = 0.42 * dim;
+    const ck = 0.5 * dim, rk = 0.13 * dim; // (the stood-up ring is faint: the screen shockwave carries the blast front)
     this.P.glow({ x: pos.x, y: pos.y, z: pos.z, r: fx.core[0] * ck, g: fx.core[1] * ck, b: fx.core[2] * ck, life: 0.09, size: radius * 0.55, size2: radius * 0.9, sprite: SPR.GLOW });
     const matter = element === 'fire' || element === 'enemyFire' || element === 'earth' || element === 'blood' || element === 'poison' || element === 'enemyGreen' || element === 'physical';
     if (!matter) this.P.glow({ x: pos.x, y: pos.y, z: pos.z, r: fx.core[0] * rk, g: fx.core[1] * rk, b: fx.core[2] * rk, r2: fx.mid[0] * rk * 0.5, g2: fx.mid[1] * rk * 0.5, b2: fx.mid[2] * rk * 0.5, life: 0.3, size: radius * 0.4, size2: radius * 2.4, sprite: SPR.RING });
@@ -1404,14 +1500,14 @@ export class VFX {
     switch (element) {
       case 'fire': case 'enemyFire': {
         // a churning ball of flame inside dark smoke, not a white sun
-        this.burst(pos, { element, count: Math.round(28 * s), speed: 4.5 * s, life: 0.7, size: 0.55 * s, size2: 0.12, sprite: SPR.FLAME, drag: 3, upward: 0.25, color: scaleC(fx.mid, 1.05 * dim, _sc), color2: fx.end, spin: 1.5 });
+        this.burst(pos, { element, count: Math.round(20 * s), speed: 4.5 * s, life: 0.6, size: 0.6 * s, size2: 0.85 * s, sprite: SPR.FLAME, drag: 3.5, upward: 0.25, jitter: 0.15 * radius, color: scaleC(fx.mid, 1.0 * dim, _sc), color2: fx.end, spin: 1.5 });
         // the body of the blast: big billowing tongues that swell outward, then a
         // column of flame rolling up out of it into the smoke
         // (glowing smoke-textured puffs: billowing and ragged, never neat cones)
         this.burst(pos, { element, count: Math.round(12 * s), speed: 2.6 * s, life: 0.55, size: 0.8 * s, size2: 1.7 * s, sprite: SPR.SMOKE, drag: 4, jitter: 0.25 * radius, color: scaleC(fx.mid, 0.6 * dim, _sc), color2: fx.end, spin: 1.5 });
-        for (let i = 0; i < Math.round(7 * s); i++) {
-          this.P.glow({ x: pos.x + rand(-0.3, 0.3) * radius, y: pos.y + rand(0, 0.4), z: pos.z + rand(-0.3, 0.3) * radius, vx: rand(-0.6, 0.6), vy: rand(3, 6) * Math.sqrt(s), vz: rand(-0.6, 0.6),
-            r: fx.mid[0] * 0.7 * dim, g: fx.mid[1] * 0.7 * dim, b: fx.mid[2] * 0.7 * dim, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2], life: rand(0.6, 0.9), size: 0.7 * s, size2: 0.25 * s, sprite: SPR.FLAME, drag: 1.6, delay: rand(0, 0.12), spin: 2 });
+        for (let i = 0; i < Math.round(5 * s); i++) {
+          this.P.glow({ x: pos.x + rand(-0.25, 0.25) * radius, y: pos.y + rand(0, 0.4), z: pos.z + rand(-0.25, 0.25) * radius, vx: rand(-0.6, 0.6), vy: rand(2.5, 5) * Math.sqrt(s), vz: rand(-0.6, 0.6),
+            r: fx.mid[0] * 0.7 * dim, g: fx.mid[1] * 0.7 * dim, b: fx.mid[2] * 0.7 * dim, r2: fx.end[0], g2: fx.end[1], b2: fx.end[2], life: rand(0.55, 0.85), size: 0.9 * s, size2: 1.35 * s, sprite: SPR.FLAME, drag: 1.6, delay: rand(0, 0.12), spin: 2 });
         }
         this.burst(pos, { element, count: Math.round(12 * s), speed: 2.5 * s, life: 0.45, size: 0.45 * s, size2: 0.1, sprite: SPR.FLAME, drag: 3, upward: 0.4, color: scaleC(fx.core, 0.7 * dim, _sc2), color2: fx.mid });
         this.burst(pos, { element, count: Math.round(14 * s), speed: 8 * s, life: 1.2, size: 0.03, size2: 0.01, sprite: SPR.EMBER, gravity: 5, drag: 1.2, upward: 0.4, stretch: 0.01, color: [1.5, 0.45, 0.06], color2: [0.45, 0.04, 0.0] });
@@ -1493,6 +1589,9 @@ export class VFX {
         this.smoke(pos, { count: 6 });
     }
     this.addShake(Math.min(0.5, 0.12 * s) * (o.shakeScale ?? 1));
+    // the air buckles round the blast (a small pop barely ripples; o.shock scales it, 0 for none)
+    const sk = (o.shock ?? 1) * Math.min(1.2, 0.25 + radius * 0.18) * (matter ? 0.85 : 1);
+    if (sk > 0.05 && radius >= 1.2) this.shockwave(pos, radius * 1.6, sk, 0.38 + Math.min(0.3, radius * 0.04));
   }
 
   // generic projectile trail emission (call per frame)

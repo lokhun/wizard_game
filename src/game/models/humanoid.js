@@ -380,7 +380,7 @@ function deathPose(m, s, P, D, A, sc) {
   const back = style === 'fallBack';
   const K = { hips: [0, 0, 0, 0, -(D.thigh * 0.95), -0.05 * sc], thighL: [-0.25, 0, 0.1], thighR: [-0.1, 0, -0.1], shinL: [1.6, 0, 0], shinR: [1.5, 0, 0], footL: [0.5, 0, 0], footR: [0.5, 0, 0], spine: [0.35, 0, 0], chest: [0.2, 0, 0], head: [0.5, 0, 0.2], armL: [0.1, 0, 0.15], armR: [0.1, 0, -0.15], foreL: [-0.3, 0, 0], foreR: [-0.3, 0, 0] };
   const F = back
-    ? { hips: [-1.5, 0, 0, 0, -(D.hipH - 0.16 * sc), -0.35 * sc], thighL: [-0.5, 0, 0.15], thighR: [-0.3, 0, -0.1], shinL: [0.7, 0, 0], shinR: [0.3, 0, 0], spine: [-0.05, 0, 0], head: [-0.2, 0.9 * sd, 0], armL: [0.3, 0, 1.3], armR: [-0.3, 0, -1.1], foreL: [-0.6, 0, 0], foreR: [-0.2, 0, 0] }
+    ? { hips: [-1.5, 0, 0, 0, -(D.hipH - (0.16 + (A.deathLift ?? 0)) * sc), -0.35 * sc], thighL: [-0.5, 0, 0.15], thighR: [-0.3, 0, -0.1], shinL: [0.7, 0, 0], shinR: [0.3, 0, 0], spine: [-0.05, 0, 0], head: [-0.2, 0.9 * sd, 0], armL: [0.3, 0, 1.3], armR: [-0.3, 0, -1.1], foreL: [-0.6, 0, 0], foreR: [-0.2, 0, 0] }
     : { hips: [1.48, 0.2 * sd, 0, 0, -(D.hipH - (0.22 + (A.deathLift ?? 0)) * sc), 0.2 * sc], thighL: [-0.15, 0, 0.15], thighR: [-0.3, 0, -0.1], shinL: [0.4, 0, 0], shinR: [0.9, 0, 0], spine: [0.05, 0, 0], chest: [0, 0, 0], neck: [-0.2, 0, 0], head: [-0.3, 1.1 * sd, 0], armL: [-0.4, 0, 1.2], armR: [0.3, 0, -0.9], foreL: [-0.5, 0, 0], foreR: [-0.3, 0, 0] };
   P.apply(K, a * (1 - b));
   P.apply(F, b);

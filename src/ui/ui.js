@@ -691,11 +691,14 @@ export class UI {
       if (!(L.rooms[co.a].visited || L.rooms[co.b].visited)) continue;
       for (const i of co.cells) { const x = i % L.W, y = Math.floor(i / L.W); g.fillRect(x * T * S, y * T * S, T * S + 0.5, T * S + 0.5); }
     }
+    const C = T * S;
     for (const r of L.rooms) {
       if (!known.has(r.id)) continue;
-      const x = r.x * T * S, y = r.y * T * S, w = r.w * T * S, hh = r.h * T * S;
+      // the room's own floor as it lies, cell by cell: its alcoves, the screen wall across a hall, an
+      // L-shaped room's cut corner (the box round it was drawn before, and hid all three)
+      const x0 = Math.max(0, r.x - 3), y0 = Math.max(0, r.y - 3), x1 = Math.min(L.W, r.x + r.w + 3), y1 = Math.min(L.H, r.y + r.h + 3);
       g.fillStyle = r.visited ? (active === r.id ? 'rgba(160,40,30,0.55)' : 'rgba(120,100,75,0.45)') : 'rgba(60,50,40,0.3)';
-      g.fillRect(x, y, w, hh);
+      for (let cy = y0; cy < y1; cy++) for (let cx = x0; cx < x1; cx++) if (L.roomId[L.idx(cx, cy)] === r.id) g.fillRect(cx * C, cy * C, C + 0.5, C + 0.5);
       // a visited room's ground as it lies: raised floor lighter, pits darker, water blue-grey, vents marked
       if (r.visited) {
         for (let cy = r.y; cy < r.y + r.h; cy++) for (let cx = r.x; cx < r.x + r.w; cx++) {
@@ -712,9 +715,27 @@ export class UI {
         g.fillStyle = 'rgba(255,120,40,0.75)';
         for (const v of r.vents ?? []) { g.beginPath(); g.arc(v.x * S, v.z * S, 2.2, 0, Math.PI * 2); g.fill(); }
       }
+      // its walls: every edge between its floor and stone (doorways, onto corridors, stay open)
       g.strokeStyle = r.visited ? 'rgba(226,196,138,0.8)' : 'rgba(226,196,138,0.3)';
       g.lineWidth = 1.5;
-      g.strokeRect(x, y, w, hh);
+      g.beginPath();
+      for (let cy = y0; cy < y1; cy++) for (let cx = x0; cx < x1; cx++) {
+        if (L.roomId[L.idx(cx, cy)] !== r.id) continue;
+        const wall = (nx, ny) => { if (!L.inb(nx, ny)) return true; const j = L.idx(nx, ny); return L.roomId[j] !== r.id && L.corrId[j] < 0 && L.cells[j] !== 1; };
+        if (wall(cx, cy - 1)) { g.moveTo(cx * C, cy * C); g.lineTo((cx + 1) * C, cy * C); }
+        if (wall(cx, cy + 1)) { g.moveTo(cx * C, (cy + 1) * C); g.lineTo((cx + 1) * C, (cy + 1) * C); }
+        if (wall(cx - 1, cy)) { g.moveTo(cx * C, cy * C); g.lineTo(cx * C, (cy + 1) * C); }
+        if (wall(cx + 1, cy)) { g.moveTo((cx + 1) * C, cy * C); g.lineTo((cx + 1) * C, (cy + 1) * C); }
+      }
+      g.stroke();
+    }
+    // the fires a visited room keeps (a hearth, a camp): somewhere warm on the map
+    g.fillStyle = 'rgba(255,150,60,0.9)';
+    for (const pr of L.props) {
+      if (pr.type !== 'fireplace' && pr.type !== 'campfire') continue;
+      const co = L.corridors[L.corrId[L.idx(Math.floor(pr.x / T), Math.floor(pr.z / T))]];
+      if (!L.roomAt(pr.x, pr.z)?.visited && !(co && (L.rooms[co.a].visited || L.rooms[co.b].visited))) continue;
+      g.beginPath(); g.arc(pr.x * S, pr.z * S, 2.6, 0, Math.PI * 2); g.fill();
     }
     this._mmL = { L, key, c, s: S, known };
     return this._mmL;
@@ -927,16 +948,20 @@ export class UI {
     for (let i = this.numbers.length - 1; i >= 0; i--) {
       const n = this.numbers[i];
       n.t += dt;
-      n.pos.y += dt * (n.crit ? 1.4 : 1.0);
+      // thrown up off the hit and slowing as it goes (a damage tick just floats), drifting a little
+      // to its side; a crit shudders as it lands
+      const k = n.t / n.life;
+      n.pos.y += dt * (n.dot ? 0.9 : (n.crit ? 2.8 : 2.1) * Math.max(0.12, 1 - k * 1.7));
+      if (!n.dot) n.ox += Math.sign(n.ox || 1) * dt * 16 * (1 - k);
       const s = this._project(n.pos.x, n.pos.y, n.pos.z);
       if (n.t > n.life || !s) { if (n.t > n.life) this.numbers.splice(i, 1); continue; }
-      const k = n.t / n.life;
       const pop = n.t < 0.12 ? 1 + (1 - n.t / 0.12) * (n.crit ? 0.9 : 0.4) : 1;
+      const shake = n.crit && n.t < 0.18 ? Math.sin(n.t * 95) * 3.2 * (1 - n.t / 0.18) : 0;
       g.globalAlpha = k > 0.6 ? 1 - (k - 0.6) / 0.4 : 1;
       // bigger hits read bigger; the size is rounded so a merged number only
       // re-renders its bitmap when it visibly grows, and the pop is a scale
       const size = Math.round(n.dot ? 13 : (n.crit ? 22 : 15) + Math.min(10, Math.log2(1 + n.amount / 12) * 2.5));
-      const c = this._clearHud(s.x + n.ox, s.y, size * 1.2, size * 0.6);
+      const c = this._clearHud(s.x + n.ox + shake, s.y, size * 1.2, size * 0.6);
       this._blitNumber(g, n.text, `${n.crit ? 700 : 600} ${size}px Cinzel, serif`, n.color, c.x, c.y, pop);
       g.globalAlpha = 1;
     }
