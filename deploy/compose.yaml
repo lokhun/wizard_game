@@ -1,6 +1,7 @@
 # Production: /opt/wizard on the lokhunproject.fun Droplet, next to /opt/rift, /opt/house and /opt/puzzle.
-# A static file server for dist/ on loopback only; the rift Caddy terminates HTTPS for
-# play.lokhunproject.fun and proxies here. Co-op is peer-to-peer; `turn` relays it for
+# A static file server on loopback only for play.lokhunproject.fun: play/ holds the games home
+# page and one folder per game (this game in play/arcane-ascent; see Caddyfile). The rift Caddy
+# terminates HTTPS for play.lokhunproject.fun and proxies here. Co-op is peer-to-peer; `turn` relays it for
 # players whose networks block direct connections (see turnserver.conf), and `signal`
 # (signal/server.mjs) is where players find each other (PeerJS) and get the relay's
 # short-lived logins. turn.secret and the rendered turn/turnserver.conf are written on
@@ -11,7 +12,7 @@ services:
     restart: unless-stopped
     network_mode: host
     volumes:
-      - ./site:/srv:ro
+      - ./play:/srv:ro
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     read_only: true
     tmpfs: [/data, /config]

@@ -1,4 +1,7 @@
-# Serves the built game (dist/, mounted at /srv) on 127.0.0.1:3003.
+# Serves play.lokhunproject.fun (/opt/wizard/play, mounted at /srv) on 127.0.0.1:3003:
+#   /                  the games home page (deploy/home)
+#   /arcane-ascent/    this game (dist/, tools/deploy.mjs)
+#   /<slug>/           other static games (tools/deploy-static.mjs)
 # The rift Caddy in front handles HTTPS for play.lokhunproject.fun.
 {
 	admin off
@@ -10,19 +13,29 @@
 	bind 127.0.0.1
 	# Other deploy scripts on this Droplet check https://play.lokhunproject.fun/healthz.
 	respond /healthz "ok" 200
-	# co-op: matchmaking (PeerJS, WebSocket) and the relay's short-lived logins (signal/server.mjs)
+
+	# Party invites from before the game moved off / still land in the party.
+	@oldjoin {
+		path /
+		query join=*
+	}
+	redir @oldjoin /arcane-ascent/?{query} 302
+
+	# co-op: matchmaking (PeerJS, WebSocket) and the relay's short-lived logins (signal/server.mjs).
+	# The game asks for ./net-config; /net-config is kept for tabs opened before the move.
+	rewrite /arcane-ascent/net-config /net-config
 	@net path /net-config /peerjs/*
 	reverse_proxy @net 127.0.0.1:3004
 
-	# Hashed assets never change; index.html always revalidates (same rules as public/_headers).
-	@assets path /assets/*
-	@pages not path /assets/*
+	# Arcane Ascent's hashed assets never change; everything else revalidates (same rules as public/_headers).
+	@assets path /arcane-ascent/assets/*
+	@pages not path /arcane-ascent/assets/*
 	header @assets Cache-Control "public, max-age=31536000, immutable"
 	header @pages Cache-Control "no-cache"
 
 	root * /srv
 	file_server {
 		precompressed br gzip
-		hide .htaccess _headers
+		hide .htaccess _headers .git
 	}
 }

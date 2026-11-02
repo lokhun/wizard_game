@@ -406,6 +406,7 @@ export class ActorManager {
   _goLimp(a) {
     const g = this.g;
     if (a._prevAnim === 'spawn') return false; // (still rising out of the floor: it sinks back the old way)
+    if (typeof a.model.ragdoll !== 'function') return false; // (a stand-in body, its model failed: models.js)
     let dx = 0, dz = 0;
     if (a._kbT >= 0 && g.time - a._kbT < 1) { dx = a._kbx; dz = a._kby; }
     else if (a.deathYaw != null) { dx = Math.sin(a.deathYaw); dz = Math.cos(a.deathYaw); }
