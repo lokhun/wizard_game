@@ -1421,9 +1421,14 @@ export class EnemyInstance {
       if (stepped) { dmin = Infinity; for (const s of this._soles) dmin = Math.min(dmin, s.d); }
     } else top = this._soles[0].chain[this._soles[0].chain.length - 1];
     // the body sits on the lowest floor under it (never sunk into it: the plain lift on top)
-    const tgt = w > 0 ? (dmin + clamp(dmin - lo, 0, this.height * 0.2)) * w : 0;
-    // quick to rise (a sinking foot shows), slower to settle back (no pop when an action ends or the body falls)
-    this._lift += (tgt - this._lift) * (1 - Math.exp(-(tgt > this._lift ? 30 : 8) * dt));
+    // (walking, it may also draw the body down a little, so a stride always has a foot on the floor)
+    const mw = this.state.moveW ?? 0;
+    const tgt = w > 0 ? (dmin + clamp(dmin - lo, -this.height * 0.06 * mw, this.height * 0.2)) * w : 0;
+    // quick to rise (a sinking foot shows), slower to settle back (no pop when an action ends or the body falls);
+    // walking, as quick to settle: the lift a stride needs swings by several cm, and a slow settle had left the
+    // body hanging after each peak with both feet off the floor (a fifth to a third of the stride)
+    const settle = 8 + 22 * mw;
+    this._lift += (tgt - this._lift) * (1 - Math.exp(-(tgt > this._lift ? 30 : settle) * dt));
     if (Math.abs(this._lift) > 1e-4) top.position.y += this._lift;
     // each foot short of its own floor bends its knee to reach it: thigh forward, shin back twice as far,
     // foot level, eased like the lift

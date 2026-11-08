@@ -256,7 +256,9 @@ export function humanoidPose(m, s, P, dt) {
     P.r('thighL', -ls * ampL * w); P.r('thighR', ls * ampL * w);
     P.r('shinL', (Math.max(0, cs) * knee + 0.08) * w); P.r('shinR', (Math.max(0, -cs) * knee + 0.08) * w);
     P.r('footL', (-Math.max(0, cs) * 0.4 + ls * 0.2) * w); P.r('footR', (-Math.max(0, -cs) * 0.4 - ls * 0.2) * w);
-    const drop = legLen * (1 - Math.cos(ampL * ls)) + Math.abs(ls) * 0.015 * sc;
+    // (the hips dip as the legs spread: half a straight leg's arc, the knees and feet taking the rest - the full
+    // arc had dropped them ~13 cm at a run's stride ends, the feet planted only where the legs crossed)
+    const drop = (legLen * (1 - Math.cos(ampL * ls)) + Math.abs(ls) * 0.015 * sc) * 0.5;
     P.p('hips', sn * (0.015 + plod * 0.03) * w * sc * 0, -drop * w * (1 + plod * 0.6) - run * 0.05 * sc * w, 0);
     // (the pelvis rolls with the stride, heavier in a plod; the thighs turn back by as much, so the waddle is
     // the body's and the legs stay under it: rolled with the pelvis they had swung out like a pendulum, the
