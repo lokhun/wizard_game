@@ -1290,6 +1290,11 @@ export class EnemyInstance {
     this.P.followK = S.anim === 'death' ? 1 - smooth(0.45, 0.8, S.progress) : 1;
     if (this._dissolving && S.anim !== 'death' && S.anim !== 'spawn') this.setDissolve(0); // (burnt in: whole again)
     this.P.damp(dt, rate);
+    // a hit's flinch (ActorManager.jolt), bent in at the waist: on the pose just written, so it never builds up
+    if (this.jolt && (this.jolt[0] || this.jolt[1])) {
+      const [jx, jz] = this.jolt, B = this.bones;
+      B.spine.rotateX(jx * 0.55); B.spine.rotateZ(jz * 0.55); B.chest.rotateX(jx * 0.6); B.chest.rotateZ(jz * 0.6);
+    }
     // (off in flight; a body rising out of the floor takes it up over the end of the rise, not in a pop; a body
     // falling to its knees keeps its feet on the floor as its legs fold (they had sunk 10-25 cm through it while
     // the hips came down faster than the knees bent), letting go as it topples over; a death of a type's own

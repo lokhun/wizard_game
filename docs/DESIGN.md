@@ -196,7 +196,7 @@ The target pace is quicker than Dark and Darker, nowhere near a boomer shooter, 
   - Clearing a room restores 10% health. Health orbs drop from about 10% of kills and pull in from 5 m.
   - Bosses are a test of the build and of dodging, not of attrition.
 - **Feedback:**
-  - Hit flinch on a damped spring, a flash, merged damage numbers and a hitmarker.
+  - Hit flinch on a damped spring, a flash, merged damage numbers and a hitmarker; a body with a waist (spine, chest and legs) takes the flinch bent in at the waist, its feet on the floor (tilted whole about its feet it had rocked like a plank, one foot lifting and the other's toe 2-5 cm into the floor); other shapes still tilt whole.
   - Bodies ride the killing blow and linger.
   - Debris matches the material: bone, metal, slime, spirit or flesh.
 

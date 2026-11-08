@@ -776,9 +776,12 @@ export class ActorManager {
           j[2] += (-170 * j[0] - 16 * j[2]) * h; j[3] += (-170 * j[1] - 16 * j[3]) * h;
           j[0] += j[2] * h; j[1] += j[3] * h;
           j[0] = Math.max(-0.35, Math.min(0.35, j[0])); j[1] = Math.max(-0.3, Math.min(0.3, j[1]));
-          m.root.rotation.order = 'YXZ';
-          m.root.rotation.x = j[0]; m.root.rotation.z = j[1];
-          if (Math.abs(j[0]) + Math.abs(j[1]) + Math.abs(j[2]) + Math.abs(j[3]) < 1e-3) { a.jv = null; m.root.rotation.x = 0; m.root.rotation.z = 0; }
+          // (a body with a waist bends there, its feet staying on the floor; tilted whole about its feet, it had
+          // rocked like a plank, a foot lifting clear and the other's toe in the floor; others tilt whole)
+          const waist = m.joltWaist ??= !!(m.bones?.spine && m.bones?.chest && m.bones?.thighL);
+          if (waist) { (m.jolt ??= [0, 0])[0] = j[0]; m.jolt[1] = j[1]; }
+          else { m.root.rotation.order = 'YXZ'; m.root.rotation.x = j[0]; m.root.rotation.z = j[1]; }
+          if (Math.abs(j[0]) + Math.abs(j[1]) + Math.abs(j[2]) + Math.abs(j[3]) < 1e-3) { a.jv = null; m.root.rotation.x = 0; m.root.rotation.z = 0; if (m.jolt) m.jolt[0] = m.jolt[1] = 0; }
         }
         if (a._laserBeam && (g.time > a._laserEnd || a.anim !== 'windup')) { a._laserBeam.release(0.05); a._laserBeam = null; }
         if (a.anim === 'windup' && a._prevAnim !== 'windup') this._windupTell(a);
