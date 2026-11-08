@@ -154,7 +154,9 @@ export function quadPose(m, s, P, dt) {
   const hz = Math.min(f0, fMax), duty = f0 > 1e-3 ? 0.5 * Math.min(1, fMax / f0) : 0.5;
   if (spd > 0.01) st.phase += TAU * hz * dt;
   const moveTgt = smooth(0.05, 0.5, spd);
-  st.moveW = (st.moveW ?? 0) + (moveTgt - (st.moveW ?? 0)) * (1 - Math.exp(-8 * dt));
+  // (the gait comes up three times faster than it eases away: the body sets off at full speed in one frame, and
+  // a stride growing in over a quarter second had the planted paws skating at ~80% of it)
+  st.moveW = (st.moveW ?? 0) + (moveTgt - (st.moveW ?? 0)) * (1 - Math.exp(-(moveTgt > (st.moveW ?? 0) ? 40 : 8) * dt));
   const w = st.moveW, ph = st.phase;
   const bound = A.gait === 'bound';
   const offs = bound ? { FL: 0, FR: 0.35, BL: Math.PI, BR: Math.PI + 0.35 } : { FL: 0, BR: 0.1, FR: Math.PI, BL: Math.PI + 0.1 };
