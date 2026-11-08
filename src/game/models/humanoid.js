@@ -253,7 +253,10 @@ export function humanoidPose(m, s, P, dt) {
   } else if (!seated && !dead && !spawning) {
     const plod = A.gait === 'plod' ? 1 : 0;
     const knee = (A.knee ?? 0.9) * (1 + run * 0.4);
-    P.r('thighL', -ls * ampL * w); P.r('thighR', ls * ampL * w);
+    // (past the hips' turn toward the way of travel - it stops at ~60 degrees - the legs swing along what's left,
+    // across the hips as well as fore and aft, so a body moving sideways steps sideways)
+    const off = (back ? rel - Math.sign(rel) * Math.PI : rel) - st.twist, ox = Math.cos(off), oz = -Math.sin(off);
+    P.r('thighL', -ls * ampL * w * ox, 0, -ls * ampL * w * oz); P.r('thighR', ls * ampL * w * ox, 0, ls * ampL * w * oz);
     P.r('shinL', (Math.max(0, cs) * knee + 0.08) * w); P.r('shinR', (Math.max(0, -cs) * knee + 0.08) * w);
     P.r('footL', (-Math.max(0, cs) * 0.4 + ls * 0.2) * w); P.r('footR', (-Math.max(0, -cs) * 0.4 - ls * 0.2) * w);
     // (the hips dip as the legs spread: half a straight leg's arc, the knees and feet taking the rest - the full
