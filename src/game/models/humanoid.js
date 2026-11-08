@@ -207,7 +207,19 @@ export function humanoidPose(m, s, P, dt) {
   const moveTgt = smooth(0.05, 0.6, spd);
   st.moveW = (st.moveW ?? 0) + (moveTgt - (st.moveW ?? 0)) * (1 - Math.exp(-8 * dt));
   const w = st.moveW;
+  // The pose eases toward its targets (rate ~12/s): on a stride of ~2 Hz that filter had left the legs swinging
+  // ~70% of the gait's stride, ~45 degrees late, so the feet covered less ground than the body and slid. Walking,
+  // the legs follow the cycle nearly as authored (their easing x5, by how much the body walks; not in an action,
+  // a stagger or a fall, whose legs keep their own pace).
+  if (!P._legI) { P._legI = ['thighL', 'thighR', 'shinL', 'shinR', 'footL', 'footR'].map((n) => P.idx.get(n)).filter((i) => i !== undefined); P._legR = P._legI.map((i) => P.rate[i]); }
+  const legK = 1 + 4 * (action || dead || anim === 'stagger' ? 0 : w);
+  for (let k = 0; k < P._legI.length; k++) P.rate[P._legI[k]] = P._legR[k] * legK;
   const ph = st.phase, sn = Math.sin(ph), cs = Math.cos(ph);
+  // The thighs swing on a (barely rounded) triangle of the phase, not its sine: a stance leg turning at an even rate
+  // carries its foot back under the body at the body's own speed all through the stride, where a sine had it slide
+  // (back at up to pi/2 the body's speed mid-stride, lagging near the ends). The knee, the swing foot and everything
+  // above the legs keep the sine: a swing leg's knee still folds and opens over its half of the cycle as before.
+  const ls = Math.asin(0.99 * sn) * (1 / Math.asin(0.99));
   // a footfall (the legs pass each other as a foot takes the weight): the actor raises dust under heavy
   // walkers (m.footfall: the side, read and cleared by Actors)
   if (spd > 0.6 && w > 0.5) { const sg = sn >= 0 ? 1 : -1; if (st.stepSg && sg !== st.stepSg) m.footfall = sg; st.stepSg = sg; }
@@ -241,10 +253,10 @@ export function humanoidPose(m, s, P, dt) {
   } else if (!seated && !dead && !spawning) {
     const plod = A.gait === 'plod' ? 1 : 0;
     const knee = (A.knee ?? 0.9) * (1 + run * 0.4);
-    P.r('thighL', -sn * ampL * w); P.r('thighR', sn * ampL * w);
+    P.r('thighL', -ls * ampL * w); P.r('thighR', ls * ampL * w);
     P.r('shinL', (Math.max(0, cs) * knee + 0.08) * w); P.r('shinR', (Math.max(0, -cs) * knee + 0.08) * w);
-    P.r('footL', (-Math.max(0, cs) * 0.4 + sn * 0.2) * w); P.r('footR', (-Math.max(0, -cs) * 0.4 - sn * 0.2) * w);
-    const drop = legLen * (1 - Math.cos(ampL * sn)) + Math.abs(sn) * 0.015 * sc;
+    P.r('footL', (-Math.max(0, cs) * 0.4 + ls * 0.2) * w); P.r('footR', (-Math.max(0, -cs) * 0.4 - ls * 0.2) * w);
+    const drop = legLen * (1 - Math.cos(ampL * ls)) + Math.abs(ls) * 0.015 * sc;
     P.p('hips', sn * (0.015 + plod * 0.03) * w * sc * 0, -drop * w * (1 + plod * 0.6) - run * 0.05 * sc * w, 0);
     P.r('hips', 0, sn * 0.12 * w, cs * (0.03 + plod * 0.07) * w);
     P.r('spine', (0.06 + run * 0.18 + plod * 0.05) * w, -sn * 0.08 * w, -cs * plod * 0.05 * w);
