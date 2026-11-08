@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { G, xf, taper, lathe, tube, extrude, deform, robe, panel, mergeRaw, chainSkin, spikeRing, rng, vnoise, clamp, lerp, smooth, bump, easeOut, easeIn, TAU } from './core.js';
+import { G, xf, taper, lathe, tube, extrude, deform, robe, panel, mergeRaw, chainSkin, spikeRing, rng, vnoise, clamp, lerp, smooth, bump, easeOut, easeIn, TAU, modelScale } from './core.js';
 import { humanSkeleton, humanoidPose, act2 } from './humanoid.js';
 import { addSkull, addBoneHand, addPlate, addTabard, greatHelm, rivets, twoSided, HDR } from './parts.js';
 
@@ -104,7 +104,7 @@ function holdArm(P, m, s, side, k = 1) {
   const st = m.state, w = st.moveW ?? 0;
   if (w < 1e-3) return;
   const A = m.spec.anim, sc = m.spec.dims.hipH / 0.97;
-  const run = clamp((s.speed / sc - 2.2) / 2.5);
+  const run = clamp((s.speed / modelScale(m) / sc - 2.2) / 2.5);
   const sn = Math.sin(st.phase);
   const armA = (A.armSwing ?? 0.45) * (1 + run * 0.5);
   if (side > 0) { P.r('armL', -sn * armA * w * k); P.r('foreL', (0.25 + Math.max(0, -sn) * 0.4 + run * 0.6) * w * k); }

@@ -1,4 +1,4 @@
-import { clamp, lerp, smooth, easeOut, bump, TAU, turnK } from './core.js';
+import { clamp, lerp, smooth, easeOut, bump, TAU, turnK, modelScale } from './core.js';
 
 // ---------------------------------------------------------------------------
 // Quadruped skeleton + procedural gait (trot / bound) and actions.
@@ -93,7 +93,7 @@ export function quadPose(m, s, P, dt) {
   const anim = s.anim;
   const dead = anim === 'death', spawning = anim === 'spawn';
   let rate = A.rate ?? 14;
-  const spd = dead ? 0 : Math.max(s.speed, turnK(m, dt) * 0.5); // (turning on the spot shuffles the paws round)
+  const spd = dead ? 0 : Math.max(s.speed / modelScale(m), turnK(m, dt) * 0.5); // (turning on the spot shuffles the paws round; the speed in the model's own units)
   // Gait: `stride` is the ground a full cycle covers with each paw down half of it (a trot, a lope), which the
   // paw's sweep under the body matches. Faster than the legs can cycle (a cap from their length, the way a
   // bigger animal's stride is slower: ~5 Hz for the rat, ~3 for the hound) the cycle stops quickening and each

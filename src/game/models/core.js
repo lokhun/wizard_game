@@ -857,6 +857,15 @@ export class Rig {
   }
 }
 
+// How many world metres one of the model's own units is: the actor's scale on the root (an elite's 1.25, the
+// Hoarder's 1.55) times a type's own scaler group (the bosses': the Hollow King 2.15, the Executioner 1.8).
+// A gait sizes its stride in the model's units, so it reads its speed in them too: driven by world speed, a
+// body scaled 2x swung its legs twice as far as it went and its planted feet slid at the body's own pace.
+export function modelScale(m) {
+  const sp = m.bones.base?.parent;
+  return (m.root.scale.x || 1) * (sp && sp !== m.root ? sp.scale.x || 1 : 1);
+}
+
 // How hard the body is turning on the spot, 0..1 (eased): its own yaw rate, read off the root the game
 // turns before posing it. Poses feed it to their walk cycle as a slow shuffle, so a foe tracking you
 // steps round instead of skating its feet.

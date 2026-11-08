@@ -1,4 +1,4 @@
-import { clamp, lerp, smooth, easeOut, easeInOut, bump, TAU, turnK } from './core.js';
+import { clamp, lerp, smooth, easeOut, easeInOut, bump, TAU, turnK, modelScale } from './core.js';
 
 // ---------------------------------------------------------------------------
 // Humanoid skeleton + procedural animation.
@@ -186,7 +186,7 @@ export function humanoidPose(m, s, P, dt) {
 
   // ---- locomotion phase driven by distance travelled
   // (turning on the spot shuffles the feet round: see turnK)
-  const spd = dead || seated ? 0 : Math.max(s.speed, turnK(m, dt) * 0.55 * sc);
+  const spd = dead || seated ? 0 : Math.max(s.speed / modelScale(m), turnK(m, dt) * 0.55 * sc); // (in the model's own units)
   const legLen = D.legLen;
   const ampL = Math.min(A.stride ?? 0.55, 0.18 + spd * (A.strideK ?? 0.16) / sc);
   const step = Math.max(0.12, 2 * legLen * Math.sin(ampL));
