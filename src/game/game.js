@@ -867,15 +867,25 @@ export class Game {
     // mirror the two strongest nearby world lights into the view scene so the
     // hands are lit by real torches and spells
     const cam = this.renderer.camera;
-    // pick the strongest few scene lights for the hands without allocating each frame
+    // pick the strongest few scene lights for the hands without allocating or sorting each frame
+    // (one pass keeping the top few, in order: the pool is ~50 lights, the hands take 2)
     const all = (this._vlAll ??= [...this.lights.torchLights, ...this.lights.fxLights]);
-    const scored = (this._vlScored ??= all.map((l) => ({ l, s: 0 })));
-    for (const e of scored) e.s = e.l.intensity > 0.01 ? e.l.intensity / (1 + e.l.position.distanceToSquared(cam.position)) : -1;
-    scored.sort((a, b) => b.s - a.s);
+    const K = this.viewLights.length;
+    const top = (this._vlTop ??= new Array(K)), topS = (this._vlTopS ??= new Float64Array(K));
+    top.fill(null); topS.fill(0);
+    for (let i = 0; i < all.length; i++) {
+      const l = all[i];
+      if (!(l.intensity > 0.01)) continue;
+      const s = l.intensity / (1 + l.position.distanceToSquared(cam.position));
+      if (s <= topS[K - 1]) continue;
+      let j = K - 1;
+      while (j > 0 && topS[j - 1] < s) { top[j] = top[j - 1]; topS[j] = topS[j - 1]; j--; }
+      top[j] = l; topS[j] = s;
+    }
     const inv = cam.matrixWorldInverse;
-    for (let i = 0; i < this.viewLights.length; i++) {
+    for (let i = 0; i < K; i++) {
       const vl = this.viewLights[i];
-      const src = scored[i]?.s > 0 ? scored[i].l : null;
+      const src = top[i];
       if (!src) { vl.intensity = 0; continue; }
       const d = src.position.distanceTo(cam.position);
       const local = _v.copy(src.position).applyMatrix4(inv);
