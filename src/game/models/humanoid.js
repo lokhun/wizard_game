@@ -245,6 +245,12 @@ export function humanoidPose(m, s, P, dt) {
   const back = spd > 0.3 && Math.abs(rel) > 1.95;
   const twistTgt = spd > 0.3 ? clamp(back ? rel - Math.sign(rel) * Math.PI : rel, -1.05, 1.05) : 0;
   st.twist = (st.twist ?? 0) + (twistTgt - (st.twist ?? 0)) * (1 - Math.exp(-9 * dt));
+  // Setting off from a standstill the stride starts where the legs pass each other (no leg is spread, so the stride
+  // can come up to full at once) and the walk weight comes up three times faster than it eases away: the body moves
+  // at full speed from the first frame, and a stride growing in from nothing over a quarter second had left the
+  // planted feet skating at ~60% of that speed every time a foe moved off.
+  const setOff = spd > 0.3 * sc && (st.moveW ?? 0) < 0.15;
+  if (setOff) st.phase = Math.round(st.phase / Math.PI) * Math.PI;
   if (spd > 0.01) st.phase += ((back ? -1 : 1) * Math.PI * spd * dt) / step;
   // weight: a body pitches into its push as it sets off and rocks back against its brake as it stops
   // (eased, so a frame's jostle from a crowd doesn't show), the way it travels
@@ -252,7 +258,7 @@ export function humanoidPose(m, s, P, dt) {
   st.prevSpd = spd;
   st.lean = (st.lean ?? 0) + (clamp(acc * 0.022 * (back ? -1 : 1) / sc, -0.2, 0.2) - (st.lean ?? 0)) * (1 - Math.exp(-5 * dt));
   const moveTgt = smooth(0.05, 0.6, spd);
-  st.moveW = (st.moveW ?? 0) + (moveTgt - (st.moveW ?? 0)) * (1 - Math.exp(-8 * dt));
+  st.moveW = (st.moveW ?? 0) + (moveTgt - (st.moveW ?? 0)) * (1 - Math.exp(-(moveTgt > (st.moveW ?? 0) ? 25 : 8) * dt));
   const w = st.moveW;
   // The pose eases toward its targets (rate ~12/s): on a stride of ~2 Hz that filter had left the legs swinging
   // ~70% of the gait's stride, ~45 degrees late, so the feet covered less ground than the body and slid. Walking,
@@ -275,7 +281,7 @@ export function humanoidPose(m, s, P, dt) {
       S.u += dt / STOP_T;
       for (let k = 0; k < 2; k++) { const u = S.u - (k === S.first ? 0 : 1); legW[k] = S.w0 * (1 - smooth(0, 1, u)); }
       if (S.u >= 2) st.stopSeq = null;
-    } else for (let k = 0; k < 2; k++) legW[k] += (w - legW[k]) * Math.min(1, dt * 14);
+    } else for (let k = 0; k < 2; k++) legW[k] += (w - legW[k]) * Math.min(1, dt * 40);
   }
   const ph = st.phase, sn = Math.sin(ph), cs = Math.cos(ph);
   // The thighs swing on a (barely rounded) triangle of the phase, not its sine: a stance leg turning at an even rate
