@@ -359,6 +359,11 @@ const ATLAS_LAYER = new Map(ATLAS_KEYS.map((k, i) => [k, i]));
 const ATLAS_SIZE = 512;
 const BACK = 32;
 const MAX_LAYERS = 16;
+// The glow parts (eyes, runes, cores: unlit vertex colour) of a body that has atlas parts ride in the
+// atlas mesh too, as one more layer the atlas shader leaves unlit (see atlasFragment): one draw a body,
+// not two. It has no texture layer of its own (its reads clamp to the last; their result is unused).
+const GLOW_LAYER = ATLAS_KEYS.length;
+if (GLOW_LAYER >= MAX_LAYERS) throw new Error('enemy atlas: no layer left for glow');
 
 function buildAtlas(factory, env) {
   const r = factory.renderer, gl = r.getContext();
@@ -481,7 +486,7 @@ const VCHUNK = /* glsl */ `
 #ifdef EN_WOBBLE
   {
     float w = sin(uTime * 2.7 + position.y * 5.0 + position.x * 3.0) * 0.5 + sin(uTime * 3.9 + position.z * 6.0 - position.y * 2.0) * 0.5;
-    transformed += objectNormal * enFace * w * uWobble * aAnim;
+    transformed += objectNormal * enFace * w * uWobble * aAnim * enWob;
   }
 #endif
 `;
@@ -557,6 +562,7 @@ const RIM_CHUNK = `
 // reads with the layer's texture-array reads (ORM read once, not three times)
 const ATLAS_V = /* glsl */ `
   float enFace = aLayer >= ${BACK}.0 ? -1.0 : 1.0;
+  float enWob = int(aLayer + 0.5) % ${BACK} == ${GLOW_LAYER} ? 0.0 : 1.0; // (glow never wobbled: it was a basic material)
   {
     int li = int(aLayer + 0.5) % ${BACK};
     vLayA = vec4(uLayA[li].xy, float(li), enFace);
@@ -568,7 +574,10 @@ function atlasFragment(src) {
   const rep = (s, from, to) => { if (!s.includes(from)) throw new Error('atlas patch: missing ' + from); return s.replace(from, to); };
   // (the arrays' ORM read, texelOrm, stands in for three's: its maps are all one dummy, which would
   // otherwise get render/orm.js's ORM_SHARED, a reuse of three's roughness read this patch removes)
-  src = '#undef ORM_SHARED\nuniform highp sampler2DArray uAMap, uANrm, uAOrm;\nuniform vec3 uTintCol;\nuniform float uTintMix;\nflat in vec4 vLayA, vLayB;\n' + src;
+  src = '#undef ORM_SHARED\nuniform highp sampler2DArray uAMap, uANrm, uAOrm;\nuniform vec3 uTintCol, uGlowCol;\nuniform float uTintMix;\nflat in vec4 vLayA, vLayB;\n' + src;
+  // the glow layer: exactly what its MeshBasicMaterial drew (vertex colour x the instance's glow colour,
+  // its opacity; fog follows as it did), in place of the lit result
+  src = rep(src, '#include <opaque_fragment>', `if ( int( vLayA.z + 0.5 ) == ${GLOW_LAYER} ) { outgoingLight = vColor.rgb * uGlowCol; diffuseColor.a = opacity * vColor.a; }\n#include <opaque_fragment>`);
   // per-layer env strength: a global set at the top of main instead of the uniform
   src = rep(src, '#include <envmap_common_pars_fragment>', rep(C.envmap_common_pars_fragment, 'uniform float envMapIntensity;', 'float envMapIntensity;'));
   src = rep(src, '#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n  envMapIntensity = vLayA.y;');
@@ -610,7 +619,7 @@ export function patchInstanceMaterial(mat, U, feats) {
       sh.fragmentShader = atlasFragment(sh.fragmentShader);
       sh.vertexShader = `attribute float aLayer;\nuniform vec4 uLayA[${MAX_LAYERS}], uLayB[${MAX_LAYERS}];\nflat out vec4 vLayA, vLayB;\n` +
         sh.vertexShader.replace('#include <begin_vertex>', ATLAS_V + '#include <begin_vertex>');
-    } else sh.vertexShader = '#define enFace 1.0\n' + sh.vertexShader;
+    } else sh.vertexShader = '#define enFace 1.0\n#define enWob 1.0\n' + sh.vertexShader;
     if (keyBits.includes('R')) {
       sh.fragmentShader = 'uniform vec3 uRim, uTint;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + RIM_CHUNK);
     }
@@ -692,6 +701,7 @@ export class Rig {
     const local = new THREE.Matrix4(), full = new THREE.Matrix4(), nm = new THREE.Matrix3();
     const v = new THREE.Vector3(), n = new THREE.Vector3();
     let tris = 0;
+    const atlasRig = this.parts.some((p) => !p.opts.own && ATLAS_LAYER.has(p.mat));
     for (const part of this.parts) {
       const src = part.geo;
       const bone = this.bones[part.bone];
@@ -758,7 +768,7 @@ export class Rig {
       g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
       g.setIndex(index);
       // parts flagged opts.own (boss fx) keep their own mesh so they can fade alone; same material type, so no new shader
-      const layer = part.opts.own ? undefined : ATLAS_LAYER.get(part.mat);
+      const layer = part.opts.own ? undefined : ATLAS_LAYER.get(part.mat) ?? (part.mat === 'glow' && atlasRig ? GLOW_LAYER : undefined);
       const gk = part.opts.own ? part.mat + '#' + part.opts.own : layer !== undefined ? '@' + part.mat : part.mat;
       if (!byMat.has(gk)) byMat.set(gk, []);
       if (layer !== undefined) {
@@ -785,6 +795,7 @@ export class Rig {
       for (const k of atlasKeys) byMat.delete(k);
       const geo = mergeGeometries(geos, false);
       geos.forEach((g) => g.dispose());
+      geo.userData.glowLayer = atlasKeys.includes('@glow');
       const mesh = new THREE.SkinnedMesh(geo, lib.atlas().material);
       mesh.name = 'mesh:atlas';
       mesh.userData.matKey = 'atlas';
@@ -1059,6 +1070,8 @@ function shadowProxyMaterial(side, map) {
 const _lw = new THREE.Vector3(), _lr = new THREE.Vector3(), _lu = new THREE.Vector3(0, 1, 0);
 const _lq = new THREE.Quaternion(), _lq2 = new THREE.Quaternion(), _lpw = new THREE.Quaternion();
 const _white = new THREE.Color(1, 1, 1);
+// (the glow layer's entry in an instance's mats: no material of its own)
+const GLOW_STUB = { userData: {}, dispose() {} };
 const orbGeoCache = new Map();
 function orbGeo() {
   if (!orbGeoCache.has('o')) orbGeoCache.set('o', new THREE.IcosahedronGeometry(1, 2));
@@ -1093,6 +1106,7 @@ export class EnemyInstance {
       uCrackLo: { value: 0.045 }, uCrackHi: { value: 0.012 },
       uTintCol: { value: new THREE.Color(0, 0, 0) }, uTintMix: { value: 0 },
       uDissolve: { value: 0 }, uEnH: { value: spec.height ?? 1.8 }, uDissolveCol: { value: new THREE.Color(spec.dissolveColor ?? 0xff7a2a).multiplyScalar(3) },
+      uGlowCol: { value: new THREE.Color(1, 1, 1) }, // (the atlas's glow layer: see GLOW_LAYER)
     };
     this._dissolving = false;
     // per-instance materials
@@ -1123,6 +1137,11 @@ export class EnemyInstance {
           this.mats.push({ m, key, color: m.color.clone(), em: m.emissive ? m.emissive.clone().multiplyScalar(m.emissiveIntensity) : null, opacity: m.opacity, transparent: m.transparent, depthWrite: m.depthWrite });
         }
         o.material = clones.get(base);
+        // the glow parts drawn in the atlas keep an entry of their own (glowLevel, tint and flash set its
+        // colour, which _applyMats hands to uGlowCol): what their own material's entry was
+        if (o.userData.matKey === 'atlas' && o.geometry.userData.glowLayer && !this.mats.some((e) => e.glowLayer)) {
+          this.mats.push({ m: GLOW_STUB, key: 'glow', color: new THREE.Color(1, 1, 1), em: null, opacity: 1, transparent: false, depthWrite: true, glowLayer: true });
+        }
         o.frustumCulled = true;
         o.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, spec.height * 0.5, 0), Math.max(spec.height, spec.length ?? 0) * 0.85 + 1);
       }
@@ -1204,6 +1223,13 @@ export class EnemyInstance {
     // lit materials take the tint's glow through the rim chunk (uTint), not as flat emissive
     if (tc) this.U.uTint.value.copy(tc).multiplyScalar(tk * 0.22); else this.U.uTint.value.setRGB(0, 0, 0);
     for (const e of this.mats) {
+      if (e.glowLayer) {
+        // (as the glow's own MeshBasicMaterial took them)
+        const gc = this.U.uGlowCol.value.copy(e.color);
+        if (tc) gc.lerp(tc, tk * 0.3);
+        if (f > 0) gc.lerp(_white, f * 0.5);
+        continue;
+      }
       const m = e.m;
       m.color.copy(e.color);
       // (the atlas mixes each layer's own base colour toward the tint in its shader)
