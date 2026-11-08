@@ -528,7 +528,9 @@ export function createViewModel(classId, ctx) {
     const lx = THREE.MathUtils.clamp(s.look?.x ?? 0, -200, 200), ly = THREE.MathUtils.clamp(s.look?.y ?? 0, -200, 200);
     sSway.target[0] = THREE.MathUtils.clamp(-lx * 0.00028, -0.035, 0.035);
     sSway.target[1] = THREE.MathUtils.clamp(ly * 0.00028, -0.03, 0.03);
-    sSway.target[2] = THREE.MathUtils.clamp(-lx * 0.0012, -0.12, 0.12);
+    // (the yaw turns the hands back against the turn, with the shift: it had turned them into it, the hands leading
+    // the view by ~2 cm instead of trailing it)
+    sSway.target[2] = THREE.MathUtils.clamp(lx * 0.0008, -0.08, 0.08);
     sSway.target[3] = THREE.MathUtils.clamp(-ly * 0.0009, -0.1, 0.1);
     sSway.target[4] = THREE.MathUtils.clamp(lx * 0.0012, -0.1, 0.1);
     const C = THREE.MathUtils.clamp;
