@@ -6,6 +6,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
+import { ClusteredLights, clusterOn } from './clustered.js';
 
 // Final grading: grim color grade, vignette, film grain, chromatic aberration
 // and a red damage vignette, in linear HDR. SCENE(uv) is the HDR frame
@@ -241,6 +242,8 @@ export class Renderer {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(78, window.innerWidth / window.innerHeight, 0.05, 220);
     this.baseFov = 78;
+    // the main scene's point lights (render/clustered.js): no THREE.PointLight goes in this.scene
+    this.clusters = new ClusteredLights();
 
     // first person weapon layer rendered with its own camera so it never
     // clips into walls and can have its own field of view
@@ -537,9 +540,11 @@ export class Renderer {
     const info = this.renderer.info;
     info.autoReset = false;
     info.reset();
+    const db = this.renderer.getDrawingBufferSize(_size);
+    this.clusters.update(this.camera, db.x, db.y);
     if (this.fused) this._renderFused();
     else this.composer.render();
-    this.lastStats = { calls: info.render.calls, tris: info.render.triangles, geos: info.memory.geometries, tex: info.memory.textures, programs: info.programs?.length };
+    this.lastStats = { calls: info.render.calls, tris: info.render.triangles, geos: info.memory.geometries, tex: info.memory.textures, programs: info.programs?.length, lights: this.clusters.count, cells: this.clusters.cells };
   }
 
   _renderFused() {
@@ -605,7 +610,10 @@ function bloomMips(b, r, input) {
   r.autoClear = oldAutoClear;
 }
 
+const _size = new THREE.Vector2();
+
 // Renders a second scene on top of the main one after clearing depth.
+// (Its own few point lights light it: the cluster grid is the main camera's.)
 class ViewModelPass {
   constructor(scene, camera) {
     this.scene = scene;
@@ -640,7 +648,8 @@ class ViewModelPass {
       saved[i] = I;
       L[i].intensity = I * VIEW_LIGHT_MAX / (VIEW_LIGHT_MAX + I);
     }
-    renderer.render(this.scene, this.camera);
+    clusterOn(false);
+    try { renderer.render(this.scene, this.camera); } finally { clusterOn(true); }
     for (let i = 0; i < L.length; i++) L[i].intensity = saved[i];
     renderer.autoClear = oldAuto;
   }

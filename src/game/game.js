@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { TextureFactory } from '../render/textures.js';
-import { LightPool } from '../render/lights.js';
+import { LightPool, lightBudget } from '../render/lights.js';
+import { ClusterLight } from '../render/clustered.js';
 import { Particles, SPR } from '../render/particles.js';
 import { VFX, fxOf } from '../render/vfx.js';
 import { TorchHalos } from '../render/halos.js';
@@ -95,7 +96,7 @@ export class Game {
     this.settings = settings;
     this.texFactory = new TextureFactory(renderer.renderer);
     const q = settings.quality ?? 'high';
-    this.lights = new LightPool(this.scene, q === 'low' ? { torchCount: 5, fxCount: 4 } : q === 'medium' ? { torchCount: 7, fxCount: 5 } : q === 'high' ? { torchCount: 9, fxCount: 6 } : { torchCount: 12, fxCount: 8 });
+    this.lights = new LightPool(renderer.clusters, lightBudget(q));
     this.lights.settings = settings; // "Reduce flashing" softens flashes
     this.particles = new Particles(this.scene);
     this.vfx = new VFX(this.scene, renderer.camera, this.particles, this.lights);
@@ -141,8 +142,7 @@ export class Game {
     this.scene.add(this.moon);
     this.scene.add(this.moon.target);
     // the wizard's own glow so you can see in the dark
-    this.selfLight = new THREE.PointLight(0xffffff, 0, 11, 1.6);
-    this.scene.add(this.selfLight);
+    this.selfLight = renderer.clusters.add(new ClusterLight(0xffffff, 0, 11, 1.6));
     // view-model scene lighting
     this.viewHemi = new THREE.HemisphereLight(0x606880, 0x202020, 1.2);
     renderer.viewScene.add(this.viewHemi);

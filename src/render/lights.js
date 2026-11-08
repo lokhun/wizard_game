@@ -1,8 +1,10 @@
 import * as THREE from 'three';
+import { ClusterLight } from './clustered.js';
 
-// Fixed-size pool of point lights. Changing the number of lights in three.js
-// forces shader recompiles, so we keep the count constant and move lights to
-// wherever they matter most each frame.
+// Pool of point lights, drawn through the clustered lighting (render/clustered.js):
+// a light costs only the pixels it reaches and its count never touches a shader,
+// so the pool is sized for how many lights the scene should show, not for what
+// every pixel can afford to loop over.
 //
 // Torches: static sources; the N nearest to the camera get a light, with a
 // distance-based fade so lights never pop in or out.
@@ -10,22 +12,29 @@ import * as THREE from 'three';
 
 const FX_BUDGET = 60, FX_CLUSTER_R2 = 3 * 3;
 
+// How many torches and spell lights each quality shows at once. A light costs
+// only the pixels it reaches (render/clustered.js), so these are set by how far
+// the lit world should reach, not by a per-pixel loop: the torches down the
+// hall stay lit, and most spells in a fight cast light. (They were 5/4, 7/5,
+// 9/6 and 12/8 while every pixel looped over all of them.) The cluster holds
+// MAX_LIGHTS in all, the wizard's own glow included. ?lights=torches,fx
+// overrides them (A/B tests).
+const BUDGET = { low: [10, 8], medium: [18, 14], high: [28, 22], ultra: [44, 36] };
+export function lightBudget(quality) {
+  const o = typeof location !== 'undefined' && new URLSearchParams(location.search).get('lights');
+  if (o) { const [t, f] = o.split(',').map(Number); if (t >= 0 && f >= 0) return { torchCount: t, fxCount: f }; }
+  const [torchCount, fxCount] = BUDGET[quality] ?? BUDGET.high;
+  return { torchCount, fxCount };
+}
+
 export class LightPool {
-  constructor(scene, { torchCount = 10, fxCount = 8 } = {}) {
-    this.scene = scene;
+  // clusters: the renderer's ClusteredLights, which draws the pool's lights
+  constructor(clusters, { torchCount = 10, fxCount = 8 } = {}) {
+    this.clusters = clusters;
     this.torchLights = [];
     this.fxLights = [];
-    for (let i = 0; i < torchCount; i++) {
-      const l = new THREE.PointLight(0xff9a40, 0, 14, 1.6);
-      l.userData.slot = i;
-      scene.add(l);
-      this.torchLights.push(l);
-    }
-    for (let i = 0; i < fxCount; i++) {
-      const l = new THREE.PointLight(0xffffff, 0, 10, 1.8);
-      scene.add(l);
-      this.fxLights.push(l);
-    }
+    for (let i = 0; i < torchCount; i++) this.torchLights.push(clusters.add(new ClusterLight(0xff9a40, 0, 14, 1.6)));
+    for (let i = 0; i < fxCount; i++) this.fxLights.push(clusters.add(new ClusterLight(0xffffff, 0, 10, 1.8)));
     this.torches = []; // {pos, color, intensity, range, seed, flicker, enabled}
     this._reqPool = []; this.nReq = 0; // this frame's requests: _reqPool[0..nReq)
     this.flashes = []; // timed lights {x,y,z,color,intensity,range,life,t}

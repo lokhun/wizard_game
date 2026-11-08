@@ -13,7 +13,7 @@ export async function devScene() {
   const seed = +(params.get('seed') ?? 1234);
   const R = new Renderer(document.getElementById('game'), params.get('q') ?? 'high');
   const tex = new TextureFactory(R.renderer);
-  const lights = new LightPool(R.scene);
+  const lights = new LightPool(R.clusters);
   const particles = new Particles(R.scene);
   const level = generateLevel(seed, floor);
   const built = buildLevel(level, tex, lights, { quality: params.get('q') ?? 'high' });

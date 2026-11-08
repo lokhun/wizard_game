@@ -18,7 +18,7 @@ A first-person, co-op wizard roguelike for the browser. Fight your way up from t
   - **Pings** (G) say what they mark: aim at a foe and the marker rides above it with its name until it falls; aim at a tome, chest, merchant or portal and it names it. A ping off screen clings to the screen's edge.
 - **Grim, torch-lit visuals**, all generated in code. There are no asset files:
   - GPU-generated stone, wood and metal textures.
-  - Dynamic torch lighting, volumetric-feeling fog, bloom and colour grading.
+  - Clustered dynamic lighting (dozens of torches and spells lighting the scene at once), volumetric-feeling fog, bloom and colour grading.
   - Thousands of GPU particles and element-specific spell effects.
 - **Procedural audio**: all sounds and music are synthesised with Web Audio.
   - About 100 layered sound effects, ambience for each realm, and generative music that shifts between exploring, combat and boss fights.
