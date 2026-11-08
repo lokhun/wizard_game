@@ -146,7 +146,7 @@ export function fingerSeg(L, r0, r1, rad = 8, flat = 0.85, tip = false, paint = 
         cr = ((wrinkleBase ? Math.exp(-Math.pow((d0 - 0.0012) / 0.0008, 2)) : 0) + (tip ? 0 : Math.exp(-Math.pow((d1 - 0.0012) / 0.0008, 2)))) * across;
       }
       const s0 = Math.hypot(x, ny) || 1;
-      const k = 1 - (wr * 0.00022 + cr * 0.0004) / s0;
+      const k = 1 - (wr * 0.00022 + cr * 0.00026) / s0;
       p.setXYZ(i, x * 1.04 * k, ny * k, z);
     } else p.setXYZ(i, x * 1.04, ny, z);
     if (col) {
@@ -154,11 +154,14 @@ export function fingerSeg(L, r0, r1, rad = 8, flat = 0.85, tip = false, paint = 
       const crease = y < 0 ? Math.exp(-Math.pow((u - 0.0) / 0.05, 2)) * (1 - side * 0.6) : 0;
       let r = 1, gg = 1, b = 1;
       if (paint === 'skin') {
-        // knuckle: redder and a touch darker, its wrinkles darker still; crease; a pink, fuller tip
+        // knuckle: redder and a touch darker, its wrinkles darker still; the palm side's creases thin and
+        // warm (blood under thin skin, not ink: they had been black bands, a jointed mannequin's), the pads
+        // a little pinker than the back; a pink, fuller tip
         r -= 0.03 * knuckle; gg -= 0.12 * knuckle; b -= 0.12 * knuckle;
         r -= 0.12 * wr; gg -= 0.15 * wr; b -= 0.14 * wr;
-        r -= 0.2 * cr; gg -= 0.24 * cr; b -= 0.22 * cr;
-        r -= 0.25 * crease; gg -= 0.3 * crease; b -= 0.28 * crease;
+        r -= 0.07 * cr; gg -= 0.13 * cr; b -= 0.11 * cr;
+        r -= 0.08 * crease; gg -= 0.17 * crease; b -= 0.14 * crease;
+        if (y < 0) { const pad = Math.min(1, -y / (r0 * 0.6)); gg -= 0.04 * pad; b -= 0.03 * pad; }
         if (tip) { const pk = Math.max(0, (u - 0.6) / 0.4); r += 0.03 * pk; gg -= 0.08 * pk; b -= 0.05 * pk; }
       } else {
         // leather: paler worn knuckles, dark creases, a stitched seam down each side

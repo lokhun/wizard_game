@@ -22,7 +22,8 @@ const THUMB = { x: -0.027, y: -0.008, z: -0.02, L: [0.04, 0.03, 0.025], r: [0.01
 // Euler angles. t = [yaw, pitch, roll, curl1, curl2].
 const BASE_POSES = {
   relaxed: { f: [[0.25, 0.3, 0.2, 0], [0.3, 0.35, 0.22, 0], [0.38, 0.4, 0.25, 0], [0.45, 0.45, 0.3, 0]], thumb: [[-0.049, -0.024, -0.05], [-0.059, -0.034, -0.074], [-0.058, -0.042, -0.097]] },
-  open: { f: [[0.12, 0.2, 0.12, -0.04], [0.18, 0.27, 0.16, 0], [0.27, 0.34, 0.22, 0.04], [0.38, 0.42, 0.28, 0.09]], thumb: [[-0.052, -0.016, -0.046], [-0.071, -0.02, -0.066], [-0.086, -0.022, -0.086]] },
+  // (a relaxed open hand: each finger curled a little more than the last, drawn in a touch, not fanned flat)
+  open: { f: [[0.17, 0.29, 0.18, -0.02], [0.24, 0.36, 0.22, 0], [0.34, 0.45, 0.29, 0.02], [0.47, 0.54, 0.35, 0.045]], thumb: [[-0.052, -0.016, -0.046], [-0.07, -0.021, -0.066], [-0.084, -0.024, -0.085]] },
   cradle: { f: [[0.3, 0.32, 0.18, -0.05], [0.32, 0.36, 0.2, 0], [0.38, 0.4, 0.22, 0.05], [0.48, 0.45, 0.25, 0.12]], thumb: [[-0.05, -0.022, -0.048], [-0.066, -0.03, -0.068], [-0.076, -0.034, -0.09]] },
   spread: { f: [[-0.05, 0.05, 0.05, -0.2], [-0.05, 0.04, 0.04, -0.03], [0.0, 0.06, 0.05, 0.13], [0.05, 0.08, 0.06, 0.32]], thumb: [[-0.054, -0.012, -0.04], [-0.077, -0.012, -0.056], [-0.099, -0.01, -0.07]] },
   claw: { f: [[0.35, 0.95, 0.75, -0.18], [0.3, 1.0, 0.8, -0.03], [0.38, 1.0, 0.8, 0.12], [0.45, 1.0, 0.8, 0.3]], thumb: [[-0.052, -0.022, -0.045], [-0.067, -0.036, -0.062], [-0.068, -0.054, -0.078]] },
@@ -308,8 +309,9 @@ export function buildHand(opts) {
   if (pcol) palm.setAttribute('color', new THREE.Float32BufferAttribute(pcol, 3));
   palm.computeVertexNormals();
   const palmParts = [palm,
-    // fleshy thumb base (thenar) blended into the palm side
-    sphere(0.017, rad, 8, { x: -0.025, y: -0.006, z: -0.03, sx: 0.9, sy: 0.75, sz: 1.5, ry: 0.4 }),
+    // fleshy thumb base (thenar) blended into the palm side (its poles turned along the hand, into the palm
+    // and the wrist: one had faced out of the palm, a pinched black dot at the root of the thumb)
+    xf(new THREE.SphereGeometry(0.017, rad, 8).rotateX(Math.PI / 2), { x: -0.025, y: -0.006, z: -0.03, sx: 0.9, sy: 0.75, sz: 1.5, ry: 0.4 }),
   ];
   // wrist + forearm stub reaching back into the sleeve
   const wr = lathe([[0.0305, -0.014], [0.029, 0.008], [0.0295, 0.03]], rad + 4);
@@ -319,7 +321,8 @@ export function buildHand(opts) {
   if (style !== 'gauntlet') {
     // the knuckles: low and broad (they had stood out like beads)
     for (const f of FINGERS) {
-      const k = sphere(f.r[0] * 0.98, 12, 8, { x: f.x, y: 0.0068 + f.y, z: f.z + 0.004, sx: 1.08, sy: 0.5, sz: 1.05 });
+      // (poles along the finger, under it and inside the hand, not pinched on top of the knuckle)
+      const k = xf(new THREE.SphereGeometry(f.r[0] * 0.98, 12, 8).rotateX(Math.PI / 2), { x: f.x, y: 0.0068 + f.y, z: f.z + 0.004, sx: 1.08, sy: 0.5, sz: 1.05 });
       if (paintPalm) paint(k, paintPalm === 'skin' ? [1, 0.9, 0.88] : [1.1, 1.1, 1.1]);
       palmParts.push(k);
     }

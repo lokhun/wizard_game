@@ -91,19 +91,22 @@ const SURFS = {
   // Skin: subtle pores, mottling and creases. Neutral warm tone.
   skin: /* glsl */ `
   void surf(vec2 uv, out vec3 col, out float h, out float rough, out float metal, out float ao){
-    float n = fbm(uv, 6., 5);
-    float pores = smoothstep(0.7, 0.85, fbm(uv, 90., 3)) * 0.5;
+    // (a texture runs once round each finger segment, a few cm: pores and grain must stay fine and faint
+    // there, or the hand reads as pocked clay - they had been 2-3 mm dark pits)
+    float n = fbm(uv, 4., 5);
+    float pores = smoothstep(0.62, 0.92, fbm(uv, 200., 2));
     float crease = smoothstep(0.75, 0.9, fbm2(uv + 2., vec2(4., 30.), 4));
     float blot = fbm(uv + 5., 3., 4);
     float flush = smoothstep(0.45, 0.8, fbm(uv + 9., 4., 4));
-    h = 0.5 + n * 0.15 - pores * 0.06 - crease * 0.2;
+    // (no pores in the height: the normal map takes the slope, and fine pits come out as craters)
+    h = 0.5 + n * 0.08 - crease * 0.12;
     // living skin: warm base with ruddy patches, darker creases, no plastic white
     vec3 c = mix(vec3(0.86, 0.78, 0.74), vec3(0.84, 0.66, 0.62), blot);
     c = mix(c, vec3(0.82, 0.56, 0.52), flush * 0.45);
-    c *= 0.9 + 0.14 * n;
-    c *= 1. - crease * 0.2 - pores * 0.03;
+    c *= 0.94 + 0.08 * n;
+    c *= 1. - crease * 0.12 - pores * 0.01;
     col = srgb(c);
-    rough = 0.55 + pores * 0.2 + crease * 0.1;
+    rough = 0.52 + pores * 0.1 + crease * 0.08;
     metal = 0.;
     ao = 1. - crease * 0.3;
   }`,
