@@ -40,7 +40,9 @@ const HOLDS = {
   // leaned out and back so the blade rests beside the crosshair, not across it
   sword: { pole: true, tilt: -0.7, lean: 0.18, roll: 0.0, pos: [0.008, -0.01, 0] },
   claw: { rot: [1.15, 0.45, 0.15], order: 'YXZ', pos: [-0.04, 0.09, -0.05] },
-  fist: { rot: [0.6, 0.8, 0.0], pos: [-0.04, 0.06, -0.04] },
+  // (the geomancer's stone fist, raised, the rune on its back to the eye: it had lain flat and turned in along
+  // the bottom of the view, half below it, a dark lump with a glowing scratch)
+  fist: { rot: [0.45, 0.25, 0.5], pos: [-0.05, 0.1, -0.05] },
 };
 const HOLDS_L = {
   open: { rot: [0.12, 0.55, -2.05], pos: [0, 0.02, 0] },
