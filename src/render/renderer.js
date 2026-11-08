@@ -6,6 +6,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
+import './orm.js'; // (before any material exists: see orm.js)
 import { ClusteredLights, clusterOn } from './clustered.js';
 
 // Final grading: grim color grade, vignette, film grain, chromatic aberration

@@ -566,7 +566,9 @@ const ATLAS_V = /* glsl */ `
 function atlasFragment(src) {
   const C = THREE.ShaderChunk;
   const rep = (s, from, to) => { if (!s.includes(from)) throw new Error('atlas patch: missing ' + from); return s.replace(from, to); };
-  src = 'uniform highp sampler2DArray uAMap, uANrm, uAOrm;\nuniform vec3 uTintCol;\nuniform float uTintMix;\nflat in vec4 vLayA, vLayB;\n' + src;
+  // (the arrays' ORM read, texelOrm, stands in for three's: its maps are all one dummy, which would
+  // otherwise get render/orm.js's ORM_SHARED, a reuse of three's roughness read this patch removes)
+  src = '#undef ORM_SHARED\nuniform highp sampler2DArray uAMap, uANrm, uAOrm;\nuniform vec3 uTintCol;\nuniform float uTintMix;\nflat in vec4 vLayA, vLayB;\n' + src;
   // per-layer env strength: a global set at the top of main instead of the uniform
   src = rep(src, '#include <envmap_common_pars_fragment>', rep(C.envmap_common_pars_fragment, 'uniform float envMapIntensity;', 'float envMapIntensity;'));
   src = rep(src, '#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n  envMapIntensity = vLayA.y;');
