@@ -1286,7 +1286,7 @@ export class EnemyInstance {
     // the hips came down faster than the knees bent), letting go as it topples over; a death of a type's own
     // keeps it through the first buckle only, its heap left as it was made)
     if (this._soles) {
-      const ds = this.spec.anim?.death, folds = ds === undefined || ds === 'fall' || ds === 'fallBack' || ds === 'kneel' || ds === 'collapse';
+      const ds = this.spec.anim?.death, folds = ds === undefined || ds === 'fall' || ds === 'fallBack' || ds === 'kneel' || ds === 'collapse' || ds === 'apart';
       const dw = folds ? 1 - smooth(0.45, 0.95, S.progress) : typeof ds === 'function' ? 1 - smooth(0.3, 0.55, S.progress) : 0;
       const gw = this._flying ? 0 : S.anim === 'death' ? dw : S.anim === 'spawn' ? smooth(0.7, 1, S.progress) : 1;
       this._ground(dt, gw, s.floor);

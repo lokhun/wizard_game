@@ -385,7 +385,13 @@ function deathPose(m, s, P, D, A, sc) {
   if (style === 'apart') {
     // armor pieces lose their binding and clatter apart
     // (the pieces come to rest on the floor, not in it: a plate's thickness kept above the flagstones)
-    const fall = { hips: [0.2, 0, 0.3 * sd, 0, -(D.hipH - 0.3 * sc), 0], thighL: [-1.0, 0, 0.6], thighR: [-0.3, 0, -0.5], shinL: [1.6, 0, 0], shinR: [0.5, 0, 0] };
+    // (the legs splay out in front, the knees bent back so the greaves lie on the floor; the heap is mirrored with
+    // the way the hips roll, so either side comes to rest the same: the legs had stayed near straight and the
+    // greaves sunk half a metre into the flagstones)
+    const [near, far] = sd < 0 ? ['L', 'R'] : ['R', 'L'];
+    const fall = { hips: [0.2, 0, 0.3 * sd, 0, -(D.hipH - 0.3 * sc), 0] };
+    fall['thigh' + near] = [-1.25, 0, -0.55 * sd]; fall['thigh' + far] = [-1.1, 0, 0.5 * sd];
+    fall['shin' + near] = [-0.8, 0, 0]; fall['shin' + far] = [-0.45, 0, 0];
     P.apply(fall, b);
     P.apply({ hips: [0, 0, 0, 0, -0.15 * sc, 0], spine: [0.3, 0, 0], head: [0.3, 0, 0] }, a * (1 - b));
     const sep = smooth(0.15, 0.6, p);
