@@ -74,6 +74,7 @@ function hitShapeOf(type, model, r0, h0) {
   HIT_SHAPES.set(type, s);
   return s;
 }
+const _hp = { x: 0, z: 0 };
 // the point of a's hit segment nearest (x, z): out.x/out.z
 export function hitPoint(a, x, z, out) {
   if (!a.hitL) { out.x = a.pos.x; out.z = a.pos.z; return out; }
@@ -1090,20 +1091,23 @@ export class ActorManager {
         mx += dx / d * push; mz += dz / d * push;
       }
     }
-    // keep out of players
+    // keep out of players: measured from the body's nearest point (the head end of a long body's hit segment: a
+    // hound's head had rested in the camera three quarters of a fight, a rat's half), and a body moving in stops at
+    // the line rather than being nudged back after crossing it (a lunge carries ~0.3 m a frame against a push of
+    // half the overlap: a leaping ghoul or hound came to rest with the camera inside it)
     const players = g.allPlayers();
     for (let i = 0; i < players.length; i++) {
       const p = players[i];
       if (!p.alive || p.dead) continue;
-      const dx = a.pos.x - p.pos.x, dz = a.pos.z - p.pos.z;
+      hitPoint(a, p.pos.x, p.pos.z, _hp);
+      const dx = _hp.x - p.pos.x, dz = _hp.z - p.pos.z;
       // shields and big weapons stick out past the body radius: keep those further from the camera
       const rr = a.radius + (a.def.frontShield || a.boss || (a.def.cost ?? 0) >= 8 || a.def.splitInto || a.def.model === 'slime' ? 0.85 : 0.4);
-      const d2 = dx * dx + dz * dz;
-      if (d2 < rr * rr) {
-        const d = Math.sqrt(d2);
-        const nx = d > 1e-3 ? dx / d : -Math.sin(a.yaw), nz = d > 1e-3 ? dz / d : -Math.cos(a.yaw);
-        mx += nx * (rr - d) * 0.5; mz += nz * (rr - d) * 0.5;
-      }
+      const d = Math.hypot(dx, dz);
+      const nx = d > 1e-3 ? dx / d : -Math.sin(a.yaw), nz = d > 1e-3 ? dz / d : -Math.cos(a.yaw);
+      if (d < rr) { mx += nx * (rr - d) * 0.5; mz += nz * (rr - d) * 0.5; }
+      const r = mx * nx + mz * nz, lim = Math.min(d, rr);
+      if (d + r < lim) { mx += nx * (lim - d - r); mz += nz * (lim - d - r); }
     }
     if (mx || mz) {
       // spirits (def.phase) drift straight through walls and pillars
