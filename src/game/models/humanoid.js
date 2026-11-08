@@ -51,6 +51,22 @@ function stepLift(P, from, to, k) {
     P.r('thigh' + n, -0.45 * up); P.r('shin' + n, 0.9 * up); P.r('foot' + n, -0.4 * up);
   }
 }
+// The legs that stay planted through a strike keep their feet where they stood: as the hips lunge (their z between
+// the two poses) the planted thigh turns just enough to leave its foot in place (foot ahead of the hip = L sin(-rx)),
+// in place of the strike pose's own angle. (The strike poses turned the planted leg ~0.6 rad back while the hips
+// went ~0.23 m forward: the foot was shoved ~0.3 m back over the floor.)
+function plantLegs(P, W, S, u, k, L) {
+  const hzW = W.hips?.[5] ?? 0, hzS = S.hips?.[5] ?? 0;
+  if (!L || hzW === hzS || k <= 0) return;
+  const hz0 = hzW * k, hz = (hzW + (hzS - hzW) * u) * k;
+  for (const n of ['L', 'R']) {
+    const rW = W['thigh' + n]?.[0] ?? 0, rS = S['thigh' + n]?.[0] ?? 0;
+    if (rS - rW <= -STEP_MIN) continue; // (the stepping leg: lifted, it travels)
+    const r0 = rW * k, cur = (rW + (rS - rW) * u) * k;
+    const want = -Math.asin(clamp((hz0 + L * Math.sin(-r0) - hz) / L, -0.95, 0.95));
+    P.r('thigh' + n, want - cur);
+  }
+}
 export function act2(W, S, o = {}) {
   const hit = o.hit ?? 0.3;
   return (P, ph, p, m, s) => {
@@ -67,6 +83,7 @@ export function act2(W, S, o = {}) {
     const rec = smooth(o.recover ?? 0.6, 1, p) * (o.recoverAmt ?? 0.55);
     P.blend(W, S, u, 1 - rec);
     stepLift(P, W, S, Math.sin(Math.PI * clamp(p / hit)));
+    plantLegs(P, W, S, u, 1 - rec, m.spec.dims?.legLen);
     if (o.strikeExtra) o.strikeExtra(P, p, m, s, u);
     return o.strikeRate ?? 26;
   };
