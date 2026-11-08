@@ -301,8 +301,20 @@ export function buildHand(opts) {
         if (paintPalm === 'skin') { const pk = g2(u, 0.6) * g2(t - 0.5, 0.35) * 0.06; gg -= pk; b -= pk; }
       }
     }
-    // knuckle line: pinky side shorter
-    if (t < 0.2) z += Math.max(0, x) * 0.18 * (1 - t / 0.2);
+    if (y < 0) {
+      // the hollow of the palm between its mounds
+      y *= 1 - 0.16 * g2(x - 0.004, 0.015) * g2(t - 0.47, 0.2);
+      // the skin runs on past the knuckles into the webs between the fingers' roots (the fingers had sprouted
+      // from a rounded edge, a notch between each)
+      if (t < 0.2) {
+        let near = 0;
+        for (const f of FINGERS) near = Math.max(near, g2(x - f.x, 0.0065));
+        const wb = (1 - t / 0.2) ** 2;
+        z -= 0.008 * wb * (0.35 + 0.65 * near); y += (-0.0045 - y) * 0.45 * wb;
+      }
+    }
+    // knuckle line: an arc, the middle finger's root furthest, the pinky's shortest
+    if (t < 0.2) z += (Math.max(0, x) * 0.18 + 0.004 * (1 - g2(x + 0.004, 0.026))) * (1 - t / 0.2);
     pp.setXYZ(i, x, y, z - 0.047);
     if (pcol) { pcol[i * 3] = r; pcol[i * 3 + 1] = gg; pcol[i * 3 + 2] = b; }
   }
