@@ -171,6 +171,48 @@ function fidget(m, st, P, idleW, dt, A, engaged) {
   f[1](P, k, u, st.fidS);
 }
 
+// ---------------------------------------------------------- turn steps ----
+// A body turning where it stands keeps each planted foot where it is on the floor: the root's turn since that foot
+// landed (a) is undone by leaning the leg (the foot's spot, rotated back about the body's axis, read off as thigh
+// pitch and roll) and turning it back about its own axis. Past TS_A of twist a foot steps: it lifts and swings to
+// its place under the hip over TS_T, one foot at a time, the other holding; a twist left when the turn stops is
+// stepped out after half a second's stillness. (The walking gait marking time had dragged the planted feet round
+// with the body: 0.4-1.6 m/s at 3 rad/s.)
+const TS_A = 0.25, TS_T = 0.18, TS_MAX = 0.7;
+function turnSteps(m, st, hold, dt) {
+  const T = st.ts ??= { y: null, l: [{ a: 0, p: -1, f: 0 }, { a: 0, p: -1, f: 0 }] };
+  const yaw = m.root.rotation.y;
+  let d = T.y == null ? 0 : yaw - T.y;
+  d = Math.atan2(Math.sin(d), Math.cos(d));
+  if (Math.abs(d) > 1) d = 0; // (a snap of the facing, not a turn)
+  T.y = yaw;
+  // (a twist left in the legs when the turn stops is stepped out after a moment's stillness)
+  T.q = Math.abs(d) > 0.2 * dt ? 0 : (T.q ?? 0) + dt;
+  const lim = T.q > 0.5 ? 0.1 : TS_A;
+  let act = 0;
+  for (let k = 0; k < 2; k++) {
+    const L = T.l[k], O = T.l[1 - k];
+    if (L.p >= 0) { L.p += dt / TS_T; if (L.p >= 1) { L.p = -1; L.a = 0; } }
+    else {
+      L.a = clamp((L.a + d * hold) * Math.exp(-6 * (1 - hold) * dt), -TS_MAX, TS_MAX);
+      if (Math.abs(L.a) > lim && O.p < 0 && hold > 0.5 && Math.abs(L.a) >= Math.abs(O.a)) { L.p = 0; L.f = L.a; }
+    }
+    if (L.p >= 0 || Math.abs(L.a) > 0.01) act = 1;
+  }
+  return act * hold;
+}
+function turnStepPose(P, st, D, sc, hold) {
+  const T = st.ts, z0 = 0.02 * sc, len = D.legLen;
+  for (let k = 0; k < 2; k++) {
+    const L = T.l[k], n = k === 0 ? 'L' : 'R', x0 = (k === 0 ? 1 : -1) * D.hipW;
+    const a = L.p >= 0 ? L.f * (1 - smooth(0, 1, L.p)) : L.a;
+    const c = Math.cos(a), sn = Math.sin(a);
+    const dx = x0 * (c - 1) - z0 * sn, dz = x0 * sn + z0 * (c - 1);
+    P.r('thigh' + n, (-dz / len) * hold, -a * hold, (dx / len) * hold);
+    if (L.p >= 0) { const up = Math.sin(Math.PI * L.p) * hold; P.r('thigh' + n, -0.3 * up); P.r('shin' + n, 0.6 * up); P.r('foot' + n, -0.3 * up); }
+  }
+}
+
 // ---------------------------------------------------------------- pose ----
 export function humanoidPose(m, s, P, dt) {
   const A = m.spec.anim;
@@ -186,7 +228,11 @@ export function humanoidPose(m, s, P, dt) {
 
   // ---- locomotion phase driven by distance travelled
   // (turning on the spot shuffles the feet round: see turnK)
-  const spd = dead || seated ? 0 : Math.max(s.speed / modelScale(m), turnK(m, dt) * 0.55 * sc); // (in the model's own units)
+  // turning where it stands: the feet stay planted and step round (turnStep, below), in place of the walking gait
+  // marking time; hold is how far the body is standing still
+  const hold = dead || seated || spawning || anim === 'attack' || A.gait === 'float' ? 0 : 1 - smooth(0.2, 0.9, s.speed / modelScale(m) / sc);
+  const spd = dead || seated ? 0 : Math.max(s.speed / modelScale(m), turnK(m, dt) * 0.55 * sc * (1 - hold)); // (in the model's own units)
+  const tsAct = turnSteps(m, st, hold, dt);
   const legLen = D.legLen;
   const ampL = Math.min(A.stride ?? 0.55, 0.18 + spd * (A.strideK ?? 0.16) / sc);
   const step = Math.max(0.12, 2 * legLen * Math.sin(ampL));
@@ -212,7 +258,7 @@ export function humanoidPose(m, s, P, dt) {
   // the legs follow the cycle nearly as authored (their easing x5, by how much the body walks; not in an action,
   // a stagger or a fall, whose legs keep their own pace).
   if (!P._legI) { P._legI = ['thighL', 'thighR', 'shinL', 'shinR', 'footL', 'footR'].map((n) => P.idx.get(n)).filter((i) => i !== undefined); P._legR = P._legI.map((i) => P.rate[i]); }
-  const legK = 1 + 4 * (action || dead || anim === 'stagger' ? 0 : w);
+  const legK = 1 + 4 * (action || dead || anim === 'stagger' ? tsAct : Math.max(w, tsAct));
   for (let k = 0; k < P._legI.length; k++) P.rate[P._legI[k]] = P._legR[k] * legK;
   const ph = st.phase, sn = Math.sin(ph), cs = Math.cos(ph);
   // The thighs swing on a (barely rounded) triangle of the phase, not its sine: a stance leg turning at an even rate
@@ -259,6 +305,7 @@ export function humanoidPose(m, s, P, dt) {
     P.r('thighL', -ls * ampL * w * ox, 0, -ls * ampL * w * oz); P.r('thighR', ls * ampL * w * ox, 0, ls * ampL * w * oz);
     P.r('shinL', (Math.max(0, cs) * knee + 0.08) * w); P.r('shinR', (Math.max(0, -cs) * knee + 0.08) * w);
     P.r('footL', (-Math.max(0, cs) * 0.4 + ls * 0.2) * w); P.r('footR', (-Math.max(0, -cs) * 0.4 - ls * 0.2) * w);
+    if (tsAct > 0) turnStepPose(P, st, D, sc, hold);
     // (the hips dip as the legs spread: half a straight leg's arc, the knees and feet taking the rest - the full
     // arc had dropped them ~13 cm at a run's stride ends, the feet planted only where the legs crossed)
     const drop = (legLen * (1 - Math.cos(ampL * ls)) + Math.abs(ls) * 0.015 * sc) * 0.5;
