@@ -258,7 +258,11 @@ export function humanoidPose(m, s, P, dt) {
     P.r('footL', (-Math.max(0, cs) * 0.4 + ls * 0.2) * w); P.r('footR', (-Math.max(0, -cs) * 0.4 - ls * 0.2) * w);
     const drop = legLen * (1 - Math.cos(ampL * ls)) + Math.abs(ls) * 0.015 * sc;
     P.p('hips', sn * (0.015 + plod * 0.03) * w * sc * 0, -drop * w * (1 + plod * 0.6) - run * 0.05 * sc * w, 0);
-    P.r('hips', 0, sn * 0.12 * w, cs * (0.03 + plod * 0.07) * w);
+    // (the pelvis rolls with the stride, heavier in a plod; the thighs turn back by as much, so the waddle is
+    // the body's and the legs stay under it: rolled with the pelvis they had swung out like a pendulum, the
+    // planted feet skating sideways at up to ~0.4 of the walking speed)
+    const roll = cs * (0.03 + plod * 0.07) * w;
+    P.r('hips', 0, sn * 0.12 * w, roll); P.r('thighL', 0, 0, -roll); P.r('thighR', 0, 0, -roll);
     P.r('spine', (0.06 + run * 0.18 + plod * 0.05) * w, -sn * 0.08 * w, -cs * plod * 0.05 * w);
     P.r('chest', 0, -sn * 0.1 * w, 0);
     P.r('head', -(0.04 + run * 0.12) * w, sn * 0.06 * w, -cs * plod * 0.04 * w);
@@ -269,6 +273,18 @@ export function humanoidPose(m, s, P, dt) {
     // (the turn toward the way of travel: hips round, the spine and chest back, the head held on its foe)
     const tw = st.twist * w * (A.twist ?? 1);
     if (Math.abs(tw) > 1e-3) { P.r('hips', 0, tw, 0); P.r('spine', 0, -tw * 0.55, 0); P.r('chest', 0, -tw * 0.45, 0); }
+    // A stance foot lands on its heel, sets flat and rolls off its toes: its pitch over the floor (the leg's
+    // turns summed down from the base) is levelled through the middle of the stance, the strike and the
+    // push-off at either end left as the gait has them. (It had stood on tiptoe all stance, the heel climbing
+    // as the leg swung back, the toe the only thing on the floor.)
+    const Kp = P.tgt.length / P.n, up = P.tgt[P.idx.get('base') * Kp] + P.tgt[P.idx.get('hips') * Kp];
+    for (let sd = 1; sd >= -1; sd -= 2) {
+      if (sd * cs >= 0) continue;
+      const u = (1 - sd * ls) * 0.5, flat = smooth(0, 0.18, u) * (1 - smooth(0.5, 0.95, u)) * w;
+      if (flat < 1e-3) continue;
+      const lr = sd > 0 ? 'L' : 'R', ft = P.idx.get('foot' + lr) * Kp;
+      P.tgt[ft] -= (up + P.tgt[P.idx.get('thigh' + lr) * Kp] + P.tgt[P.idx.get('shin' + lr) * Kp] + P.tgt[ft]) * flat;
+    }
     const armA = (A.armSwing ?? 0.45) * (1 + run * 0.5);
     if (!action) {
       P.r('armL', sn * armA * w); P.r('armR', -sn * armA * w);
