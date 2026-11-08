@@ -38,11 +38,25 @@ export function humanSkeleton(rig, o = {}) {
 // An action is fn(P, phase, p, m, s) where phase is 'windup'|'attack'|'cast'.
 // It writes a pose and may return a damping rate. act2 builds one from a
 // held anticipation pose and a strike pose.
+// A leg the action carries forward (its thigh turned forward by more than STEP_MIN from one pose to the next) steps:
+// it lifts - knee up, toe down - while it travels, instead of sliding its foot over the floor. (In a real fight the
+// feet of a body swinging where it stood slid at 2.5 m/s on average, the strike's step dragged along the stones.)
+const STEP_MIN = 0.15;
+function stepLift(P, from, to, k) {
+  if (k <= 0) return;
+  for (const n of ['L', 'R']) {
+    const d = (to['thigh' + n]?.[0] ?? 0) - (from?.['thigh' + n]?.[0] ?? 0);
+    if (d > -STEP_MIN) continue;
+    const up = Math.min(0.7, -d) * k;
+    P.r('thigh' + n, -0.45 * up); P.r('shin' + n, 0.9 * up); P.r('foot' + n, -0.4 * up);
+  }
+}
 export function act2(W, S, o = {}) {
   const hit = o.hit ?? 0.3;
   return (P, ph, p, m, s) => {
     if (ph === 'windup') {
       P.apply(W);
+      stepLift(P, null, W, Math.sin(Math.PI * clamp((s?.t ?? 1) / 0.3)));
       const tr = smooth(0.5, 1, p) * (o.tremble ?? 0.025);
       if (tr) { P.r('armR', Math.sin(m.time * 37) * tr, 0, Math.sin(m.time * 29) * tr); P.r('armL', Math.sin(m.time * 31) * tr); P.r('chest', 0, Math.sin(m.time * 23) * tr * 0.6); }
       if (o.windupExtra) o.windupExtra(P, p, m, s);
@@ -52,6 +66,7 @@ export function act2(W, S, o = {}) {
     const u = easeOut(p / hit);
     const rec = smooth(o.recover ?? 0.6, 1, p) * (o.recoverAmt ?? 0.55);
     P.blend(W, S, u, 1 - rec);
+    stepLift(P, W, S, Math.sin(Math.PI * clamp(p / hit)));
     if (o.strikeExtra) o.strikeExtra(P, p, m, s, u);
     return o.strikeRate ?? 26;
   };
