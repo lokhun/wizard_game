@@ -93,6 +93,7 @@ QACT.spit = QACT.breath;
 // too), and past QT_A of twist a diagonal pair lifts and steps back under the body in QT_T while the other pair
 // holds. (The trot marking time had dragged the planted paws round with the body.)
 const QT_A = 0.22, QT_T = 0.15, QT_MAX = 0.6;
+const QSTOP_T = 0.14; // (a closing step's time)
 function quadTurn(st, yaw, hold, dt) {
   const T = st.qt ??= { y: null, p: [{ a: 0, s: -1, f: 0 }, { a: 0, s: -1, f: 0 }] }; // pairs: FL+BR, FR+BL
   let d = T.y == null ? 0 : yaw - T.y;
@@ -151,7 +152,11 @@ export function quadPose(m, s, P, dt) {
   // fifth of the way: its front paws skated along the floor and its hind paws never touched it.)
   const stride = A.stride ?? 0.6;
   const f0 = spd / stride, fMax = A.maxHz ?? 2.5 / Math.sqrt(Q.legF[0] + Q.legF[1] + Q.legF[2]);
-  const hz = Math.min(f0, fMax), duty = f0 > 1e-3 ? 0.5 * Math.min(1, fMax / f0) : 0.5;
+  const hz = Math.min(f0, fMax);
+  // (the share of the cycle a paw is down is held from the last stride while the gait fades out: worked out
+  // afresh at a standstill it jumped from a gallop's ~0.2 to 0.5, and every leg's pose with it)
+  if (f0 > 1e-3) st.duty = 0.5 * Math.min(1, fMax / f0);
+  const duty = f0 > 1e-3 ? st.duty : st.duty ?? 0.5;
   if (spd > 0.01) st.phase += TAU * hz * dt;
   const moveTgt = smooth(0.05, 0.5, spd);
   // (the gait comes up three times faster than it eases away: the body sets off at full speed in one frame, and
@@ -165,9 +170,27 @@ export function quadPose(m, s, P, dt) {
   // moving, the legs follow the cycle nearly as authored (their easing x8 by how much the body moves; not in an
   // action, a stagger or a fall, whose legs keep their own pace)
   if (!P._legI) { P._legI = ['legFL', 'legFR', 'legBL', 'legBR', 'legF2L', 'legF2R', 'legB2L', 'legB2R', 'pawFL', 'pawFR', 'pawBL', 'pawBR'].map((n) => P.idx.get(n)).filter((i) => i !== undefined); P._legR = P._legI.map((i) => P.rate[i]); }
-  const legK = 1 + 7 * (action || dead || anim === 'stagger' ? tsAct : Math.max(w, tsAct));
+  const legK = 1 + 7 * (action || dead || anim === 'stagger' ? Math.max(tsAct, st.stopSeq ? 1 : 0) : Math.max(w, tsAct, st.stopSeq ? 1 : 0));
   for (let k = 0; k < P._legI.length; k++) P.rate[P._legI[k]] = P._legR[k] * legK;
 
+  // Stopping dead the run is finished with steps: every leg holds where it is (the planted paws stay put), the
+  // paws in the air come down under the body, then the planted ones step in after them. (The whole stride had
+  // eased shut at once, the planted paws sliding 10-47 cm.)
+  const legW = st.legW ??= [0, 0, 0, 0], LEGS = ['FL', 'FR', 'BL', 'BR'];
+  {
+    const stopped = s.speed / modelScale(m) < 0.05;
+    if (st.stopSeq && (!stopped || dead || spawning)) st.stopSeq = null;
+    if (!st.stopSeq && stopped && !dead && !spawning && Math.max(...legW) > 0.25) {
+      const grp = LEGS.map((n) => { let u = (ph + offs[n] - Math.PI / 2) / TAU; u -= Math.floor(u); return u >= duty ? 0 : 1; });
+      st.stopSeq = { u: grp.every((x) => x === 1) ? 1 : 0, grp, w0: Math.max(...legW) };
+    }
+    const S = st.stopSeq;
+    if (S) {
+      S.u += dt / QSTOP_T;
+      for (let k = 0; k < 4; k++) legW[k] = S.w0 * (1 - smooth(0, 1, S.u - S.grp[k]));
+      if (S.u >= 2) st.stopSeq = null;
+    } else for (let k = 0; k < 4; k++) legW[k] += (w - legW[k]) * Math.min(1, dt * 120);
+  }
   for (const S of ['L', 'R']) {
     P.r('legF' + S, Q.stF[0]); P.r('legF2' + S, Q.stF[1]); P.r('pawF' + S, Q.stF[2]);
     P.r('legB' + S, Q.stB[0]); P.r('legB2' + S, Q.stB[1]); P.r('pawB' + S, Q.stB[2]);
@@ -178,12 +201,16 @@ export function quadPose(m, s, P, dt) {
       let sn, up;
       if (u < duty) { sn = 1 - 2 * u / duty; up = 0; }
       else { const v = (u - duty) / (1 - duty); sn = 2 * smooth(0, 1, v) - 1; up = Math.sin(Math.PI * v); }
-      P.r('leg' + F + S, -sn * amp * w);
+      const li = LEGS.indexOf(F + S), wl = legW[li];
+      // (stepping in: a paw in the air keeps its lift as it comes forward, a planted one lifts; both come down)
+      if (st.stopSeq) { const v = st.stopSeq.u - st.stopSeq.grp[li]; up = v <= 0 ? up : v >= 1 ? 0 : Math.max(up * (1 - smooth(0, 1, v)), Math.sin(Math.PI * v)); }
+      P.r('leg' + F + S, -sn * amp * wl);
       // (a fore leg stands with its lower joint bent forward: lifted, it folds further that way - upper leg back,
       // lower forward twice as far - and the paw curls under; folded backward it had passed through straight,
       // longer than the shoulder is high, and scraped the floor on the way up and down)
-      if (F === 'F') { P.r('legF' + S, up * lift * 0.45 * w); P.r('legF2' + S, -up * lift * 0.9 * w); P.r('pawF' + S, (up * (lift * 0.45 + 0.35) + sn * 0.2) * w); }
-      else { P.r('legB2' + S, up * lift * 0.8 * w); P.r('pawB' + S, (-up * 0.5 - sn * 0.2) * w); }
+      const wu = st.stopSeq ? st.stopSeq.w0 : wl;
+      if (F === 'F') { P.r('legF' + S, up * lift * 0.45 * wu); P.r('legF2' + S, -up * lift * 0.9 * wu); P.r('pawF' + S, up * (lift * 0.45 + 0.35) * wu + sn * 0.2 * wl); }
+      else { P.r('legB2' + S, up * lift * 0.8 * wu); P.r('pawB' + S, -up * 0.5 * wu - sn * 0.2 * wl); }
     }
   }
   if (tsAct > 0 && !dead) quadTurnPose(P, st, Q, hold, lift);
