@@ -88,12 +88,60 @@ const QACT = {
 };
 QACT.spit = QACT.breath;
 
+// Turning where it stands: each planted paw keeps its spot on the floor, the turn since it landed undone by leaning
+// its leg (the paw's spot rotated back about the body's axis, as leg pitch and roll; turned back about its own axis
+// too), and past QT_A of twist a diagonal pair lifts and steps back under the body in QT_T while the other pair
+// holds. (The trot marking time had dragged the planted paws round with the body.)
+const QT_A = 0.22, QT_T = 0.15, QT_MAX = 0.6;
+function quadTurn(st, yaw, hold, dt) {
+  const T = st.qt ??= { y: null, p: [{ a: 0, s: -1, f: 0 }, { a: 0, s: -1, f: 0 }] }; // pairs: FL+BR, FR+BL
+  let d = T.y == null ? 0 : yaw - T.y;
+  d = Math.atan2(Math.sin(d), Math.cos(d));
+  if (Math.abs(d) > 1) d = 0;
+  T.y = yaw;
+  T.q = Math.abs(d) > 0.2 * dt ? 0 : (T.q ?? 0) + dt;
+  const lim = T.q > 0.5 ? 0.08 : QT_A;
+  let act = 0;
+  for (let k = 0; k < 2; k++) {
+    const L = T.p[k], O = T.p[1 - k];
+    if (L.s >= 0) { L.s += dt / QT_T; if (L.s >= 1) { L.s = -1; L.a = 0; } }
+    else {
+      L.a = clamp((L.a + d * hold) * Math.exp(-6 * (1 - hold) * dt), -QT_MAX, QT_MAX);
+      if (Math.abs(L.a) > lim && O.s < 0 && hold > 0.5 && Math.abs(L.a) >= Math.abs(O.a)) { L.s = 0; L.f = L.a; }
+    }
+    if (L.s >= 0 || Math.abs(L.a) > 0.01) act = 1;
+  }
+  return act * hold;
+}
+const QLEGS = [['F', 'L', 0], ['B', 'R', 0], ['F', 'R', 1], ['B', 'L', 1]];
+function quadTurnPose(P, st, Q, hold, lift) {
+  const T = st.qt;
+  for (const [F, S, k] of QLEGS) {
+    const L = T.p[k], sd = S === 'L' ? 1 : -1;
+    const x0 = sd * (F === 'F' ? Q.w : Q.wb ?? Q.w), z0 = F === 'F' ? Q.len / 2 + Q.fz : -Q.len / 2 + Q.bz;
+    const len = Q.bodyH + (F === 'F' ? Q.shoulderY : Q.hipY); // (the joint's height over the floor)
+    const a = L.s >= 0 ? L.f * (1 - smooth(0, 1, L.s)) : L.a;
+    const c = Math.cos(a), sn = Math.sin(a);
+    const dx = x0 * (c - 1) - z0 * sn, dz = x0 * sn + z0 * (c - 1);
+    P.r('leg' + F + S, (-dz / len) * hold, -a * hold, (dx / len) * hold);
+    if (L.s >= 0) {
+      const up = Math.sin(Math.PI * L.s) * hold;
+      if (F === 'F') { P.r('legF' + S, up * lift * 0.45); P.r('legF2' + S, -up * lift * 0.9); P.r('pawF' + S, up * (lift * 0.45 + 0.35)); }
+      else { P.r('legB2' + S, up * lift * 0.8); P.r('pawB' + S, -up * 0.5); }
+    }
+  }
+}
+
 export function quadPose(m, s, P, dt) {
   const Q = m.spec.dims, A = m.spec.anim, st = m.state, T = m.time;
   const anim = s.anim;
   const dead = anim === 'death', spawning = anim === 'spawn';
   let rate = A.rate ?? 14;
-  const spd = dead ? 0 : Math.max(s.speed / modelScale(m), turnK(m, dt) * 0.5); // (turning on the spot shuffles the paws round; the speed in the model's own units)
+  // (turning where it stands the paws stay planted and step round in diagonal pairs - quadTurn, below - in place of
+  // the trot marking time; hold is how far the body is standing still)
+  const hold = dead || spawning || anim === 'attack' ? 0 : 1 - smooth(0.1, 0.6, s.speed / modelScale(m));
+  const spd = dead ? 0 : Math.max(s.speed / modelScale(m), turnK(m, dt) * 0.5 * (1 - hold)); // (the speed in the model's own units)
+  const tsAct = quadTurn(st, m.root.rotation.y, hold, dt);
   // Gait: `stride` is the ground a full cycle covers with each paw down half of it (a trot, a lope), which the
   // paw's sweep under the body matches. Faster than the legs can cycle (a cap from their length, the way a
   // bigger animal's stride is slower: ~5 Hz for the rat, ~3 for the hound) the cycle stops quickening and each
@@ -115,7 +163,7 @@ export function quadPose(m, s, P, dt) {
   // moving, the legs follow the cycle nearly as authored (their easing x8 by how much the body moves; not in an
   // action, a stagger or a fall, whose legs keep their own pace)
   if (!P._legI) { P._legI = ['legFL', 'legFR', 'legBL', 'legBR', 'legF2L', 'legF2R', 'legB2L', 'legB2R', 'pawFL', 'pawFR', 'pawBL', 'pawBR'].map((n) => P.idx.get(n)).filter((i) => i !== undefined); P._legR = P._legI.map((i) => P.rate[i]); }
-  const legK = 1 + 7 * (action || dead || anim === 'stagger' ? 0 : w);
+  const legK = 1 + 7 * (action || dead || anim === 'stagger' ? tsAct : Math.max(w, tsAct));
   for (let k = 0; k < P._legI.length; k++) P.rate[P._legI[k]] = P._legR[k] * legK;
 
   for (const S of ['L', 'R']) {
@@ -136,6 +184,7 @@ export function quadPose(m, s, P, dt) {
       else { P.r('legB2' + S, up * lift * 0.8 * w); P.r('pawB' + S, (-up * 0.5 - sn * 0.2) * w); }
     }
   }
+  if (tsAct > 0 && !dead) quadTurnPose(P, st, Q, hold, lift);
   // body motion
   if (bound) {
     const sf = Math.sin(ph);
