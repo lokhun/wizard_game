@@ -90,7 +90,7 @@ export function fingerSeg(L, r0, r1, rad = 8, flat = 0.85, tip = false, paint = 
   // sphere (or a rounded end, a fuller pad, on the last segment)
   const prof = [];
   const n = rad >= 8 ? 5 : rad >= 6 ? 3 : 1; // rad < 6: low-poly avatar fingers
-  const CAP = 0.9;
+  const CAP = 1.0; // (a round joint: a flattened one pinched a notch into every bent knuckle)
   for (let i = 0; i <= n; i++) {
     const a = -Math.PI / 2 + (i / n) * Math.PI / 2;
     prof.push([r0 * Math.cos(a), r0 * CAP * Math.sin(a)]);
@@ -132,7 +132,9 @@ export function fingerSeg(L, r0, r1, rad = 8, flat = 0.85, tip = false, paint = 
     const back = y > 0 ? y / r0 : 0, side = Math.abs(x) / r0;
     let ny = y * flat;
     if (y > 0) ny *= 0.86 * (1 + 0.1 * Math.exp(-Math.pow((u - 0.02) / 0.1, 2)) * back);
-    else ny *= 1 + 0.16 * Math.sin(Math.PI * Math.min(1, u * 1.15)) + (tip ? 0.12 * Math.max(0, (u - 0.55) / 0.45) : 0);
+    // (the pad keeps its fullness along the segment and falls away only near the joint: a sine had made each
+    // segment a sausage, the valleys between them dark bands across a bare finger in the torchlight)
+    else ny *= 1 + 0.13 * Math.min(1, 1.7 * Math.sin(Math.PI * Math.min(1, u * 1.15))) + (tip ? 0.12 * Math.max(0, (u - 0.55) / 0.45) : 0);
     // knuckle wrinkles (fine first-person fingers): three fine folds across the back on each side of a
     // joint, pressed in a hair; one deeper crease across the palm side
     let wr = 0, cr = 0;
