@@ -1281,8 +1281,14 @@ export class EnemyInstance {
     this.P.followK = S.anim === 'death' ? 1 - smooth(0.45, 0.8, S.progress) : 1;
     if (this._dissolving && S.anim !== 'death' && S.anim !== 'spawn') this.setDissolve(0); // (burnt in: whole again)
     this.P.damp(dt, rate);
-    // (off in death and flight; a body rising out of the floor takes it up over the end of the rise, not in a pop)
-    if (this._soles) this._ground(dt, S.anim === 'death' || this._flying ? 0 : S.anim === 'spawn' ? smooth(0.7, 1, S.progress) : 1, s.floor);
+    // (off in flight; a body rising out of the floor takes it up over the end of the rise, not in a pop; a body
+    // falling to its knees keeps its feet on the floor as its legs fold (they had sunk 10-25 cm through it while
+    // the hips came down faster than the knees bent), letting go as it topples over)
+    if (this._soles) {
+      const ds = this.spec.anim?.death, folds = ds === undefined || ds === 'fall' || ds === 'fallBack' || ds === 'kneel' || ds === 'collapse';
+      const gw = this._flying ? 0 : S.anim === 'death' ? (folds ? 1 - smooth(0.45, 0.95, S.progress) : 0) : S.anim === 'spawn' ? smooth(0.7, 1, S.progress) : 1;
+      this._ground(dt, gw, s.floor);
+    }
     if (this.spec.look) this._lookWorld(dt, S, s.look);
     if (Math.abs(this._opTarget - this._opacity) > 1e-3) { this._opacity = this._opTarget; this._dirty = true; }
     this._updateOrb(dt);
