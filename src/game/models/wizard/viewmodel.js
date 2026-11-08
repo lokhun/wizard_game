@@ -456,7 +456,7 @@ export function createViewModel(classId, ctx) {
   const sLand = new Spring(1, 160, 0.35);
   let bobPhase = 0, bobAmp = 0;
   let wasGrounded = true;
-  let lastCastT = -1, lastCastKey = '';
+  let lastCastT = -1, lastCastKey = '', lastStartT = -9;
   let prevHurt = 0;
   // idle fidget state
   let stillT = 0, fidget = null, fidgetT = 0, fidgetN = 0, nextFidget = 6;
@@ -562,10 +562,17 @@ export function createViewModel(classId, ctx) {
       const style = STYLES[cast.style] ? cast.style : 'flick';
       if (isNew) {
         flare = 1;
-        castVar.amp = 0.88 + Math.random() * 0.24; castVar.ry = (Math.random() - 0.5) * 0.14;
-        castVar.rz = (Math.random() - 0.5) * 0.16; castVar.py = (Math.random() - 0.5) * 0.014;
+        // a held stream of casts (a primary on auto-fire) plays as a rhythm of compact snaps, a lone cast
+        // takes its full swing: three full flicks a second had swept the focus, the brightest thing on
+        // screen, through ~40 degrees of the view beside the crosshair
+        const gap = t - lastStartT;
+        lastStartT = t;
+        // (not a blade's cuts: a chain's forehand and backhand must match the slashes they leave in the world)
+        const rep = gap < 0.55 && style !== 'swing' && style !== 'swing2' ? 0.5 + 0.5 * THREE.MathUtils.smoothstep(gap, 0.25, 0.55) : 1;
+        castVar.amp = (0.88 + Math.random() * 0.24) * rep; castVar.ry = (Math.random() - 0.5) * 0.14 * rep;
+        castVar.rz = (Math.random() - 0.5) * 0.16 * rep; castVar.py = (Math.random() - 0.5) * 0.014 * rep;
         // recoil through the whole view rig: the spell leaves, the hands jolt back and up
-        const kick = KICK[style] ?? 0.5;
+        const kick = (KICK[style] ?? 0.5) * (0.4 + 0.6 * rep);
         sSway.v[3] += kick * (0.9 + Math.random() * 0.3); sSway.v[5] += kick * 0.22;
         sSway.v[0] += (Math.random() - 0.5) * kick * 0.12; sSway.v[4] += (Math.random() - 0.5) * kick * 0.8;
       }
@@ -773,7 +780,7 @@ export function createViewModel(classId, ctx) {
   root.traverse((o) => { if (o.isMesh && o.material?.transparent && o.material.blending !== THREE.AdditiveBlending) exclude.add(o); });
   // back to rest: the probe ran the springs, fidgets, sigils and trail
   for (const sp of [sR, sL, sSway, sLand]) { sp.x.fill(0); sp.v.fill(0); sp.target.fill(0); }
-  bobPhase = bobAmp = 0; wasGrounded = true; lastCastT = -1; lastCastKey = ''; prevHurt = 0;
+  bobPhase = bobAmp = 0; wasGrounded = true; lastCastT = -1; lastCastKey = ''; lastStartT = -9; prevHurt = 0;
   stillT = 0; fidget = null; fidgetT = 0; fidgetN = 0; nextFidget = 6;
   power = downedK = dashK = chargeK = flare = 0; first = true;
   pvr = pvf = pvy = accVR = accVF = 0;
