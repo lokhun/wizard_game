@@ -117,8 +117,12 @@ function nailGeo(L, r, rad) {
   const p = g.getAttribute('position');
   const col = new Float32Array(p.count * 3);
   for (let i = 0; i < p.count; i++) {
-    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
     const u = 0.5 - y / len; // 0 root .. 1 free edge
+    // (its outline rounded: the root a curved cuticle and the free edge a gentle arc - drawn as a cut cylinder it
+    // had been a square-cornered plate, which a dark nail on a curled grip turned into a band of black tape)
+    const wk = Math.sqrt(Math.max(0, 1 - Math.pow(Math.max(0, 1 - u / 0.32), 2))) * Math.sqrt(Math.max(0, 1 - Math.pow(Math.max(0, (u - 0.8) / 0.2), 2) * 0.55));
+    { const a = Math.atan2(x, z) * Math.max(0.12, wk), rr = Math.hypot(x, z); x = Math.sin(a) * rr; z = Math.cos(a) * rr; }
     const side = Math.abs(Math.atan2(x, z)) / (arc / 2);
     // (the plate dips toward the tip, following the rounded end; flatter than round, like the finger)
     p.setXYZ(i, x * 1.04, y, z * 0.74 - Math.max(0, u - 0.7) * r * 0.5);
