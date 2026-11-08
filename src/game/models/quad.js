@@ -94,25 +94,45 @@ export function quadPose(m, s, P, dt) {
   const dead = anim === 'death', spawning = anim === 'spawn';
   let rate = A.rate ?? 14;
   const spd = dead ? 0 : Math.max(s.speed, turnK(m, dt) * 0.5); // (turning on the spot shuffles the paws round)
+  // Gait: `stride` is the ground a full cycle covers with each paw down half of it (a trot, a lope), which the
+  // paw's sweep under the body matches. Faster than the legs can cycle (a cap from their length, the way a
+  // bigger animal's stride is slower: ~5 Hz for the rat, ~3 for the hound) the cycle stops quickening and each
+  // paw spends less of it down (a gallop: a quick push, a long reach back through the air), so a planted paw
+  // still sweeps back at the body's speed. Down, the leg turns at that even rate; up, it eases forward with
+  // the knee folded. (At a rat's full run the cycle had been 11 Hz, and the pose's easing let the legs swing a
+  // fifth of the way: its front paws skated along the floor and its hind paws never touched it.)
   const stride = A.stride ?? 0.6;
-  if (spd > 0.01) st.phase += (TAU * spd * dt) / stride;
+  const f0 = spd / stride, fMax = A.maxHz ?? 2.5 / Math.sqrt(Q.legF[0] + Q.legF[1] + Q.legF[2]);
+  const hz = Math.min(f0, fMax), duty = f0 > 1e-3 ? 0.5 * Math.min(1, fMax / f0) : 0.5;
+  if (spd > 0.01) st.phase += TAU * hz * dt;
   const moveTgt = smooth(0.05, 0.5, spd);
   st.moveW = (st.moveW ?? 0) + (moveTgt - (st.moveW ?? 0)) * (1 - Math.exp(-8 * dt));
   const w = st.moveW, ph = st.phase;
   const bound = A.gait === 'bound';
   const offs = bound ? { FL: 0, FR: 0.35, BL: Math.PI, BR: Math.PI + 0.35 } : { FL: 0, BR: 0.1, FR: Math.PI, BL: Math.PI + 0.1 };
   const amp = A.legAmp ?? 0.5, lift = A.lift ?? 0.9;
+  const action = anim === 'windup' || anim === 'attack' || anim === 'cast';
+  // moving, the legs follow the cycle nearly as authored (their easing x8 by how much the body moves; not in an
+  // action, a stagger or a fall, whose legs keep their own pace)
+  if (!P._legI) { P._legI = ['legFL', 'legFR', 'legBL', 'legBR', 'legF2L', 'legF2R', 'legB2L', 'legB2R', 'pawFL', 'pawFR', 'pawBL', 'pawBR'].map((n) => P.idx.get(n)).filter((i) => i !== undefined); P._legR = P._legI.map((i) => P.rate[i]); }
+  const legK = 1 + 7 * (action || dead || anim === 'stagger' ? 0 : w);
+  for (let k = 0; k < P._legI.length; k++) P.rate[P._legI[k]] = P._legR[k] * legK;
 
   for (const S of ['L', 'R']) {
     P.r('legF' + S, Q.stF[0]); P.r('legF2' + S, Q.stF[1]); P.r('pawF' + S, Q.stF[2]);
     P.r('legB' + S, Q.stB[0]); P.r('legB2' + S, Q.stB[1]); P.r('pawB' + S, Q.stB[2]);
     if (dead) continue;
     for (const F of ['F', 'B']) {
-      const pl = ph + offs[F + S];
-      const sn = Math.sin(pl), cs = Math.cos(pl);
+      // u: the leg's place in its cycle from touching down at its furthest reach
+      let u = (ph + offs[F + S] - Math.PI / 2) / TAU; u -= Math.floor(u);
+      let sn, up;
+      if (u < duty) { sn = 1 - 2 * u / duty; up = 0; }
+      else { const v = (u - duty) / (1 - duty); sn = 2 * smooth(0, 1, v) - 1; up = Math.sin(Math.PI * v); }
       P.r('leg' + F + S, -sn * amp * w);
-      const up = Math.max(0, cs);
-      if (F === 'F') { P.r('legF2' + S, up * lift * w); P.r('pawF' + S, (-up * 0.6 + sn * 0.2) * w); }
+      // (a fore leg stands with its lower joint bent forward: lifted, it folds further that way - upper leg back,
+      // lower forward twice as far - and the paw curls under; folded backward it had passed through straight,
+      // longer than the shoulder is high, and scraped the floor on the way up and down)
+      if (F === 'F') { P.r('legF' + S, up * lift * 0.45 * w); P.r('legF2' + S, -up * lift * 0.9 * w); P.r('pawF' + S, (up * (lift * 0.45 + 0.35) + sn * 0.2) * w); }
       else { P.r('legB2' + S, up * lift * 0.8 * w); P.r('pawB' + S, (-up * 0.5 - sn * 0.2) * w); }
     }
   }
@@ -120,10 +140,10 @@ export function quadPose(m, s, P, dt) {
   if (bound) {
     const sf = Math.sin(ph);
     P.r('front', sf * 0.14 * w); P.r('rear', -sf * 0.14 * w);
-    P.p('body', 0, (Math.cos(ph * 2) * 0.012 - 0.01) * w * (Q.bodyH / 0.3), 0);
+    P.p('body', 0, Math.cos(ph * 2) * 0.012 * w * (Q.bodyH / 0.3), 0);
     P.r('body', Math.cos(ph) * 0.06 * w);
   } else {
-    P.p('body', 0, -Math.abs(Math.cos(ph)) * 0.025 * w * (Q.bodyH / 0.5), 0);
+    P.p('body', 0, (0.64 - Math.abs(Math.cos(ph))) * 0.025 * w * (Q.bodyH / 0.5), 0);
     P.r('body', 0, Math.sin(ph) * 0.04 * w, Math.sin(ph) * 0.03 * w);
   }
   P.r('body', (A.lean ?? 0.05) * w);
@@ -149,7 +169,6 @@ export function quadPose(m, s, P, dt) {
     P.r('tail' + i, (A.tailDroop ?? 0.12) * (dead ? 0.3 : 1) + Math.sin(T * 2.1 - i * 0.6) * 0.05 * k, Math.sin(T * (1.4 + w * 4) - i * 0.7) * sway * (0.4 + k), 0);
   }
 
-  const action = anim === 'windup' || anim === 'attack' || anim === 'cast';
   if (action) {
     const key = s.attackType;
     const fn = A.actions?.[key] ?? QACT[key] ?? A.actions?.[m.spec.defaultAttack] ?? QACT[m.spec.defaultAttack] ?? QACT.bite;
