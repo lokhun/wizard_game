@@ -639,8 +639,8 @@ export function necromancer(kit, meta, o) {
     left: L, leftGrip: { kind: 'pole', r: 0.0045 }, leftHold: 'lantern',
     leftLight: { obj: lan, pos: V(0, -0.05, 0) },
     hands: {
-      R: { style: 'bare', skin: kit.skin(0xa8b0a0), nail: kit.plain(0x1a1a18, 0.4) },
-      L: { style: 'bare', skin: kit.skin(0xa8b0a0), nail: kit.plain(0x1a1a18, 0.4) },
+      R: { style: 'bare', skin: kit.skin(0x969e90), nail: kit.plain(0x1a1a18, 0.4) },
+      L: { style: 'bare', skin: kit.skin(0x969e90), nail: kit.plain(0x1a1a18, 0.4) },
     },
     update(t, dt, st) {
       const f = 0.85 + 0.15 * flick(t, 4) + st.charge * 0.8;

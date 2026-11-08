@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CLASS_META } from '../../classMeta.js';
 import { getKit, GlowSet } from './kit.js';
-import { buildHand, gripPose, POSES, lerpPose, clonePose } from './hand.js';
+import { buildHand, gripPose, POSES, clonePose } from './hand.js';
 import { buildFocus } from './foci.js';
 import { lathe, torus, mergeGeos, xf, mulberry, V, uvs } from './shapes.js';
 import { wob } from './fx.js';
@@ -47,7 +47,9 @@ const HOLDS_L = {
   spread: { rot: [0.35, 0.45, -2.1], pos: [0, 0.04, 0] },
   cradle: { rot: [0.45, 0.4, -2.75], pos: [0.01, 0.05, 0] },
   book: { rot: [0.6, 0.6, -2.4], pos: [0.0, 0.04, -0.05] },
-  lantern: { pole: true, tilt: 0.1, lean: 1.45, roll: 0, pos: [-0.03, 0.12, -0.08] },
+  // held out ahead to light the way: the lantern hangs in view left of the crosshair (it had hung below the
+  // screen behind the sleeve, a pale fist pointing up the only sign of it)
+  lantern: { pole: true, tilt: 0.3, lean: 1.75, roll: 0, pos: [0.06, 0.21, -0.18] },
   staff: { pole: true, tilt: -0.62, lean: 0.24, roll: 0.15, pos: [0, 0, 0] },
 };
 
@@ -147,6 +149,63 @@ class Spring {
   }
 }
 
+// Finger joints on springs, each finger at its own pace (overlapping action): a hand closing curls its
+// little finger first and its index last, an opening one straightens the index first; the thumb follows a
+// beat behind. A little overshoot gives a snap or a clench its bite. (They had moved as one, every joint
+// eased toward the next pose at the same rate: a mannequin's hand.)
+const CLOSE_K = [0.72, 0.88, 1.06, 1.28], OPEN_K = [1.28, 1.06, 0.88, 0.72], THUMB_K = 0.8, FINGER_ZETA = 0.62;
+class FingerRig {
+  constructor(pose) { this.x = pose; this.vf = pose.f.map((r) => r.map(() => 0)); this.vt = pose.t.map(() => 0); }
+  reset() { for (const r of this.vf) r.fill(0); this.vt.fill(0); }
+  step(target, rate, dt) {
+    const n = Math.max(1, Math.ceil(dt / 0.004)), h = dt / n;
+    const xf = this.x.f, tf = target.f;
+    for (let i = 0; i < 4; i++) {
+      for (let j = 0; j < 4; j++) {
+        // (the splay, j 3, spreads with the index's pace)
+        const w = rate * (j === 3 ? 1 : tf[i][j] > xf[i][j] ? CLOSE_K[i] : OPEN_K[i]);
+        this._dof(xf[i], j, this.vf[i], tf[i][j], w * w, 2 * FINGER_ZETA * w, n, h);
+      }
+    }
+    const w = rate * THUMB_K;
+    for (let j = 0; j < 5; j++) this._dof(this.x.t, j, this.vt, target.t[j], w * w, 2 * FINGER_ZETA * w, n, h);
+  }
+  _dof(xs, j, vs, tg, K, C, n, h) {
+    let x = xs[j], v = vs[j];
+    for (let s = 0; s < n; s++) { v += (K * (tg - x) - C * v) * h; x += v * h; }
+    xs[j] = x; vs[j] = v;
+  }
+}
+
+// The wrist hangs the hand (and whatever it holds) on the forearm like a damped pendulum: swing the arm and
+// the hand drags behind, stop it and the hand carries on through and settles; thrust and the head of a staff
+// tips back. Driven by the forearm's angular and linear acceleration (the rig springs' velocities).
+const WRIST_K = 420, WRIST_ZETA = 0.5, WRIST_ANG = 0.18, WRIST_LIN = 3.2, WRIST_MAX = 0.32;
+class WristRig {
+  constructor() { this.x = [0, 0]; this.v = [0, 0]; this.pv = null; }
+  reset() { this.x[0] = this.x[1] = this.v[0] = this.v[1] = 0; this.pv = null; }
+  // sp: the rig spring (x, y, z, pitch, yaw, roll); x[0] pitch about X, x[1] about Z
+  step(sp, dt) {
+    if (dt < 1e-4) return;
+    const v = sp.v;
+    if (!this.pv) this.pv = Float32Array.from(v);
+    const C = (a) => Math.max(-400, Math.min(400, a));
+    const aPitch = C((v[3] - this.pv[3]) / dt), aRoll = C((v[5] - this.pv[5]) / dt);
+    const ax = C((v[0] - this.pv[0]) / dt), az = C((v[2] - this.pv[2]) / dt);
+    this.pv.set(v);
+    // (the hand lags the arm's turn; a push along -Z tips its top back toward the eye, one to the right leans it left)
+    const drive = [-WRIST_ANG * aPitch - WRIST_LIN * az, -WRIST_ANG * aRoll + WRIST_LIN * ax];
+    const w = Math.sqrt(WRIST_K), c = 2 * WRIST_ZETA * w;
+    const n = Math.max(1, Math.ceil(dt / 0.004)), h = dt / n;
+    for (let k = 0; k < 2; k++) {
+      let x = this.x[k], vv = this.v[k];
+      for (let s = 0; s < n; s++) { vv += (drive[k] - WRIST_K * x - c * vv) * h; x += vv * h; }
+      if (x > WRIST_MAX) { x = WRIST_MAX; vv = Math.min(0, vv); } else if (x < -WRIST_MAX) { x = -WRIST_MAX; vv = Math.max(0, vv); }
+      this.x[k] = x; this.v[k] = vv;
+    }
+  }
+}
+
 // first-person sleeve along +Y (y = 0 at the cuff), elliptical, shaped like
 // the class costume's sleeve so your arms match what partners see
 const SLEEVE_PROFILES = {
@@ -157,7 +216,8 @@ const SLEEVE_PROFILES = {
 // a warm, bright cuff colour reads as gold braid: give it a metal edge
 const gilt = (hex) => { const r = hex >> 16, g = (hex >> 8) & 255, b = hex & 255; return r > 0xb0 && r > g && g > b * 1.3; };
 function sleeveGeo(sl, seed) {
-  const bw = (sl.bell ?? 0.1) * 0.82;
+  // (a bell this close to the lens would fill a corner of the view: first person keeps its flare modest)
+  const bw = Math.min(0.062, (sl.bell ?? 0.1) * 0.82);
   const prof = sl.kind === 'bell'
     ? [[bw, 0.0], [bw * 0.98, 0.012], [bw * 0.86, 0.07], [Math.max(0.064, bw * 0.72), 0.18], [0.068, 0.34], [0.072, 0.55]]
     : SLEEVE_PROFILES[sl.kind] ?? SLEEVE_PROFILES.fitted;
@@ -404,6 +464,9 @@ export function createViewModel(classId, ctx) {
   let downedK = 0, dashK = 0, chargeK = 0;
   let flare = 0;
   const poseR = clonePose(restPoseR), poseL = clonePose(restPoseL);
+  const fingersR = new FingerRig(poseR), fingersL = new FingerRig(poseL);
+  const wristSpR = new WristRig(), wristSpL = new WristRig();
+  const elbow = V();
   const tmp6 = [0, 0, 0, 0, 0, 0];
   const prevPosR = V(), prevPosL = V(), velR = V(), velL = V(), accR = V(), accL = V(), prevVelR = V();
   const tmpV = V();
@@ -415,10 +478,9 @@ export function createViewModel(classId, ctx) {
   const castVar = { amp: 1, ry: 0, rz: 0, py: 0 };
   const st = { charge: 0, power: 0, glow: 1, castK: 0, accelR: accR, accelL: accL, view: true, up: root };
 
-  function freePose(hand, pose, rest, name, k, dt) {
-    const target = name ? POSES[name] : rest;
-    lerpPose(pose, target, 1 - Math.exp(-dt * k), pose);
-    hand.setPose(pose);
+  function freePose(hand, fingers, rest, name, k, dt) {
+    fingers.step(name ? POSES[name] : rest, k, dt);
+    hand.setPose(fingers.x);
   }
 
   function update(dt, s = {}) {
@@ -590,13 +652,18 @@ export function createViewModel(classId, ctx) {
     for (const [sl, base, anim] of [[sleeveR, sleeveRBase, animR], [sleeveL, sleeveLBase, animL]]) {
       anim.updateMatrix();
       tmpV.copy(base.wrist).applyMatrix4(anim.matrix);
-      tmpV2.subVectors(base.elbow, tmpV).normalize();
+      // (the elbow comes along with most of a reach: aimed at a fixed elbow, a thrust stretched the sleeve
+      // into a pole across the view)
+      elbow.copy(base.elbow).addScaledVector(anim.position, 0.6);
+      tmpV2.subVectors(elbow, tmpV).normalize();
       sl.quaternion.setFromUnitVectors(UPV, tmpV2);
       sl.position.copy(tmpV).addScaledVector(tmpV2, 0.035);
     }
 
-    // wrist accent for flicks
-    wristR.rotation.x = castR === 'flick' ? sR.x[3] * 0.5 : 0;
+    // the wrist: its follow-through, and an accent for flicks
+    wristSpR.step(sR, dt); wristSpL.step(sL, dt);
+    wristR.rotation.set((castR === 'flick' ? sR.x[3] * 0.5 : 0) + wristSpR.x[0], 0, wristSpR.x[1]);
+    wristL.rotation.set(wristSpL.x[0], 0, wristSpL.x[1]);
 
     // fingers
     if (gripR.kind === 'fist') {
@@ -604,7 +671,7 @@ export function createViewModel(classId, ctx) {
       handR.setPose(restPoseR);
     } else if (gripR.kind !== 'pole') {
       const name = castR ? sampleFingers(STYLES[castR].fingers, castT) : null;
-      freePose(handR, poseR, restPoseR, name, 22, dt);
+      freePose(handR, fingersR, restPoseR, name, 22, dt);
     } else {
       // tighten grip a little while charging / casting
       const squeeze = chargeK * 0.12 + (castR ? 0.08 : 0);
@@ -615,7 +682,7 @@ export function createViewModel(classId, ctx) {
       let name = castL ? sampleFingers(STYLES[castL].fingers, castT) : fidL ? sampleFingers(fidL.fingers, fidgetT) : null;
       if (!name && downedK > 0.5) name = 'relaxed';
       if (!name && chargeK > 0.3) name = 'claw';
-      freePose(handL, poseL, restPoseL, name, 26, dt);
+      freePose(handL, fingersL, restPoseL, name, 26, dt);
       // gentle idle finger motion
       if (!name) {
         for (let i = 0; i < 4; i++) {
@@ -711,6 +778,7 @@ export function createViewModel(classId, ctx) {
   power = downedK = dashK = chargeK = flare = 0; first = true;
   pvr = pvf = pvy = accVR = accVF = 0;
   for (const [p, r] of [[poseR, restPoseR], [poseL, restPoseL]]) { r.f.forEach((row, i) => p.f[i].splice(0, row.length, ...row)); p.t.splice(0, r.t.length, ...r.t); }
+  fingersR.reset(); fingersL.reset(); wristSpR.reset(); wristSpL.reset();
   for (const it of sigils.items) it.m.visible = false;
   sigils.chargeK = 0; sigils.charge.visible = false;
   if (trail) { trail.count = 0; trail.mesh.visible = false; }

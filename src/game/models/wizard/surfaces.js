@@ -143,6 +143,22 @@ const SURFS = {
     ao = 0.85 + 0.15 * tw;
   }`,
 
+  // Fine kid leather for gloves. A texture runs once round each finger segment (a few cm), so anything
+  // coarse becomes a pattern of scales: only a fine pebble grain and a slow drift in tone here. Where a
+  // glove wears (knuckles, stitched points, creases) is painted on the hand itself (hand.js).
+  kid: /* glsl */ `
+  void surf(vec2 uv, out vec3 col, out float h, out float rough, out float metal, out float ao){
+    float grain = fbm(uv, 150., 3);
+    float pore = fbm(uv + 1.7, 290., 2);
+    float drift = fbm(uv, 2., 3);
+    h = 0.5 + grain * 0.05 + pore * 0.03;
+    vec3 c = vec3(0.71, 0.69, 0.67) * (0.95 + 0.07 * drift) * (0.96 + 0.06 * grain);
+    col = srgb(c);
+    rough = 0.48 + 0.14 * grain + 0.06 * pore;
+    metal = 0.;
+    ao = 0.97 + 0.03 * grain;
+  }`,
+
   // Stitched glove leather, smoother and darker than the world leather.
   glove: /* glsl */ `
   void surf(vec2 uv, out vec3 col, out float h, out float rough, out float metal, out float ao){
@@ -161,7 +177,7 @@ const SURFS = {
   }`,
 };
 
-const NS = { bark: 1.6, metal: 0.5, skin: 0.42, fur: 1.2, glove: 0.6, robe: 0.45 };
+const NS = { bark: 1.6, metal: 0.5, skin: 0.42, fur: 1.2, glove: 0.6, kid: 0.5, robe: 0.45 };
 
 const VERT = /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }`;
 

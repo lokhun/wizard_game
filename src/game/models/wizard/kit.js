@@ -97,7 +97,8 @@ export function getKit(factory) {
     darkIron: () => kit.metal(0x3a3a40, 1.2),
     iron: () => shared('iron', () => withEnv(surfMat('iron', { size: 1024 }), 0.8)),
     leather: (tint = 0x6a4a30) => shared(`leather:${hexKey(tint)}`, () => surfMat('glove', { color: tint, normalScale: 1.3 })),
-    glove: (tint = 0xffffff) => shared(`glove:${hexKey(tint)}`, () => surfMat('glove', { color: tint })),
+    // (fine kid leather: the world leather's wear blotches came out as scales on a finger)
+    glove: (tint = 0xffffff) => shared(`glove:${hexKey(tint)}`, () => surfMat('kid', { color: tint })),
     cloth: (color) => shared(`cloth:${hexKey(color)}`, () => surfMat('robe', { color: col(color, 1.2) })),
     clothDS: (color) => shared(`clothDS:${hexKey(color)}`, () => surfMat('robe', { color: col(color, 1.2), side: THREE.DoubleSide })),
     skin: (tone = 0xffffff, emissiveMap = null, emissive = 0x000000, ei = 1) => shared(`skin:${hexKey(tone)}:${emissiveMap ? emissiveMap.uuid : ''}:${hexKey(emissive)}`, () => surfMat('skin', { color: tone, emissive, emissiveMap, emissiveIntensity: ei })),
