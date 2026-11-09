@@ -283,6 +283,7 @@ export function createAvatar(classId, ctx) {
   let hurtX = 0, hurtV = 0, hurtSide = 1; // (a blow's recoil: a damped spring)
   let airK = 0, airT = 0, fallV = 0, landX = 0, landV = 0; // (a jump: in the air, and the landing's crouch)
   let dashK = 0; // (a dash: the body's burst well past a run)
+  let deadT = 0, deadDown = null; // (how long it has been dead: the fall's own clock; the kneel it died in)
   // turning on the spot (mouse-look) steps the feet round: yaw rate eased into 0..1, its sign, and a step phase
   let turnK = 0, turnDir = 1, turnPh = 0, prevYaw = null;
   const _te = new THREE.Euler();
@@ -321,7 +322,7 @@ export function createAvatar(classId, ctx) {
   }
 
   function resetState() {
-    phase = 0; moveK = 0; lastT = 0; deadK = 0; downK = 0; castK = 0; idleT = 0; hurtX = 0; hurtV = 0; airK = 0; airT = 0; fallV = 0; landX = 0; landV = 0; dashK = 0; haveprev = false; turnK = 0; prevYaw = null;
+    phase = 0; moveK = 0; lastT = 0; deadK = 0; downK = 0; castK = 0; idleT = 0; hurtX = 0; hurtV = 0; airK = 0; airT = 0; fallV = 0; landX = 0; landV = 0; dashK = 0; deadT = 0; deadDown = null; haveprev = false; turnK = 0; prevYaw = null;
     for (const j of allJoints) { j.t.set(0, 0, 0); j.c.set(0, 0, 0); }
     hips.position.copy(hipsBase);
     cloth.first = true;
@@ -376,7 +377,10 @@ export function createAvatar(classId, ctx) {
     moveK += ((moving ? Math.min(1, speed / 2.6) : 0) - moveK) * (1 - Math.exp(-dt * 7));
     phase += (speed * dt * TAU) / (1.45 + 0.22 * Math.min(speed, 7));
     deadK += ((anim === 'dead' ? 1 : 0) - deadK) * (1 - Math.exp(-dt * 4.5));
-    downK += ((anim === 'downed' ? 1 : 0) - downK) * (1 - Math.exp(-dt * 5));
+    // (dying from the kneel, it stays down and gives way only as the body falls: unwound at its own pace it had risen
+    // halfway to standing first)
+    if (anim === 'dead') { deadDown ??= downK; const u = Math.min(1, Math.max(0, (deadT - 0.12) / 0.5)); downK = deadDown * (1 - u * u); }
+    else { deadDown = null; downK += ((anim === 'downed' ? 1 : 0) - downK) * (1 - Math.exp(-dt * 5)); }
     castK += ((anim === 'cast' ? 1 : 0) - castK) * (1 - Math.exp(-dt * 12));
     const k = moveK;
     const still = (1 - k) * (1 - downK) * (1 - deadK);
@@ -553,9 +557,22 @@ export function createAvatar(classId, ctx) {
       armR.jS.mix(-0.85, 0, -0.32, d); armR.jE.mix(-0.55, 0, 0, d);
       focusDir.lerp(tmp.set(0, 1, 0.3), d);
     }
+    // ---- dying: the knees buckle, then the body falls back as a weight falls - slow off the mark, quickest as it
+    // lands, a small rebound off the floor - its limbs going limp with it. (Eased on deadK it had tipped over stiff as
+    // a plank about its feet, fastest at the start and slowing into the floor, the arms flung out before it fell.)
+    deadT = anim === 'dead' ? deadT + dt : 0;
+    let fallK = deadK, limpK = deadK;
+    if (anim === 'dead') {
+      const u = Math.min(1, Math.max(0, (deadT - 0.12) / 0.5)), land = deadT - 0.62;
+      fallK = u * u + (land > 0 ? -0.06 * Math.exp(-land * 9) * Math.sin(land * 22) : 0);
+      limpK = Math.min(deadK, Math.max(Math.min(1, fallK), 0.25 * deadK));
+      const b = THREE.MathUtils.smoothstep(deadT, 0, 0.18) * (1 - THREE.MathUtils.smoothstep(deadT, 0.35, 0.7)) * (1 - downK);
+      for (let li = 0; li < 2; li++) { legs[li].jT.add(-0.45 * b, 0, 0); legs[li].jK.add(0.95 * b, 0, 0); legs[li].jA.add(-0.3 * b, 0, 0); }
+      hips.position.y -= 0.13 * b; jSpine.add(0.12 * b, 0, 0); jHead.add(0.2 * b, 0, 0);
+    }
     // ---- dead: on the back, arms flung out
-    if (deadK > 0.01) {
-      const d = deadK;
+    if (limpK > 0.01) {
+      const d = limpK;
       legL.jT.mix(-0.1, 0, 0.14, d); legL.jK.mix(0.18, 0, 0, d); legL.jA.mix(0.5, 0, 0.1, d);
       legR.jT.mix(0.02, 0, -0.12, d); legR.jK.mix(0.32, 0, 0, d); legR.jA.mix(0.5, 0, -0.1, d);
       jSpine.mix(0, 0, 0, d); jChest.mix(0, 0, 0, d); jNeck.mix(-0.12, 0, 0, d); jHead.mix(0, 0.75, 0, d); jHips.mix(0, 0, 0, d);
@@ -589,9 +606,9 @@ export function createAvatar(classId, ctx) {
         jSpine.add(0.22 * lk, 0, 0); jHead.add(-0.12 * lk, 0, 0);
       }
     }
-    const bodyY = -0.45 * downK + 0.13 * deadK;
-    body.position.set(0, bodyY, deadK * 0.88);
-    body.rotation.set(-deadK * Math.PI / 2, 0, 0);
+    const bodyY = -0.45 * downK + 0.13 * fallK;
+    body.position.set(0, bodyY, fallK * 0.88);
+    body.rotation.set(-fallK * Math.PI / 2, 0, 0);
     hips.position.z += downK * 0.06;
 
     const kk = 1 - Math.exp(-dt * 13);
