@@ -70,6 +70,7 @@ export const G = {
 
 // Transform a geometry (in place) by {x,y,z,rx,ry,rz,s,sx,sy,sz}
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
+const _fm = new THREE.Matrix4(), _fh = new THREE.Matrix4();
 export function xfMatrix(o = {}, out = new THREE.Matrix4()) {
   const s = o.s ?? 1;
   _e.set(o.rx ?? 0, o.ry ?? 0, o.rz ?? 0, o.order ?? 'XYZ');
@@ -1303,6 +1304,8 @@ export class EnemyInstance {
       const ds = this.spec.anim?.death, folds = ds === undefined || ds === 'fall' || ds === 'fallBack' || ds === 'kneel' || ds === 'collapse' || ds === 'apart';
       const dw = folds ? 1 - smooth(0.45, 0.95, S.progress) : typeof ds === 'function' ? 1 - smooth(0.3, 0.55, S.progress) : 0;
       const gw = this._flying ? 0 : S.anim === 'death' ? dw : S.anim === 'spawn' ? smooth(0.7, 1, S.progress) : 1;
+      // (the lock first, so the lift sees the legs where they'll be drawn)
+      if (gw > 0 && this.spec.anim?.gait !== 'float') this._footLock(dt, s.floor);
       this._ground(dt, gw, s.floor);
     }
     if (this.spec.look) this._lookWorld(dt, S, s.look);
@@ -1461,6 +1464,61 @@ export class EnemyInstance {
       if (s.raise < 1e-3) continue;
       const a = Math.acos(1 - s.raise / s.leg);
       s.chain[2].rotation.x -= a; s.chain[1].rotation.x += 2 * a; s.chain[0].rotation.x -= a;
+    }
+  }
+  // Planted feet stay put (after the pose and the floor lift): a leg's sole that touches the floor is locked where
+  // it landed, and while it stays down its thigh is turned (pitch and roll, from the drift read back through the
+  // leg's own matrices) to keep it on that spot; it lets go when the foot lifts or the spot falls too far behind (a
+  // step the gait didn't take), and the turn eases off in the air. Height is left to the gait and the lift: pinned
+  // in height too, the feet had hovered or sunk (the gait's hip height and a pinned foot disagree).
+  _footLock(dt, floor) {
+    const top = this._soles[0].chain[this._soles[0].chain.length - 1];
+    top.parent.updateWorldMatrix(true, false);
+    const W = top.parent.matrixWorld;
+    for (const s of this._soles) {
+      if (!s.leg) continue;
+      const c = s.chain, th = c[2], p = s.pts;
+      const lk = s.lk ??= { on: false, x: 0, z: 0, cx: 0, cz: 0 };
+      let cx = 0, cz = 0;
+      for (let it = 0; it < 2; it++) {
+        // the sole's middle and lowest point in the world, and the hips' frame (the thigh's parent)
+        _fm.copy(W);
+        for (let i = c.length - 1; i >= 3; i--) { c[i].updateMatrix(); _fm.multiply(c[i].matrix); }
+        _fh.copy(_fm);
+        for (let i = 2; i >= 0; i--) { c[i].updateMatrix(); _fm.multiply(c[i].matrix); }
+        const e = _fm.elements;
+        const mx = (p[0] + p[3]) * 0.5, my = (p[1] + p[4]) * 0.5, mz = (p[2] + p[5]) * 0.5;
+        const wx = e[0] * mx + e[4] * my + e[8] * mz + e[12], wz = e[2] * mx + e[6] * my + e[10] * mz + e[14];
+        if (it === 0) {
+          // (the body's lift isn't on yet this frame: last frame's stands in)
+          let lo = Infinity;
+          for (let j = 0; j < 6; j += 3) lo = Math.min(lo, e[1] * p[j] + e[5] * p[j + 1] + e[9] * p[j + 2] + e[13]);
+          lo += this._lift * (Math.hypot(W.elements[4], W.elements[5], W.elements[6]) || 1);
+          const gy = floor ? floor(wx, wz) : W.elements[13];
+          const down = lo - gy < 0.02;
+          if (down && !lk.on) { lk.on = true; lk.x = wx; lk.z = wz; }
+          else if (!down && lo - gy > 0.035) lk.on = false;
+          if (lk.on && Math.hypot(lk.x - wx, lk.z - wz) > 0.3 * (this.height / 1.8)) lk.on = false; // (left too far behind: let it step)
+          if (!lk.on) break;
+        }
+        // the drift, into the hips' frame (rotation only), as a turn of the thigh: pitch moves the foot along the
+        // hips' z (back for +x), roll along their x (out for +z)
+        const dxw = lk.x - wx, dzw = lk.z - wz, h = _fh.elements;
+        const sx = Math.hypot(h[0], h[1], h[2]) || 1, sz = Math.hypot(h[8], h[9], h[10]) || 1;
+        const lx = (h[0] * dxw + h[2] * dzw) / (sx * sx), lz = (h[8] * dxw + h[10] * dzw) / (sz * sz);
+        const L = s.leg * 1.05;
+        const ax = clamp(-lz / L, -0.25, 0.25), az = clamp(lx / L, -0.25, 0.25);
+        // (and the foot turned back by as much, so it stays level: tilted with the leg, a toe or heel dug in)
+        th.rotation.x += ax; th.rotation.z += az; c[0].rotation.x -= ax; c[0].rotation.z -= az; cx += ax; cz += az;
+      }
+      if (lk.on) { lk.cx = cx; lk.cz = cz; }
+      else {
+        // (in the air the last turn eases off, so the foot doesn't jump back under the gait)
+        const k = Math.exp(-14 * dt);
+        lk.cx *= k; lk.cz *= k;
+        th.rotation.x += lk.cx; th.rotation.z += lk.cz; c[0].rotation.x -= lk.cx; c[0].rotation.z -= lk.cz;
+      }
+      th.updateMatrix(); c[0].updateMatrix();
     }
   }
   dispose() {
