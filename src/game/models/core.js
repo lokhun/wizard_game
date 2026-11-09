@@ -1493,8 +1493,8 @@ export class EnemyInstance {
       if (!s.lockLeg) continue;
       const c = s.chain, ti = s.thi, th = c[ti], p = s.pts;
       const lk = s.lk ??= { on: false, x: 0, z: 0, cx: 0, cz: 0 };
-      let cx = 0, cz = 0;
-      for (let it = 0; it < 2; it++) {
+      let cx = 0, cz = 0, gy = 0, held = false;
+      for (let it = 0, nIt = walking ? 3 : 2; it < nIt; it++) {
         // the sole's middle and lowest point in the world, and the hips' frame (the thigh's parent)
         _fm.copy(W);
         for (let i = c.length - 1; i > ti; i--) { c[i].updateMatrix(); _fm.multiply(c[i].matrix); }
@@ -1503,13 +1503,24 @@ export class EnemyInstance {
         const e = _fm.elements;
         const mx = (p[0] + p[3]) * 0.5, my = (p[1] + p[4]) * 0.5, mz = (p[2] + p[5]) * 0.5;
         const wx = e[0] * mx + e[4] * my + e[8] * mz + e[12], wz = e[2] * mx + e[6] * my + e[10] * mz + e[14];
+        if (it === 2) {
+          // (walking, a held foot is let go once it has left the floor as the lock holds it - judged on the gait's own
+          // pose, the thigh not yet turned, a foot rolling off its toes had read 2-3 cm higher than it stood: let go with
+          // the toe still down, it slid back under the gait at ~1 m/s on its toe. Not in an action: a strike's step lifts
+          // the leg itself, and held down by the turn the lifted foot was dragged)
+          let lo = Infinity;
+          for (let j = 0; j < 6; j += 3) lo = Math.min(lo, e[1] * p[j] + e[5] * p[j + 1] + e[9] * p[j + 2] + e[13]);
+          lo += this._lift * (Math.hypot(W.elements[4], W.elements[5], W.elements[6]) || 1);
+          if (lo - gy > 0.035) { lk.on = false; held = true; }
+          break;
+        }
         if (it === 0) {
           if (free) { lk.on = false; lk.m0 = 0; break; }
           // (the body's lift isn't on yet this frame: last frame's stands in)
           let lo = Infinity;
           for (let j = 0; j < 6; j += 3) lo = Math.min(lo, e[1] * p[j] + e[5] * p[j + 1] + e[9] * p[j + 2] + e[13]);
           lo += this._lift * (Math.hypot(W.elements[4], W.elements[5], W.elements[6]) || 1);
-          const gy = floor ? floor(wx, wz) : W.elements[13];
+          gy = floor ? floor(wx, wz) : W.elements[13];
           const down = lo - gy < 0.02;
           // (a foot let go to step isn't caught again until it has stepped, nor while the turn it was held by is still
           // easing off - out of the walk, any turn; walking, a big one, from a sharp turn: caught the next frame, still on
@@ -1523,7 +1534,7 @@ export class EnemyInstance {
           lk.px = wx; lk.pz = wz; lk.pt = 1;
           const still = !walking || fv < 1.2 * (this.height / 1.8);
           if (down && still && !lk.on && !(lk.m0 > 0) && (Math.abs(lk.cx) + Math.abs(lk.cz) < (walking ? 0.25 : 0.06))) { lk.on = true; lk.x = wx; lk.z = wz; }
-          else if (!down && lo - gy > 0.035) lk.on = false;
+          else if (!walking && !down && lo - gy > 0.035) lk.on = false;
           if (lk.on && Math.hypot(lk.x - wx, lk.z - wz) > 0.3 * (this.height / 1.8)) { lk.on = false; lk.m0 = (this.state.moveW ?? 0) > 0.3 ? 0 : Math.hypot(lk.cx, lk.cz); } // (left too far behind: let it step - standing, a step with a lift; walking, the gait's own)
           if (!lk.on) break;
         }
@@ -1537,7 +1548,7 @@ export class EnemyInstance {
         // (and the foot turned back by as much, so it stays level: tilted with the leg, a toe or heel dug in)
         th.rotation.x += ax; th.rotation.z += az; c[0].rotation.x -= ax; c[0].rotation.z -= az; cx += ax; cz += az;
       }
-      if (lk.on) { lk.cx = cx; lk.cz = cz; }
+      if (lk.on || held) { lk.cx = cx; lk.cz = cz; } // (let go this frame, the turn already in the leg eases off from the next)
       else {
         // (in the air the last turn eases off, so the foot doesn't jump back under the gait)
         const k = Math.exp(-14 * dt);
