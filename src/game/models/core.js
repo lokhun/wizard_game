@@ -911,13 +911,19 @@ export function soleProbe(root, names = ['footL', 'footR']) { // (a spec's soles
     let lo = Infinity;
     for (let i = 1; i < pts.length; i += 3) lo = Math.min(lo, pts[i]);
     // heel and toe: the back-most and front-most of the points near the bottom
-    let heel = -1, toe = -1;
+    let heel = -1, toe = -1, sx = 0, n = 0;
     for (let i = 0; i < pts.length; i += 3) {
       if (pts[i + 1] > lo + 0.03) continue;
       if (heel < 0 || pts[i + 2] < pts[heel + 2]) heel = i;
       if (toe < 0 || pts[i + 2] > pts[toe + 2]) toe = i;
+      sx += pts[i]; n++;
     }
-    out.push({ name, pts: new Float32Array([pts[heel], pts[heel + 1], pts[heel + 2], pts[toe], pts[toe + 1], pts[toe + 2]]) });
+    // (both on the sole's middle line, across: the back-most and front-most points of a flat boot tie all along its
+    // width, and whichever came first had stood for it - both of a knight's feet measured at the same side, +7 cm, so
+    // as the pelvis rolled one sole read higher than it was and the other lower, the body drawn down ~1 cm over one
+    // foot and up over the other, and that side's swing skimmed the floor)
+    const mx = sx / n;
+    out.push({ name, pts: new Float32Array([mx, pts[heel + 1], pts[heel + 2], mx, pts[toe + 1], pts[toe + 2]]) });
   }
   return out.length ? out : null;
 }
