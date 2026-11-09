@@ -293,6 +293,7 @@ function fidget(m, st, P, idleW, dt, A, engaged) {
 const TS_A = 0.25, TS_T = 0.18, TS_MAX = 0.7;
 const STOP_T = 0.2; // (a closing step's time)
 const SW_K = 1.3, KNEE_V = 0.4; // (a swinging leg: the thigh's ease into the footfall, where its knee is most folded)
+const BK_LIFT = 0.5; // (walking backward: the knee's lift as it folds, by the knee's fold)
 function turnSteps(m, st, hold, dt) {
   const T = st.ts ??= { y: null, l: [{ a: 0, p: -1, f: 0 }, { a: 0, p: -1, f: 0 }] };
   const yaw = m.root.rotation.y;
@@ -492,6 +493,15 @@ export function humanoidPose(m, s, P, dt) {
     const kL = cs > 0 ? cs + (kn(vL) - cs) * fw : 0, kR = cs < 0 ? -cs + (kn(vR) + cs) * fw : 0;
     P.r('thighL', tL * ampL * wL * ox, 0, tL * ampL * wL * oz); P.r('thighR', tR * ampL * wR * ox, 0, tR * ampL * wR * oz);
     P.r('shinL', (kL * knee + 0.08) * wL); P.r('shinR', (kR * knee + 0.08) * wR);
+    // Walking backward, a foot leaves the floor in front of the body with its leg slanting forward, and folding the
+    // knee from there swings it back through its lowest point under the knee: it scraped the floor at ~7 m/s for the
+    // first few frames of every step (a skeleton backing off, 1.4 m in 3 s). The knee lifts as it folds instead (the
+    // thigh raised forward through the first half of the swing, back in line by its middle), so the foot comes up.
+    const kb = BK_LIFT * (1 - fw);
+    if (kb > 1e-3) {
+      const hL = cs > 0 && vL < 0.5 ? Math.sin(2 * Math.PI * vL) : 0, hR = cs < 0 && vR < 0.5 ? Math.sin(2 * Math.PI * vR) : 0;
+      P.r('thighL', -kb * hL * knee * wL); P.r('thighR', -kb * hR * knee * wR);
+    }
     P.r('footL', (-kL * 0.4 + ls * 0.2) * wL); P.r('footR', (-kR * 0.4 - ls * 0.2) * wR);
     if (st.stopSeq) {
       // (the stepping foot clears the floor: knee up, toe down, as it swings under)
