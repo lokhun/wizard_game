@@ -346,6 +346,13 @@ export function humanoidPose(m, s, P, dt) {
   const back = spd > 0.3 && Math.abs(rel) > 1.95;
   const twistTgt = spd > 0.3 ? clamp(back ? rel - Math.sign(rel) * Math.PI : rel, -1.05, 1.05) : 0;
   st.twist = (st.twist ?? 0) + (twistTgt - (st.twist ?? 0)) * (1 - Math.exp(-9 * dt));
+  // (the legs swing along the way of travel, eased: a foe going from a chase to circling sideways had swung its
+  // stride round 80 degrees in one frame, the leading foot 28 cm; flipped at once on a turn to walking backward, as
+  // the stride's sign flips with it)
+  const swT = back ? rel - Math.sign(rel) * Math.PI : rel;
+  if (st.swBack !== back || st.sw == null) st.sw = swT;
+  else { let d = swT - st.sw; d -= Math.round(d / TAU) * TAU; st.sw += d * (1 - Math.exp(-12 * dt)); }
+  st.swBack = back;
   // Setting off from a standstill the stride starts where the legs pass each other (no leg is spread, so the stride
   // can come up to full at once) and the walk weight comes up three times faster than it eases away: the body moves
   // at full speed from the first frame, and a stride growing in from nothing over a quarter second had left the
@@ -429,7 +436,7 @@ export function humanoidPose(m, s, P, dt) {
     const knee = (A.knee ?? 0.9) * (1 + run * 0.4);
     // (past the hips' turn toward the way of travel - it stops at ~60 degrees - the legs swing along what's left,
     // across the hips as well as fore and aft, so a body moving sideways steps sideways)
-    const off = (back ? rel - Math.sign(rel) * Math.PI : rel) - st.twist, ox = Math.cos(off), oz = -Math.sin(off);
+    const off = st.sw - st.twist, ox = Math.cos(off), oz = -Math.sin(off);
     const wL = legW[0], wR = legW[1];
     P.r('thighL', -ls * ampL * wL * ox, 0, -ls * ampL * wL * oz); P.r('thighR', ls * ampL * wR * ox, 0, ls * ampL * wR * oz);
     P.r('shinL', (Math.max(0, cs) * knee + 0.08) * wL); P.r('shinR', (Math.max(0, -cs) * knee + 0.08) * wR);
