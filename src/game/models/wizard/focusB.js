@@ -203,7 +203,8 @@ export function geomancer(kit, meta, o) {
   const rock = kit.rock(0x9a9088);
   const rock2 = kit.rock(0x7a7068);
   const plate = kit.bone(0xa69c8e);
-  const runeMat = glows.add(kit.glow(0xff8424, 2.2), 1);
+  const RUNE_C = 0xff7a1a, RUNE_K = 1.5;
+  const runeMat = glows.add(kit.glow(RUNE_C, RUNE_K), 1);
   const rr = mulberry(55);
   // ---- stone gauntlet, in hand space (fist: fingers -Z, back +Y) ---------
   const G = new THREE.Group();
@@ -292,7 +293,7 @@ export function geomancer(kit, meta, o) {
     },
     update(t, dt, st) {
       const f = (0.75 + 0.25 * Math.sin(t * 1.7)) * st.glow;
-      runeMat.color.set(meta.color).multiplyScalar(2.6 * f);
+      runeMat.color.set(RUNE_C).multiplyScalar(RUNE_K * f);
     },
   };
 }
