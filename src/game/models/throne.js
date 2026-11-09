@@ -299,10 +299,12 @@ export const gildedSentinel = {
       armR: [0.35, 0, -0.5], foreR: [-0.4, 0, 0], hips: [0, 0.1, 0, 0, -0.05, -0.12], thighL: [-0.3, 0, 0.05], shinL: [0.4, 0, 0], thighR: [0.15, 0, -0.05],
     },
     actions: {
-      // draw the shield back, then a lunging shield-slam
+      // draw the shield back, then a lunging shield-slam (the back leg reaches the floor in both: braced on a
+      // half-bent knee, then driven straight with the hips low - it had hung 0.2 m up through the wind-up and
+      // kicked 0.6 m up behind at the slam, the hips thrown 0.54 m forward over a leg too short to follow)
       bash: act2(
-        { armL: [0.06, -1.297, 0.708], foreL: [-0.94, 0, 0], shield: [-0.088, 0.247, 0.001], armR: [0.25, 0, -0.35], foreR: [-0.7, 0, 0], handR: [0.7, 0, 0], chest: [-0.06, 0.38, 0], spine: [0.0, 0.18, 0], head: [-0.05, -0.35, 0], hips: [0, 0.15, 0, 0, -0.1, -0.12], thighL: [-0.1, 0, 0.05], shinL: [0.4, 0, 0], thighR: [0.3, 0, -0.05], shinR: [0.4, 0, 0] },
-        { armL: [-0.156, 0.183, 0.998], foreL: [-1.831, 0, 0], shield: [0.345, 0.259, -0.354], armR: [0.45, 0, -0.4], foreR: [-0.6, 0, 0], handR: [0.6, 0, 0], chest: [0.22, -0.35, 0], spine: [0.2, -0.2, 0], head: [-0.25, 0.3, 0], hips: [0, -0.15, 0, 0, -0.14, 0.42], thighL: [-0.6, 0, 0], shinL: [0.55, 0, 0], thighR: [0.4, 0, 0], shinR: [0.25, 0, 0], footR: [0.3, 0, 0] },
+        { armL: [0.06, -1.297, 0.708], foreL: [-0.94, 0, 0], shield: [-0.088, 0.247, 0.001], armR: [0.25, 0, -0.35], foreR: [-0.7, 0, 0], handR: [0.7, 0, 0], chest: [-0.06, 0.38, 0], spine: [0.0, 0.18, 0], head: [-0.05, -0.35, 0], hips: [0, 0.15, 0, 0, -0.1, -0.12], thighL: [-0.1, 0, 0.05], shinL: [0.4, 0, 0], thighR: [0.12, 0, -0.05], shinR: [0.18, 0, 0] },
+        { armL: [-0.156, 0.183, 0.998], foreL: [-1.831, 0, 0], shield: [0.345, 0.259, -0.354], armR: [0.45, 0, -0.4], foreR: [-0.6, 0, 0], handR: [0.6, 0, 0], chest: [0.22, -0.35, 0], spine: [0.2, -0.2, 0], head: [-0.25, 0.3, 0], hips: [0, -0.15, 0, 0, -0.24, 0.25], thighL: [-0.6, 0, 0], shinL: [0.55, 0, 0], thighR: [0.4, 0, 0], shinR: [0.05, 0, 0], footR: [0.4, 0, 0] },
         { hit: 0.22, recover: 0.62, recoverAmt: 0.6, tremble: 0.02 },
       ),
       // overhead mace smash over the shield rim
