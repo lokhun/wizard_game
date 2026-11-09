@@ -97,9 +97,14 @@ export function reachLegs(P, m, wL, wR) {
   const D = m.spec.dims, soles = m._soles;
   if (!D?.thigh || !D?.shin || !soles || soles.length !== 2 || !P.get('hips')) return;
   const T = D.thigh, S = D.shin;
-  for (let it = 0; it < 2; it++) {
+  // (the leg's plane is an approximation - a rolled thigh, a pitched hips - so each solve gets most of the way and
+  // the sole is read back again: up to four rounds, done when both feet are down)
+  let floorY = 0;
+  for (let it = 0; it < 4; it++) {
     const y = soles.map((so) => soleLow(P, so));
-    const floorY = Math.min(0, y[0], y[1]);
+    // (the floor is read once: a foot that overshoots a hair below the other must not become the new floor, or the
+    // rounds push both feet down and the lift hoists the body - and any stepping foot - higher)
+    if (it === 0) floorY = Math.min(0, y[0], y[1]);
     let moved = false;
     for (let k = 0; k < 2; k++) {
       const n = soles[k].chain[0].name.slice(4), w = n === 'L' ? wL : wR, dy = y[k] - floorY;
@@ -109,8 +114,12 @@ export function reachLegs(P, m, wL, wR) {
       const hp = P.get('hips'), bs = P.get('base'), th = P.get('thigh' + n), sh = P.get('shin' + n);
       if (!th || !sh) continue;
       const t = (bs ? bs[0] : 0) + hp[0] + th[0], kn = sh[0], c = Math.max(0.5, Math.cos(hp[2] + th[2]));
-      const ty = -(T * Math.cos(t) + S * Math.cos(t + kn)) * c - dy, tz = -(T * Math.sin(t) + S * Math.sin(t + kn));
-      const d0 = Math.hypot(ty / c, tz), d = Math.min(d0, (T + S) * 0.999);
+      const ty = -(T * Math.cos(t) + S * Math.cos(t + kn)) * c - dy, dMax = (T + S) * 0.995;
+      let tz = -(T * Math.sin(t) + S * Math.sin(t + kn));
+      // (out of reach with the foot that far out - the leg already straight: the foot comes in under the hip
+      // enough to reach the floor, rather than staying in the air)
+      if (Math.hypot(ty / c, tz) > dMax && Math.abs(ty / c) < dMax) tz = Math.sign(tz) * Math.sqrt(dMax * dMax - (ty / c) * (ty / c));
+      const d = Math.min(Math.hypot(ty / c, tz), dMax);
       const line = Math.atan2(-tz, -ty / c);
       const beta = Math.acos(clamp((T * T + d * d - S * S) / (2 * T * d), -1, 1));
       const gamma = Math.acos(clamp((T * T + S * S - d * d) / (2 * T * S), -1, 1));
