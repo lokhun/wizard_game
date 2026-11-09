@@ -134,9 +134,11 @@ export function fingerSeg(L, r0, r1, rad = 8, flat = 0.85, tip = false, paint = 
     if (y > 0) ny *= 0.86 * (1 + 0.1 * Math.exp(-Math.pow((u - 0.02) / 0.1, 2)) * back);
     // (the pad keeps its fullness along the segment and falls away only near the joint: a sine had made each
     // segment a sausage, the valleys between them dark bands across a bare finger in the torchlight)
-    else ny *= 1 + 0.13 * Math.min(1, 1.7 * Math.sin(Math.PI * Math.min(1, u * 1.15))) + (tip ? 0.12 * Math.max(0, (u - 0.55) / 0.45) : 0);
+    // (and stays fuller through the joint too, the pads meeting at the crease: a wide waist there had left the
+    // joint's round cap standing between two grooves, a ring round every joint)
+    else ny *= 1 + 0.13 * (0.4 + 0.6 * Math.min(1, 3 * Math.sin(Math.PI * Math.min(1, u * 1.15)))) + (tip ? 0.12 * Math.max(0, (u - 0.55) / 0.45) : 0);
     // knuckle wrinkles (fine first-person fingers): three fine folds across the back on each side of a
-    // joint, pressed in a hair; one deeper crease across the palm side
+    // joint, pressed in a hair; one deeper crease across the palm side, on the joint
     let wr = 0, cr = 0;
     if (rad >= 10 && paint) {
       const d0 = u * L, d1 = (1 - u) * L, across = Math.max(0, 1 - side * side * 0.8);
@@ -145,7 +147,9 @@ export function fingerSeg(L, r0, r1, rad = 8, flat = 0.85, tip = false, paint = 
         if (!tip) for (const di of [0.0022, 0.0042]) wr += 0.7 * Math.exp(-Math.pow((d1 - di) / 0.0005, 2));
         wr *= across * back;
       } else {
-        cr = ((wrinkleBase ? Math.exp(-Math.pow((d0 - 0.0012) / 0.0008, 2)) : 0) + (tip ? 0 : Math.exp(-Math.pow((d1 - 0.0012) / 0.0008, 2)))) * across;
+        // (one crease, on the joint: one each side 1.2 mm off it had the other segment's cap showing between
+        // them, a raised band - the fingers read as bamboo in a raking light)
+        cr = (wrinkleBase ? Math.exp(-Math.pow((d0 - 0.0006) / 0.0007, 2)) : 0) * across;
       }
       const s0 = Math.hypot(x, ny) || 1;
       const k = 1 - (wr * 0.00022 + cr * 0.00026) / s0;
