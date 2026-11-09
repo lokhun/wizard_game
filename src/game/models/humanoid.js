@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { clamp, lerp, smooth, easeOut, easeInOut, bump, TAU, turnK, modelScale } from './core.js';
 
 // ---------------------------------------------------------------------------
@@ -67,6 +68,61 @@ function plantLegs(P, W, S, u, k, L) {
     P.r('thigh' + n, want - cur);
   }
 }
+// The feet of an action's pose reach the floor: each leg is solved in its own plane (thigh and shin from the
+// type's dims) for where its sole would be, and a foot that would hang above the floor - or above the other
+// foot, which the body's lift will set on the floor - is lowered onto it, its reach forward kept, by turning
+// the thigh and opening the knee (foot kept level). A generic strike pose is one set of angles over many
+// builds: on most of them the stepping foot hung 10-18 cm up for the whole strike (a knight's slash, a
+// halberd thrust, a plague doctor's saw), a slam's planted foot 9-13 cm up through its wind-up, a rat
+// ogre's 0.4 m. Off while a stepping leg is lifted on purpose (stepLift), and for anything higher than
+// REACH_MAX (a foot raised by design).
+const REACH_MAX = 0.25;
+const _rq = new THREE.Quaternion(), _re = new THREE.Euler(), _rp = new THREE.Vector3(), _rs = new THREE.Vector3(), _rm = new THREE.Matrix4(), _rl = new THREE.Matrix4(), _rv = new THREE.Vector3();
+// a sole's lowest point (heel or toe) in the body's space, through its leg's chain posed at the pose's targets
+function soleLow(P, so) {
+  const c = so.chain, T = P.tgt;
+  _rm.identity();
+  for (let i = c.length - 1; i >= 0; i--) {
+    const j = P.idx.get(c[i].name);
+    if (j === undefined) { c[i].updateMatrix(); _rm.multiply(c[i].matrix); continue; }
+    const o = j * 9, r = P.rest[j];
+    _rq.setFromEuler(_re.set(T[o], T[o + 1], T[o + 2], 'XYZ'));
+    _rl.compose(_rp.set(r.x + T[o + 3], r.y + T[o + 4], r.z + T[o + 5]), _rq, _rs.set(T[o + 6] || 1, T[o + 7] || 1, T[o + 8] || 1));
+    _rm.multiply(_rl);
+  }
+  const p = so.pts;
+  return Math.min(_rv.set(p[0], p[1], p[2]).applyMatrix4(_rm).y, _rv.set(p[3], p[4], p[5]).applyMatrix4(_rm).y);
+}
+function reachLegs(P, m, wL, wR) {
+  const D = m.spec.dims, soles = m._soles;
+  if (!D?.thigh || !D?.shin || !soles || soles.length !== 2 || !P.get('hips')) return;
+  const T = D.thigh, S = D.shin;
+  for (let it = 0; it < 2; it++) {
+    const y = soles.map((so) => soleLow(P, so));
+    const floorY = Math.min(0, y[0], y[1]);
+    let moved = false;
+    for (let k = 0; k < 2; k++) {
+      const n = soles[k].chain[0].name.slice(4), w = n === 'L' ? wL : wR, dy = y[k] - floorY;
+      if (w <= 0 || dy < 0.012 || dy > REACH_MAX) continue;
+      // the leg in its own plane: its pitch from the vertical (base, hips, thigh) and knee; the ankle's target
+      // the same reach forward and dy lower; thigh and knee solved for it
+      const hp = P.get('hips'), bs = P.get('base'), th = P.get('thigh' + n), sh = P.get('shin' + n);
+      if (!th || !sh) continue;
+      const t = (bs ? bs[0] : 0) + hp[0] + th[0], kn = sh[0], c = Math.max(0.5, Math.cos(hp[2] + th[2]));
+      const ty = -(T * Math.cos(t) + S * Math.cos(t + kn)) * c - dy, tz = -(T * Math.sin(t) + S * Math.sin(t + kn));
+      const d0 = Math.hypot(ty / c, tz), d = Math.min(d0, (T + S) * 0.999);
+      const line = Math.atan2(-tz, -ty / c);
+      const beta = Math.acos(clamp((T * T + d * d - S * S) / (2 * T * d), -1, 1));
+      const gamma = Math.acos(clamp((T * T + S * S - d * d) / (2 * T * S), -1, 1));
+      const dt = (line - beta - t) * w, dk = (Math.PI - gamma - kn) * w;
+      P.r('thigh' + n, dt); P.r('shin' + n, dk); P.r('foot' + n, -(dt + dk));
+      moved = true;
+    }
+    if (!moved) break;
+  }
+}
+const stepK = (from, to, n, k) => ((to['thigh' + n]?.[0] ?? 0) - (from?.['thigh' + n]?.[0] ?? 0) <= -STEP_MIN ? k : 0);
+
 export function act2(W, S, o = {}) {
   const hit = o.hit ?? 0.3;
   return (P, ph, p, m, s) => {
@@ -76,6 +132,8 @@ export function act2(W, S, o = {}) {
       const tr = smooth(0.5, 1, p) * (o.tremble ?? 0.025);
       if (tr) { P.r('armR', Math.sin(m.time * 37) * tr, 0, Math.sin(m.time * 29) * tr); P.r('armL', Math.sin(m.time * 31) * tr); P.r('chest', 0, Math.sin(m.time * 23) * tr * 0.6); }
       if (o.windupExtra) o.windupExtra(P, p, m, s);
+      const kw = Math.sin(Math.PI * clamp((s?.t ?? 1) / 0.3));
+      reachLegs(P, m, 1 - stepK(null, W, 'L', kw), 1 - stepK(null, W, 'R', kw));
       return o.windupRate ?? 9;
     }
     // attack / cast use the same strike follow-through
@@ -85,6 +143,8 @@ export function act2(W, S, o = {}) {
     stepLift(P, W, S, Math.sin(Math.PI * clamp(p / hit)));
     plantLegs(P, W, S, u, 1 - rec, m.spec.dims?.legLen);
     if (o.strikeExtra) o.strikeExtra(P, p, m, s, u);
+    const ks = Math.sin(Math.PI * clamp(p / hit));
+    reachLegs(P, m, 1 - stepK(W, S, 'L', ks), 1 - stepK(W, S, 'R', ks));
     return o.strikeRate ?? 26;
   };
 }
