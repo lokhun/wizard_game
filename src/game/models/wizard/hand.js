@@ -345,6 +345,10 @@ export function buildHand(opts) {
   }
   if (pcol) palm.setAttribute('color', new THREE.Float32BufferAttribute(pcol, 3));
   palm.computeVertexNormals();
+  // its texture repeated three times round and along (the surfaces tile): once round the whole hand, the grain
+  // had come out 3-6 times coarser than on the fingers, which wrap it once round each segment - pebbled leather
+  // on the back of a glove beside smooth fingers
+  { const uv = palm.getAttribute('uv'); for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 3, uv.getY(i) * 3); }
   const palmParts = [palm,
     // fleshy thumb base (thenar) blended into the palm side (its poles turned along the hand, into the palm
     // and the wrist: one had faced out of the palm, a pinched black dot at the root of the thumb)
