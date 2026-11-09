@@ -944,14 +944,19 @@ export class ActorManager {
   _clientUpdate(a, dt) {
     const n = a.net;
     const k = 1 - Math.exp(-dt * 12);
-    const dx = n.x - a.pos.x, dz = n.z - a.pos.z;
-    if (dx * dx + dz * dz > 64) { a.pos.x = n.x; a.pos.z = n.z; }
-    a.pos.x += dx * k;
-    a.pos.z += dz * k;
+    // (chasing the last snapshot alone, at 15 a second, a walking body surged and checked between them - its speed
+    // 1.8-4.3 m/s at a steady 3, and the gait's stride and pace with it; led along the snapshots' own velocity a
+    // moment past the last one, 2.4-3.5 m/s, overshooting a stop by under 2 cm)
+    const te = Math.min(this.g.time - (n.t ?? this.g.time), 0.1), nvx = n.vx ?? 0, nvz = n.vz ?? 0;
+    const tx = n.x + nvx * te, tz = n.z + nvz * te;
+    const dx = tx - a.pos.x, dz = tz - a.pos.z;
+    if (dx * dx + dz * dz > 64) { a.pos.x = tx; a.pos.z = tz; }
+    else { a.pos.x += dx * k; a.pos.z += dz * k; }
     a.pos.y += (n.y - a.pos.y) * k;
     a.yaw = angleDamp(a.yaw, n.yaw, 12, dt);
-    a.moveSpeed = Math.hypot(dx, dz) * 12 * 0.9;
-    if (a.moveSpeed > 0.3) a.moveYaw = Math.atan2(dx, dz);
+    // (the gait's speed and way from that velocity, eased: read off the chase, they pulsed with every snapshot)
+    a.moveSpeed = (a.moveSpeed ?? 0) + (Math.hypot(nvx, nvz) - (a.moveSpeed ?? 0)) * k;
+    if (a.moveSpeed > 0.3 && nvx * nvx + nvz * nvz > 0.04) a.moveYaw = Math.atan2(nvx, nvz);
     if (a.anim === 'windup' || a.anim === 'attack' || a.anim === 'cast') a.progress = Math.min(1, a.progress + dt / Math.max(0.2, a.netDur ?? 0.6));
     else if (a.anim === 'spawn') a.progress = Math.min(1, a.progress + dt / 0.9);
     // archer laser
@@ -964,6 +969,14 @@ export class ActorManager {
     for (let i = 0; i < arr.length; i += N) {
       const a = this.byId.get(arr[i]);
       if (!a || a.dead) continue;
+      // (its velocity, from the snapshots' own steps: the body is led along it between them - see _clientUpdate)
+      {
+        const n = a.net, nx = arr[i + 1] / 100, nz = arr[i + 3] / 100, now = this.g.time, gap = now - (n.t ?? -9);
+        let vx = 0, vz = 0;
+        if (gap > 0.02 && gap < 0.3) { vx = (nx - n.x) / gap; vz = (nz - n.z) / gap; if (vx * vx + vz * vz > 400) vx = vz = 0; }
+        n.vx = gap < 0.3 ? (n.vx ?? 0) + (vx - (n.vx ?? 0)) * 0.5 : 0; n.vz = gap < 0.3 ? (n.vz ?? 0) + (vz - (n.vz ?? 0)) * 0.5 : 0;
+        n.t = now;
+      }
       a.net.x = arr[i + 1] / 100; a.net.y = arr[i + 2] / 100; a.net.z = arr[i + 3] / 100;
       a.net.yaw = arr[i + 4] / 100;
       a.hp = (arr[i + 5] / 1000) * a.maxHp;
