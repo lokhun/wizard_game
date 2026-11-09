@@ -281,6 +281,7 @@ export function createAvatar(classId, ctx) {
   // ---------------- animation state ----------------
   let phase = 0, moveK = 0, lastT = 0, deadK = 0, downK = 0, castK = 0, idleT = 0;
   let hurtX = 0, hurtV = 0, hurtSide = 1; // (a blow's recoil: a damped spring)
+  let airK = 0, airT = 0, fallV = 0, landX = 0, landV = 0; // (a jump: in the air, and the landing's crouch)
   // turning on the spot (mouse-look) steps the feet round: yaw rate eased into 0..1, its sign, and a step phase
   let turnK = 0, turnDir = 1, turnPh = 0, prevYaw = null;
   const _te = new THREE.Euler();
@@ -319,7 +320,7 @@ export function createAvatar(classId, ctx) {
   }
 
   function resetState() {
-    phase = 0; moveK = 0; lastT = 0; deadK = 0; downK = 0; castK = 0; idleT = 0; hurtX = 0; hurtV = 0; haveprev = false; turnK = 0; prevYaw = null;
+    phase = 0; moveK = 0; lastT = 0; deadK = 0; downK = 0; castK = 0; idleT = 0; hurtX = 0; hurtV = 0; airK = 0; airT = 0; fallV = 0; landX = 0; landV = 0; haveprev = false; turnK = 0; prevYaw = null;
     for (const j of allJoints) { j.t.set(0, 0, 0); j.c.set(0, 0, 0); }
     hips.position.copy(hipsBase);
     cloth.first = true;
@@ -417,15 +418,37 @@ export function createAvatar(classId, ctx) {
     else if (lhold === 'float') { armL.jS.set(-0.4, 0, 0.24); armL.jE.set(-0.95, 0, 0); armL.jW.set(0, 0, 1.2); }
 
     // ---- walk / run: legs follow the movement direction, arms counter-swing
-    if (k > 0.001) {
-      const A = (0.42 + 0.12 * Math.min(1, speed / 4)) * k;
+    // ---- in the air (a partner's jump, read off the root's own rise and fall: its height is all a partner's avatar
+    // gets): held a moment through the apex; the stride stops, the knees come up and then reach for the floor
+    {
+      const vy = wvel.y / (wscale || 1);
+      if (vy < -1.8) { airT = 0.3; fallV = Math.min(fallV, vy); }
+      else if (vy > 1.8) airT = 0.3;
+      else if (fallV < -1.8 && vy > -0.9) { landV += 7 * Math.min(1, -fallV / 5); airT = 0; fallV = 0; }
+      else airT -= dt;
+      const tgt = airT > 0 && downK < 0.5 && deadK < 0.5 ? 1 : 0;
+      airK += (tgt - airK) * (1 - Math.exp(-dt * (tgt ? 14 : 10)));
+      if (airK > 0.01) {
+        const a = airK, up = THREE.MathUtils.smoothstep(vy, -2.5, 1.5);
+        for (let li = 0; li < 2; li++) {
+          const L = legs[li], lead = L.s > 0 ? 1 : 0.7;
+          L.jT.add(-(0.6 * up + 0.25 * (1 - up)) * a * lead, 0, 0);
+          L.jK.add((1.15 * up + 0.3 * (1 - up)) * a * lead, 0, 0);
+          L.jA.add((-0.3 * up + 0.2 * (1 - up)) * a, 0, 0);
+        }
+        jSpine.add(0.06 * a * up, 0, 0);
+        armL.jS.add(-0.3 * a, 0, 0.3 * a); armL.jE.add(-0.2 * a, 0, 0);
+      }
+    }
+    if (k > 0.001 && airK < 0.99) {
+      const A = (0.42 + 0.12 * Math.min(1, speed / 4)) * k * (1 - airK);
       for (let li = 0; li < 2; li++) {
         const L = legs[li];
         const p = phase + (L.s > 0 ? 0 : Math.PI);
         const sw = Math.sin(p), cs = Math.cos(p);
         L.jT.add(-sw * A * dirZ, 0, sw * A * dirX * 0.75);
-        L.jK.add((Math.pow(Math.max(0, cs * Math.sign(dirZ || 1)), 1.4) * 1.0 + 0.1) * k, 0, 0);
-        L.jA.add((sw * A * 0.3 - 0.15 * Math.max(0, -cs)) * k, 0, 0);
+        L.jK.add((Math.pow(Math.max(0, cs * Math.sign(dirZ || 1)), 1.4) * 1.0 + 0.1) * k * (1 - airK), 0, 0);
+        L.jA.add((sw * A * 0.3 - 0.15 * Math.max(0, -cs)) * k * (1 - airK), 0, 0);
       }
       jHips.add(0, swing * 0.11 * k * dirZ, 0);
       jSpine.add(0.08 * k * Math.min(1, speed / 3) * dirZ, -swing * 0.09 * k * dirZ, -dirX * 0.06 * k);
@@ -532,6 +555,17 @@ export function createAvatar(classId, ctx) {
         jNeck.add(-0.2 * hk, 0, 0); jHead.add(-0.35 * hk, 0.25 * hk * hurtSide, 0.12 * hk * hurtSide);
         armL.jS.add(0.15 * hk, 0, 0.2 * hk); armR.jS.add(0.1 * hk, 0, -0.15 * hk);
         hips.position.z -= 0.03 * hk;
+      }
+    }
+    // ---- landing: the legs give under the drop and push back up (a damped spring, by how fast it came down)
+    {
+      const h = Math.min(dt, 1 / 30);
+      landV += (-180 * landX - 16 * landV) * h; landX += landV * h;
+      const lk = Math.max(0, landX) * (1 - downK) * (1 - deadK);
+      if (lk > 1e-4) {
+        hips.position.y -= 0.14 * lk;
+        for (let li = 0; li < 2; li++) { legs[li].jT.add(-0.45 * lk, 0, 0); legs[li].jK.add(0.9 * lk, 0, 0); legs[li].jA.add(-0.45 * lk, 0, 0); }
+        jSpine.add(0.22 * lk, 0, 0); jHead.add(-0.12 * lk, 0, 0);
       }
     }
     const bodyY = -0.45 * downK + 0.13 * deadK;
