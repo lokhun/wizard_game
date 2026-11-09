@@ -269,6 +269,8 @@ export function bonePos(m, b, out, x = 0, y = 0, z = 0) {
 const _S = new THREE.Vector3(), _T = new THREE.Vector3(), _E = new THREE.Vector3(), _A = new THREE.Vector3(), _B = new THREE.Vector3();
 const _qa = new THREE.Quaternion(), _qf = new THREE.Quaternion(), _qp = new THREE.Quaternion(), _qh = new THREE.Quaternion(), _qw = new THREE.Quaternion();
 const _DOWN = new THREE.Vector3(0, -1, 0);
+const ELB_RATE = 10; // rad/s: how fast an elbow may swing to the other side of its reach
+const _eQ = new THREE.Quaternion(), _eQ2 = new THREE.Quaternion(), _eQ3 = new THREE.Quaternion(), _eV = new THREE.Vector3(), _eW = new THREE.Vector3();
 export function armIK(m, side, target, pole, w = 1, handQ = null) {
   if (w <= 0.001) return;
   const S = side > 0 ? 'L' : 'R';
@@ -290,6 +292,26 @@ export function armIK(m, side, target, pole, w = 1, handQ = null) {
   _B.copy(pole).addScaledVector(_A, -pole.dot(_A));
   if (_B.lengthSq() < 1e-6) _B.set(0, 0, 1).addScaledVector(_A, -_A.z);
   _B.normalize();
+  // (the elbow's side turns at a bounded rate, in the chest's frame: where the reach swings past the pole the plane
+  // flips over, and the elbow had swapped sides in a frame or two - the Executioner's forearm 1.1-1.25 m as a
+  // charge or a slam's wind-up carried the axe past it)
+  {
+    const es = (m.state.elbB ??= {}), pr = es[S];
+    _eQ.copy(_qp).invert();
+    _eV.copy(_B).applyQuaternion(_eQ);
+    if (pr && m.time - pr.t > 0 && m.time - pr.t < 0.25) {
+      const ang = pr.v.angleTo(_eV), maxA = ELB_RATE * (m.time - pr.t);
+      if (ang > maxA) {
+        _eQ2.setFromUnitVectors(pr.v, _eV);
+        _eQ3.identity().slerp(_eQ2, maxA / ang);
+        _eV.copy(pr.v).applyQuaternion(_eQ3);
+        _eW.copy(_eV).applyQuaternion(_qp);
+        _eW.addScaledVector(_A, -_eW.dot(_A));
+        if (_eW.lengthSq() > 1e-4) { _B.copy(_eW).normalize(); _eV.copy(_B).applyQuaternion(_eQ.copy(_qp).invert()); }
+      }
+    }
+    if (pr) { pr.v.copy(_eV); pr.t = m.time; } else es[S] = { v: _eV.clone(), t: m.time };
+  }
   _E.copy(_S).addScaledVector(_A, U * cosA).addScaledVector(_B, U * sinA);
   // upper arm: local -Y toward elbow
   _v.subVectors(_E, _S).normalize().applyQuaternion(_qw.copy(_qp).invert());

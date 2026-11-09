@@ -93,6 +93,7 @@ function soleLow(P, so) {
   const p = so.pts;
   return Math.min(_rv.set(p[0], p[1], p[2]).applyMatrix4(_rm).y, _rv.set(p[3], p[4], p[5]).applyMatrix4(_rm).y);
 }
+const _reachKeep = [0, 0];
 export function reachLegs(P, m, wL, wR) {
   const D = m.spec.dims, soles = m._soles;
   if (!D?.thigh || !D?.shin || !soles || soles.length !== 2 || !P.get('hips')) return;
@@ -100,15 +101,22 @@ export function reachLegs(P, m, wL, wR) {
   // (the leg's plane is an approximation - a rolled thigh, a pitched hips - so each solve gets most of the way and
   // the sole is read back again: up to four rounds, done when both feet are down)
   let floorY = 0;
+  const keep = _reachKeep;
   for (let it = 0; it < 4; it++) {
     const y = soles.map((so) => soleLow(P, so));
     // (the floor is read once: a foot that overshoots a hair below the other must not become the new floor, or the
     // rounds push both feet down and the lift hoists the body - and any stepping foot - higher)
-    if (it === 0) floorY = Math.min(0, y[0], y[1]);
+    if (it === 0) {
+      floorY = Math.min(0, y[0], y[1]);
+      // (a foot well up is raised by design and left there; between the two it is lowered only part of the way - left
+      // or set down whole either side of one height, a running foot rising past it had dropped to the floor in a
+      // frame: the Executioner's, 82 cm, in the stride of his charge)
+      for (let k = 0; k < 2; k++) { const d0 = y[k] - floorY; keep[k] = d0 * smooth(REACH_MAX * 0.8, REACH_MAX * 1.2, d0); }
+    }
     let moved = false;
     for (let k = 0; k < 2; k++) {
-      const n = soles[k].chain[0].name.slice(4), w = n === 'L' ? wL : wR, dy = y[k] - floorY;
-      if (w <= 0 || dy < 0.012 || dy > REACH_MAX) continue;
+      const n = soles[k].chain[0].name.slice(4), w = n === 'L' ? wL : wR, dy = y[k] - floorY - keep[k];
+      if (w <= 0 || dy < 0.012) continue;
       // the leg in its own plane: its pitch from the vertical (base, hips, thigh) and knee; the ankle's target
       // the same reach forward and dy lower; thigh and knee solved for it
       const hp = P.get('hips'), bs = P.get('base'), th = P.get('thigh' + n), sh = P.get('shin' + n);
