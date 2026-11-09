@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { G, xf, taper, lathe, shell, tube, deform, bumpy, robe, panel, mergeRaw, chainSkin, spikeRing, rng, vnoise, clamp, lerp, smooth, bump, easeOut, easeIn, easeInOut, TAU } from './core.js';
-import { humanSkeleton, humanoidPose, act2, ACT } from './humanoid.js';
+import { humanSkeleton, humanoidPose, act2, ACT, reachLegs } from './humanoid.js';
 import { glowLevel } from './bossKit.js';
 import {
   addSkull, addSkeletonBody, addFleshBody, addFleshHand, addBoneHand, addPlate, addTabard, greatHelm, hood, addWing, wingBones, flapWings, addHalberd, addCrystalStaff, addTowerShield, bookGeo,
@@ -964,6 +964,7 @@ function wardenAction(name) {
         if (p < 0.25) keyLerp(W.key, GW_K_HOLD, W.key, smooth(0, 0.25, p));
         const tr = smooth(0.6, 1, p) * 0.02;
         P.r('chest', Math.sin(T * 31) * tr, Math.sin(T * 23) * tr); P.p('hips', 0, Math.sin(T * 27) * tr * 0.3, 0);
+        reachLegs(P, m, 1, 1);
         return 7;
       }
       const hit = 0.24, u = easeIn(clamp(p / hit)), rec = smooth(0.62, 1, p) * 0.45;
@@ -973,6 +974,7 @@ function wardenAction(name) {
       // impact: the whole suit jolts, plates rattle
       const j = bump(hit, hit + 0.12, p);
       P.p('hips', 0, -j * 0.06, 0); P.r('chest', j * 0.08); P.r('head', -j * 0.1, Math.sin(T * 50) * j * 0.05);
+      reachLegs(P, m, 1, 1);
       return p < hit ? 30 : 18;
     }
     // sweep
@@ -981,12 +983,15 @@ function wardenAction(name) {
       keyLerp(W.key, GW_K_HOLD, GW_K_SW_W, smooth(0, 0.75, p));
       const tr = smooth(0.6, 1, p) * 0.02;
       P.r('chest', 0, Math.sin(T * 29) * tr);
+      reachLegs(P, m, 1, 1);
       return 7;
     }
     const hit = 0.32, u = smooth(0, hit, p), rec = smooth(0.66, 1, p) * 0.5;
     P.blend(GW_SW_W, GW_SW_S, u, 1 - rec);
     keyLerp(W.key, GW_K_SW_W, GW_K_SW_S, easeInOut(u));
     if (rec > 0) keyLerp(W.key, W.key, GW_K_HOLD, rec);
+    // (the right foot steps through with the swing, then plants: it had hung 16 cm up for the rest of it)
+    reachLegs(P, m, 1, smooth(hit * 0.6, hit, p));
     return 24;
   };
 }

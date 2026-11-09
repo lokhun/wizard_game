@@ -93,7 +93,7 @@ function soleLow(P, so) {
   const p = so.pts;
   return Math.min(_rv.set(p[0], p[1], p[2]).applyMatrix4(_rm).y, _rv.set(p[3], p[4], p[5]).applyMatrix4(_rm).y);
 }
-function reachLegs(P, m, wL, wR) {
+export function reachLegs(P, m, wL, wR) {
   const D = m.spec.dims, soles = m._soles;
   if (!D?.thigh || !D?.shin || !soles || soles.length !== 2 || !P.get('hips')) return;
   const T = D.thigh, S = D.shin;
