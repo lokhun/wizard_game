@@ -48,6 +48,8 @@ export class RemotePlayer {
     const n = this.net;
     n.x = s.p[0]; n.y = s.p[1]; n.z = s.p[2];
     n.yaw = s.y; n.pitch = s.pi;
+    // (a blow the partner took: their avatar recoils, by its share of their health)
+    if (s.hp < this.hp - 0.5 && !s.dn && !s.dd) this._hurt = Math.max(this._hurt ?? 0, Math.min(1, 0.35 + (this.hp - s.hp) / Math.max(1, s.mh) * 4));
     this.hp = s.hp; this.maxHp = s.mh; this.shield = s.sh ?? 0;
     this.downed = !!s.dn; this.dead = !!s.dd;
     this.reviveProgress = s.rp ?? 0;
@@ -134,8 +136,8 @@ export class RemotePlayer {
     _sph.center.set(this.pos.x, this.pos.y + 1, this.pos.z);
     this._poseDt += dt;
     if (_frustum.intersectsSphere(_sph) || anim === 'cast' || anim !== this._posedAnim || ++this._lod % 4 === 0) {
-      av.update(this._poseDt, { anim, t: this.game.time, speed, pitch: this.pitch, castProgress: this.channel ? 0.5 : 1 - this.castT * 2, strafe: 0 });
-      this._poseDt = 0; this._posedAnim = anim;
+      av.update(this._poseDt, { anim, t: this.game.time, speed, pitch: this.pitch, castProgress: this.channel ? 0.5 : 1 - this.castT * 2, strafe: 0, hurt: this._hurt ?? 0 });
+      this._poseDt = 0; this._posedAnim = anim; this._hurt = 0;
     }
     if (this.channel) {
       const ctx = this.channel.ctx;

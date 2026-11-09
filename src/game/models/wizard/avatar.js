@@ -280,6 +280,7 @@ export function createAvatar(classId, ctx) {
 
   // ---------------- animation state ----------------
   let phase = 0, moveK = 0, lastT = 0, deadK = 0, downK = 0, castK = 0, idleT = 0;
+  let hurtX = 0, hurtV = 0, hurtSide = 1; // (a blow's recoil: a damped spring)
   // turning on the spot (mouse-look) steps the feet round: yaw rate eased into 0..1, its sign, and a step phase
   let turnK = 0, turnDir = 1, turnPh = 0, prevYaw = null;
   const _te = new THREE.Euler();
@@ -318,7 +319,7 @@ export function createAvatar(classId, ctx) {
   }
 
   function resetState() {
-    phase = 0; moveK = 0; lastT = 0; deadK = 0; downK = 0; castK = 0; idleT = 0; haveprev = false; turnK = 0; prevYaw = null;
+    phase = 0; moveK = 0; lastT = 0; deadK = 0; downK = 0; castK = 0; idleT = 0; hurtX = 0; hurtV = 0; haveprev = false; turnK = 0; prevYaw = null;
     for (const j of allJoints) { j.t.set(0, 0, 0); j.c.set(0, 0, 0); }
     hips.position.copy(hipsBase);
     cloth.first = true;
@@ -517,6 +518,21 @@ export function createAvatar(classId, ctx) {
       armL.jS.mix(-0.25, 0, 1.25, d); armL.jE.mix(-0.45, 0, 0, d); armL.jW.mix(0, 0, 1.4, d);
       armR.jS.mix(-0.12, 0, -1.1, d); armR.jE.mix(-0.3, 0, 0, d);
       focusDir.lerp(tmp.set(-1, 0, 0.3), d); focusUp.lerp(tmp.set(0, 1, 0), d);
+    }
+    // ---- hit: a blow knocks the body back - spine and chest snap back, the head jerks to a side, the arms fly a
+    // little - on a damped spring, and the robes flash (s.hurt: the blow's size, the frame it lands). (A partner
+    // taking a hit had shown nothing at all.)
+    if (s.hurt > 0 && deadK < 0.5) { hurtV += 24 * Math.min(1, s.hurt); hurtSide = Math.random() < 0.5 ? -1 : 1; flashK = Math.max(flashK, 0.12 + 0.12 * Math.min(1, s.hurt)); applyMats(); }
+    {
+      const h = Math.min(dt, 1 / 30);
+      hurtV += (-220 * hurtX - 18 * hurtV) * h; hurtX += hurtV * h;
+      const hk = hurtX * (1 - downK);
+      if (Math.abs(hk) > 1e-4) {
+        jSpine.add(-0.22 * hk, 0.08 * hk * hurtSide, 0); jChest.add(-0.3 * hk, 0.1 * hk * hurtSide, 0.05 * hk * hurtSide);
+        jNeck.add(-0.2 * hk, 0, 0); jHead.add(-0.35 * hk, 0.25 * hk * hurtSide, 0.12 * hk * hurtSide);
+        armL.jS.add(0.15 * hk, 0, 0.2 * hk); armR.jS.add(0.1 * hk, 0, -0.15 * hk);
+        hips.position.z -= 0.03 * hk;
+      }
     }
     const bodyY = -0.45 * downK + 0.13 * deadK;
     body.position.set(0, bodyY, deadK * 0.88);

@@ -301,7 +301,9 @@ function stepAvatars(dt) {
   let cp = state.cp;
   if (cp < 0) cp = (state.t * 1.2) % 1;
   for (const a of avatars) {
-    a.update(dt, { anim, t: state.t, speed: sp, pitch: state.pitch, castProgress: cp, strafe: state.strafe });
+    // (hurtAt=<t>: a blow lands at that moment - the partner's hit recoil)
+    const hit = P.has('hurtAt') && state.t <= num('hurtAt', 0) && state.t + dt > num('hurtAt', 0) ? 1 : 0;
+    a.update(dt, { anim, t: state.t, speed: sp, pitch: state.pitch, castProgress: cp, strafe: state.strafe, hurt: hit });
   }
 }
 
