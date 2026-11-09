@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { clamp, lerp, smooth, easeOut, bump, TAU, turnK, modelScale } from './core.js';
 
 // ---------------------------------------------------------------------------
@@ -133,6 +134,57 @@ function quadTurnPose(P, st, Q, hold, lift) {
   }
 }
 
+// Planted paws on the floor: a leg swung about its hip carries its paw in an arc, so a bent hind leg's paw had hung
+// 2-12 cm up through most of its stance and touched the floor only at the end of it (a hound walking: hind paws
+// down 12-15% of the cycle, fore 22%, where half is a stance). Each leg down (and coming down at the end of its
+// swing) has its hip and lower joint solved on the pose's own chain - Newton, the Jacobian read back by nudging
+// each - to set the paw tip on the floor where it was going to be along the stride (its sweep, matched to the
+// body's speed, kept), the paw counter-turned to keep its pitch. The lower joint keeps the way it bends.
+const _qm = new THREE.Matrix4(), _ql = new THREE.Matrix4(), _qq = new THREE.Quaternion(), _qe = new THREE.Euler(), _qp = new THREE.Vector3(), _qs = new THREE.Vector3(), _qv = new THREE.Vector3(), _qa = [0, 0];
+function pawAt(P, chain, tip, out = _qa) {
+  const T = P.tgt;
+  _qm.identity();
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const j = chain[i], o = j * 9, r = P.rest[j];
+    _qq.setFromEuler(_qe.set(T[o], T[o + 1], T[o + 2], 'XYZ'));
+    _ql.compose(_qp.set(r.x + T[o + 3], r.y + T[o + 4], r.z + T[o + 5]), _qq, _qs.set(T[o + 6] || 1, T[o + 7] || 1, T[o + 8] || 1));
+    _qm.multiply(_ql);
+  }
+  _qv.set(0, -tip, 0).applyMatrix4(_qm);
+  out[0] = _qv.y; out[1] = _qv.z;
+  return out;
+}
+function plantPaws(P, m, st, Q, wts) {
+  const C = (m._pawChains ??= ['FL', 'FR', 'BL', 'BR'].map((n) => {
+    const ids = [];
+    for (let b = m.bones['paw' + n]; b?.isBone; b = b.parent) { const j = P.idx.get(b.name); if (j === undefined) return null; ids.push(j); }
+    return { n, F: n[0], S: n[1], ids, tip: n[0] === 'F' ? Q.legF[2] : Q.legB[2] };
+  }));
+  for (let k = 0; k < 4; k++) {
+    const c = C[k], wt = wts[k];
+    if (!c || wt < 0.01) continue;
+    const hip = P.get('leg' + c.F + c.S), kn = P.get('leg' + c.F + '2' + c.S), paw = P.get('paw' + c.F + c.S);
+    if (!hip || !kn || !paw) continue;
+    let [y, z] = pawAt(P, c.ids, c.tip);
+    const yT = y * (1 - wt), zT = z, h = 0.02, fore = c.F === 'F';
+    for (let it = 0; it < 3; it++) {
+      const ey = yT - y, ez = zT - z;
+      if (Math.abs(ey) < 0.002 && Math.abs(ez) < 0.004) break;
+      hip[0] += h; paw[0] -= h; const [y1, z1] = pawAt(P, c.ids, c.tip); hip[0] -= h; paw[0] += h;
+      kn[0] += h; paw[0] -= h; const [y2, z2] = pawAt(P, c.ids, c.tip); kn[0] -= h; paw[0] += h;
+      const j11 = (y1 - y) / h, j12 = (y2 - y) / h, j21 = (z1 - z) / h, j22 = (z2 - z) / h, det = j11 * j22 - j12 * j21;
+      if (Math.abs(det) < 1e-7) break;
+      let da = (ey * j22 - j12 * ez) / det, db = (j11 * ez - j21 * ey) / det;
+      const L = Math.hypot(da, db);
+      if (L > 0.3) { da *= 0.3 / L; db *= 0.3 / L; }
+      if (fore && kn[0] + db > 0) db = -kn[0];
+      if (!fore && kn[0] + db < 0) db = -kn[0];
+      hip[0] += da; kn[0] += db; paw[0] -= da + db;
+      [y, z] = pawAt(P, c.ids, c.tip);
+    }
+  }
+}
+
 export function quadPose(m, s, P, dt) {
   const Q = m.spec.dims, A = m.spec.anim, st = m.state, T = m.time;
   const anim = s.anim;
@@ -210,6 +262,8 @@ export function quadPose(m, s, P, dt) {
       if (u < duty) { sn = 1 - 2 * u / duty; up = 0; }
       else { const v = (u - duty) / (1 - duty); sn = 2 * smooth(0, 1, v) - 1; up = Math.sin(Math.PI * v); }
       const li = LEGS.indexOf(F + S), wl = legW[li];
+      // (fading out into a hound's gallop, whose paws are mostly in the air and whose legs' easing lags the solve)
+      (st.plantW ??= [0, 0, 0, 0])[li] = st.stopSeq ? 0 : wl * (bound ? 1 : 1 - smooth(0.42, 0.3, duty)) * (u < duty ? 1 : smooth(0.7, 1, (u - duty) / (1 - duty)) + 1 - smooth(0, 0.2, (u - duty) / (1 - duty)));
       // (stepping in: a paw in the air keeps its lift as it comes forward, a planted one lifts; both come down)
       if (st.stopSeq) { const v = st.stopSeq.u - st.stopSeq.grp[li]; up = v <= 0 ? up : v >= 1 ? 0 : Math.max(up * (1 - smooth(0, 1, v)), Math.sin(Math.PI * v)); }
       P.r('leg' + F + S, -sn * amp * wl);
@@ -294,6 +348,7 @@ export function quadPose(m, s, P, dt) {
     P.r('legFL', -1.2 * (1 - p) + Math.sin(m.time * 14) * 0.4 * (1 - p)); P.r('legFR', -1.2 * (1 - p) + Math.sin(m.time * 14 + 2) * 0.4 * (1 - p));
     rate = 20;
   }
+  if (!action && !dead && !spawning && anim !== 'stagger' && w > 0.01 && st.plantW) plantPaws(P, m, st, Q, st.plantW);
   if (A.extra) A.extra(P, m, s, dt, { w, ph, br, action, dead });
   return rate;
 }
