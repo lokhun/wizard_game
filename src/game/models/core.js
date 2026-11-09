@@ -1305,7 +1305,10 @@ export class EnemyInstance {
       const dw = folds ? 1 - smooth(0.45, 0.95, S.progress) : typeof ds === 'function' ? 1 - smooth(0.3, 0.55, S.progress) : 0;
       const gw = this._flying ? 0 : S.anim === 'death' ? dw : S.anim === 'spawn' ? smooth(0.7, 1, S.progress) : 1;
       // (the lock first, so the lift sees the legs where they'll be drawn)
-      if (gw > 0 && this.spec.anim?.gait !== 'float') this._footLock(dt, s.floor);
+      // (a strike that carries the body - a lunge, a charge, at several m/s - takes its feet with it: held to the floor
+      // they were left behind, let go every few frames and snapped 30-50 cm after the body)
+      const dash = (S.anim === 'attack' || S.anim === 'windup' || S.anim === 'cast') && S.speed / modelScale(this) > 3;
+      if (gw > 0 && this.spec.anim?.gait !== 'float') this._footLock(dt, s.floor, dash);
       this._ground(dt, gw, s.floor);
     }
     if (this.spec.look) this._lookWorld(dt, S, s.look);
@@ -1471,7 +1474,7 @@ export class EnemyInstance {
   // leg's own matrices) to keep it on that spot; it lets go when the foot lifts or the spot falls too far behind (a
   // step the gait didn't take), and the turn eases off in the air. Height is left to the gait and the lift: pinned
   // in height too, the feet had hovered or sunk (the gait's hip height and a pinned foot disagree).
-  _footLock(dt, floor) {
+  _footLock(dt, floor, free = false) {
     const top = this._soles[0].chain[this._soles[0].chain.length - 1];
     top.parent.updateWorldMatrix(true, false);
     const W = top.parent.matrixWorld;
@@ -1490,15 +1493,18 @@ export class EnemyInstance {
         const mx = (p[0] + p[3]) * 0.5, my = (p[1] + p[4]) * 0.5, mz = (p[2] + p[5]) * 0.5;
         const wx = e[0] * mx + e[4] * my + e[8] * mz + e[12], wz = e[2] * mx + e[6] * my + e[10] * mz + e[14];
         if (it === 0) {
+          if (free) { lk.on = false; lk.m0 = 0; break; }
           // (the body's lift isn't on yet this frame: last frame's stands in)
           let lo = Infinity;
           for (let j = 0; j < 6; j += 3) lo = Math.min(lo, e[1] * p[j] + e[5] * p[j + 1] + e[9] * p[j + 2] + e[13]);
           lo += this._lift * (Math.hypot(W.elements[4], W.elements[5], W.elements[6]) || 1);
           const gy = floor ? floor(wx, wz) : W.elements[13];
           const down = lo - gy < 0.02;
-          if (down && !lk.on) { lk.on = true; lk.x = wx; lk.z = wz; }
+          // (a foot let go to step isn't caught again until it has stepped: caught the next frame, still on the floor,
+          // it had snapped to the pose's own spot - 25-50 cm in one frame as a strike or its recovery moved the feet)
+          if (down && !lk.on && !(lk.m0 > 0)) { lk.on = true; lk.x = wx; lk.z = wz; }
           else if (!down && lo - gy > 0.035) lk.on = false;
-          if (lk.on && Math.hypot(lk.x - wx, lk.z - wz) > 0.3 * (this.height / 1.8)) lk.on = false; // (left too far behind: let it step)
+          if (lk.on && Math.hypot(lk.x - wx, lk.z - wz) > 0.3 * (this.height / 1.8)) { lk.on = false; lk.m0 = (this.state.moveW ?? 0) > 0.3 ? 0 : Math.hypot(lk.cx, lk.cz); } // (left too far behind: let it step - standing, a step with a lift; walking, the gait's own)
           if (!lk.on) break;
         }
         // the drift, into the hips' frame (rotation only), as a turn of the thigh: pitch moves the foot along the
@@ -1517,6 +1523,14 @@ export class EnemyInstance {
         const k = Math.exp(-14 * dt);
         lk.cx *= k; lk.cz *= k;
         th.rotation.x += lk.cx; th.rotation.z += lk.cz; c[0].rotation.x -= lk.cx; c[0].rotation.z -= lk.cz;
+        // let go to step: the foot lifts in an arc - knee up, toe down - as the turn eases off, and sets down at the
+        // pose's own spot
+        if (lk.m0 > 0) {
+          const e = clamp(1 - Math.hypot(lk.cx, lk.cz) / lk.m0, 0, 1), up = Math.sin(Math.PI * e) * Math.min(0.6, lk.m0 * 2.5);
+          th.rotation.x -= 0.45 * up; c[1].rotation.x += 0.9 * up; c[0].rotation.x -= 0.4 * up;
+          c[1].updateMatrix();
+          if (e > 0.96) lk.m0 = 0;
+        }
       }
       th.updateMatrix(); c[0].updateMatrix();
     }

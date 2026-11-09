@@ -718,7 +718,7 @@ export class ActorManager {
         // flung the way the blow pushed it, harder for a heavier push, carried on by its own run
         if (a._rag === undefined && a.model && !a.boss && !a.collapsed) a._rag = this._goLimp(a);
         // it turns as it buckles, to fall the way the killing blow pushed it (see _fallYaw)
-        if (a.deathYaw != null && a.deadT < 0.5 && a.model && !a._rag) { a.yaw = angleDamp(a.yaw, a.deathYaw, 9, dt); a.model.root.rotation.y = a.yaw; }
+        if (a.deathYaw != null && a.deadT < 0.5 && a.model && !a._rag) { a.yaw = angleDamp(a.yaw, a.deathYaw, 9, dt); a.vyaw = a.yaw; a.model.root.rotation.y = a.yaw; }
         // the killing blow carries the body for a moment
         const kbl = Math.hypot(a.kb.x, a.kb.z);
         if (kbl > 0.1 && !a.boss) {
@@ -773,7 +773,10 @@ export class ActorManager {
           if (u >= 1) a.airDur = 0;
           else m.root.position.y += a.airH * 4 * u * (1 - u);
         }
-        m.root.rotation.y = a.yaw;
+        // (the body turns to its facing over a few frames: an attack faces its target at once - the strike's aim -
+        // and drawn at once the body had spun up to ~55 degrees in one frame, its planted feet twisting with it)
+        a.vyaw = a.vyaw == null ? a.yaw : angleDamp(a.vyaw, a.yaw, 22, dt);
+        m.root.rotation.y = a.vyaw;
         if (a.jv) {
           // damped spring back to upright
           const j = a.jv, h = Math.min(dt, 1 / 30);
