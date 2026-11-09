@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mulberry, fbm3, roundedBox, sphere, torus, xf, noisify, tubeVar, leaf, feather, gear, crystal } from './shapes.js';
+import { mulberry, fbm3, roundedBox, sphere, torus, xf, noisify, tubeVar, leaf, feather, gear, crystal, weldNormals } from './shapes.js';
 
 // ---------------------------------------------------------------------------
 // Geometry for the third-person wizard bodies. Everything is authored in the
@@ -116,26 +116,7 @@ function gridGeo(pos, uv, col, cols, rows, flip, closedWeld) {
   if (closedWeld) weldNormals(g);
   return g;
 }
-// average normals of coincident vertices (closes lathe / ring seams)
-export function weldNormals(g) {
-  const p = g.getAttribute('position'), n = g.getAttribute('normal');
-  // (a numeric key per half-millimetre cell: string keys cost more than the rest of a garment)
-  const m = new Map();
-  const ids = new Float64Array(p.count);
-  for (let i = 0; i < p.count; i++) {
-    const k = ((Math.round(p.getX(i) * 2e3) + 4096) * 8192 + (Math.round(p.getY(i) * 2e3) + 4096)) * 8192 + (Math.round(p.getZ(i) * 2e3) + 4096);
-    ids[i] = k;
-    let a = m.get(k);
-    if (!a) { a = [0, 0, 0]; m.set(k, a); }
-    a[0] += n.getX(i); a[1] += n.getY(i); a[2] += n.getZ(i);
-  }
-  for (let i = 0; i < p.count; i++) {
-    const a = m.get(ids[i]);
-    const l = Math.hypot(a[0], a[1], a[2]) || 1;
-    n.setXYZ(i, a[0] / l, a[1] / l, a[2] / l);
-  }
-  return g;
-}
+export { weldNormals }; // (shapes.js; costumes import it from here)
 
 // ---- garment shell -----------------------------------------------------------
 // A tube of cloth around the vertical axis from y0 (top) to y1 (hem).

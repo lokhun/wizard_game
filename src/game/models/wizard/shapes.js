@@ -71,6 +71,33 @@ export function torus(R, r, rs = 8, ts = 24, arc = Math.PI * 2, o) {
 }
 
 // profile: [[r, y], ...] from bottom to top
+// Average the normals of coincident vertices: recomputed normals on a closed lathe, ring or sphere break at
+// its seam (the duplicated first column gets only the faces on its own side) and pinch at its poles. (Every
+// finger segment's seam runs down the back of the finger: a hard light/dark line along each one.)
+// scale: key cells per metre - 2e3 (half-millimetre cells, coordinates within +-2 m) for garments; the
+// hands' sub-millimetre profiles take 1e5 (coordinates within +-0.3 m).
+export function weldNormals(g, scale = 2e3) {
+  const p = g.getAttribute('position'), n = g.getAttribute('normal');
+  const M = scale > 4e3 ? 65536 : 8192, O = M / 2;
+  // (a numeric key per cell: string keys cost more than the rest of a garment)
+  const m = new Map();
+  const ids = new Float64Array(p.count);
+  for (let i = 0; i < p.count; i++) {
+    const k = ((Math.round(p.getX(i) * scale) + O) * M + (Math.round(p.getY(i) * scale) + O)) * M + (Math.round(p.getZ(i) * scale) + O);
+    ids[i] = k;
+    let a = m.get(k);
+    if (!a) { a = [0, 0, 0]; m.set(k, a); }
+    a[0] += n.getX(i); a[1] += n.getY(i); a[2] += n.getZ(i);
+  }
+  for (let i = 0; i < p.count; i++) {
+    const a = m.get(ids[i]);
+    const l = Math.hypot(a[0], a[1], a[2]) || 1;
+    n.setXYZ(i, a[0] / l, a[1] / l, a[2] / l);
+  }
+  n.needsUpdate = true;
+  return g;
+}
+
 export function lathe(profile, seg = 16, phiStart = 0, phiLen = Math.PI * 2) {
   const pts = profile.map(([r, y]) => new THREE.Vector2(Math.max(r, 0), y));
   const g = new THREE.LatheGeometry(pts, S(seg, 5), phiStart, phiLen);
@@ -152,7 +179,9 @@ export function fingerSeg(L, r0, r1, rad = 8, flat = 0.85, tip = false, paint = 
         cr = (wrinkleBase ? Math.exp(-Math.pow((d0 - 0.0006) / 0.0007, 2)) : 0) * across;
       }
       const s0 = Math.hypot(x, ny) || 1;
-      const k = 1 - (wr * 0.00022 + cr * 0.00026) / s0;
+      // (never past the axis: at a cap's pole s0 is ~0 and the press had flung the pole's vertices into a ring,
+      // its normal turned sideways - a black notch on the back of a bent joint)
+      const k = Math.max(0, 1 - (wr * 0.00022 + cr * 0.00026) / s0);
       p.setXYZ(i, x * 1.04 * k, ny * k, z);
     } else p.setXYZ(i, x * 1.04, ny, z);
     if (col) {
@@ -183,6 +212,7 @@ export function fingerSeg(L, r0, r1, rad = 8, flat = 0.85, tip = false, paint = 
   }
   if (col) g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.computeVertexNormals();
+  weldNormals(g, 1e5);
   g.userData.shared = true;
   segCache.set(key, g);
   return g;

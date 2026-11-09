@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { fingerSeg, roundedBox, sphere, mergeGeos, lathe, xf, torus, cyl, V } from './shapes.js';
+import { fingerSeg, roundedBox, sphere, mergeGeos, lathe, xf, torus, cyl, V, weldNormals } from './shapes.js';
 
 // ---------------------------------------------------------------------------
 // Articulated stylised hand. Built as a RIGHT hand in its own frame:
@@ -358,6 +358,7 @@ export function buildHand(opts) {
   }
   if (pcol) palm.setAttribute('color', new THREE.Float32BufferAttribute(pcol, 3));
   palm.computeVertexNormals();
+  weldNormals(palm, 1e5);
   // its texture repeated three times round and along (the surfaces tile): once round the whole hand, the grain
   // had come out 3-6 times coarser than on the fingers, which wrap it once round each segment - pebbled leather
   // on the back of a glove beside smooth fingers
