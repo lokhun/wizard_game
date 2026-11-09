@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { G, xf, lathe, shell, tube, extrude, deform, bumpy, mergeRaw, chainSkin, panel, spikeRing, rng, vnoise, fbm3, clamp, lerp, smooth, bump, easeOut, easeIn, easeInOut, TAU } from './core.js';
-import { humanSkeleton, humanoidPose, act2 } from './humanoid.js';
+import { humanSkeleton, humanoidPose, act2, reachLegs } from './humanoid.js';
 import { addPlate, addTabard, hood, pauldron, twoSided, HDR, GOLDTRIM } from './parts.js';
 import { wounds, strikeLayer, coil } from './bossKit.js';
 import { addFx, fxOf, fxSet, fxPos, fxRot, paint, softRing, softDisc, softColumn, Rope, aimChain, boneWorld, boneModel, snapRot, setBone, springTo, glowLevel, wield, swingTrailGeo, aimTrail, panelBand, embroideryOf } from './bossKit.js';
@@ -334,12 +334,13 @@ export const hollowKing = {
     stance: (P, m, s) => { P.apply({ spine: [0.04, 0, 0], thighL: [-0.1, 0, 0.08], thighR: [0.02, 0, -0.08], shinL: [0.14, 0, 0], shinR: [0.1, 0, 0] }); if (s.anim === 'idle' || s.anim === 'move') P.apply(B_REST, 1 - (m.state.moveW ?? 0)); },
     // (the throne's seat stands higher than a man's knee: sit up on it, feet forward on its step)
     seated: (P, m) => { P.apply({ head: [0.25, 0, 0], neck: [0.1, 0, 0], hips: [0, 0, 0, 0, 0.12, 0.02], thighL: [-0.08, 0, 0], thighR: [-0.08, 0, 0], shinL: [-0.3, 0, 0], shinR: [-0.3, 0, 0] }); P.r('head', 0, Math.sin(m.time * 0.2) * 0.15, 0); },
+    // (the hand-written actions set their feet on the floor too: reachLegs, as act2 does)
     actions: {
       sweep: act2(B_SWEEP_W, B_SWEEP_S, { hit: 0.3, recover: 0.7, recoverAmt: 0.6, windupExtra: (P, p) => { const k = smooth(0.5, 1, p); P.r('hips', 0, -0.12 * k, 0); P.r('chest', 0, -0.12 * k, 0); }, strikeExtra: (P, p) => { const k = bump(0.15, 0.7, p); P.r('chest', 0, 0.22 * k, 0); P.r('hips', 0, 0.12 * k, 0); } }),
       thrust: act2(B_THRUST_W, B_THRUST_S, { hit: 0.22, recover: 0.7, recoverAmt: 0.6, windupExtra: (P, p) => { const k = smooth(0.5, 1, p); P.r('chest', 0, -0.15 * k, 0); P.p('hips', 0, -0.04 * k, -0.06 * k); }, strikeExtra: (P, p) => { const k = bump(0.1, 0.55, p); P.p('hips', 0, -0.04 * k, 0.12 * k); P.r('footL', 0.25 * k); } }),
-      spiral: (P, ph, p, m) => { const k = smooth(0, 0.12, p) * (1 - smooth(0.9, 1, p)); P.apply(B_SPIRAL, k); P.r('hips', 0, Math.sin(m.time * 2.4) * 0.3 * k, 0); P.r('chest', 0, Math.sin(m.time * 2.4 - 0.6) * 0.15 * k, 0); return 8; },
+      spiral: (P, ph, p, m) => { const k = smooth(0, 0.12, p) * (1 - smooth(0.9, 1, p)); P.apply(B_SPIRAL, k); P.r('hips', 0, Math.sin(m.time * 2.4) * 0.3 * k, 0); P.r('chest', 0, Math.sin(m.time * 2.4 - 0.6) * 0.15 * k, 0); reachLegs(P, m, 1, 1); return 8; },
       judgment: (P, ph, p, m) => { const k = smooth(0, 0.2, p), dn = smooth(0.9, 0.94, p), out = smooth(0.97, 1, p); P.apply(B_JUDGE_UP, k * (1 - dn)); P.apply(B_PLUNGE_S, dn * (1 - out) * 0.8); const tr = smooth(0.5, 0.9, p) * (1 - dn) * 0.025; P.r('chest', Math.sin(m.time * 43) * tr, Math.sin(m.time * 37) * tr); P.r('head', Math.sin(m.time * 51) * tr * 2); return dn > 0 && dn < 1 ? 26 : 7; },
-      vanish: (P, ph, p) => { P.apply(B_VANISH, smooth(0, 0.5, p)); return 16; },
+      vanish: (P, ph, p, m) => { P.apply(B_VANISH, smooth(0, 0.5, p)); reachLegs(P, m, 1, 1); return 16; },
       leap: act2(B_LEAP_W, B_LEAP_S, { hit: 0.35, recover: 2, recoverAmt: 0, windupRate: 11 }),
       slam: act2(B_PLUNGE_W, B_PLUNGE_S, { hit: 0.25, recover: 0.75, recoverAmt: 0.55, tremble: 0.02 }),
       roar: act2(B_ROAR_W, B_ROAR_S, { hit: 0.15, recover: 0.8, tremble: 0.05, strikeExtra: (P, p, m) => { const k = bump(0.1, 0.8, p) * 0.04; P.r('chest', Math.sin(m.time * 45) * k, Math.sin(m.time * 38) * k); } }),
