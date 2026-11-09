@@ -322,6 +322,27 @@ export function buildHand(opts) {
     pp.setXYZ(i, x, y, z - 0.047);
     if (pcol) { pcol[i * 3] = r; pcol[i * 3 + 1] = gg; pcol[i * 3 + 2] = b; }
   }
+  // the wrist: the palm's own surface carried on back into the sleeve (the rings round its wrist pole remapped
+  // onto a tube, the palm's section easing into the wrist's rounder one), so palm and wrist are one skin, one
+  // texture, one set of normals (a separate tube had stood out of the palm's rounded heel: a hard edge across
+  // the back of the hand and a pale box on the thumb side of every staff grip, just before the sleeve)
+  {
+    const WS = detail >= 1 ? 40 : detail > 0.3 ? 14 : 10, HS = detail >= 1 ? 36 : detail > 0.3 ? 10 : 8;
+    const iy0 = Math.round(HS / 3); // 60 degrees from the pole: the palm still near its full width
+    const Z1 = 0.03, RX = 0.029, RY = 0.0195, YC = -0.0005;
+    for (let ix = 0; ix <= WS; ix++) {
+      const b = iy0 * (WS + 1) + ix;
+      const x0 = pp.getX(b), y0 = pp.getY(b), z0 = pp.getZ(b);
+      const a = Math.atan2((y0 - YC) / RY, x0 / RX), wx = RX * Math.cos(a), wy = YC + RY * Math.sin(a);
+      for (let iy = 0; iy < iy0; iy++) {
+        const i = iy * (WS + 1) + ix, sv = (iy0 - iy) / iy0; // 0 at that ring .. 1 at the pole
+        const u = Math.min(1, sv / 0.55), w = u * u * (3 - 2 * u), c = iy === 0 ? 0 : 1;
+        const x = x0 + (wx - x0) * w, y = y0 + (wy - y0) * w;
+        pp.setXYZ(i, x * c, YC + (y - YC) * c, z0 + (Z1 - z0) * sv);
+        if (pcol) { pcol[i * 3] = pcol[b * 3]; pcol[i * 3 + 1] = pcol[b * 3 + 1]; pcol[i * 3 + 2] = pcol[b * 3 + 2]; }
+      }
+    }
+  }
   if (pcol) palm.setAttribute('color', new THREE.Float32BufferAttribute(pcol, 3));
   palm.computeVertexNormals();
   const palmParts = [palm,
@@ -329,11 +350,6 @@ export function buildHand(opts) {
     // and the wrist: one had faced out of the palm, a pinched black dot at the root of the thumb)
     xf(new THREE.SphereGeometry(0.017, rad, 8).rotateX(Math.PI / 2), { x: -0.025, y: -0.006, z: -0.03, sx: 0.9, sy: 0.75, sz: 1.5, ry: 0.4 }),
   ];
-  // wrist + forearm stub reaching back into the sleeve
-  const wr = lathe([[0.0305, -0.014], [0.029, 0.008], [0.0295, 0.03]], rad + 4);
-  xf(wr, { rx: Math.PI / 2 });
-  wr.scale(1, 0.66, 1);
-  palmParts.push(wr);
   if (style !== 'gauntlet') {
     // the knuckles: low and broad (they had stood out like beads)
     for (const f of FINGERS) {
