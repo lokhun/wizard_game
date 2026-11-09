@@ -46,6 +46,16 @@ export class RemotePlayer {
 
   applyState(s) {
     const n = this.net;
+    // (the partner's velocity, from the states' own steps: their avatar is led along it between them - see update;
+    // nothing past a run's speed, so a dash's end is not overshot)
+    {
+      const now = this.game.time, gap = now - (n.t ?? -9);
+      let vx = 0, vz = 0;
+      if (gap > 0.02 && gap < 0.3) { vx = (s.p[0] - n.x) / gap; vz = (s.p[2] - n.z) / gap; }
+      if (gap >= 0.3 || vx * vx + vz * vz > 144) n.vx = n.vz = 0;
+      else { n.vx = (n.vx ?? 0) + (vx - (n.vx ?? 0)) * 0.5; n.vz = (n.vz ?? 0) + (vz - (n.vz ?? 0)) * 0.5; }
+      n.t = now;
+    }
     n.x = s.p[0]; n.y = s.p[1]; n.z = s.p[2];
     n.yaw = s.y; n.pitch = s.pi;
     // (a blow the partner took: their avatar recoils, by its share of their health)
@@ -113,15 +123,23 @@ export class RemotePlayer {
     const n = this.net;
     const k = 1 - Math.exp(-dt * 14);
     const ox = this.pos.x, oz = this.pos.z;
-    if (Math.hypot(n.x - this.pos.x, n.z - this.pos.z) > 8) this.pos.set(n.x, n.y, n.z);
-    this.pos.x += (n.x - this.pos.x) * k;
+    // (led along the states' velocity a moment past the newest, then eased toward that: chasing the newest state
+    // alone, at 20 a second, a partner walking at 5 m/s had surged and checked between them, 3.1-6.9 m/s, and
+    // their stride with it)
+    const lead = Math.min(this.game.time - (n.t ?? this.game.time), 0.1), nvx = n.vx ?? 0, nvz = n.vz ?? 0;
+    const tx = n.x + nvx * lead, tz = n.z + nvz * lead;
+    if (Math.hypot(tx - this.pos.x, tz - this.pos.z) > 8) this.pos.set(tx, n.y, tz);
+    this.pos.x += (tx - this.pos.x) * k;
     this.pos.y += (n.y - this.pos.y) * k;
-    this.pos.z += (n.z - this.pos.z) * k;
+    this.pos.z += (tz - this.pos.z) * k;
     this.vel.set((this.pos.x - ox) / Math.max(dt, 1e-3), 0, (this.pos.z - oz) / Math.max(dt, 1e-3));
     this.yaw = angleDamp(this.yaw, n.yaw, 14, dt);
     this.pitch += (n.pitch - this.pitch) * k;
     this.alive = !this.dead;
-    const speed = Math.hypot(this.vel.x, this.vel.z);
+    // (the stride's speed from the states' velocity, eased, when there is one; a dash - past a run's speed - from the body's own motion)
+    const rootSp = Math.hypot(this.vel.x, this.vel.z), nsp = Math.hypot(nvx, nvz);
+    this._sp = nsp < 1e-3 && rootSp > 12 ? rootSp : (this._sp ?? rootSp) + (nsp - (this._sp ?? rootSp)) * k;
+    const speed = this._sp;
     if (speed > 0.5 && this.pos.y < 0) this.game.wadeFx(this, speed, dt, 0.5);
     this.castT = Math.max(0, this.castT - dt);
     const av = this.avatar;
