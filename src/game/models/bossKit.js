@@ -206,6 +206,12 @@ export class Rope {
   step(anchor, dt, o = {}) {
     const n = this.n, p = this.p, pr = this.o;
     if (!this.init || p[0].distanceToSquared(anchor) > 25) { _v.set(0, -1, 0); this.reset(anchor, _v); }
+    // (a jump of the anchor too fast for anything but a teleport - the Archmage's blink - carries the chain with it,
+    // as it hung: left to the physics it had whipped across the gap, the censer 35-52 cm a frame)
+    else if (p[0].distanceToSquared(anchor) > 0.25) {
+      _v.subVectors(anchor, p[0]);
+      for (let i = 0; i <= this.n; i++) { p[i].add(_v); pr[i].add(_v); }
+    }
     if (dt <= 0) return this;
     dt = Math.min(dt, 1 / 30);
     const g = (o.g ?? 9.8) * dt * dt, k = Math.exp(-(o.damp ?? 1.5) * dt);

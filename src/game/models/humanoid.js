@@ -540,7 +540,13 @@ export function humanoidPose(m, s, P, dt) {
   // ---- fidgets: now and then a body standing still does something with itself
   if (!dead && !spawning && !seated && !action && anim !== 'stagger' && A.fidgets !== false) fidget(m, st, P, idleW, dt, A, s.look);
   else st.fidI = -1;
-  if (A.rest && !dead) P.apply(A.rest, action ? 0 : 1);
+  // (eased in and out, not switched: a caster going straight from one cast to the next passes through a single idle
+  // frame, and the rest pose taken whole for that frame had flicked the Court Archmage's left hand 13-16 cm)
+  if (A.rest && !dead) {
+    const rt = action ? 0 : 1;
+    st.restW = st.restW === undefined ? rt : st.restW + (rt - st.restW) * (1 - Math.exp(-8 * dt));
+    P.apply(A.rest, st.restW);
+  }
   // (a body that dies holds its weapon as it stood until it falls: dropped at once, the arm swung straight down
   // and a halberd or a sword went flat at the hip, standing out a metre, while the body still stood for most of
   // a second)
