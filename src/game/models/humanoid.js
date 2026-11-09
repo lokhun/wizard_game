@@ -366,7 +366,11 @@ export function humanoidPose(m, s, P, dt) {
   // the legs follow the cycle nearly as authored (their easing x5, by how much the body walks; not in an action,
   // a stagger or a fall, whose legs keep their own pace).
   if (!P._legI) { P._legI = ['thighL', 'thighR', 'shinL', 'shinR', 'footL', 'footR'].map((n) => P.idx.get(n)).filter((i) => i !== undefined); P._legR = P._legI.map((i) => P.rate[i]); }
-  const legK = 1 + 4 * (action || dead || anim === 'stagger' ? Math.max(tsAct, st.stopSeq ? 1 : 0) : Math.max(w, tsAct, st.stopSeq ? 1 : 0));
+  // (and coming out of an action the walk's quick legs come in over a quarter second: at once, a charge ending at
+  // full speed had snapped its legs into the stride - a foot 26 cm in a frame)
+  if (action || anim === 'stagger') st.actT = T;
+  const fromAct = smooth(0, 0.25, T - (st.actT ?? -9));
+  const legK = 1 + 4 * (action || dead || anim === 'stagger' ? Math.max(tsAct, st.stopSeq ? 1 : 0) : Math.max(w * fromAct, tsAct, st.stopSeq ? 1 : 0));
   for (let k = 0; k < P._legI.length; k++) P.rate[P._legI[k]] = P._legR[k] * legK;
   // Stopping dead (a foe reaching its range), the stride is finished with steps: the legs hold the stride they were
   // in (the planted foot stays where it is), then the trailing foot lifts and steps under the hips, and the other
