@@ -1308,7 +1308,7 @@ export class EnemyInstance {
       // (a strike that carries the body - a lunge, a charge, at several m/s - takes its feet with it: held to the floor
       // they were left behind, let go every few frames and snapped 30-50 cm after the body)
       const dash = (S.anim === 'attack' || S.anim === 'windup' || S.anim === 'cast') && S.speed / modelScale(this) > 3;
-      if (gw > 0 && this.spec.anim?.gait !== 'float') this._footLock(dt, s.floor, dash);
+      if (gw > 0 && this.spec.anim?.gait !== 'float') this._footLock(dt, s.floor, dash, S.anim === 'move');
       this._ground(dt, gw, s.floor);
     }
     if (this.spec.look) this._lookWorld(dt, S, s.look);
@@ -1474,7 +1474,7 @@ export class EnemyInstance {
   // leg's own matrices) to keep it on that spot; it lets go when the foot lifts or the spot falls too far behind (a
   // step the gait didn't take), and the turn eases off in the air. Height is left to the gait and the lift: pinned
   // in height too, the feet had hovered or sunk (the gait's hip height and a pinned foot disagree).
-  _footLock(dt, floor, free = false) {
+  _footLock(dt, floor, free = false, walking = true) {
     const top = this._soles[0].chain[this._soles[0].chain.length - 1];
     top.parent.updateWorldMatrix(true, false);
     const W = top.parent.matrixWorld;
@@ -1500,9 +1500,10 @@ export class EnemyInstance {
           lo += this._lift * (Math.hypot(W.elements[4], W.elements[5], W.elements[6]) || 1);
           const gy = floor ? floor(wx, wz) : W.elements[13];
           const down = lo - gy < 0.02;
-          // (a foot let go to step isn't caught again until it has stepped: caught the next frame, still on the floor,
-          // it had snapped to the pose's own spot - 25-50 cm in one frame as a strike or its recovery moved the feet)
-          if (down && !lk.on && !(lk.m0 > 0)) { lk.on = true; lk.x = wx; lk.z = wz; }
+          // (a foot let go to step isn't caught again until it has stepped, nor - out of the walk - while the turn it
+          // was held by is still easing off: caught the next frame, still on the floor, it had snapped to the pose's own
+          // spot - 25-50 cm in one frame as a strike, its wind-up or its recovery moved the feet)
+          if (down && !lk.on && !(lk.m0 > 0) && (walking || Math.abs(lk.cx) + Math.abs(lk.cz) < 0.06)) { lk.on = true; lk.x = wx; lk.z = wz; }
           else if (!down && lo - gy > 0.035) lk.on = false;
           if (lk.on && Math.hypot(lk.x - wx, lk.z - wz) > 0.3 * (this.height / 1.8)) { lk.on = false; lk.m0 = (this.state.moveW ?? 0) > 0.3 ? 0 : Math.hypot(lk.cx, lk.cz); } // (left too far behind: let it step - standing, a step with a lift; walking, the gait's own)
           if (!lk.on) break;
