@@ -518,14 +518,16 @@ export function humanoidPose(m, s, P, dt) {
       const lr = sd > 0 ? 'L' : 'R', ft = P.idx.get('foot' + lr) * Kp;
       P.tgt[ft] -= (up + P.tgt[P.idx.get('thigh' + lr) * Kp] + P.tgt[P.idx.get('shin' + lr) * Kp] + P.tgt[ft]) * flat;
     }
-    // and a swinging foot comes in heel first: through the last part of its swing it levels out, toes a little up,
-    // where it had come down toe first, the toe scuffing the floor ahead of the stride at ~3x the walking speed
+    // and a swinging foot comes in level: through the last part of its swing it levels out, where it had come down toe
+    // first, the toe scuffing the floor ahead of the stride at ~3x the walking speed (levelled with the toes 0.15 rad
+    // up, the heel came down instead while the foot still flew - a plague doctor's long boot skimming the floor for
+    // the last quarter of every swing)
     for (let sd = 1; sd >= -1; sd -= 2) {
       if (sd * cs <= 0) continue;
       const v = (1 + sd * ls) * 0.5, late = smooth(0.45, 0.85, v) * w;
       if (late < 1e-3) continue;
       const lr = sd > 0 ? 'L' : 'R', ft = P.idx.get('foot' + lr) * Kp;
-      P.tgt[ft] += (-0.15 - (up + P.tgt[P.idx.get('thigh' + lr) * Kp] + P.tgt[P.idx.get('shin' + lr) * Kp] + P.tgt[ft])) * late;
+      P.tgt[ft] -= (up + P.tgt[P.idx.get('thigh' + lr) * Kp] + P.tgt[P.idx.get('shin' + lr) * Kp] + P.tgt[ft]) * late;
     }
     const armA = (A.armSwing ?? 0.45) * (1 + run * 0.5);
     if (!action) {
