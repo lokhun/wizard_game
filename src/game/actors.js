@@ -85,8 +85,9 @@ export function hitPoint(a, x, z, out) {
 }
 
 // how far a body's nearest point stays from a player (the move step's keep-out): shields and big weapons stick
-// out past the body radius, so those stay further from the camera
-const keepOutR = (a) => a.radius + (a.def.frontShield || a.boss || (a.def.cost ?? 0) >= 8 || a.def.splitInto || a.def.model === 'slime' ? 0.85 : 0.4);
+// out past the body radius, so those stay further from the camera; so does a head carried well out in front of the
+// body (def.reach: the ghoul's hunch, which the hit shape - taken from the upright bind pose - doesn't see)
+const keepOutR = (a) => a.radius + (a.def.frontShield || a.boss || (a.def.cost ?? 0) >= 8 || a.def.splitInto || a.def.model === 'slime' ? 0.85 : 0.4) + (a.def.reach ?? 0);
 
 // a champion's affix, whichever of its (up to two) slots holds it
 export const hasAffix = (a, k) => a.affix === k || a.affix2 === k;

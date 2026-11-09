@@ -39,7 +39,7 @@ export const ENEMY_DEFS = {
     attacks: [{ id: 'engulf', kind: 'lunge', range: 1.3, arc: 1.6, windup: 0.4, recover: 0.6, anim: 'attack', leap: 4, hop: 0.25 }],
   },
   ghoul: {
-    name: 'Drowned Ghoul', hp: 90, speed: 4.6, dmg: 13, cost: 4, ai: 'melee', poise: 35, gold: 3, sound: 'ghoul_growl', deathSound: 'enemy_death', undead: true,
+    name: 'Drowned Ghoul', hp: 90, speed: 4.6, dmg: 13, cost: 4, ai: 'melee', poise: 35, gold: 3, reach: 0.3, sound: 'ghoul_growl', deathSound: 'enemy_death', undead: true,
     attacks: [
       { id: 'claw', kind: 'melee', range: 2.1, arc: 1.5, windup: 0.45, recover: 0.55, anim: 'swing' },
       { id: 'pounce', kind: 'lunge', range: 6, minRange: 3, arc: 1.2, windup: 0.6, recover: 0.9, anim: 'charge', leap: 13, hop: 0.6, cd: 5, dmgMult: 1.4 },
