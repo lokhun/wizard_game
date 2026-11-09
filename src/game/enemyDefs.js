@@ -20,7 +20,7 @@ export const ENEMY_DEFS = {
   // ----------------------------------------------------------- SEWERS
   rat: {
     name: 'Plague Rat', hp: 20, speed: 6.2, dmg: 5, cost: 1, ai: 'melee', poise: 5, gold: 1, sound: 'rat_squeak', deathSound: 'rat_death', hitSound: 'enemy_hit',
-    attacks: [{ id: 'bite', kind: 'lunge', range: 1.6, arc: 1.4, windup: 0.32, recover: 0.6, anim: 'bite', leap: 5 }],
+    attacks: [{ id: 'bite', kind: 'lunge', range: 1.6, arc: 1.4, windup: 0.32, recover: 0.6, anim: 'bite', leap: 5, hop: 0.18 }],
     flank: true, pack: [3, 6],
   },
   // the Hoarder: a fat, gilded rat that bolts from the party and escapes after 15 s;
@@ -31,18 +31,18 @@ export const ENEMY_DEFS = {
   },
   slime: {
     name: 'Sewer Ooze', hp: 70, speed: 2.6, dmg: 10, cost: 3, ai: 'melee', poise: 30, gold: 2, sound: 'slime_squish', deathSound: 'slime_death', hitSound: 'slime_squish',
-    attacks: [{ id: 'engulf', kind: 'lunge', range: 1.9, arc: 1.6, windup: 0.6, recover: 0.8, anim: 'attack', leap: 6 }],
+    attacks: [{ id: 'engulf', kind: 'lunge', range: 1.9, arc: 1.6, windup: 0.6, recover: 0.8, anim: 'attack', leap: 6, hop: 0.35 }],
     splitInto: 'slimeling', splits: 2, resist: { poison: 0.5 },
   },
   slimeling: {
     name: 'Ooze Spawn', hp: 22, speed: 4, dmg: 5, cost: 1, ai: 'melee', poise: 5, gold: 0, sound: 'slime_squish', deathSound: 'slime_death', scale: 0.55, model: 'slime',
-    attacks: [{ id: 'engulf', kind: 'lunge', range: 1.3, arc: 1.6, windup: 0.4, recover: 0.6, anim: 'attack', leap: 4 }],
+    attacks: [{ id: 'engulf', kind: 'lunge', range: 1.3, arc: 1.6, windup: 0.4, recover: 0.6, anim: 'attack', leap: 4, hop: 0.25 }],
   },
   ghoul: {
     name: 'Drowned Ghoul', hp: 90, speed: 4.6, dmg: 13, cost: 4, ai: 'melee', poise: 35, gold: 3, sound: 'ghoul_growl', deathSound: 'enemy_death', undead: true,
     attacks: [
       { id: 'claw', kind: 'melee', range: 2.1, arc: 1.5, windup: 0.45, recover: 0.55, anim: 'swing' },
-      { id: 'pounce', kind: 'lunge', range: 6, minRange: 3, arc: 1.2, windup: 0.6, recover: 0.9, anim: 'charge', leap: 13, cd: 5, dmgMult: 1.4 },
+      { id: 'pounce', kind: 'lunge', range: 6, minRange: 3, arc: 1.2, windup: 0.6, recover: 0.9, anim: 'charge', leap: 13, hop: 0.6, cd: 5, dmgMult: 1.4 },
     ],
   },
   bilespitter: {
@@ -116,7 +116,7 @@ export const ENEMY_DEFS = {
   },
   hound: {
     name: 'Hellhound', hp: 70, speed: 7.5, dmg: 12, cost: 3, ai: 'melee', poise: 20, gold: 2, sound: 'beast_growl', deathSound: 'beast_growl', flank: true, pack: [2, 4],
-    attacks: [{ id: 'bite', kind: 'lunge', range: 2.0, arc: 1.4, windup: 0.35, recover: 0.6, anim: 'bite', leap: 7, st: { burn: [2, 3] } }],
+    attacks: [{ id: 'bite', kind: 'lunge', range: 2.0, arc: 1.4, windup: 0.35, recover: 0.6, anim: 'bite', leap: 7, hop: 0.3, st: { burn: [2, 3] } }],
     resist: { fire: 0.6 },
   },
   gargoyle: {
@@ -244,7 +244,7 @@ export const ENEMY_DEFS = {
   mimic: {
     name: 'Mimic', hp: 230, speed: 4.8, dmg: 15, cost: 8, ai: 'melee', poise: 90, gold: 14, sound: 'mimic_growl', deathSound: 'mimic_death', hitSound: 'enemy_hit',
     attacks: [
-      { id: 'chomp', kind: 'lunge', range: 2.4, arc: 1.5, windup: 0.5, recover: 0.75, anim: 'chomp', leap: 8 },
+      { id: 'chomp', kind: 'lunge', range: 2.4, arc: 1.5, windup: 0.5, recover: 0.75, anim: 'chomp', leap: 8, hop: 0.35 },
       { id: 'pounce', kind: 'nova', radius: 3.4, windup: 0.95, recover: 1.0, anim: 'pounce', cd: 7, dmgMult: 1.3, st: { stun: 0.4 } },
       { id: 'tongue', kind: 'melee', range: 4.6, arc: 0.5, windup: 0.6, recover: 0.8, anim: 'tongue', cd: 3.5, kb: -6, st: { slow: 1.5 } },
     ],

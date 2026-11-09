@@ -84,6 +84,10 @@ export function hitPoint(a, x, z, out) {
   return out;
 }
 
+// how far a body's nearest point stays from a player (the move step's keep-out): shields and big weapons stick
+// out past the body radius, so those stay further from the camera
+const keepOutR = (a) => a.radius + (a.def.frontShield || a.boss || (a.def.cost ?? 0) >= 8 || a.def.splitInto || a.def.model === 'slime' ? 0.85 : 0.4);
+
 // a champion's affix, whichever of its (up to two) slots holds it
 export const hasAffix = (a, k) => a.affix === k || a.affix2 === k;
 
@@ -1104,8 +1108,7 @@ export class ActorManager {
       if (!p.alive || p.dead) continue;
       hitPoint(a, p.pos.x, p.pos.z, _hp);
       const dx = _hp.x - p.pos.x, dz = _hp.z - p.pos.z;
-      // shields and big weapons stick out past the body radius: keep those further from the camera
-      const rr = a.radius + (a.def.frontShield || a.boss || (a.def.cost ?? 0) >= 8 || a.def.splitInto || a.def.model === 'slime' ? 0.85 : 0.4);
+      const rr = keepOutR(a);
       const d = Math.hypot(dx, dz);
       const nx = d > 1e-3 ? dx / d : -Math.sin(a.yaw), nz = d > 1e-3 ? dz / d : -Math.cos(a.yaw);
       if (d < rr) { mx += nx * (rr - d) * 0.5; mz += nz * (rr - d) * 0.5; }
@@ -1447,7 +1450,7 @@ export class ActorManager {
     const fx = Math.sin(a.yaw), fz = Math.cos(a.yaw);
     if (a.faction === 'ally') {
       // summons strike enemies directly (host-side)
-      if (at.kind === 'lunge') { const leap = at.leap ?? 6; a.leapT = 0.2; a.leapV = { x: fx * leap * 2, z: fz * leap * 2 }; }
+      if (at.kind === 'lunge') { const leap = at.leap ?? 6; a.leapT = 0.2; a.leapV = { x: fx * leap * 2, z: fz * leap * 2 }; if (at.hop) { a.airT = 0; a.airDur = 0.2; a.airH = at.hop; g.net?.broadcast({ t: 'eair', id: a.id, d: 0.2, h: at.hop }); } }
       const reach = (at.range ?? 2) + a.radius + 0.4;
       g.spells.after(0.1, () => {
         for (const e of this._hostiles) {
@@ -1472,6 +1475,15 @@ export class ActorManager {
       case 'lunge': {
         const leap = at.leap ?? 6;
         a.leapT = 0.22; a.leapV = { x: fx * leap / 0.22 * 0.6, z: fz * leap / 0.22 * 0.6 };
+        // (a pounce leaves the floor: the model rides a low arc over the dash - visual only, every peer. A ghoul
+        // covering 8 m in 0.22 s had skated along the floor on all fours, a teleport from the player's eyes.)
+        // The arc spans the run it will get before a player's keep-out stops it (cut short there, it had bobbed
+        // in place in front of the camera)
+        if (at.hop) {
+          const full = leap * 0.6, run = g.allPlayers().includes(tgt) ? Math.max(0, dist - keepOutR(a) - (a.hitL ?? 0)) : full;
+          const k = Math.min(1, run / full);
+          if (k > 0.05) { a.airT = 0; a.airDur = 0.22 * k; a.airH = at.hop * k; g.net?.broadcast({ t: 'eair', id: a.id, d: a.airDur, h: a.airH }); }
+        }
         const land = Math.min(dist, leap * 0.6 * 0.22 * (1 / 0.22) * 0.22 + 0.5);
         g.broadcastHazard({ shape: 'arc', x: a.pos.x + fx * land, y: a.pos.y, z: a.pos.z + fz * land, r: at.range * 0.6 + a.radius, rot: a.yaw, angle: at.arc * 0.5, delay: 0.18, dmg, el: at.el ?? 'physical', st: at.st, kb: 4, vis: 0, src: a.id, mv: at.id });
         g.audio?.play('swing', { pos: a.pos, volume: 0.6 });
