@@ -1171,7 +1171,12 @@ export class EnemyInstance {
       // a leg (foot <- shin <- thigh) can bend to set its foot on a step: its two lengths, or none
       const leg = /^foot/.test(chain[0]?.name) && /^shin/.test(chain[1]?.name) && /^thigh/.test(chain[2]?.name)
         ? chain[0].position.length() + chain[1].position.length() : 0;
-      return { chain, pts: s.pts, leg, d: 0, lo: 0, raise: 0 };
+      // the planted-foot lock (see _footLock) also takes a digitigrade leg (toes <- ankle <- shin <- thigh: the
+      // Gravemaw's): the thigh it turns, and the hip-to-sole length the turn is worked out over
+      const thi = leg ? 2 : chain.findIndex((b, i) => i > 0 && i <= 3 && /^thigh/.test(b.name));
+      let lockLeg = leg;
+      if (!leg && thi > 0) for (let i = 0; i < thi; i++) lockLeg += chain[i].position.length();
+      return { chain, pts: s.pts, leg, thi, lockLeg, d: 0, lo: 0, raise: 0 };
     }) : null;
     this._lift = 0;
     this.sockets = {};
@@ -1479,16 +1484,16 @@ export class EnemyInstance {
     top.parent.updateWorldMatrix(true, false);
     const W = top.parent.matrixWorld;
     for (const s of this._soles) {
-      if (!s.leg) continue;
-      const c = s.chain, th = c[2], p = s.pts;
+      if (!s.lockLeg) continue;
+      const c = s.chain, ti = s.thi, th = c[ti], p = s.pts;
       const lk = s.lk ??= { on: false, x: 0, z: 0, cx: 0, cz: 0 };
       let cx = 0, cz = 0;
       for (let it = 0; it < 2; it++) {
         // the sole's middle and lowest point in the world, and the hips' frame (the thigh's parent)
         _fm.copy(W);
-        for (let i = c.length - 1; i >= 3; i--) { c[i].updateMatrix(); _fm.multiply(c[i].matrix); }
+        for (let i = c.length - 1; i > ti; i--) { c[i].updateMatrix(); _fm.multiply(c[i].matrix); }
         _fh.copy(_fm);
-        for (let i = 2; i >= 0; i--) { c[i].updateMatrix(); _fm.multiply(c[i].matrix); }
+        for (let i = ti; i >= 0; i--) { c[i].updateMatrix(); _fm.multiply(c[i].matrix); }
         const e = _fm.elements;
         const mx = (p[0] + p[3]) * 0.5, my = (p[1] + p[4]) * 0.5, mz = (p[2] + p[5]) * 0.5;
         const wx = e[0] * mx + e[4] * my + e[8] * mz + e[12], wz = e[2] * mx + e[6] * my + e[10] * mz + e[14];
@@ -1514,7 +1519,7 @@ export class EnemyInstance {
         const dxw = lk.x - wx, dzw = lk.z - wz, h = _fh.elements;
         const sx = Math.hypot(h[0], h[1], h[2]) || 1, sz = Math.hypot(h[8], h[9], h[10]) || 1;
         const lx = (h[0] * dxw + h[2] * dzw) / (sx * sx), lz = (h[8] * dxw + h[10] * dzw) / (sz * sz);
-        const L = s.leg * 1.05;
+        const L = s.lockLeg * 1.05;
         const ax = clamp(-lz / L, -0.25, 0.25), az = clamp(lx / L, -0.25, 0.25);
         // (and the foot turned back by as much, so it stays level: tilted with the leg, a toe or heel dug in)
         th.rotation.x += ax; th.rotation.z += az; c[0].rotation.x -= ax; c[0].rotation.z -= az; cx += ax; cz += az;
@@ -1529,8 +1534,8 @@ export class EnemyInstance {
         // pose's own spot
         if (lk.m0 > 0) {
           const e = clamp(1 - Math.hypot(lk.cx, lk.cz) / lk.m0, 0, 1), up = Math.sin(Math.PI * e) * Math.min(0.6, lk.m0 * 2.5);
-          th.rotation.x -= 0.45 * up; c[1].rotation.x += 0.9 * up; c[0].rotation.x -= 0.4 * up;
-          c[1].updateMatrix();
+          th.rotation.x -= 0.45 * up; c[ti - 1].rotation.x += 0.9 * up; c[0].rotation.x -= 0.4 * up;
+          c[ti - 1].updateMatrix();
           if (e > 0.96) lk.m0 = 0;
         }
       }
