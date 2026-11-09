@@ -440,7 +440,22 @@ export function humanoidPose(m, s, P, dt) {
       pre.set(P.tgt);
       A.stance(P, m, s);
       if (k < 1) for (let i = 0; i < pre.length; i++) P.tgt[i] = pre[i] + (P.tgt[i] - pre[i]) * k;
-    } else A.stance(P, m, s);
+    } else {
+      A.stance(P, m, s);
+      // (walking, the stance's lean of one leg over the other - a guard's foot forward - evens out: kept, one stance
+      // leg stood shorter, the body rode low over it, and the other foot's swing skimmed the floor at the end of every
+      // stride, caught by the lock while it still swung and slid)
+      const wv = st.moveW ?? 0;
+      if (wv > 1e-3) {
+        const Kq = P.tgt.length / P.n;
+        for (const b of ['thigh', 'shin', 'foot']) {
+          const iL = P.idx.get(b + 'L'), iR = P.idx.get(b + 'R');
+          if (iL === undefined || iR === undefined) continue;
+          const oL = iL * Kq, oR = iR * Kq, mid = (P.tgt[oL] + P.tgt[oR]) * 0.5;
+          P.tgt[oL] += (mid - P.tgt[oL]) * wv; P.tgt[oR] += (mid - P.tgt[oR]) * wv;
+        }
+      }
+    }
   }
 
   const floating = A.gait === 'float';
