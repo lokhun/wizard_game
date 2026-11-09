@@ -753,7 +753,10 @@ function armIK(m, P, W, side, g, z, pole, wIK) {
     if (_w.b.lengthSq() < 0.5) _w.b.set(0, 0, -1);
     _w.c.crossVectors(_w.a, _w.b);
     _w.M.makeBasis(_w.a, _w.b, _w.c);
-    _w.Bv.copy(pole).applyQuaternion(_w.qc).addScaledVector(_w.A, -pole.dot(_w.A)).normalize();
+    // (the pole across the reach: the rotated pole less its share along the reach - it had taken off the unrotated
+    // pole's share, which left a slant that grew as the arm went overhead, and the elbow flipped sides in a frame there)
+    _w.Bv.copy(pole).applyQuaternion(_w.qc);
+    _w.Bv.addScaledVector(_w.A, -_w.Bv.dot(_w.A)).normalize();
     _w.v.crossVectors(_w.A, _w.Bv);
     _w.M2.makeBasis(_w.A, _w.Bv, _w.v);
     _w.M2.multiply(_w.M.transpose());
@@ -847,7 +850,9 @@ function wardenMaul(m, s, P, dt) {
   // dragged: right fist (FK) holds the butt end, head scraping on its face behind; pitch solved so it touches
   if (W.modes[2] > 1e-3) {
     const ih = W.iHandR;
-    poseModel(m, P.tgt, W.Mn);
+    // (the fist as drawn - the eased pose - not the pose it is heading for: read off the target, the maul had jumped
+    // with it the frame an action began, 36 cm, while the hand itself eased over)
+    poseModel(m, P.cur, W.Mn);
     _w.p.set(0, -GW_GRIP, 0).applyMatrix4(W.Mn[ih]); // fist grip
     const yaw = Math.PI + 0.85, g = 0.14;
     let lo = -1.4, hi = 0.3, pitch = -0.5;
