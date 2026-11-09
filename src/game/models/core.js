@@ -1509,7 +1509,14 @@ export class EnemyInstance {
           // easing off - out of the walk, any turn; walking, a big one, from a sharp turn: caught the next frame, still on
           // the floor, it had snapped to the pose's own spot - 25-50 cm in one frame as a strike, its wind-up or its
           // recovery moved the feet, or the body spun round)
-          if (down && !lk.on && !(lk.m0 > 0) && (Math.abs(lk.cx) + Math.abs(lk.cz) < (walking ? 0.25 : 0.06))) { lk.on = true; lk.x = wx; lk.z = wz; }
+          // (walking, a foot is caught only once it has stopped - its own speed over the floor a planted foot's, not a
+          // swinging one's: the gait sets a swinging foot down a little before its swing ends, and caught at the first
+          // touch the lock had held it against the swing, its turn climbing to 0.25 rad in two frames, let it go, let
+          // it slide, and caught it again with the turn dropped - a skeleton's foot every stride)
+          const fv = lk.pt !== undefined && dt > 1e-4 ? Math.hypot(wx - lk.px, wz - lk.pz) / dt : 0;
+          lk.px = wx; lk.pz = wz; lk.pt = 1;
+          const still = !walking || fv < 1.2 * (this.height / 1.8);
+          if (down && still && !lk.on && !(lk.m0 > 0) && (Math.abs(lk.cx) + Math.abs(lk.cz) < (walking ? 0.25 : 0.06))) { lk.on = true; lk.x = wx; lk.z = wz; }
           else if (!down && lo - gy > 0.035) lk.on = false;
           if (lk.on && Math.hypot(lk.x - wx, lk.z - wz) > 0.3 * (this.height / 1.8)) { lk.on = false; lk.m0 = (this.state.moveW ?? 0) > 0.3 ? 0 : Math.hypot(lk.cx, lk.cz); } // (left too far behind: let it step - standing, a step with a lift; walking, the gait's own)
           if (!lk.on) break;
