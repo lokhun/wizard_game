@@ -382,9 +382,9 @@ export function druid(kit, meta, o) {
       // vines wrapping the wrist and running over the back of the hand
       vg.push(tubeVar(helixPts(0.031, 0, 1, 2.2, 40).map((p) => V(p.x, p.z * 0.75, 0.06 - p.y * 0.1)), 0.0032, 50, 5, true));
       vg.push(tubeVar([V(0.03, 0.01, 0.0), V(0.02, 0.022, -0.03), V(0.0, 0.024, -0.06), V(-0.02, 0.02, -0.085)], 0.0026, 16, 5, true));
-      // (this one runs onto the palm by the thumb: it tapers to a tendril's tip lying on the skin; ending
-      // full thickness it had shown its cut end, a black hole at the root of the thumb)
-      vg.push(tubeVar([V(-0.03, 0.0, 0.01), V(-0.035, -0.012, -0.02), V(-0.031, -0.0175, -0.038), V(-0.026, -0.0165, -0.05)], (t) => 0.0022 * (1 - t * 0.8), 14, 5, true));
+      // (no tendril onto the palm: a dark vine 1-2 mm thick running in under the thumb's root showed only its
+      // end, a short black slash - in every open-palm cast it read as a cut across the root of the thumb, laid
+      // on the skin or not)
       add(g, mergeGeos(vg), vineMat);
       const th = [];
       for (let i = 0; i < 8; i++) {
