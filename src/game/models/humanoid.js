@@ -500,6 +500,10 @@ export function humanoidPose(m, s, P, dt) {
   if (!dead && !spawning && !seated && !action && anim !== 'stagger' && A.fidgets !== false) fidget(m, st, P, idleW, dt, A, s.look);
   else st.fidI = -1;
   if (A.rest && !dead) P.apply(A.rest, action ? 0 : 1);
+  // (a body that dies holds its weapon as it stood until it falls: dropped at once, the arm swung straight down
+  // and a halberd or a sword went flat at the hip, standing out a metre, while the body still stood for most of
+  // a second)
+  else if (A.rest && dead && typeof A.death !== 'function') P.apply(A.rest, 1 - smooth(0.2, 0.6, s.progress));
   if (!dead && !spawning) {
     P.r('armL', 0, 0, (A.armOut ?? 0.1)); P.r('armR', 0, 0, -(A.armOut ?? 0.1));
     if (!action && !A.rest) { P.r('foreL', -0.15); P.r('foreR', -0.15); }
