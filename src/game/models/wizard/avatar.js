@@ -282,6 +282,7 @@ export function createAvatar(classId, ctx) {
   let phase = 0, moveK = 0, lastT = 0, deadK = 0, downK = 0, castK = 0, idleT = 0;
   let hurtX = 0, hurtV = 0, hurtSide = 1; // (a blow's recoil: a damped spring)
   let airK = 0, airT = 0, fallV = 0, landX = 0, landV = 0; // (a jump: in the air, and the landing's crouch)
+  let dashK = 0; // (a dash: the body's burst well past a run)
   // turning on the spot (mouse-look) steps the feet round: yaw rate eased into 0..1, its sign, and a step phase
   let turnK = 0, turnDir = 1, turnPh = 0, prevYaw = null;
   const _te = new THREE.Euler();
@@ -320,7 +321,7 @@ export function createAvatar(classId, ctx) {
   }
 
   function resetState() {
-    phase = 0; moveK = 0; lastT = 0; deadK = 0; downK = 0; castK = 0; idleT = 0; hurtX = 0; hurtV = 0; airK = 0; airT = 0; fallV = 0; landX = 0; landV = 0; haveprev = false; turnK = 0; prevYaw = null;
+    phase = 0; moveK = 0; lastT = 0; deadK = 0; downK = 0; castK = 0; idleT = 0; hurtX = 0; hurtV = 0; airK = 0; airT = 0; fallV = 0; landX = 0; landV = 0; dashK = 0; haveprev = false; turnK = 0; prevYaw = null;
     for (const j of allJoints) { j.t.set(0, 0, 0); j.c.set(0, 0, 0); }
     hips.position.copy(hipsBase);
     cloth.first = true;
@@ -344,7 +345,9 @@ export function createAvatar(classId, ctx) {
     const wscale = rs.x;
     if (haveprev && dt > 1e-4) {
       tmp.subVectors(wpos, wprev).divideScalar(dt);
-      if (tmp.lengthSq() > 400) tmp.set(0, 0, 0);
+      // (a jump of the root faster than 50 m/s is a teleport, not motion; a dash is 36 m/s - at the old 20 m/s cut-off
+      // a partner's avatar had read every dash as standing still)
+      if (tmp.lengthSq() > 2500) tmp.set(0, 0, 0);
       wvel.lerp(tmp, 1 - Math.exp(-dt * 10));
     } else wvel.set(0, 0, 0);
     // a huge turn in one frame (teleport / respawn / spawn facing): snap the cloth
@@ -441,14 +444,14 @@ export function createAvatar(classId, ctx) {
       }
     }
     if (k > 0.001 && airK < 0.99) {
-      const A = (0.42 + 0.12 * Math.min(1, speed / 4)) * k * (1 - airK);
+      const A = (0.42 + 0.12 * Math.min(1, speed / 4)) * k * (1 - airK) * (1 - dashK);
       for (let li = 0; li < 2; li++) {
         const L = legs[li];
         const p = phase + (L.s > 0 ? 0 : Math.PI);
         const sw = Math.sin(p), cs = Math.cos(p);
         L.jT.add(-sw * A * dirZ, 0, sw * A * dirX * 0.75);
-        L.jK.add((Math.pow(Math.max(0, cs * Math.sign(dirZ || 1)), 1.4) * 1.0 + 0.1) * k * (1 - airK), 0, 0);
-        L.jA.add((sw * A * 0.3 - 0.15 * Math.max(0, -cs)) * k * (1 - airK), 0, 0);
+        L.jK.add((Math.pow(Math.max(0, cs * Math.sign(dirZ || 1)), 1.4) * 1.0 + 0.1) * k * (1 - airK) * (1 - dashK), 0, 0);
+        L.jA.add((sw * A * 0.3 - 0.15 * Math.max(0, -cs)) * k * (1 - airK) * (1 - dashK), 0, 0);
       }
       jHips.add(0, swing * 0.11 * k * dirZ, 0);
       jSpine.add(0.08 * k * Math.min(1, speed / 3) * dirZ, -swing * 0.09 * k * dirZ, -dirX * 0.06 * k);
@@ -459,6 +462,24 @@ export function createAvatar(classId, ctx) {
       else armL.jS.add(swing * 0.12 * k, 0, 0);
       armR.jS.add(-swing * 0.16 * k * dirZ - 0.08 * k, 0, 0);
       if (hold === 'staff') focusDir.lerp(tmp.set(0.05, 1, 0.35), k * 0.5);
+    }
+    // ---- a dash (a burst well past a run, read off the root's own speed: a partner's dash is a 36 m/s lunge of 0.18 s):
+    // the body pitches into it, low, the legs split in a lunge - the leading leg reaching, the other trailing -
+    // the free arm flung back; the stride holds still under it. (The avatar had glided along upright on straight
+    // legs, only its coat flying out behind.)
+    {
+      const tgt = THREE.MathUtils.smoothstep(lsp, 12, 18) * (1 - downK) * (1 - deadK); // (a run with every speed tome stays under 12 m/s)
+      dashK += (tgt - dashK) * (1 - Math.exp(-dt * (tgt > dashK ? 30 : 7)));
+      if (dashK > 0.01) {
+        const d = dashK, fz = lsp > 0.3 ? lvel.z / lsp : 1, fx = lsp > 0.3 ? lvel.x / lsp : 0;
+        jHips.add(0.12 * d * fz, 0, -0.1 * d * fx);
+        jSpine.add(0.22 * d * fz, 0, -0.12 * d * fx); jChest.add(0.08 * d * fz, 0, 0); jHead.add(-0.22 * d * fz, 0, 0);
+        hips.position.y -= 0.07 * d;
+        legL.jT.add(-0.55 * d * fz, 0, 0.25 * d * fx); legL.jK.add(0.45 * d, 0, 0); legL.jA.add(0.15 * d, 0, 0);
+        legR.jT.add(0.45 * d * fz, 0, 0.25 * d * fx); legR.jK.add(0.35 * d, 0, 0); legR.jA.add(0.3 * d, 0, 0);
+        if (!lhold) armL.jS.add(0.6 * d, 0, 0.25 * d);
+        armR.jS.add(0.2 * d, 0, 0);
+      }
     }
     // ---- turning on the spot: short side steps toward the turn, one foot then the other
     const tk = turnK * still;
