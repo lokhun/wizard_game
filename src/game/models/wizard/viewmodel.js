@@ -217,6 +217,30 @@ const SLEEVE_PROFILES = {
 };
 // a warm, bright cuff colour reads as gold braid: give it a metal edge
 const gilt = (hex) => { const r = hex >> 16, g = (hex >> 8) & 255, b = hex & 255; return r > 0xb0 && r > g && g > b * 1.3; };
+// The sleeves' cloth: a soft rim of the room's sky light where the cloth turns away from the eye, strong on a
+// near-black robe and gone on a pale one (a necromancer's or warlock's sleeve, albedo ~0.006, took no light the
+// dungeon gives and was a flat black cut-out reaching in from the screen's edge; brightening the cloth or the
+// hands' ambient fivefold changed it by a pixel value or two). Its own material, not marked shared, so the bake
+// keeps it as it is (the avatars' cloth is untouched).
+function sleeveCloth(src) {
+  const m = src.clone();
+  m.userData = {};
+  m.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+    {
+      #if NUM_HEMI_LIGHTS > 0
+      vec3 skyR = hemisphereLights[0].skyColor;
+      #else
+      vec3 skyR = vec3(0.08);
+      #endif
+      float ndvR = clamp(abs(dot(normal, normalize(vViewPosition))), 0.0, 1.0);
+      float darkR = 1.0 - smoothstep(0.02, 0.2, dot(diffuseColor.rgb, vec3(0.3, 0.55, 0.15)));
+      reflectedLight.indirectDiffuse += skyR * pow(1.0 - ndvR, 3.0) * 0.5 * darkR;
+    }`);
+  };
+  m.customProgramCacheKey = () => 'vmrim';
+  return m;
+}
 function sleeveGeo(sl, seed) {
   // (a bell this close to the lens would fill a corner of the view: first person keeps its flare modest)
   const bw = Math.min(0.062, (sl.bell ?? 0.1) * 0.82);
@@ -258,7 +282,7 @@ export function createViewModel(classId, ctx) {
   // sleeves follow the class costume (cut, colour and cuff)
   const cos = getCostume(classId, meta);
   const sl = cos.sleeves ?? { kind: 'fitted', cuffKind: 'turn' };
-  const robe = kit.clothDS(sl.col ?? cos.coat?.col ?? cos.inner?.col ?? meta.robe);
+  const robe = sleeveCloth(kit.clothDS(sl.col ?? cos.coat?.col ?? cos.inner?.col ?? meta.robe));
   const trim = kit.cloth(sl.cuff ?? meta.trim);
   const gold = kit.gold();
 
