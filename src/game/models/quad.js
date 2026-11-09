@@ -164,7 +164,15 @@ export function quadPose(m, s, P, dt) {
   st.moveW = (st.moveW ?? 0) + (moveTgt - (st.moveW ?? 0)) * (1 - Math.exp(-(moveTgt > (st.moveW ?? 0) ? 40 : 8) * dt));
   const w = st.moveW, ph = st.phase;
   const bound = A.gait === 'bound';
-  const offs = bound ? { FL: 0, FR: 0.35, BL: Math.PI, BR: Math.PI + 0.35 } : { FL: 0, BR: 0.1, FR: Math.PI, BL: Math.PI + 0.1 };
+  // Run flat out, a trotting beast gallops: once its legs can cycle no faster and each paw is down for less than
+  // ~40% of the stride, its footfalls ease from the trot's diagonal pairs into a gallop's (the hind pair, then
+  // half a stride later the fore pair, each pair a little staggered) and its back flexes with them (below). (A
+  // hound at 7.5 m/s had trotted on a rigid level back, its paws down a quarter of the time: a toy's gait.)
+  const galT = bound ? 0 : smooth(0.42, 0.3, duty) * w;
+  st.gal = (st.gal ?? 0) + (galT - (st.gal ?? 0)) * (1 - Math.exp(-3 * dt));
+  const gw = st.gal;
+  const offs = bound ? { FL: 0, FR: 0.35, BL: Math.PI, BR: Math.PI + 0.35 }
+    : { FL: 0, BR: 0.1 - 2.69 * gw, FR: Math.PI - 2.59 * gw, BL: Math.PI + 0.1 - 0.1 * gw };
   const amp = A.legAmp ?? 0.5, lift = A.lift ?? 0.9;
   const action = anim === 'windup' || anim === 'attack' || anim === 'cast';
   // moving, the legs follow the cycle nearly as authored (their easing x8 by how much the body moves; not in an
@@ -221,8 +229,18 @@ export function quadPose(m, s, P, dt) {
     P.p('body', 0, Math.cos(ph * 2) * 0.012 * w * (Q.bodyH / 0.3), 0);
     P.r('body', Math.cos(ph) * 0.06 * w);
   } else {
-    P.p('body', 0, (0.64 - Math.abs(Math.cos(ph))) * 0.025 * w * (Q.bodyH / 0.5), 0);
-    P.r('body', 0, Math.sin(ph) * 0.04 * w, Math.sin(ph) * 0.03 * w);
+    const tw = w * (1 - gw);
+    P.p('body', 0, (0.64 - Math.abs(Math.cos(ph))) * 0.025 * tw * (Q.bodyH / 0.5), 0);
+    P.r('body', 0, Math.sin(ph) * 0.04 * tw, Math.sin(ph) * 0.03 * tw);
+    if (gw > 0.001) {
+      // galloping: the back arches as the legs gather under the body (fore paws pushed back, hind paws reaching
+      // forward) and stretches long as they reach out; the body rocks with the push of each pair, and rides
+      // highest in the flights
+      const flex = Math.cos(ph - 4.0), g = gw * w;
+      P.r('front', flex * 0.16 * g); P.r('rear', -flex * 0.16 * g);
+      P.r('body', Math.cos(ph - 2.4) * 0.07 * g);
+      P.p('body', 0, Math.cos(ph * 2 - 1.0) * 0.008 * g * (Q.bodyH / 0.5), 0);
+    }
   }
   P.r('body', (A.lean ?? 0.05) * w);
   // banking: a running beast leans into its turn and leads it with its head
