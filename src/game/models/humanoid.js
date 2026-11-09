@@ -292,6 +292,7 @@ function fidget(m, st, P, idleW, dt, A, engaged) {
 // with the body: 0.4-1.6 m/s at 3 rad/s.)
 const TS_A = 0.25, TS_T = 0.18, TS_MAX = 0.7;
 const STOP_T = 0.2; // (a closing step's time)
+const SW_K = 1.3, KNEE_V = 0.4; // (a swinging leg: the thigh's ease into the footfall, where its knee is most folded)
 function turnSteps(m, st, hold, dt) {
   const T = st.ts ??= { y: null, l: [{ a: 0, p: -1, f: 0 }, { a: 0, p: -1, f: 0 }] };
   const yaw = m.root.rotation.y;
@@ -474,9 +475,24 @@ export function humanoidPose(m, s, P, dt) {
     // across the hips as well as fore and aft, so a body moving sideways steps sideways)
     const off = st.sw - st.twist, ox = Math.cos(off), oz = -Math.sin(off);
     const wL = legW[0], wR = legW[1];
-    P.r('thighL', -ls * ampL * wL * ox, 0, -ls * ampL * wL * oz); P.r('thighR', ls * ampL * wR * ox, 0, ls * ampL * wR * oz);
-    P.r('shinL', (Math.max(0, cs) * knee + 0.08) * wL); P.r('shinR', (Math.max(0, -cs) * knee + 0.08) * wR);
-    P.r('footL', (-Math.max(0, cs) * 0.4 + ls * 0.2) * wL); P.r('footR', (-Math.max(0, -cs) * 0.4 - ls * 0.2) * wR);
+    // A swinging leg's thigh eases into the footfall (swung forward fast off the toe, slowing to a stop with a touch
+    // of pull-back as the heel comes down) and its knee folds early and is open before the foot lands (the most
+    // folded a third of the way through, in place of the sine's half-way). The thigh had swung at an even rate to
+    // the end and the knee opened fastest at the very end: the foot came down still flying forward at 9-14 m/s, a
+    // plague doctor's boot skidding over the floor for three frames every stride. The stance half is untouched, and
+    // so is walking backward: there the knee folding carries the foot the way the body goes and its opening holds it
+    // back at the footfall, as the sine had it (the eased swing more than doubled a backward walk's skid).
+    const swE = (v) => v + SW_K * v * (1 - v);
+    const kn = (v) => (v < KNEE_V ? Math.sin(Math.PI * 0.5 * v / KNEE_V) : 0.5 + 0.5 * Math.cos(Math.PI * (v - KNEE_V) / (1 - KNEE_V)));
+    // (eased between the two on a flip, which keeps the swing's progress: switched, a leg mid-swing jumped ~0.25 rad)
+    const fw = st.swFw = (st.swFw ?? 1) + ((back ? 0 : 1) - (st.swFw ?? 1)) * (1 - Math.exp(-12 * dt));
+    // (v: how far through its swing a leg is, in time - backward the phase runs the other way)
+    const sgB = back ? -1 : 1, vL = back ? (1 - ls) * 0.5 : (ls + 1) * 0.5, vR = 1 - vL;
+    const tL = cs > 0 ? -ls + (sgB * (1 - 2 * swE(vL)) + ls) * fw : -ls, tR = cs < 0 ? ls + (sgB * (1 - 2 * swE(vR)) - ls) * fw : ls;
+    const kL = cs > 0 ? cs + (kn(vL) - cs) * fw : 0, kR = cs < 0 ? -cs + (kn(vR) + cs) * fw : 0;
+    P.r('thighL', tL * ampL * wL * ox, 0, tL * ampL * wL * oz); P.r('thighR', tR * ampL * wR * ox, 0, tR * ampL * wR * oz);
+    P.r('shinL', (kL * knee + 0.08) * wL); P.r('shinR', (kR * knee + 0.08) * wR);
+    P.r('footL', (-kL * 0.4 + ls * 0.2) * wL); P.r('footR', (-kR * 0.4 - ls * 0.2) * wR);
     if (st.stopSeq) {
       // (the stepping foot clears the floor: knee up, toe down, as it swings under)
       for (let k = 0; k < 2; k++) {
