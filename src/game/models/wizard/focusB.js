@@ -197,9 +197,13 @@ export function lightbinder(kit, meta, o) {
 // ---------------------------------------------------------------------------
 export function geomancer(kit, meta, o) {
   const { glows, detail } = o;
+  // (the back plate a smooth dressed stone, lighter than the rough knuckle stones and bracer: all in the rough rock
+  // it had read from the eye as one dark brick with bark on it; the runes a deep amber cut into it - in the class
+  // colour at full glow, tone-mapped to a pale cream and laid on top, they had read as crossed sticks)
   const rock = kit.rock(0x9a9088);
   const rock2 = kit.rock(0x7a7068);
-  const runeMat = glows.add(kit.glow(meta.color, 2.6), 1);
+  const plate = kit.bone(0xa69c8e);
+  const runeMat = glows.add(kit.glow(0xff8424, 2.2), 1);
   const rr = mulberry(55);
   // ---- stone gauntlet, in hand space (fist: fingers -Z, back +Y) ---------
   const G = new THREE.Group();
@@ -207,10 +211,11 @@ export function geomancer(kit, meta, o) {
     const g = roundedBox(w, h, d, Math.min(w, h, d) * 0.25, 2);
     return noisify(g, amp, 60, seed, 2);
   };
-  const stones = [
+  const plates = [
     xf(chunk(0.1, 0.034, 0.088, 1, 0.004), { y: 0.024, z: -0.052, rx: 0.06 }),
     xf(chunk(0.096, 0.03, 0.05, 2), { y: 0.02, z: 0.0, rx: -0.1 }),
   ];
+  const stones = [];
   // knuckle stones over the curled fingers
   for (let i = 0; i < 4; i++) {
     const x = -0.03 + i * 0.0195;
@@ -225,13 +230,14 @@ export function geomancer(kit, meta, o) {
     noisify(g, 0.003, 50, 40 + i, 2);
     stones.push(xf(g, { rx: Math.PI / 2, z: 0.03 + i * 0.038, ry: i * 0.3, sy: 1 }).scale(1, 0.8, 1));
   }
+  add(G, flat(mergeGeos(plates)), plate);
   add(G, flat(mergeGeos(stones)), rock);
   // glowing seams and runes
   const runes = [];
   const seam = (pts, r = 0.0013) => runes.push(tubeVar(pts, r, 8, 3, true));
-  seam([V(-0.03, 0.043, -0.08), V(0, 0.046, -0.06), V(0.03, 0.043, -0.04)]);
-  seam([V(0, 0.046, -0.085), V(0, 0.047, -0.02)]);
-  seam([V(-0.02, 0.045, -0.03), V(0.02, 0.045, -0.075)]);
+  seam([V(-0.03, 0.0415, -0.08), V(0, 0.0435, -0.06), V(0.03, 0.0415, -0.04)], 0.0016);
+  seam([V(0, 0.043, -0.085), V(0, 0.044, -0.02)], 0.0016);
+  seam([V(-0.02, 0.0425, -0.03), V(0.02, 0.0425, -0.075)], 0.0016);
   for (let i = 0; i < 3; i++) {
     const z = 0.03 + i * 0.038;
     const a0 = rr() * 6;
