@@ -461,6 +461,19 @@ export function createAvatar(classId, ctx) {
       jSpine.add(0.08 * k * Math.min(1, speed / 3) * dirZ, -swing * 0.09 * k * dirZ, -dirX * 0.06 * k);
       jChest.add(0, -swing * 0.05 * k * dirZ, 0);
       hips.position.y += (Math.abs(Math.cos(phase)) - 0.55) * 0.035 * k;
+      // the weight passes from foot to foot: the pelvis shifts over the stance leg and dips on the swinging side, the
+      // spine rolls back past upright so the chest leans a little over the stance foot, and the thighs turn back by as
+      // much so the feet stay where the stride puts them (seen from the front the walk had been a glide: only the
+      // turn of the hips and a 3.5 cm bob, both hard to see head-on)
+      {
+        const sway = -Math.cos(phase) * k * (1 - airK) * (1 - dashK) * Math.abs(dirZ), roll = sway * 0.05, shift = sway * 0.024;
+        hips.position.x += shift; hips.position.y -= Math.abs(roll) * HIP_X;
+        jHips.add(0, 0, roll);
+        jSpine.add(0, 0, -roll * 1.2);
+        jHead.add(0, 0, roll * 0.25);
+        const back = -(roll + shift / (BODY_Y.hipJ - BODY_Y.ankle));
+        for (const L of legs) L.jT.add(0, 0, back);
+      }
       // free arm swings opposite its leg; the staff arm swings a little
       if (!lhold) armL.jS.add(swing * 0.5 * k * dirZ, 0, 0.04 * k), armL.jE.add(-0.25 * k - Math.max(0, -swing) * 0.35 * k, 0, 0);
       else armL.jS.add(swing * 0.12 * k, 0, 0);
