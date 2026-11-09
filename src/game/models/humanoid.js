@@ -343,15 +343,25 @@ export function humanoidPose(m, s, P, dt) {
   // going backward the stride runs in reverse. (Feet no longer skate sideways under a forward walk.)
   let rel = s.dir ?? 0;
   rel -= Math.round(rel / TAU) * TAU;
-  const back = spd > 0.3 && Math.abs(rel) > 1.95;
+  // (with a margin either way: a kiting archer, its way hovering about the line, had flipped 50 times in 15 s)
+  const back = spd > 0.3 && Math.abs(rel) > (st.back ? 1.75 : 2.15);
+  // (going backward is the forward cycle run with its phase negated and the stride's axis turned round: flipped
+  // there, the phase is negated with it, so the legs carry on where they were - they had crossed over to the
+  // other side in a frame, 15-35 cm)
+  if (st.back !== undefined && back !== st.back) { st.phase = -(st.phase ?? 0); if (st.stepSg) st.stepSg = -st.stepSg; }
+  st.back = back;
   const twistTgt = spd > 0.3 ? clamp(back ? rel - Math.sign(rel) * Math.PI : rel, -1.05, 1.05) : 0;
   st.twist = (st.twist ?? 0) + (twistTgt - (st.twist ?? 0)) * (1 - Math.exp(-9 * dt));
   // (the legs swing along the way of travel, eased: a foe going from a chase to circling sideways had swung its
-  // stride round 80 degrees in one frame, the leading foot 28 cm; flipped at once on a turn to walking backward, as
-  // the stride's sign flips with it)
+  // stride round 80 degrees in one frame, the leading foot 28 cm)
   const swT = back ? rel - Math.sign(rel) * Math.PI : rel;
-  if (st.swBack !== back || st.sw == null) st.sw = swT;
-  else { let d = swT - st.sw; d -= Math.round(d / TAU) * TAU; st.sw += d * (1 - Math.exp(-12 * dt)); }
+  if (st.sw == null) st.sw = swT;
+  else {
+    // (turned round with the stride on a flip to or from walking backward, from where it was: snapped to its new
+    // aim there, a body turning as it went had its stride swung by the lag, ~0.4 rad)
+    if (st.swBack !== back) st.sw += Math.PI;
+    let d = swT - st.sw; d -= Math.round(d / TAU) * TAU; st.sw += d * (1 - Math.exp(-12 * dt));
+  }
   st.swBack = back;
   // Setting off from a standstill the stride starts where the legs pass each other (no leg is spread, so the stride
   // can come up to full at once) and the walk weight comes up three times faster than it eases away: the body moves
