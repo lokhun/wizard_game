@@ -135,7 +135,10 @@ const stepK = (from, to, n, k) => ((to['thigh' + n]?.[0] ?? 0) - (from?.['thigh'
 export function act2(W, S, o = {}) {
   const hit = o.hit ?? 0.3;
   return (P, ph, p, m, s) => {
-    if (ph === 'windup') {
+    // (a cast's first pass is its wind-up: played as the strike, the throw came a quarter of the way in, long before
+    // anything left the hand, and the strike's own pass after it started over from the wind-up pose - an imp's hand
+    // jumped 28 cm at every fireball)
+    if (ph === 'windup' || (ph === 'cast' && m.state.castPass === 1)) {
       P.apply(W);
       stepLift(P, null, W, Math.sin(Math.PI * clamp((s?.t ?? 1) / 0.3)));
       const tr = smooth(0.5, 1, p) * (o.tremble ?? 0.025);
@@ -547,6 +550,11 @@ export function humanoidPose(m, s, P, dt) {
   } else if (action) {
     const key = s.attackType;
     const fn = A.actions?.[key] ?? ACT[key] ?? (anim === 'cast' ? (A.actions?.cast ?? ACT.cast) : (A.actions?.[A.defaultAttack] ?? ACT[m.spec.defaultAttack] ?? ACT.swing));
+    // (which pass of an action this is: a cast's wind-up plays 'cast' too, and its strike 'cast' or 'attack' after it,
+    // its progress starting over - see act2)
+    if (!st.actPrev) st.castPass = 1;
+    else if (st.actPrev === 'cast' && (anim === 'attack' || (anim === 'cast' && s.progress + 0.2 < (st.actP ?? 0)))) st.castPass = 2;
+    st.actPrev = anim; st.actP = s.progress;
     const r = fn(P, anim, s.progress, m, s);
     if (typeof r === 'number') rate = r;
     // muzzle glow for casters
@@ -572,6 +580,7 @@ export function humanoidPose(m, s, P, dt) {
     m.setOrb(A.idleOrb);
   }
 
+  if (!action || seated) st.actPrev = null;
   if (A.extra) A.extra(P, m, s, dt, { w, ph, sn, cs, br, action, seated });
   return rate;
 }
