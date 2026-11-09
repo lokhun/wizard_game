@@ -343,6 +343,19 @@ export function buildHand(opts) {
       }
     }
   }
+  // the thenar: the heel of the palm on the thumb's side swells out round the thumb's root (the root's round
+  // joint had stood 8-10 mm proud of a straight palm edge, a knob with a notch above it: the thumb a sausage
+  // stuck on the hand)
+  {
+    const B = 0.012;
+    for (let i = 0; i < pp.count; i++) {
+      const x = pp.getX(i);
+      if (x >= 0) continue;
+      const y = pp.getY(i), z = pp.getZ(i);
+      const w = Math.exp(-(((z + 0.022) / 0.016) ** 2)) * Math.exp(-(((y + 0.005) / 0.013) ** 2)) * Math.min(1, (x / 0.03) ** 2);
+      pp.setX(i, x - B * w);
+    }
+  }
   if (pcol) palm.setAttribute('color', new THREE.Float32BufferAttribute(pcol, 3));
   palm.computeVertexNormals();
   // its texture repeated three times round and along (the surfaces tile): once round the whole hand, the grain
