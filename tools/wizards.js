@@ -296,7 +296,7 @@ function stepView(dt) {
 }
 
 function stepAvatars(dt) {
-  const anim = state.anim;
+  const anim = P.has('from') && state.t < num('from', 0) ? 'idle' : state.anim; // (from=<t>: idle until then, to see a state begin)
   const sp = anim === 'move' ? num('speed', 3.2) : 0;
   let cp = state.cp;
   if (cp < 0) cp = (state.t * 1.2) % 1;

@@ -26,6 +26,10 @@ import { getCostume, dress } from './costumes.js';
 // ---------------------------------------------------------------------------
 
 const SKIRT_N = 12, SKIRT_SEG = 4;
+// the leg's two bones (hip to knee, knee to ankle), for the gait's solve
+const LEG_A = BODY_Y.hipJ - BODY_Y.knee, LEG_B = BODY_Y.knee - BODY_Y.ankle;
+// the ground one full stride (two steps) covers at a speed, and the most a single planted foot may cover
+const strideOf = (v) => 1.1 + 0.28 * Math.min(v, 7), STEP_MAX = 0.84;
 
 // Follow-through, as the enemies' rigs have it (models/core.js PoseBuf): each joint's eased angles drive a
 // light spring, kicked by every change in its angular speed and a share of its parent's, so a cast's thrust
@@ -293,6 +297,11 @@ export function createAvatar(classId, ctx) {
   let airK = 0, airV = 0, landK = 0, dashK = 0, hurtK = 0, hurtSide = 1, accX = 0, accZ = 0, plx = 0, plz = 0;
   // which cast is playing (a spell's own style and hand: see the cast block), and whether the free hand is in it
   let castStyle = null, castLeft = false, castRight = true;
+  // dying: time since the fall began (it is played, not eased: the knees go, the body tips and lands)
+  let deadT = 0;
+  // at rest: a glance (where the head is turned to, until when), a blink, and now and then a look at the free hand
+  let glanceY = 0, glanceX = 0, glanceAt = 2, blinkAt = 1.5, blinkT = 1, gestT = -1, gestAt = 7;
+  const gait = new Float32Array(6); // (each foot's place this frame: along its path, lift, heel-to-toe roll)
   const leftFree = lgp.kind !== 'pole' && !F.left;
   // turning on the spot (mouse-look) steps the feet round: yaw rate eased into 0..1, its sign, and a step phase
   let turnK = 0, turnDir = 1, turnPh = 0, prevYaw = null;
@@ -334,6 +343,7 @@ export function createAvatar(classId, ctx) {
   function resetState() {
     phase = 0; moveK = 0; lastT = 0; deadK = 0; downK = 0; castK = 0; idleT = 0; haveprev = false; turnK = 0; prevYaw = null;
     airK = airV = landK = dashK = hurtK = accX = accZ = plx = plz = 0; castStyle = null; castLeft = false; castRight = true;
+    deadT = 0; glanceY = glanceX = 0; glanceAt = 2; blinkAt = 1.5; blinkT = 1; gestT = -1; gestAt = 7;
     fingR.reset(); fingL.reset();
     for (const j of allJoints) { j.t.set(0, 0, 0); j.c.set(0, 0, 0); }
     hips.position.copy(hipsBase);
@@ -392,7 +402,7 @@ export function createAvatar(classId, ctx) {
     if (!moving) flow.set(0, 0, 0);
     flow.applyQuaternion(rq).multiplyScalar(-2.2);
     moveK += ((moving ? Math.min(1, speed / 2.6) : 0) - moveK) * (1 - Math.exp(-dt * 7));
-    phase += (speed * dt * TAU) / (1.45 + 0.22 * Math.min(speed, 7));
+    phase += (speed * dt * TAU) / strideOf(speed);
     deadK += ((anim === 'dead' ? 1 : 0) - deadK) * (1 - Math.exp(-dt * 4.5));
     downK += ((anim === 'downed' ? 1 : 0) - downK) * (1 - Math.exp(-dt * 5));
     castK += ((anim === 'cast' ? 1 : 0) - castK) * (1 - Math.exp(-dt * 12));
@@ -423,8 +433,17 @@ export function createAvatar(classId, ctx) {
     jHips.set(0, 0, -0.03 * ws * still);
     jSpine.set(0.035 + br * 0.006, 0, 0.035 * ws * still);
     jChest.set(-0.015 - br * 0.018, 0, 0.012 * ws * still);
-    jNeck.set(-pitch * 0.35 + 0.05, look * 0.1 * still, 0);
-    jHead.set(-pitch * 0.45 + 0.04 * look2 * still, look * 0.2 * still, -0.02 * ws * still);
+    // the head does not drift, it looks: every few seconds a glance somewhere, held, then somewhere else
+    // (a quick turn, eyes first - the joints' own easing and follow-through make the move)
+    if (idleT > glanceAt) {
+      const r = Math.sin(idleT * 12.9898 + phase) * 43758.5453, u = r - Math.floor(r), r2 = Math.sin(idleT * 78.233) * 12543.21, u2 = r2 - Math.floor(r2);
+      glanceY = u < 0.3 ? 0 : (u2 - 0.5) * 0.9; glanceX = u < 0.3 ? 0 : (u - 0.65) * 0.3;
+      glanceAt = idleT + 1.4 + u2 * 3.2;
+    }
+    const gl = still * (1 - castK);
+    jNeck.set(-pitch * 0.35 + 0.05 + glanceX * 0.4 * gl, (look * 0.06 + glanceY * 0.4) * gl, 0);
+    jHead.set(-pitch * 0.45 + (0.03 * look2 + glanceX * 0.6) * gl, (look * 0.08 + glanceY * 0.6) * gl, (-0.02 * ws - glanceY * 0.08) * gl);
+    jChest.add(0, glanceY * 0.12 * gl, 0);
     hips.position.set(hipsBase.x - 0.018 * ws * still, hipsBase.y, hipsBase.z);
     const wR = Math.max(0, ws), wL = Math.max(0, -ws);
     legL.jT.set(-0.07 * wR * still, 0, 0.03 + 0.03 * ws * still);
@@ -454,21 +473,85 @@ export function createAvatar(classId, ctx) {
     else if (lhold === 'cradle') { armL.jS.set(-0.2, 0.15, 0.2 + brA); armL.jE.set(-1.25, 0.6, 0); armL.jW.set(0.2, 0, 1.2); }
     else if (lhold === 'float') { armL.jS.set(-0.4, 0, 0.24); armL.jE.set(-0.95, 0, 0); armL.jW.set(0, 0, 1.2); }
 
+    // ---- at rest, now and then: the free hand comes up, is turned over and looked at, the fingers worked
+    if (gestT >= 0) {
+      gestT += dt;
+      if (gestT > 2.6 || still < 0.9 || castK > 0.05 || hurtK > 0.05) { gestT = -1; gestAt = idleT + 9 + (Math.sin(idleT * 3.7) + 1) * 5; }
+      else {
+        const g = sstep(0, 0.5, gestT) * (1 - sstep(2.0, 2.6, gestT)), turn = sstep(0.7, 1.2, gestT) * (1 - sstep(1.6, 2.0, gestT));
+        armL.jS.mix(-0.75, 0.25, 0.2, g); armL.jE.mix(-1.75, 0.35, 0, g); armL.jW.mix(0.15, 0, 1.5 - 1.9 * turn, g);
+        jNeck.mix(0.28, 0.22, 0, g); jHead.mix(0.3, 0.3, 0.06, g); jChest.add(0.04 * g, 0.08 * g, 0);
+      }
+    } else if (!lhold && leftFree && still > 0.97 && idleT > gestAt && castK < 0.01) gestT = 0;
+
     // ---- walk / run: legs follow the movement direction, arms counter-swing
     if (k > 0.001) {
-      const A = (0.42 + 0.12 * Math.min(1, speed / 4)) * k;
+      // The feet are planted. Each foot's path is laid out on the ground - set down ahead, carried back
+      // under the body at exactly the pace the body travels, peeled off the toe, swung through with the
+      // knee leading - and the hip and knee are solved to put it there (two bones, closed form). The old
+      // cycle swung the thighs on a sine: the planted foot slid at most of walking speed.
+      // A walk keeps a foot down 62% of the stride (both, between steps); a run 42% (neither, in flight).
+      const run = sstep(3, 6.5, speed);
+      // (a planted foot covers at most STEP_MAX of ground: past a stroll the stride lengthens by flight, not reach)
+      const stride = strideOf(speed), duty = Math.min(0.62, STEP_MAX / stride), ik = sstep(0, 0.3, k), S = duty * stride * Math.min(1, k / Math.max(0.05, Math.min(1, speed / 2.6))); // (shortened only while getting under way)
+      const reach = (LEG_A + LEG_B) * 0.992;
+      // the pelvis rides low enough for the planted leg to reach both ends of its step, rising over the
+      // foot in a walk and sinking onto it in a run
+      const c0 = ((phase - 1.5 * Math.PI) / TAU % 1 + 1) % 1; // (the left leg's place in its cycle: 0 = heel strike)
+      const over = Math.cos(2 * TAU * (c0 - duty * 0.5));
+      const drop = (LEG_A + LEG_B) - Math.sqrt(Math.max(0.05, reach * reach - S * S * 0.25)) + 0.008 - over * (0.014 * (1 - run) - 0.024 * run);
+      hips.position.y -= drop * ik;
+      const fwdK = dirZ >= 0 ? 1 : -1, roll = Math.abs(dirZ);
+      let list = 0;
       for (let li = 0; li < 2; li++) {
-        const L = legs[li];
-        const p = phase + (L.s > 0 ? 0 : Math.PI);
-        const sw = Math.sin(p), cs = Math.cos(p);
-        L.jT.add(-sw * A * dirZ, 0, sw * A * dirX * 0.75);
-        L.jK.add((Math.pow(Math.max(0, cs * Math.sign(dirZ || 1)), 1.4) * 1.0 + 0.1) * k, 0, 0);
-        L.jA.add((sw * A * 0.3 - 0.15 * Math.max(0, -cs)) * k, 0, 0);
+        const c = li === 0 ? c0 : (c0 + 0.5) % 1;
+        let f, lift, pitch;
+        if (c < duty) {
+          // planted: straight back under the body; the toes come down from the heel strike, the heel peels at the end
+          const u = c / duty, off = sstep(0.7, 1, u);
+          f = S * (0.5 - u); lift = 0.04 * off * off * roll;
+          pitch = -0.3 * (1 - sstep(0, 0.2, u)) + 0.6 * off;
+        } else {
+          // swung through: quick off the toe, the foot carried a touch past its mark and set back onto it
+          const w = (c - duty) / (1 - duty), e = w * w * (3 - 2 * w), arc = Math.sin(Math.PI * Math.pow(w, 0.85));
+          f = S * (-0.5 + e) + S * 0.05 * Math.sin(Math.PI * w) * (1 - w);
+          lift = 0.04 * (1 - sstep(0, 0.35, w)) * roll + (0.055 + 0.2 * run) * arc;
+          pitch = 0.6 * (1 - sstep(0, 0.5, w)) - 0.3 * sstep(0.62, 1, w);
+          list += (li === 0 ? -1 : 1) * arc;
+        }
+        gait[li * 3] = f; gait[li * 3 + 1] = lift; gait[li * 3 + 2] = pitch;
       }
-      jHips.add(0, swing * 0.11 * k * dirZ, 0);
-      jSpine.add(0.08 * k * Math.min(1, speed / 3) * dirZ, -swing * 0.09 * k * dirZ, -dirX * 0.06 * k);
-      jChest.add(0, -swing * 0.05 * k * dirZ, 0);
-      hips.position.y += (Math.abs(Math.cos(phase)) - 0.55) * 0.035 * k;
+      // the pelvis: turned to carry the leading leg, dropped on the side of the leg in the air, shifted over
+      // the one on the ground; the chest turns against it and the head stays on the way ahead
+      jHips.add(0, swing * (0.11 + 0.05 * run) * k * dirZ, list * 0.05 * k);
+      const hx = over * 0.5 * Math.sin(TAU * (c0 - duty * 0.5)) * 0.03 * k * (1 - run);
+      hips.position.x += hx;
+      // The solve, per leg. Where its foot must be is taken into the pelvis's own (turned, tilted) frame,
+      // from the hip joint: so the pelvis may sway and the foot still does not move on the ground. Then
+      // the knee's bend from how far that is; the thigh swung out sideways (z) by what a side step needs,
+      // and fore and aft (x) to land the foot; the ankle keeps the sole level.
+      // (the pelvis as it will stand once this frame's easing is applied, not where it is headed)
+      const ek = 1 - Math.exp(-dt * 13), hy = jHips.c.y + (jHips.t.y - jHips.c.y) * ek, hz = jHips.c.z + (jHips.t.z - jHips.c.z) * ek;
+      const cy = Math.cos(hy), sy = Math.sin(hy), cz = Math.cos(hz), sz = Math.sin(hz);
+      for (let li = 0; li < 2; li++) {
+        const L = legs[li], f = gait[li * 3], lift = gait[li * 3 + 1], pitch = gait[li * 3 + 2];
+        const ox = L.s * HIP_X, oy = BODY_Y.hipJ - BODY_Y.hips;
+        // foot from the hips' origin (root axes), undone by the pelvis's turn (y) then its tilt (z)
+        const wx = ox + f * dirX - hx, wy = oy - (LEG_A + LEG_B - drop - lift), wz = f * dirZ;
+        const ax = wx * cy - wz * sy, az = wx * sy + wz * cy;
+        const fx = ax * cz + wy * sz - ox, h = -(-ax * sz + wy * cz - oy), fz = az;
+        const D = Math.min(reach, Math.hypot(fx, fz, h));
+        const kn = Math.PI - Math.acos(THREE.MathUtils.clamp((LEG_A * LEG_A + LEG_B * LEG_B - D * D) / (2 * LEG_A * LEG_B), -1, 1));
+        const cd = LEG_A + LEG_B * Math.cos(kn), sd = -LEG_B * Math.sin(kn);
+        const psi = Math.asin(THREE.MathUtils.clamp(fx / cd, -0.9, 0.9));
+        const th = Math.atan2(fz, h) - Math.atan2(sd, cd * Math.cos(psi));
+        L.jT.mix(-th, 0, psi, ik);
+        L.jK.mix(kn, 0, 0, ik);
+        L.jA.mix(th - kn + pitch * roll * fwdK, 0, -psi - hz, ik); // (the sole level, but for the roll from heel to toe)
+      }
+      jSpine.add(0.08 * k * Math.min(1, speed / 3) * dirZ, -swing * (0.09 + 0.05 * run) * k * dirZ, -dirX * 0.06 * k - list * 0.03 * k);
+      jChest.add(0, -swing * (0.05 + 0.04 * run) * k * dirZ, -list * 0.015 * k);
+      jNeck.add(0, swing * 0.05 * run * k * dirZ, 0);
       // free arm swings opposite its leg; the staff arm swings a little
       if (!lhold) armL.jS.add(swing * 0.5 * k * dirZ, 0, 0.04 * k), armL.jE.add(-0.25 * k - Math.max(0, -swing) * 0.35 * k, 0, 0);
       else armL.jS.add(swing * 0.12 * k, 0, 0);
@@ -649,6 +732,11 @@ export function createAvatar(classId, ctx) {
       armL.jS.mix(-0.25, 0, 0.32, d); armL.jE.mix(-0.12, 0, 0, d); armL.jW.mix(-1.2, 0, 1.4, d);
       armR.jS.mix(-0.85, 0, -0.32, d); armR.jE.mix(-0.55, 0, 0, d);
       focusDir.lerp(tmp.set(0, 1, 0.3), d);
+      // hurt and winded: hard breaths that lift the shoulders and rock the back, the head hanging and swaying
+      const hb = Math.sin(t * 3.4), hb2 = Math.max(0, Math.sin(t * 3.4 - 0.5));
+      jSpine.add(-0.05 * hb * d, 0, wob(t * 0.5, 9) * 0.03 * d); jChest.add(-0.07 * hb2 * d, 0, 0);
+      jNeck.add(0.06 * hb * d, wob(t * 0.4, 11) * 0.1 * d, 0); jHead.add(0.05 * hb2 * d, wob(t * 0.33, 12) * 0.12 * d, wob(t * 0.45, 13) * 0.05 * d);
+      armL.jS.add(0, 0, 0.04 * hb2 * d); armR.jS.add(0.03 * hb * d, 0, -0.04 * hb2 * d);
     }
     // ---- dead: on the back, arms flung out
     if (deadK > 0.01) {
@@ -660,13 +748,31 @@ export function createAvatar(classId, ctx) {
       armR.jS.mix(-0.12, 0, -1.1, d); armR.jE.mix(-0.3, 0, 0, d);
       focusDir.lerp(tmp.set(-1, 0, 0.3), d); focusUp.lerp(tmp.set(0, 1, 0), d);
     }
-    const bodyY = -0.45 * downK + 0.13 * deadK;
-    body.position.set(0, bodyY, deadK * 0.88);
-    body.rotation.set(-deadK * Math.PI / 2, 0, 0);
+    // The fall is played through, not eased into: the knees go first and the body sinks, then it tips
+    // back gathering speed as a falling thing does, lands, and rocks once before it lies still. (Risen
+    // again, it is eased back up.)
+    if (anim === 'dead') deadT += dt; else deadT = 0;
+    let fall = deadK, sink = 0, rock = 0;
+    if (anim === 'dead') {
+      const u = Math.min(1, deadT / 0.85);
+      fall = Math.pow(sstep(0.12, 1, u), 1.9);
+      sink = Math.sin(Math.PI * sstep(0, 0.75, u)) * (1 - fall);
+      const tau = deadT - 0.85;
+      if (tau > 0) rock = Math.exp(-tau * 7) * Math.sin(tau * 17);
+      // (the buckle: over the fall's first half the knees fold and the back rounds, before the limbs fling out)
+      for (let li = 0; li < 2; li++) { legs[li].jK.add(1.1 * sink, 0, 0); legs[li].jT.add(-0.5 * sink, 0, 0); }
+      jSpine.add(0.35 * sink, 0, 0); jHead.add(0.3 * sink - 0.25 * Math.max(0, rock), 0, 0);
+      armL.jS.add(-0.3 * rock, 0, 0.2 * sink); armR.jS.add(-0.3 * rock, 0, -0.2 * sink);
+    }
+    const bodyY = -0.45 * downK * (1 - fall) + 0.13 * fall - 0.2 * sink + 0.035 * Math.max(0, rock);
+    body.position.set(0, bodyY, fall * 0.88);
+    body.rotation.set(-fall * Math.PI / 2 + 0.07 * rock, 0, 0);
     hips.position.z += downK * 0.06;
 
     const kk = 1 - Math.exp(-dt * 13);
-    for (let i = 0; i < allJoints.length; i++) allJoints[i].step(kk, dt);
+    // (legs on the move are held closer to their solved targets: an eased foot is a sliding foot)
+    const kLeg = 1 - Math.exp(-dt * (13 + 60 * k));
+    for (let i = 0; i < allJoints.length; i++) allJoints[i].step(i >= 5 && i < 11 ? kLeg : kk, dt);
     // ---- fingers: the grip tightens through a cast; a free hand claws on the wind-up and flings open on
     // the release, hangs half closed on the run, spreads in the air and on the ground it is propped on
     {
@@ -716,7 +822,11 @@ export function createAvatar(classId, ctx) {
     st.glow = castGlow * (1 - deadK * 0.8);
     st.charge = anim === 'cast' ? Math.min(1, cp * 2) * 0.5 : 0;
     glows.set(st.glow);
-    if (eyeMat) eyeMat.color.copy(eyeMat.userData.glow.base).multiplyScalar(eyeMat.userData.glow.intensity * (1 - deadK * 0.9) * (0.9 + 0.1 * Math.sin(t * 2)));
+    // the eyes blink (their light shuts for a moment), sometimes twice, and close on a blow
+    blinkT += dt;
+    if (t > blinkAt) { const r = Math.sin(t * 91.7) * 1375.3, u = r - Math.floor(r); blinkT = 0; blinkAt = t + (u < 0.2 ? 0.28 : 2.2 + u * 4.5); }
+    const lid = Math.max(1 - sstep(0, 0.05, blinkT) * (1 - sstep(0.07, 0.16, blinkT)), 0) * (1 - Math.min(1, hurtK * 1.5));
+    if (eyeMat) eyeMat.color.copy(eyeMat.userData.glow.base).multiplyScalar(eyeMat.userData.glow.intensity * (1 - deadK * 0.9) * (0.9 + 0.1 * Math.sin(t * 2)) * (0.12 + 0.88 * lid));
     F.update?.(t, dt, st);
     fxL?.update(t, 1, dt);
     fxR?.update(t, 1, dt);

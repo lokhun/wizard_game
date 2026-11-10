@@ -777,7 +777,7 @@ export class LocalPlayer {
     const g = this.game;
     if (this.castAnim) {
       this.castAnim.t += dt;
-      if (!this.channel && this.castAnim.t > 0.6) this.castAnim = null;
+      if (!this.channel && this.castAnim.t > (this.castAnim.style === 'raise' ? 1.5 : 0.6)) this.castAnim = null; // (an invocation is held: its hands stay raised through it)
     }
     // channels
     if (this.channel) {

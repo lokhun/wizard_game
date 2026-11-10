@@ -103,23 +103,52 @@ const FIDGETS = {
   // lower the focus a touch and settle the grip
   regrip: { hand: 'right', keys: [[0, ZERO6], [0.3, [0.01, -0.035, 0.02, -0.12, 0, 0.06]], [0.55, [0.012, -0.03, 0.02, -0.1, 0, 0.05]], [1.0, ZERO6]] },
 };
-const FIDGET_ORDER = ['palm', 'twirl', 'regrip', 'palm', 'regrip'];
+// (more of them, so a long wait is not the same two moves)
+Object.assign(FIDGETS, {
+  // the free hand is stretched: fingers fanned wide and held, drawn into a fist, let go
+  stretch: { hand: 'left', keys: [[0, ZERO6], [0.4, [-0.02, 0.06, -0.05, 0.1, 0.1, 0.25]], [1.1, [-0.03, 0.07, -0.06, 0.18, 0.12, -0.2]], [1.7, [-0.02, 0.05, -0.03, 0.3, 0.05, 0.1]], [2.3, ZERO6]],
+    fingers: [[0, null], [0.3, 'spread'], [1.05, 'fist'], [1.6, 'claw'], [1.85, null]] },
+  // shaken out from the wrist, loose
+  shake: { hand: 'left', keys: [[0, ZERO6], [0.25, [-0.01, 0.05, -0.02, 0.25, 0, 0.3]], [0.4, [0, 0.03, -0.02, -0.2, 0, -0.25]], [0.55, [-0.01, 0.05, -0.02, 0.22, 0, 0.28]], [0.7, [0, 0.03, -0.02, -0.18, 0, -0.2]], [0.85, [-0.005, 0.04, -0.02, 0.15, 0, 0.18]], [1.3, ZERO6]],
+    fingers: [[0, null], [0.15, 'relaxed'], [0.95, 'open'], [1.1, null]] },
+  // one finger after another tapped down and up, as on a table
+  drum: { hand: 'left', keys: [[0, ZERO6], [0.4, [-0.01, 0.02, -0.02, -0.12, 0.05, -0.25]], [1.9, [-0.012, 0.022, -0.02, -0.1, 0.05, -0.22]], [2.4, ZERO6]],
+    fingers: [[0, null], [0.35, 'open'], [0.6, 'claw'], [0.85, 'open'], [1.1, 'claw'], [1.35, 'open'], [1.6, 'claw'], [1.85, null]] },
+  // the focus is weighed in the hand: let drop a little and caught, twice
+  weigh: { hand: 'right', keys: [[0, ZERO6], [0.22, [0, 0.03, 0.005, 0.1, 0, 0]], [0.42, [0, -0.03, 0.01, -0.08, 0, 0.02]], [0.64, [0, 0.022, 0.005, 0.07, 0, 0]], [0.84, [0, -0.02, 0.008, -0.05, 0, 0.01]], [1.3, ZERO6]] },
+  // brought up and in, its head turned to the eye and looked over
+  inspect: { hand: 'right', keys: [[0, ZERO6], [0.6, [-0.05, 0.03, 0.05, 0.3, 0.15, 0.22]], [1.3, [-0.055, 0.035, 0.055, 0.34, -0.3, 0.26]], [2.0, [-0.05, 0.03, 0.05, 0.3, 0.25, 0.2]], [2.7, ZERO6]] },
+});
+const FIDGET_ORDER = ['palm', 'weigh', 'stretch', 'twirl', 'drum', 'regrip', 'shake', 'inspect', 'palm', 'regrip'];
+// While one hand casts the other is not a bystander: it draws back and down against the throw and its
+// wrist rolls open, then comes back. Scaled by how hard the style kicks. Same key format.
+const COUNTER = [[0, ZERO6], [0.07, [0.012, -0.012, 0.022, 0.1, -0.04, -0.13]], [0.17, [0.02, -0.02, 0.035, 0.16, -0.06, -0.2]], [0.3, [0.008, -0.006, 0.012, 0.05, -0.02, -0.06]], [0.5, ZERO6]];
+// (an invocation takes both arms: a hand left out of it rises too, a little)
+const COUNTER_RAISE = [[0, ZERO6], [0.3, [-0.015, 0.06, -0.03, 0.08, 0, 0.06]], [1.1, [-0.015, 0.065, -0.035, 0.1, 0, 0.06]], [1.5, ZERO6]];
 // how hard each style's release jolts the view rig (velocity into the sway spring)
 const KICK = { flick: 0.45, thrust: 0.85, slam: 1.25, raise: 0.35, channel: 0.25, swing: 0.55, swing2: 0.55, throw: 0.75, snap: 0.4 };
 const STIFF = { swing: 2400, swing2: 2400, flick: 1500, thrust: 1100, slam: 1300, throw: 1300, snap: 1200 };
 
+// The keys are passed through, not stopped at: a cubic through each pair of keys with the slope its
+// neighbours give it (Catmull-Rom, for uneven key times), so a wind-up flows into the strike and the
+// strike into its recovery. (Each segment used to ease to a halt at its key: every cast was a row of
+// small stops, however stiff the spring that followed it.) The first and last keys are at rest.
 function sampleKeys(keys, t, out) {
+  const n = keys.length;
   if (t <= keys[0][0]) { for (let i = 0; i < 6; i++) out[i] = keys[0][1][i]; return out; }
-  for (let k = 0; k < keys.length - 1; k++) {
-    const [t0, a] = keys[k], [t1, b] = keys[k + 1];
-    if (t <= t1) {
-      const u = (t - t0) / (t1 - t0);
-      const e = u * u * (3 - 2 * u);
-      for (let i = 0; i < 6; i++) out[i] = a[i] + (b[i] - a[i]) * e;
-      return out;
+  for (let k = 0; k < n - 1; k++) {
+    const t0 = keys[k][0], t1 = keys[k + 1][0];
+    if (t > t1) continue;
+    const a = keys[k][1], b = keys[k + 1][1], h = t1 - t0, u = (t - t0) / h;
+    const pa = k > 0 ? keys[k - 1] : null, nb = k + 2 < n ? keys[k + 2] : null;
+    const u2 = u * u, u3 = u2 * u, h00 = 2 * u3 - 3 * u2 + 1, h10 = u3 - 2 * u2 + u, h01 = -2 * u3 + 3 * u2, h11 = u3 - u2;
+    for (let i = 0; i < 6; i++) {
+      const m0 = pa ? (b[i] - pa[1][i]) / (t1 - pa[0]) : 0, m1 = nb ? (nb[1][i] - a[i]) / (nb[0] - t0) : 0;
+      out[i] = h00 * a[i] + h10 * h * m0 + h01 * b[i] + h11 * h * m1;
     }
+    return out;
   }
-  const last = keys[keys.length - 1][1];
+  const last = keys[n - 1][1];
   for (let i = 0; i < 6; i++) out[i] = last[i];
   return out;
 }
@@ -410,6 +439,7 @@ export function createViewModel(classId, ctx) {
   const fingL = new FingerRig(handL, restPoseL, { grip: lg.kind === 'pole', seed: 7 });
   // the wrists: the hand trails the forearm that moves it and whips through when it stops (pitch, yaw, roll)
   const sWristR = new Spring(3, 520, 0.4), sWristL = new Spring(3, 520, 0.4);
+  const sElbowR = new Spring(3, 150, 0.5), sElbowL = new Spring(3, 150, 0.5);
   const WR = THREE.MathUtils.clamp;
   const _hq = new THREE.Quaternion(), _ha = V();
   const tmp6 = [0, 0, 0, 0, 0, 0];
@@ -450,6 +480,9 @@ export function createViewModel(classId, ctx) {
       sLand.v[0] -= 0.9 * k;
       sSway.v[3] -= 0.35 * k; sSway.v[5] += 0.12 * k;
     }
+    // leaving the ground: the body goes up and the hands, a beat behind, are left low and tip forward
+    if (!grounded && wasGrounded && (s.vy ?? 0) > 1) { sSway.v[1] -= 0.3; sSway.v[3] -= 0.35; sLand.v[0] -= 0.5; fingL.kick(-3); }
+    else if (grounded && !wasGrounded) fingL.kick(-5 * THREE.MathUtils.clamp(-pvy / 7, 0.3, 1.5)); // (and landing flings the fingers open)
     wasGrounded = grounded;
     // --- body inertia: start a strafe and the hands trail it, run and they ride back toward you,
     // rise off a jump and they sink, fall and they float
@@ -537,17 +570,22 @@ export function createViewModel(classId, ctx) {
     } else if (stillT > nextFidget) {
       let name = FIDGET_ORDER[fidgetN++ % FIDGET_ORDER.length];
       // a hand busy holding something (book, cradled flame on a pole) skips the palm flex
-      if (name === 'palm' && (lg.kind === 'pole' || F.left)) name = 'regrip';
-      if (name !== 'palm' && gripR.kind !== 'pole') name = lg.kind !== 'pole' && !F.left ? 'palm' : null;
+      if (FIDGETS[name].hand === 'left' && (lg.kind === 'pole' || F.left)) name = fidgetN % 2 ? 'regrip' : 'weigh';
+      if (FIDGETS[name].hand === 'right' && gripR.kind !== 'pole') name = lg.kind !== 'pole' && !F.left ? (fidgetN % 2 ? 'palm' : 'stretch') : null;
       fidget = name; fidgetT = 0;
       if (!name) nextFidget = stillT + 8;
     }
     const fidR = fidget && FIDGETS[fidget].hand === 'right' ? FIDGETS[fidget] : null;
     const fidL = fidget && FIDGETS[fidget].hand === 'left' ? FIDGETS[fidget] : null;
 
-    const applyRig = (sp, castStyle, isRight) => {
+    const applyRig = (sp, castStyle, isRight, otherStyle) => {
       const tg = sp.target;
       for (let i = 0; i < 6; i++) tg[i] = 0;
+      if (otherStyle && !castStyle && otherStyle !== 'channel') {
+        const raise = otherStyle === 'raise', kk = raise ? 1 : Math.min(1.3, (KICK[otherStyle] ?? 0.5) * 1.5);
+        sampleKeys(raise ? COUNTER_RAISE : COUNTER, castT, tmp6);
+        for (let i = 0; i < 6; i++) tg[i] += tmp6[i] * kk * castVar.amp;
+      }
       const fid = isRight ? fidR : fidL;
       if (fid && !castStyle) {
         sampleKeys(fid.keys, fidgetT, tmp6);
@@ -582,8 +620,8 @@ export function createViewModel(classId, ctx) {
       sp.c = 2 * 0.42 * Math.sqrt(sp.k);
       sp.step(dt);
     };
-    applyRig(sR, castR, true);
-    applyRig(sL, castL, false);
+    applyRig(sR, castR, true, castL);
+    applyRig(sL, castL, false, castR);
     animR.position.set(sR.x[0], sR.x[1], sR.x[2]);
     animR.rotation.set(sR.x[3], sR.x[4], sR.x[5]);
     animL.position.set(sL.x[0], sL.x[1], sL.x[2]);
@@ -592,11 +630,18 @@ export function createViewModel(classId, ctx) {
     // sleeves follow the wrist (position fully, rotation partially) so big
     // swings never fling the whole forearm tube across the screen
     // the sleeve aims from the animated wrist back to a fixed, off-screen elbow
-    for (const [sl, base, anim] of [[sleeveR, sleeveRBase, animR], [sleeveL, sleeveLBase, animL]]) {
+    // The elbow is not a fixed point either: it follows the hand by a third of the way, late and on a soft
+    // spring (an arm has weight; the forearm swings behind a thrust and settles after it), and the cuff
+    // turns with the roll of the hand, as cloth round a wrist does.
+    for (const [sl, base, anim, sp, se] of [[sleeveR, sleeveRBase, animR, sR, sElbowR], [sleeveL, sleeveLBase, animL, sL, sElbowL]]) {
       anim.updateMatrix();
       tmpV.copy(base.wrist).applyMatrix4(anim.matrix);
-      tmpV2.subVectors(base.elbow, tmpV).normalize();
+      se.target[0] = (tmpV.x - base.wrist.x) * 0.38; se.target[1] = (tmpV.y - base.wrist.y) * 0.3 - bobAmp * 0.006; se.target[2] = (tmpV.z - base.wrist.z) * 0.22;
+      se.step(dt);
+      tmpV2.copy(base.elbow); tmpV2.x += se.x[0]; tmpV2.y += se.x[1]; tmpV2.z += se.x[2];
+      tmpV2.sub(tmpV).normalize();
       sl.quaternion.setFromUnitVectors(UPV, tmpV2);
+      sl.quaternion.multiply(_hq.setFromAxisAngle(UPV, WR(sp.x[5] * 0.45 + sp.x[4] * 0.25, -0.5, 0.5)));
       sl.position.copy(tmpV).addScaledVector(tmpV2, 0.035);
     }
 
@@ -639,6 +684,8 @@ export function createViewModel(classId, ctx) {
       if (!name && chargeK > 0.3) name = 'claw';
       // running, the free hand half closes; in the air it opens for balance
       if (!name && !grounded) name = 'spread';
+      // (thrown wide for a beat as the other hand lets a spell go)
+      if (!name && castR && castT > 0.04 && castT < 0.2) name = castR === 'raise' ? 'spread' : 'open';
       if (castNew && castL) fingL.kick(6);
       else if (castNew) fingL.kick(1.5); // (the off hand feels the other's cast)
       fingL.update(dt, t, { pose: name ? POSES[name] : null, rate: castL ? 1.15 : fidL ? 0.45 : 0.8, squeeze: !name ? bobAmp * 0.5 + dashK * 0.8 : 0, life: idleLife, accel: fingerAcc(handL, accL, true), tremble: chargeK * 0.5 + downedK * 0.6 });
@@ -726,7 +773,7 @@ export function createViewModel(classId, ctx) {
   });
   root.traverse((o) => { if (o.isMesh && o.material?.transparent && o.material.blending !== THREE.AdditiveBlending) exclude.add(o); });
   // back to rest: the probe ran the springs, fidgets, sigils and trail
-  for (const sp of [sR, sL, sSway, sLand, sWristR, sWristL]) { sp.x.fill(0); sp.v.fill(0); sp.target.fill(0); }
+  for (const sp of [sR, sL, sSway, sLand, sWristR, sWristL, sElbowR, sElbowL]) { sp.x.fill(0); sp.v.fill(0); sp.target.fill(0); }
   fingR.reset(); fingL.reset();
   bobPhase = bobAmp = 0; wasGrounded = true; lastCastT = -1; lastCastKey = ''; prevHurt = 0;
   stillT = 0; fidget = null; fidgetT = 0; fidgetN = 0; nextFidget = 6;
