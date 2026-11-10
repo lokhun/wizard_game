@@ -116,6 +116,7 @@ export function createAvatar(classId, ctx) {
   const jHips = new Joint(hips), jSpine = new Joint(spine, 0.06, jHips), jChest = new Joint(chest, 0.1, jSpine), jNeck = new Joint(neck, 0.18, jChest), jHead = new Joint(head, 0.28, jNeck);
   for (const a of arms) a.jS.par = jChest; // (the shoulders ride the chest's motion)
   const allJoints = [jHips, jSpine, jChest, jNeck, jHead, ...legs.flatMap((l) => [l.jT, l.jK, l.jA]), ...arms.flatMap((a) => [a.jS, a.jE, a.jW])];
+  const legJ = allJoints.map((j) => legs.some((l) => l.jT === j || l.jK === j || l.jA === j));
   root.updateMatrixWorld(true);
 
   // ---------------- cloth ----------------
@@ -625,7 +626,11 @@ export function createAvatar(classId, ctx) {
     hips.position.z += downK * 0.06;
 
     const kk = 1 - Math.exp(-dt * 13);
-    for (let i = 0; i < allJoints.length; i++) allJoints[i].step(kk, dt);
+    // (walking, the legs follow the stride nearly as drawn, three times quicker: eased like the rest at 13/s, a 1.5-2 Hz
+    // stride had them swing only 70-80% of it and 35-45 degrees late, and a planted foot went back at a third of the
+    // walking speed or less - the partner skated over the floor at 65-76% of its speed; now 2-22%)
+    const kl = 1 - Math.exp(-dt * 13 * (1 + 2 * moveK * (1 - airK) * (1 - dashK)));
+    for (let i = 0; i < allJoints.length; i++) allJoints[i].step(legJ[i] ? kl : kk, dt);
     // no full-tree update before aiming: aimFocus refreshes the arm chain it
     // reads itself, and the pass below brings every node up to date (each
     // full pass over ~150 nodes was a third of an avatar's frame)
