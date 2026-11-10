@@ -483,7 +483,13 @@ export function humanoidPose(m, s, P, dt) {
     // plague doctor's boot skidding over the floor for three frames every stride. The stance half is untouched, and
     // so is walking backward: there the knee folding carries the foot the way the body goes and its opening holds it
     // back at the footfall, as the sine had it (the eased swing more than doubled a backward walk's skid).
-    const swE = (v) => v + SW_K * v * (1 - v);
+    // (a cubic from the toe at speed sa to the heel at 1 - SW_K, a little pull-back. Straight ahead it leaves the toe
+    // fast (sa = 1 + SW_K: the plain ease-out); the more the legs swing across the hips - stepping sideways past the
+    // hips' turn - the more it leaves at the stance's own rate: swung off fast there, the knee lifts the foot along
+    // the leg, not the way it swings, and a trailing foot skimmed the floor at ~8 m/s just after leaving it - a
+    // Knight-Captain's 98 cm over 3 s, a jailer's 108)
+    const sa = 1 + SW_K * (1 - Math.min(1, 2 * Math.abs(oz))), sb = 1 - SW_K;
+    const swE = (v) => ((sa + sb - 2) * v + (3 - 2 * sa - sb)) * v * v + sa * v;
     const kn = (v) => (v < KNEE_V ? Math.sin(Math.PI * 0.5 * v / KNEE_V) : 0.5 + 0.5 * Math.cos(Math.PI * (v - KNEE_V) / (1 - KNEE_V)));
     // (eased between the two on a flip, which keeps the swing's progress: switched, a leg mid-swing jumped ~0.25 rad)
     const fw = st.swFw = (st.swFw ?? 1) + ((back ? 0 : 1) - (st.swFw ?? 1)) * (1 - Math.exp(-12 * dt));
