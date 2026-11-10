@@ -879,9 +879,11 @@ export class UI {
     const g = this.ctx;
     // nothing drawn last frame and nothing to draw now: leave the canvas alone
     const busy = this.numbers.length || this.floats.length || game.remotes.size || game.pings?.length || game.actors.list.length;
-    if (!busy && !this._2dDirty) return;
-    this._2dDirty = !!busy;
-    g.clearRect(0, 0, innerWidth, innerHeight);
+    if (!busy && !this._2dInk) return;
+    // The overlay covers the whole window: touching it makes the browser upload and blend it again that
+    // frame. So it is wiped only when something is about to be drawn on it (_ink), or once after the last
+    // thing on it has gone - walking a floor of unhurt, unseen foes leaves it alone entirely.
+    this._inked = false;
     const cam = this.renderer.camera;
     // enemy health bars (only damaged or elite/boss nearby)
     const LR = (this._nameRects ??= new Float32Array(4 * 12)); // (elite names drawn this frame: see below)
@@ -900,11 +902,23 @@ export class UI {
       if (s.x > innerWidth - 250 && s.y < 250) continue;
       const w = a.elite ? 70 : 46, hgt = a.elite ? 6 : 4;
       const alpha = Math.min(1, (30 - d) / 8);
+      this._ink();
       g.globalAlpha = alpha;
       g.fillStyle = 'rgba(0,0,0,0.7)';
       g.fillRect(s.x - w / 2 - 1, s.y - 1, w + 2, hgt + 2);
       g.fillStyle = a.faction === 'ally' ? '#50d060' : a.elite ? '#ff9020' : '#c82020';
-      g.fillRect(s.x - w / 2, s.y, w * Math.max(0, a.hp / a.maxHp), hgt);
+      const hf = Math.max(0, Math.min(1, a.hp / a.maxHp));
+      g.fillRect(s.x - w / 2, s.y, w * hf, hgt);
+      // the health a blow just took shows pale for a moment, then drains after it: the size of each hit
+      // reads at a glance (a heal, or a bar seen for the first time below full, starts level)
+      let sh = a._hpShown ?? 1;
+      if (sh <= hf) sh = hf;
+      else {
+        if (hf < (a._hpSeen ?? 1) - 1e-4) a._hpHold = 0.16;
+        if ((a._hpHold = (a._hpHold ?? 0) - dt) <= 0) sh = Math.max(hf, sh - dt * (0.5 + (sh - hf) * 3.5));
+        if (sh > hf + 0.004) { g.fillStyle = a.faction === 'ally' ? '#d8ffe0' : '#ffe9c4'; g.fillRect(s.x - w / 2 + w * hf, s.y, w * (sh - hf), hgt); }
+      }
+      a._hpShown = sh; a._hpSeen = hf;
       if (a.shieldHp > 0) { g.fillStyle = '#ffe080'; g.fillRect(s.x - w / 2, s.y - 3, w * Math.min(1, a.shieldHp / a.maxHp), 2); }
       if (a.elite) {
         // (built once per affix set, not every frame; a champion's name comes after spawn)
@@ -931,6 +945,7 @@ export class UI {
     }
     // teammate name tags (and, for one out of view, a marker at the screen edge pointing to them)
     for (const r of game.remotes.values()) {
+      this._ink();
       const s = this._project(r.pos.x, r.pos.y + 2.25, r.pos.z);
       if (!s || s.x < 0 || s.y < 0 || s.x > innerWidth || s.y > innerHeight) { if (!r.dead) this._edgeMark(g, r); continue; }
       this._blitText(g, this._textBitmap(r.name + (r.downed ? ' — DOWNED' : ''), '600 13px Cinzel, serif', r.downed ? '#ff5050' : hex(r.meta.color2 ?? r.meta.color), { stroke: 'rgba(0,0,0,0.7)', lw: 3 }), s.x, s.y - 4);
@@ -957,6 +972,7 @@ export class UI {
       if (n.t > n.life || !s) { if (n.t > n.life) this.numbers.splice(i, 1); continue; }
       const pop = n.t < 0.12 ? 1 + (1 - n.t / 0.12) * (n.crit ? 0.9 : 0.4) : 1;
       const shake = n.crit && n.t < 0.18 ? Math.sin(n.t * 95) * 3.2 * (1 - n.t / 0.18) : 0;
+      this._ink();
       g.globalAlpha = k > 0.6 ? 1 - (k - 0.6) / 0.4 : 1;
       // bigger hits read bigger; the size is rounded so a merged number only
       // re-renders its bitmap when it visibly grows, and the pop is a scale
@@ -994,6 +1010,7 @@ export class UI {
         if (!moved) break;
       }
       if (nr < 24) { const o = nr * 4; FR[o] = x - hw; FR[o + 1] = y - hh; FR[o + 2] = x + hw; FR[o + 3] = y + hh; nr++; }
+      this._ink();
       g.globalAlpha = f.t > 1 ? 1 - (f.t - 1) / 0.4 : 1;
       const pop = f.t < 0.15 ? 1 + (1 - f.t / 0.15) * 0.8 : 1;
       this._blitText(g, b, x, y, pop);
@@ -1003,6 +1020,7 @@ export class UI {
     // pings: a foe ping rides above its foe, a thing ping names the thing; off screen
     // (or behind you) a ping clings to the screen's edge, pointing the way
     for (const pg of game.pings ?? []) {
+      this._ink();
       const age = game.time - pg.born;
       const fade = Math.min(1, (pg.life - age) / 0.8);
       let s = this._project(pg.pos.x, pg.pos.y, pg.pos.z);
@@ -1034,7 +1052,12 @@ export class UI {
       if (pg.label) this._blitText(g, this._textBitmap(pg.name, '11px Cinzel, serif', pg.color, { lw: 3 }), s.x, s.y + 24);
       g.globalAlpha = 1;
     }
+    // (nothing drawn this frame, but last frame's is still up: wipe it once)
+    if (!this._inked && this._2dInk) g.clearRect(0, 0, innerWidth, innerHeight);
+    this._2dInk = this._inked;
   }
+  // about to draw on the overlay: wipe last frame's first (once a frame, at the first thing drawn)
+  _ink() { if (!this._inked) { this._inked = true; this.ctx.clearRect(0, 0, innerWidth, innerHeight); } }
 
   // ---------------------------------------------------------------- feedback API
   // Hits on the same target within a short window merge into one rising number

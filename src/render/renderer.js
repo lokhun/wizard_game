@@ -20,7 +20,11 @@ const GRADE_MAIN = /* glsl */ `
     uniform vec4 uShock[4];
     uniform float uShockOn;
     varying vec2 vUv;
+    uniform float uSharp;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+    // (no sin: the same on every GPU, and no bands of repeating values at large pixel coordinates)
+    float hashP(vec2 p){ vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+    float lumaT(vec3 c){ float l = dot(c, vec3(0.2126, 0.7152, 0.0722)); return l / (1.0 + l); }
     void main(){
       vec2 uv = vUv;
       // each ring is a lens: a thin band that bends the frame outward on its outer edge and inward on its
@@ -48,9 +52,28 @@ const GRADE_MAIN = /* glsl */ `
       vec2 fr = sh * 0.45;
       vec3 col;
       // (the split is of the sharp frame only: bloom is a soft blur, fetched once)
+      vec3 mid = SHARP(uv);
       col.r = SHARP(uv - dc * ab * (1.0 + r2 * 4.0) - fr).r;
-      col.g = SHARP(uv).g;
+      col.g = mid.g;
       col.b = SHARP(uv + dc * ab * (1.0 + r2 * 4.0) + fr).b;
+      #ifdef SHARPEN
+      // Contrast-adaptive sharpening: the multisample resolve, a pixel ratio under the display's and
+      // dynamic resolution all soften the frame a little; this gives the edges of stone, mortar and
+      // silhouettes back. Worked on tone-mapped brightness (so a torch against the dark gets no ring),
+      // strongest where the neighbourhood is flat-ish and never past the brightest or darkest
+      // neighbour by more than a hair (no halos, and noise is not dug up).
+      if (uSharp > 0.001) {
+        vec2 px = 1.0 / uRes;
+        float lc = lumaT(mid);
+        float ln = lumaT(SHARP(uv + vec2(0.0, px.y))), ls = lumaT(SHARP(uv - vec2(0.0, px.y)));
+        float le = lumaT(SHARP(uv + vec2(px.x, 0.0))), lw = lumaT(SHARP(uv - vec2(px.x, 0.0)));
+        float mn = min(lc, min(min(ln, ls), min(le, lw))), mx = max(lc, max(max(ln, ls), max(le, lw)));
+        float amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, 1e-4), 0.0, 1.0));
+        float sh2 = lc + (lc - (ln + ls + le + lw) * 0.25) * uSharp * amp * 2.0;
+        sh2 = clamp(sh2, mn - 0.015, min(mx + 0.015, 0.999));
+        col *= clamp((sh2 / (1.0 - sh2)) / max(lc / (1.0 - lc), 1e-4), 0.5, 2.0);
+      }
+      #endif
       col += BLOOM(uv);
       // (the band catches a little light, so it reads in the dark too)
       col *= 1.0 + min(rim * 18.0, 0.35);
@@ -87,9 +110,13 @@ const GRADE_MAIN = /* glsl */ `
         float streak = step(0.9, hash(vec2(lane, 7.7))) * smoothstep(0.0, 0.5, run) * (1.0 - run) * smoothstep(0.3, 0.6, length(dc));
         col += uDashCol * streak * dashEdge * 0.28;
       }
-      // film grain
-      float g = hash(uv * uRes + fract(uTime * 13.37) * 100.0) - 0.5;
-      col += g * uGrain * (0.35 + l);
+      // film grain. Where this pass also tone maps (FINISH), the grain goes on after it, in display
+      // space, at an even few levels of grey; here, in linear light, it is shaped to come out about the same
+      // (it used to be near constant in linear terms: boiling, blotchy noise across every dark wall)
+      #ifndef DISPLAY_GRAIN
+      float g = hashP(gl_FragCoord.xy + fract(uTime * 13.37) * 311.0) - 0.5;
+      col += g * uGrain * (0.035 + 1.05 * pow(max(l, 0.0), 0.6));
+      #endif
       gl_FragColor = vec4(max(col, 0.0), 1.0);
       FINISH
     }
@@ -97,6 +124,7 @@ const GRADE_MAIN = /* glsl */ `
 
 // as a composer pass (Ultra, where GTAO sits in the chain)
 const GradeShader = {
+  defines: { SHARPEN: '' },
   uniforms: {
     tDiffuse: { value: null },
     uTime: { value: 0 },
@@ -117,6 +145,7 @@ const GradeShader = {
     uDangerCol: { value: new THREE.Vector3(1, 0.2, 0.1) },
     uShock: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
     uShockOn: { value: 0 },
+    uSharp: { value: 0 },
     uRes: { value: new THREE.Vector2(1, 1) },
   },
   vertexShader: /* glsl */ `
@@ -146,6 +175,20 @@ const FINAL_VERT = /* glsl */ `
   varying vec2 vUv;
   void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
 `;
+const FINISH_FN = /* glsl */ `
+  // tone map, encode, then the grain and a dither of one 8-bit step (two hashes: triangular, so it adds
+  // no brightness and no pattern): the slow gradients of fog, vignette and firelight on plaster no longer
+  // band, and the grain is a fine, even texture - faint in the dark, where the eye sees noise best
+  void finish(){
+    vec3 c = sRGBTransferOETF(vec4(ACESFilmicToneMapping(gl_FragColor.rgb), 1.0)).rgb;
+    vec2 fc = gl_FragCoord.xy + fract(uTime * 13.37) * 311.0;
+    float n1 = hashP(fc), n2 = hashP(fc + 71.7);
+    float ld = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    c += (n1 - 0.5) * uGrain * (0.12 + 0.6 * smoothstep(0.0, 0.3, ld) * (1.0 - 0.5 * smoothstep(0.6, 1.0, ld)));
+    c += (n1 + n2 - 1.0) / 255.0;
+    gl_FragColor = vec4(c, 1.0);
+  }
+`;
 const FINAL_FRAG = /* glsl */ `
   precision highp float;
   uniform sampler2D tDiffuse;
@@ -158,8 +201,9 @@ const FINAL_FRAG = /* glsl */ `
   #define SHARP(uv) sane(texture2D(tDiffuse, uv).rgb)
   #define BLOOM(uv) bloomAt(uv)
   #define SCENE(uv) (sane(texture2D(tDiffuse, uv).rgb) + bloomAt(uv))
-  #define FINISH gl_FragColor.rgb = ACESFilmicToneMapping(gl_FragColor.rgb); gl_FragColor = sRGBTransferOETF(gl_FragColor);
-  ${GRADE_MAIN}
+  #define DISPLAY_GRAIN
+  #define FINISH finish();
+  ${GRADE_MAIN.replace('void main(){', FINISH_FN + 'void main(){')}
 `;
 
 // Point lights past their range add exactly nothing (the attenuation window
@@ -292,7 +336,7 @@ export class Renderer {
       this.finalMat = new THREE.RawShaderMaterial({
         name: 'FinalShader',
         uniforms: { ...THREE.UniformsUtils.clone(GradeShader.uniforms), tBloom: { value: null }, toneMappingExposure: { value: 1 } },
-        defines: { ACES_FILMIC_TONE_MAPPING: '', SRGB_TRANSFER: '' },
+        defines: { ACES_FILMIC_TONE_MAPPING: '', SRGB_TRANSFER: '', ...(this.quality === 'low' ? {} : { SHARPEN: '' }) },
         vertexShader: FINAL_VERT, fragmentShader: FINAL_FRAG,
         depthTest: false, depthWrite: false,
       });
@@ -413,6 +457,8 @@ export class Renderer {
       this.composer.setSize(w, h);
     }
     this.grade.uniforms.uRes.value.set(w * pr, h * pr);
+    // (see SHARPEN: a little always, more as dynamic resolution drops the pixel count)
+    this.grade.uniforms.uSharp.value = this.quality === 'low' ? 0 : Math.min(0.9, 0.4 + (1 - this.resScale) * 1.2);
   }
 
   // Compile every material in both scenes exactly as a real frame would: into

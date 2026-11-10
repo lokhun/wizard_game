@@ -22,6 +22,7 @@ const GRAVITY = 24;
 const DASH_CARRY = 0.55; // the share of a dash's speed a dash-jump keeps
 const DASH_SPEED = 6.5 / 0.18; // a plain dash's (the dash key's: 6.5 m in 0.18 s)
 const _stepV = new THREE.Vector3(); // (a footfall's spray: scratch)
+const _camR = new THREE.Vector3(); // (the camera's right: scratch)
 
 export function baseStats(classId) {
   const C = CLASSES[classId];
@@ -121,6 +122,7 @@ export class LocalPlayer {
     this.landDip = 0;
     this.downK = 0; this.downV = 0; // eased slump when downed (spring, so it lands with a thud)
     this.leanK = 0;
+    this.flinch = 0; this.flinchV = 0; // a blow rocks the view away from it (roll, on a spring)
     this.kills = 0;
     this.damageDealt = 0;
     this.dmgBy = { primary: 0, secondary: 0, ability1: 0, ability2: 0, ultimate: 0, dot: 0, reaction: 0, item: 0, other: 0 }; // (where it came from: the run summary)
@@ -208,6 +210,18 @@ export class LocalPlayer {
     g.vfx.addShake(Math.min(0.5, 0.15 + dmg / this.maxHp));
     g.audio?.play('hurt', { volume: 0.8 });
     g.ui?.damageDirection(fromPos, this);
+    // the head rocks away from the blow: struck from the left it tips right (a roll about the line of
+    // sight, so the aim never moves), harder for a heavier blow; one from dead ahead or behind, or from
+    // nowhere (a pool underfoot), tips it a random way a little
+    {
+      const k = Math.min(1, 0.35 + 2.2 * dmg / this.maxHp);
+      let side = Math.random() < 0.5 ? -0.4 : 0.4;
+      if (fromPos) {
+        const dx = fromPos.x - this.pos.x, dz = fromPos.z - this.pos.z, l = Math.hypot(dx, dz);
+        if (l > 0.05) { const s = (dx * Math.cos(this.yaw) - dz * Math.sin(this.yaw)) / l; if (Math.abs(s) > 0.25) side = s; }
+      }
+      this.flinchV += side * k * 1.5;
+    }
     g.events?.emit('hurt', dmg, el, opts, fromPos);
     if (this.stats.thorns && opts.attacker) g.hitActor(opts.attacker, { dmg: this.stats.thorns, el: 'physical', src: this.id }, opts.attacker.pos);
     g.relics?.onHurt(dmg);
@@ -847,13 +861,21 @@ export class LocalPlayer {
     const sx = (Math.sin(time * 37.1) + Math.sin(time * 61.7) * 0.5) * tr * 0.025;
     const sy = (Math.sin(time * 41.3 + 1) + Math.sin(time * 53.9) * 0.5) * tr * 0.025;
     const sr = Math.sin(time * 29.3 + 2) * tr * 0.03;
-    const r = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
-    cam.position.set(eye.x + r.x * bx, eye.y + by - 0.03, eye.z + r.z * bx);
+    const r = _camR.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+    // at rest the view breathes: a slow rise and fall of a few millimetres, gone as soon as you move
+    const breath = Math.sin(time * 1.7) * 0.0045 * (1 - Math.min(1, this.bobAmp * 3));
+    cam.position.set(eye.x + r.x * bx, eye.y + by - 0.03 + breath, eye.z + r.z * bx);
+    // the flinch from a blow (see takeDamage): a quick, well-damped spring back to level
+    {
+      const h = Math.min(dt, 1 / 30);
+      this.flinchV += (-140 * this.flinch - 15 * this.flinchV) * h;
+      this.flinch = clamp(this.flinch + this.flinchV * h, -0.09, 0.09);
+    }
     const downRoll = this.downK * 0.35;
     // lean a touch into strafes
     const side = this.vel.x * r.x + this.vel.z * r.z;
     this.leanK = damp(this.leanK, this.grounded ? clamp(side / 7, -1, 1) : 0, 8, dt);
-    cam.rotation.set(this.pitch + sy, this.yaw + sx, sr + downRoll - this.leanK * 0.018, 'YXZ');
+    cam.rotation.set(this.pitch + sy, this.yaw + sx, sr + downRoll - this.leanK * 0.018 + this.flinch * Math.min(1, this.game.settings?.shake ?? 1), 'YXZ');
     const targetFov = this.game.renderer.baseFov + vfx.fovKick + (this.dashT > 0 ? 6 : 0) + (this.speedNorm ?? 0) * 2;
     cam.fov = damp(cam.fov, targetFov, 12, dt);
     cam.updateProjectionMatrix();
