@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { CLASS_META } from '../../classMeta.js';
 import { getKit, GlowSet } from './kit.js';
-import { buildHand, gripPose, POSES, lerpPose, clonePose } from './hand.js';
+import { buildHand, gripPose, POSES, clonePose } from './hand.js';
+import { FingerRig } from './fingers.js';
 import { buildFocus } from './foci.js';
 import { lathe, torus, mergeGeos, xf, mulberry, V, uvs } from './shapes.js';
 import { wob } from './fx.js';
@@ -403,7 +404,14 @@ export function createViewModel(classId, ctx) {
   let power = 0;
   let downedK = 0, dashK = 0, chargeK = 0;
   let flare = 0;
-  const poseR = clonePose(restPoseR), poseL = clonePose(restPoseL);
+  // the fingers (fingers.js): each on its own spring, with weight and idle life; a hand on a pole keeps its wrap
+  const leftFree = lg.kind !== 'pole' && !F.left;
+  const fingR = new FingerRig(handR, restPoseR, { grip: gripR.kind === 'pole', still: gripR.kind === 'fist', seed: 1 });
+  const fingL = new FingerRig(handL, restPoseL, { grip: lg.kind === 'pole', seed: 7 });
+  // the wrists: the hand trails the forearm that moves it and whips through when it stops (pitch, yaw, roll)
+  const sWristR = new Spring(3, 520, 0.4), sWristL = new Spring(3, 520, 0.4);
+  const WR = THREE.MathUtils.clamp;
+  const _hq = new THREE.Quaternion(), _ha = V();
   const tmp6 = [0, 0, 0, 0, 0, 0];
   const prevPosR = V(), prevPosL = V(), velR = V(), velL = V(), accR = V(), accL = V(), prevVelR = V();
   const tmpV = V();
@@ -414,12 +422,6 @@ export function createViewModel(classId, ctx) {
   // each cast plays its keys a little differently (size, a turn of the wrist), so a held primary never loops
   const castVar = { amp: 1, ry: 0, rz: 0, py: 0 };
   const st = { charge: 0, power: 0, glow: 1, castK: 0, accelR: accR, accelL: accL, view: true, up: root };
-
-  function freePose(hand, pose, rest, name, k, dt) {
-    const target = name ? POSES[name] : rest;
-    lerpPose(pose, target, 1 - Math.exp(-dt * k), pose);
-    hand.setPose(pose);
-  }
 
   function update(dt, s = {}) {
     dt = Math.min(Math.max(dt, 0), 0.05);
@@ -487,11 +489,13 @@ export function createViewModel(classId, ctx) {
         sp.v[0] += (Math.random() - 0.5) * 1.2 * k; sp.v[1] -= 0.8 * k; sp.v[2] += 1.6 * k;
         sp.v[3] += 6 * k; sp.v[5] += (Math.random() - 0.5) * 6 * k;
       }
+      // (and the fingers clench on the blow)
+      fingR.kick(5 * k); fingL.kick(9 * k);
     }
     prevHurt = hurt;
 
     // --- cast ---
-    let castR = null, castL = null, castT = 0;
+    let castR = null, castL = null, castT = 0, castNew = false;
     if (cast) {
       castT = cast.t ?? 0;
       const key = `${cast.slot}:${cast.style}:${cast.hand}`;
@@ -506,6 +510,7 @@ export function createViewModel(classId, ctx) {
         const kick = KICK[style] ?? 0.5;
         sSway.v[3] += kick * (0.9 + Math.random() * 0.3); sSway.v[5] += kick * 0.22;
         sSway.v[0] += (Math.random() - 0.5) * kick * 0.12; sSway.v[4] += (Math.random() - 0.5) * kick * 0.8;
+        castNew = true;
       }
       const hand = cast.hand ?? (style === 'throw' || style === 'snap' ? 'left' : 'right');
       if (hand === 'right' || hand === 'both') castR = style;
@@ -595,34 +600,50 @@ export function createViewModel(classId, ctx) {
       sl.position.copy(tmpV).addScaledVector(tmpV2, 0.035);
     }
 
-    // wrist accent for flicks
-    wristR.rotation.x = castR === 'flick' ? sR.x[3] * 0.5 : 0;
-
-    // fingers
-    if (gripR.kind === 'fist') {
-      // armoured fist (gauntlet): keep it clenched, squeeze on cast
-      handR.setPose(restPoseR);
-    } else if (gripR.kind !== 'pole') {
-      const name = castR ? sampleFingers(STYLES[castR].fingers, castT) : null;
-      freePose(handR, poseR, restPoseR, name, 22, dt);
-    } else {
-      // tighten grip a little while charging / casting
-      const squeeze = chargeK * 0.12 + (castR ? 0.08 : 0);
-      for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) poseR.f[i][j] = restPoseR.f[i][j] + squeeze * (j === 0 ? 0.3 : 0.15);
-      handR.setPose(poseR);
+    // wrists: a second joint past the forearm. The hand is carried by what moves the arm (the cast keys'
+    // spring, the view's sway) and lags it: tipped back as the arm drives down or up, trailing a turn of
+    // the view, then whipping through as the arm stops. Sprung, so it settles in a swing or two. A hand
+    // on a long pole swings it less (the head of a staff is a long way from the wrist).
+    for (const [wrist, sw, sp, style, pole, right] of [[wristR, sWristR, sR, castR, gripR.kind === 'pole', true], [wristL, sWristL, sL, castL, lg.kind === 'pole', false]]) {
+      const lim = pole ? 0.2 : 0.42, g = pole ? 0.6 : 1, sx = right ? 1 : -1;
+      sw.target[0] = WR((-sp.v[3] * 0.028 - sp.v[1] * 0.16 - sSway.v[3] * 0.14) * g, -lim, lim);
+      sw.target[1] = WR((-sp.v[4] * 0.028 + sp.v[0] * 0.16 + sx * sSway.v[2] * 0.14) * g, -lim, lim);
+      sw.target[2] = WR((-sp.v[5] * 0.03 - sx * sSway.v[4] * 0.1) * g, -lim, lim);
+      // walking, the wrist rolls a little with each stride; a held breath of sway at rest
+      sw.target[2] += Math.sin(bobPhase + (right ? 0.9 : 4.0)) * 0.035 * bobAmp * g + wob(t * 0.31, right ? 21 : 22) * 0.012;
+      sw.target[0] += wob(t * 0.27, right ? 23 : 24) * 0.012 + (style === 'channel' ? wob(t * 21, right ? 25 : 26) * 0.03 : 0);
+      sw.step(dt);
+      // (a flick is all wrist: it also leads the forearm's own tilt)
+      wrist.rotation.set(sw.x[0] + (style === 'flick' ? sp.x[3] * 0.5 : 0), sw.x[1], sw.x[2]);
     }
-    if (lg.kind !== 'pole' && !F.left) {
+
+    // fingers (fingers.js). What each hand is asked for; the rig gives it weight and life.
+    // The hand's own acceleration, along the back of the hand, is what its fingers trail against.
+    const fingerAcc = (hand, acc, mirrored) => {
+      hand.group.getWorldQuaternion(_hq);
+      _ha.set(0, 1, 0).applyQuaternion(_hq);
+      if (mirrored) _ha.x *= -1;
+      return (_ha.x * acc.x + _ha.y * acc.y + _ha.z * acc.z) * 9;
+    };
+    const idleLife = 1 - Math.min(1, bobAmp * 0.6);
+    {
+      // right: usually wrapped round the focus - it squeezes as a spell is charged and let go
+      const free = gripR.kind !== 'pole' && gripR.kind !== 'fist';
+      const name = free && castR ? sampleFingers(STYLES[castR].fingers, castT) : null;
+      if (castNew && castR) fingR.kick(free ? 6 : 3);
+      fingR.update(dt, t, { pose: name ? POSES[name] : null, squeeze: Math.min(1, chargeK * 0.9 + (castR ? 0.8 : 0) + dashK * 0.6), life: idleLife, accel: free ? fingerAcc(handR, accR, false) : 0, tremble: chargeK * 0.6 + downedK * 0.5 });
+    }
+    if (leftFree) {
       let name = castL ? sampleFingers(STYLES[castL].fingers, castT) : fidL ? sampleFingers(fidL.fingers, fidgetT) : null;
       if (!name && downedK > 0.5) name = 'relaxed';
       if (!name && chargeK > 0.3) name = 'claw';
-      freePose(handL, poseL, restPoseL, name, 26, dt);
-      // gentle idle finger motion
-      if (!name) {
-        for (let i = 0; i < 4; i++) {
-          const w = wob(t * 0.8 + i * 0.7, i) * 0.06;
-          poseL.f[i][1] += w * dt * 2;
-        }
-      }
+      // running, the free hand half closes; in the air it opens for balance
+      if (!name && !grounded) name = 'spread';
+      if (castNew && castL) fingL.kick(6);
+      else if (castNew) fingL.kick(1.5); // (the off hand feels the other's cast)
+      fingL.update(dt, t, { pose: name ? POSES[name] : null, rate: castL ? 1.15 : fidL ? 0.45 : 0.8, squeeze: !name ? bobAmp * 0.5 + dashK * 0.8 : 0, life: idleLife, accel: fingerAcc(handL, accL, true), tremble: chargeK * 0.5 + downedK * 0.6 });
+    } else {
+      fingL.update(dt, t, { squeeze: Math.min(1, chargeK * 0.9 + (castL ? 0.8 : 0)), life: lg.kind === 'pole' ? idleLife : idleLife * 0.35, tremble: chargeK * 0.5 + downedK * 0.5 });
     }
 
     // floating book
@@ -705,12 +726,12 @@ export function createViewModel(classId, ctx) {
   });
   root.traverse((o) => { if (o.isMesh && o.material?.transparent && o.material.blending !== THREE.AdditiveBlending) exclude.add(o); });
   // back to rest: the probe ran the springs, fidgets, sigils and trail
-  for (const sp of [sR, sL, sSway, sLand]) { sp.x.fill(0); sp.v.fill(0); sp.target.fill(0); }
+  for (const sp of [sR, sL, sSway, sLand, sWristR, sWristL]) { sp.x.fill(0); sp.v.fill(0); sp.target.fill(0); }
+  fingR.reset(); fingL.reset();
   bobPhase = bobAmp = 0; wasGrounded = true; lastCastT = -1; lastCastKey = ''; prevHurt = 0;
   stillT = 0; fidget = null; fidgetT = 0; fidgetN = 0; nextFidget = 6;
   power = downedK = dashK = chargeK = flare = 0; first = true;
   pvr = pvf = pvy = accVR = accVF = 0;
-  for (const [p, r] of [[poseR, restPoseR], [poseL, restPoseL]]) { r.f.forEach((row, i) => p.f[i].splice(0, row.length, ...row)); p.t.splice(0, r.t.length, ...r.t); }
   for (const it of sigils.items) it.m.visible = false;
   sigils.chargeK = 0; sigils.charge.visible = false;
   if (trail) { trail.count = 0; trail.mesh.visible = false; }

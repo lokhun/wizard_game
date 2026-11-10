@@ -301,7 +301,9 @@ function stepAvatars(dt) {
   let cp = state.cp;
   if (cp < 0) cp = (state.t * 1.2) % 1;
   for (const a of avatars) {
-    a.update(dt, { anim, t: state.t, speed: sp, pitch: state.pitch, castProgress: cp, strafe: state.strafe });
+    // (style=raise|slam|throw|channel|swing2 & hand=left|both: a spell's own cast; air=1 / dashk=1: off the ground / dashing; hit=<t>: struck at that time)
+    if (P.has('hit') && !a._hit && state.t >= num('hit', 0)) { a._hit = true; a.hit(1, 1); }
+    a.update(dt, { anim, t: state.t, speed: sp, pitch: state.pitch, castProgress: cp, strafe: state.strafe, castStyle: P.get('style') ?? undefined, castHand: P.get('hand') ?? undefined, air: P.has('air') ? num('air', 1) : undefined, dash: P.has('dashk') ? num('dashk', 1) : undefined });
   }
 }
 

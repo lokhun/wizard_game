@@ -48,6 +48,9 @@ export class RemotePlayer {
     const n = this.net;
     n.x = s.p[0]; n.y = s.p[1]; n.z = s.p[2];
     n.yaw = s.y; n.pitch = s.pi;
+    // a blow taken shows on the body: it flinches (harder for a bigger share of its health)
+    if (this._hpKnown && s.hp < this.hp - 0.5 && !s.dn && !s.dd) this.avatar.hit?.(Math.min(1, 0.35 + 3 * (this.hp - s.hp) / Math.max(1, s.mh)));
+    this._hpKnown = true;
     this.hp = s.hp; this.maxHp = s.mh; this.shield = s.sh ?? 0;
     this.downed = !!s.dn; this.dead = !!s.dd;
     this.reviveProgress = s.rp ?? 0;
@@ -88,7 +91,11 @@ export class RemotePlayer {
         dir = aim.clone().sub(tip).normalize();
       }
     }
-    this.castT = 0.5;
+    // the avatar plays the spell's own motion (the style and hand the caster's first-person hands play):
+    // an invocation is held longer than a flick
+    this.castStyle = sp.style ?? 'flick'; this.castHand = sp.hand ?? null;
+    this.castDur = this.castStyle === 'raise' ? 1.1 : this.castStyle === 'slam' ? 0.65 : 0.5;
+    this.castT = this.castDur;
     this.game.castFlourish?.(this, msg.slot);
     if (sp.mode === 'channel') {
       if (msg.chan === 1) {
@@ -134,7 +141,7 @@ export class RemotePlayer {
     _sph.center.set(this.pos.x, this.pos.y + 1, this.pos.z);
     this._poseDt += dt;
     if (_frustum.intersectsSphere(_sph) || anim === 'cast' || anim !== this._posedAnim || ++this._lod % 4 === 0) {
-      av.update(this._poseDt, { anim, t: this.game.time, speed, pitch: this.pitch, castProgress: this.channel ? 0.5 : 1 - this.castT * 2, strafe: 0 });
+      av.update(this._poseDt, { anim, t: this.game.time, speed, pitch: this.pitch, castProgress: this.channel ? 0.5 : 1 - this.castT / (this.castDur || 0.5), strafe: 0, castStyle: this.channel ? 'channel' : this.castStyle, castHand: this.castHand });
       this._poseDt = 0; this._posedAnim = anim;
     }
     if (this.channel) {

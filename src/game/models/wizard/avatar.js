@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { CLASS_META } from '../../classMeta.js';
 import { getKit, GlowSet } from './kit.js';
-import { buildHand, bakeHand, gripPose, POSES, clonePose } from './hand.js';
+import { buildHand, gripPose, POSES, clonePose } from './hand.js';
+import { FingerRig } from './fingers.js';
 import { buildFocus } from './foci.js';
 import { buildHat } from './hats.js';
 import { V, withLOD } from './shapes.js';
@@ -202,7 +203,11 @@ export function createAvatar(classId, ctx) {
     rawR.setPose(gp.pose);
     gripR = { pos: gp.gripPos, q: new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI / 2)) };
   } else rawR.setPose(clonePose(POSES[rg.kind] ?? POSES.relaxed));
-  const handR = bakeHand(rawR);
+  // The hands stay jointed (they used to be baked into one still mesh each): every finger segment rides
+  // along as a bone of the batched body, and a FingerRig (fingers.js) moves them - the grip tightens on a
+  // cast, a free hand claws, opens and trails its fingers, and neither is ever quite still.
+  const handR = rawR;
+  const restR = clonePose(rg.kind === 'pole' ? gripPose(rg.r).pose : (POSES[rg.kind] ?? POSES.relaxed));
   handR.group.name = 'handR';
   const lgp = F.leftGrip ?? { kind: 'open' };
   const rawL = withLOD(0.45, () => buildHand(handOpts(F.hands.L)));
@@ -212,7 +217,10 @@ export function createAvatar(classId, ctx) {
     rawL.setPose(gp.pose);
     gripL = { pos: gp.gripPos, q: new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI / 2)) };
   } else rawL.setPose(clonePose(POSES[lgp.kind === 'spread' ? 'open' : lgp.kind] ?? POSES.relaxed));
-  const handL = bakeHand(rawL);
+  const handL = rawL;
+  const restL = clonePose(lgp.kind === 'pole' ? gripPose(lgp.r).pose : (POSES[lgp.kind === 'spread' ? 'open' : lgp.kind] ?? POSES.relaxed));
+  const fingR = new FingerRig(handR, restR, { grip: rg.kind === 'pole', still: rg.kind === 'fist', seed: 2 });
+  const fingL = new FingerRig(handL, restL, { grip: lgp.kind === 'pole', seed: 9 });
   handL.group.name = 'handL';
   // hand frames: the hand model's fingers run along -Z; in the arm they
   // continue down the arm (-Y) with the palm facing the body
@@ -280,6 +288,12 @@ export function createAvatar(classId, ctx) {
 
   // ---------------- animation state ----------------
   let phase = 0, moveK = 0, lastT = 0, deadK = 0, downK = 0, castK = 0, idleT = 0;
+  // off the ground (0..1, and which way: 1 rising .. -1 falling), the crouch of a landing, a dash's lunge,
+  // a blow's flinch (and the side it rocks to), and the body's eased acceleration (it leans into it)
+  let airK = 0, airV = 0, landK = 0, dashK = 0, hurtK = 0, hurtSide = 1, accX = 0, accZ = 0, plx = 0, plz = 0;
+  // which cast is playing (a spell's own style and hand: see the cast block), and whether the free hand is in it
+  let castStyle = null, castLeft = false, castRight = true;
+  const leftFree = lgp.kind !== 'pole' && !F.left;
   // turning on the spot (mouse-look) steps the feet round: yaw rate eased into 0..1, its sign, and a step phase
   let turnK = 0, turnDir = 1, turnPh = 0, prevYaw = null;
   const _te = new THREE.Euler();
@@ -319,6 +333,8 @@ export function createAvatar(classId, ctx) {
 
   function resetState() {
     phase = 0; moveK = 0; lastT = 0; deadK = 0; downK = 0; castK = 0; idleT = 0; haveprev = false; turnK = 0; prevYaw = null;
+    airK = airV = landK = dashK = hurtK = accX = accZ = plx = plz = 0; castStyle = null; castLeft = false; castRight = true;
+    fingR.reset(); fingL.reset();
     for (const j of allJoints) { j.t.set(0, 0, 0); j.c.set(0, 0, 0); }
     hips.position.copy(hipsBase);
     cloth.first = true;
@@ -357,7 +373,14 @@ export function createAvatar(classId, ctx) {
     prevYaw = yaw;
     wprev.copy(wpos); haveprev = true;
     lvel.copy(wvel).applyQuaternion(qa.copy(rq).invert()).divideScalar(wscale || 1);
+    const vy = lvel.y;
     lvel.y = 0;
+    // the body's acceleration (it leans into a start and back against a stop), eased
+    if (dt > 1e-4) {
+      const e = 1 - Math.exp(-dt * 7), C = THREE.MathUtils.clamp;
+      accX += (C((lvel.x - plx) / dt, -40, 40) - accX) * e; accZ += (C((lvel.z - plz) / dt, -40, 40) - accZ) * e;
+    }
+    plx = lvel.x; plz = lvel.z;
     const moving = anim === 'move' || (anim === 'cast' && speed > 0.4);
     const lsp = Math.hypot(lvel.x, lvel.z);
     // walk direction in avatar space: measured, or straight ahead + strafe
@@ -373,6 +396,22 @@ export function createAvatar(classId, ctx) {
     deadK += ((anim === 'dead' ? 1 : 0) - deadK) * (1 - Math.exp(-dt * 4.5));
     downK += ((anim === 'downed' ? 1 : 0) - downK) * (1 - Math.exp(-dt * 5));
     castK += ((anim === 'cast' ? 1 : 0) - castK) * (1 - Math.exp(-dt * 12));
+    if (anim === 'cast') {
+      castStyle = s.castStyle ?? null;
+      const ch = s.castHand ?? (castStyle === 'throw' || castStyle === 'snap' ? 'left' : 'right');
+      castLeft = ch !== 'right'; castRight = ch !== 'left';
+    }
+    // Off the ground: a jump or a drop, read from the body's own rise and fall (a ramp or a stair is far
+    // slower). Touching down after one, the knees take it.
+    const alive = (1 - downK) * (1 - deadK);
+    const wasAir = airK;
+    airK += ((s.air ?? sstep(2.6, 5.2, Math.abs(vy))) * alive - airK) * (1 - Math.exp(-dt * (Math.abs(vy) > 2.6 ? 16 : 9)));
+    airV += (THREE.MathUtils.clamp(vy / 4.5, -1, 1) - airV) * (1 - Math.exp(-dt * 10));
+    if (wasAir > 0.45 && airK < wasAir && Math.abs(vy) < 1.5 && landK < 0.3) landK = Math.min(1, wasAir * 1.2);
+    landK *= Math.exp(-dt * 6.5);
+    // A dash: far faster than any run.
+    dashK += ((s.dash ?? sstep(11, 16, Math.hypot(lvel.x, lvel.z))) * alive - dashK) * (1 - Math.exp(-dt * 16));
+    hurtK *= Math.exp(-dt * 6);
     const k = moveK;
     const still = (1 - k) * (1 - downK) * (1 - deadK);
     idleT += dt * still;
@@ -449,11 +488,70 @@ export function createAvatar(classId, ctx) {
       hips.position.y -= 0.01 * tk;
     }
 
+    // ---- the body has weight: it leans into a start and back against a stop, and a runner drives the elbows
+    {
+      const C = THREE.MathUtils.clamp, lk = alive * (1 - dashK);
+      jSpine.add(C(accZ * 0.009, -0.16, 0.2) * lk, 0, C(-accX * 0.009, -0.16, 0.16) * lk);
+      jNeck.add(C(-accZ * 0.004, -0.08, 0.08) * lk, 0, 0);
+      const run = k * sstep(3.2, 6.5, speed);
+      if (run > 0.001) {
+        if (!lhold) armL.jE.add(-0.55 * run, 0, 0);
+        armR.jS.add(-swing * 0.14 * run * dirZ, 0, 0);
+        jSpine.add(0.07 * run * dirZ, 0, 0); jHead.add(-0.06 * run * dirZ, 0, 0);
+      }
+    }
+    // ---- in the air: knees tucked and arms out on the way up, legs reaching and arms high on the way down
+    if (airK > 0.005) {
+      const a = airK, up = Math.max(0, airV), dn = Math.max(0, -airV);
+      for (let li = 0; li < 2; li++) {
+        const L = legs[li], lead = L.s > 0 ? 1 : 0.55;
+        L.jT.mix(-(0.75 * up + 0.2 * dn) * lead + 0.12 * dn * (1 - lead), 0, L.s * 0.07, a);
+        L.jK.mix(1.15 * up * lead + 0.3 * up + 0.38 * dn, 0, 0, a);
+        L.jA.mix(0.35 * up + 0.5 * dn, 0, 0, a);
+      }
+      jSpine.add((0.14 * up - 0.1 * dn) * a, 0, 0); jHead.add((-0.1 * up + 0.12 * dn) * a, 0, 0);
+      if (!lhold) { armL.jS.mix(-0.25 * up - 0.5 * dn, 0, 0.55 + 0.55 * dn, a); armL.jE.mix(-0.5 + 0.25 * dn, 0, 0, a); }
+      else armL.jS.add(-0.15 * a, 0, 0.12 * a);
+      armR.jS.add(-(0.12 * up + 0.3 * dn) * a, 0, -(0.18 + 0.22 * dn) * a);
+    }
+    // ---- landing: the knees give and the back rounds, then up again
+    if (landK > 0.005) {
+      const l = landK * alive;
+      for (let li = 0; li < 2; li++) { const L = legs[li]; L.jT.add(-0.42 * l, 0, 0); L.jK.add(0.85 * l, 0, 0); L.jA.add(-0.4 * l, 0, 0); }
+      hips.position.y -= 0.11 * l;
+      jSpine.add(0.26 * l, 0, 0); jHead.add(-0.16 * l, 0, 0);
+      if (!lhold) armL.jS.add(0, 0, 0.3 * l);
+      armR.jS.add(0, 0, -0.12 * l);
+    }
+    // ---- dash: thrown along the line of travel, the back leg trailing and the free arm swept behind
+    if (dashK > 0.005) {
+      const d = dashK;
+      jSpine.add(0.5 * d * dirZ, 0, -0.42 * d * dirX); jChest.add(0.12 * d * dirZ, 0, -0.1 * d * dirX);
+      jNeck.add(-0.3 * d * dirZ, 0, 0); jHead.add(-0.2 * d * dirZ, 0, 0);
+      legL.jT.mix(-0.95 * dirZ, 0, 0.5 * dirX, d); legL.jK.mix(0.75, 0, 0, d); legL.jA.mix(-0.1, 0, 0, d);
+      legR.jT.mix(0.6 * dirZ, 0, 0.5 * dirX, d); legR.jK.mix(0.95, 0, 0, d); legR.jA.mix(0.55, 0, 0, d);
+      hips.position.y -= 0.1 * d;
+      if (!lhold) { armL.jS.mix(0.95, 0, 0.3, d); armL.jE.mix(-0.25, 0, 0, d); }
+      armR.jS.add(0.45 * d, 0, -0.1 * d); armR.jE.add(0.3 * d, 0, 0);
+      if (hold === 'staff') focusDir.lerp(tmp.set(0.05, 0.75, -0.6), d * 0.7);
+    }
+    // ---- struck: the body folds round the blow and rocks to one side, the shoulders come up
+    if (hurtK > 0.005) {
+      const h = hurtK * alive;
+      jSpine.add(0.2 * h, 0, 0.14 * h * hurtSide); jChest.add(0.14 * h, -0.12 * h * hurtSide, 0);
+      jNeck.add(0.12 * h, 0, 0); jHead.add(0.2 * h, 0.2 * h * hurtSide, -0.12 * h * hurtSide);
+      armL.jS.add(-0.2 * h, 0, 0.26 * h); armL.jE.add(-0.5 * h, 0, 0);
+      armR.jS.add(-0.1 * h, 0, -0.16 * h);
+      for (let li = 0; li < 2; li++) { legs[li].jK.add(0.3 * h, 0, 0); legs[li].jT.add(-0.14 * h, 0, 0); legs[li].jA.add(-0.14 * h, 0, 0); }
+      hips.position.y -= 0.035 * h;
+    }
+
     // ---- cast: big readable poses, by what the class holds
     if (castK > 0.001) {
       const wind = sstep(0, 0.28, cp), thrust = sstep(0.26, 0.46, cp), rel = sstep(0.72, 1, cp);
       const a = Math.min(1, wind * 0.55 + thrust * 0.45) * (1 - rel * 0.85);
-      const w = castK;
+      // (a spell thrown from the free hand: the focus arm only braces)
+      const w = castK * (castRight ? 1 : 0.3);
       const tr = cp > 0.45 && cp < 0.75 ? wob(t * 25, 1) * 0.015 : 0;
       const up = pitch;
       if (hold === 'staff' || hold === 'wand') {
@@ -481,15 +579,59 @@ export function createAvatar(classId, ctx) {
       }
       // the striking arm counter-rotates the torso twist so it lands on the aim line
       if (hold !== 'dagger' && hold !== 'sword') armR.jS.add(0, -(jSpine.t.y + jChest.t.y) * 0.9, 0);
-      // off hand pushes forward unless it is busy
-      if (!lhold || lhold === 'cradle') {
-        armL.jS.mix(-0.25 - wind * 0.4 - thrust * (0.7 + up * 0.5), -0.3 * thrust, 0.3 - 0.1 * thrust, w * a);
-        armL.jE.mix(-1.1 + thrust * 0.75, 0, 0, w * a);
-        armL.jW.mix(-0.9 * thrust, 0, 1.4, w * a);
-      } else if (lhold === 'book') { armL.jS.add(-0.35 * a * w, 0, 0); armL.jE.add(-0.2 * a * w, 0, 0); }
-      else if (lhold === 'float') { armL.jS.add(-0.5 * a * w, 0, 0); }
+      // off hand pushes forward unless it is busy; a spell thrown from it is the off hand's own cast -
+      // drawn back by the ear, then flung out along the aim with the shoulders turning behind it
+      const wl = castK, hold1 = 1 - rel * 0.85;
+      if (castLeft && (!lhold || lhold === 'cradle')) {
+        armL.jS.mix(0.5 - wind * 1.0 - thrust * (1.05 + up * 0.8), -0.35 + 0.5 * thrust, 0.55 - 0.35 * thrust, wl * hold1);
+        armL.jE.mix(-1.9 + thrust * 1.75, 0, 0, wl * hold1);
+        armL.jW.mix(0.5 * wind - 1.1 * thrust, 0, 1.4, wl * a);
+        if (!castRight) { jSpine.add((-0.06 * wind + 0.18 * thrust) * a * wl, (0.32 * wind - 0.42 * thrust) * a * wl, 0); jChest.add(0, (0.14 * wind - 0.12 * thrust) * a * wl, 0); }
+      } else if (!lhold || lhold === 'cradle') {
+        armL.jS.mix(-0.25 - wind * 0.4 - thrust * (0.7 + up * 0.5), -0.3 * thrust, 0.3 - 0.1 * thrust, wl * a);
+        armL.jE.mix(-1.1 + thrust * 0.75, 0, 0, wl * a);
+        armL.jW.mix(-0.9 * thrust, 0, 1.4, wl * a);
+      } else if (lhold === 'book') { armL.jS.add(-0.35 * a * wl, 0, 0); armL.jE.add(-0.2 * a * wl, 0, 0); }
+      else if (lhold === 'float') { armL.jS.add(-0.5 * a * wl, 0, 0); }
+      // ---- a spell's own shape over the hold's (the styles the first-person hands play)
+      let lungeK = 1;
+      if (castStyle === 'raise') {
+        // an invocation: both arms rise wide overhead and are held there, chest open, head back
+        const r = sstep(0, 0.22, cp) * (1 - sstep(0.82, 1, cp)) * castK, q = wob(t * 22, 4) * 0.02 * r;
+        armR.jS.mix(-2.45 + q, 0.1, -0.5, r); armR.jE.mix(-0.35, 0, 0, r);
+        focusDir.lerp(tmp.set(0.12, 1, -0.05), r); focusUp.lerp(tmp.set(0, 0, 1), r);
+        if (!lhold || lhold === 'cradle') { armL.jS.mix(-2.4 - q, -0.1, 0.55, r); armL.jE.mix(-0.4, 0, 0, r); armL.jW.mix(-0.3, 0, 1.4, r); }
+        else armL.jS.add(-0.5 * r, 0, 0.15 * r);
+        jSpine.mix(-0.16, 0, 0, r); jChest.mix(-0.14, 0, 0, r); jNeck.add(-0.16 * r, 0, 0); jHead.add(-0.22 * r, 0, 0);
+        for (let li = 0; li < 2; li++) { legs[li].jT.add(0, 0, legs[li].s * 0.07 * r); legs[li].jK.add(0.08 * r, 0, 0); }
+        lungeK = 1 - r;
+      } else if (castStyle === 'slam') {
+        // hauled high overhead, then driven into the ground: the whole body follows it down
+        const hi = sstep(0, 0.24, cp) * (1 - sstep(0.3, 0.42, cp)), lo = sstep(0.3, 0.44, cp) * (1 - sstep(0.78, 1, cp)), wk = castK;
+        armR.jS.mix(-2.6, 0.05, -0.3, hi * wk); armR.jE.mix(-0.7, 0, 0, hi * wk);
+        armR.jS.mix(-0.75, 0.1, -0.1, lo * wk); armR.jE.mix(-0.5, 0, 0, lo * wk);
+        focusDir.lerp(tmp.set(0.05, 1, -0.25), hi * wk); focusDir.lerp(tmp.set(0, -0.05, 1), lo * wk * 0.9);
+        if (!lhold || lhold === 'cradle') { armL.jS.mix(-2.4, 0, 0.4, hi * wk); armL.jS.mix(-0.7, 0, 0.3, lo * wk); armL.jE.mix(-0.6, 0, 0, Math.max(hi, lo) * wk); }
+        jSpine.add((-0.2 * hi + 0.55 * lo) * wk, 0, 0); jChest.add((-0.1 * hi + 0.2 * lo) * wk, 0, 0); jHead.add((-0.15 * hi - 0.25 * lo) * wk, 0, 0);
+        for (let li = 0; li < 2; li++) { legs[li].jT.add(-0.5 * lo * wk, 0, legs[li].s * 0.06 * lo * wk); legs[li].jK.add(0.95 * lo * wk, 0, 0); legs[li].jA.add(-0.42 * lo * wk, 0, 0); }
+        hips.position.y -= 0.14 * lo * wk;
+        lungeK = 1 - Math.max(hi, lo) * wk;
+      } else if (castStyle === 'channel') {
+        // held: braced low behind the focus, leaning into the stream, the arms shaking with it
+        const c = castK, q = wob(t * 24, 6) * 0.022 * c, q2 = wob(t * 19, 8) * 0.02 * c;
+        armR.jS.add(q, q2, 0); armR.jE.add(q2, 0, 0); armL.jS.add(-q, 0, q2);
+        jSpine.add(0.1 * c + q * 0.4, 0, 0); jHead.add(-0.08 * c, 0, 0);
+        for (let li = 0; li < 2; li++) legs[li].jK.add(0.12 * c, 0, 0);
+        hips.position.y -= 0.03 * c;
+      } else if (castStyle === 'swing2' && (hold === 'dagger' || hold === 'sword')) {
+        // the backhand: from low across the body, rising back out
+        const wk = castK * hold1;
+        armR.jS.mix(-0.7 - thrust * 1.2, 1.15 - thrust * 1.5, 0.25 - thrust * 0.75, wk); armR.jE.mix(-1.0 + thrust * 0.75, 0, 0, wk);
+        focusDir.lerp(tmp.set(-0.9 + thrust * 1.7, 0.2 + thrust * 0.6, 0.5 + thrust * 0.3), castK * a);
+        jSpine.add(0, (0.55 * wind - 1.3 * thrust) * a * castK, 0);
+      }
       // lunge onto the left foot
-      const lg = thrust * a * w;
+      const lg = thrust * a * castK * lungeK * (1 - airK);
       legL.jT.add(-0.42 * lg, 0, 0); legL.jK.add(0.5 * lg, 0, 0); legL.jA.add(-0.08 * lg, 0, 0);
       legR.jT.add(0.28 * lg, 0, -0.04 * lg); legR.jK.add(0.22 * lg, 0, 0); legR.jA.add(0.2 * lg, 0, 0);
       hips.position.y -= 0.05 * lg;
@@ -525,6 +667,19 @@ export function createAvatar(classId, ctx) {
 
     const kk = 1 - Math.exp(-dt * 13);
     for (let i = 0; i < allJoints.length; i++) allJoints[i].step(kk, dt);
+    // ---- fingers: the grip tightens through a cast; a free hand claws on the wind-up and flings open on
+    // the release, hangs half closed on the run, spreads in the air and on the ground it is propped on
+    {
+      const casting = castK > 0.5, wind = casting && cp < 0.3, out = casting && cp >= 0.3 && cp < 0.8;
+      const lifeK = (1 - deadK) * (1 - k * 0.5), tremble = downK * 0.7 + (castStyle === 'channel' ? castK * 0.5 : 0);
+      const freeR = rg.kind !== 'pole' && rg.kind !== 'fist';
+      fingR.update(dt, t, { pose: freeR ? (wind ? POSES.fist : out ? POSES.spread : null) : null, squeeze: Math.min(1, castK + dashK + hurtK), life: lifeK, tremble });
+      if (leftFree) {
+        const both = castLeft || (!lhold && castRight);
+        const pose = deadK > 0.5 ? POSES.open : downK > 0.5 ? POSES.spread : both && wind ? POSES.claw : both && out ? POSES.spread : castStyle === 'raise' && casting ? POSES.spread : airK > 0.4 ? POSES.spread : hurtK > 0.3 || dashK > 0.4 ? POSES.fist : null;
+        fingL.update(dt, t, { pose, squeeze: pose ? 0 : k * 0.55, life: lifeK, tremble, rate: casting ? 1.1 : 0.7 });
+      } else fingL.update(dt, t, { squeeze: Math.min(1, castK * 0.6 + hurtK), life: lgp.kind === 'pole' ? lifeK : lifeK * 0.3, tremble });
+    }
     // no full-tree update before aiming: aimFocus refreshes the arm chain it
     // reads itself, and the pass below brings every node up to date (each
     // full pass over ~150 nodes was a third of an avatar's frame)
@@ -578,6 +733,8 @@ export function createAvatar(classId, ctx) {
     const seq = [['idle', 16, 0], ['move', 16, 3], ['cast', 24, 0], ['downed', 12, 0], ['dead', 12, 0], ['idle', 6, 0]];
     let tt = 0;
     for (const [anim, n, sp] of seq) for (let i = 0; i < n; i++) { tt += 1 / 30; update(1 / 30, { anim, t: tt, speed: sp, castProgress: i / n }); sample(); }
+    for (const [castStyle, castHand] of [['raise', 'both'], ['slam', 'right'], ['throw', 'left'], ['channel', 'right'], ['swing2', 'right']]) for (let i = 0; i < 10; i++) { tt += 1 / 30; update(1 / 30, { anim: 'cast', t: tt, speed: 0, castProgress: i / 10, castStyle, castHand }); sample(); }
+    for (let i = 0; i < 10; i++) { tt += 1 / 30; update(1 / 30, { anim: 'move', t: tt, speed: 4, air: i < 5 ? 1 : 0, dash: i > 6 ? 1 : 0 }); sample(); }
   });
   resetState();
   for (const c of cloth.chains) c.bones.forEach((b, i) => b.quaternion.copy(c.bindQ[i]));
@@ -616,6 +773,8 @@ export function createAvatar(classId, ctx) {
     update,
     legs, // (for tools and tests)
     flash(amount = 1) { flashK = Math.max(flashK, amount); applyMats(); },
+    // a blow lands (k: 0..1 its size; side: -1 / 1 the way the body rocks, random if not given)
+    hit(k = 0.6, side = 0) { hurtK = Math.max(hurtK, Math.min(1, k)); hurtSide = side || (Math.random() < 0.5 ? -1 : 1); fingR.kick(4 * k); fingL.kick(8 * k); },
     setTint(hex, k = 0.5) {
       if (hex === null || hex === undefined) { tint = null; tintK = 0; } else { tint = hex; tintColor.set(hex); tintK = THREE.MathUtils.clamp(k, 0, 1); }
       baked.setTint(tint === null ? null : hex, tintK);
