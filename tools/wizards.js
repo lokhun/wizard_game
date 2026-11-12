@@ -169,6 +169,7 @@ function loadAvatar() {
   if (P.get('stats') === '1') logTris(avatars[0].root);
 }
 window.__avatars = () => avatars;
+window.__vm = () => vm;
 // debug: rebuild the avatar and time it (textures are warm by then)
 window.__timeBuild = () => { loadAvatar(); return window.__buildMs; };
 // debug: per-avatar triangles and draw calls (one per visible mesh / sprite)

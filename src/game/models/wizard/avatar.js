@@ -427,7 +427,7 @@ export function createAvatar(classId, ctx) {
     phase += (speed * dt * TAU) / strideOf(speed);
     deadK += ((anim === 'dead' ? 1 : 0) - deadK) * (1 - Math.exp(-dt * 4.5));
     downK += ((anim === 'downed' ? 1 : 0) - downK) * (1 - Math.exp(-dt * 5));
-    castK += ((anim === 'cast' ? 1 : 0) - castK) * (1 - Math.exp(-dt * 12));
+    castK += ((anim === 'cast' ? 1 : 0) - castK) * (1 - Math.exp(-dt * (anim === 'cast' ? 40 : 9))); // (on at once, off at leisure)
     if (anim === 'cast') {
       castStyle = s.castStyle ?? null;
       const ch = s.castHand ?? (castStyle === 'throw' || castStyle === 'snap' ? 'left' : 'right');
@@ -688,7 +688,10 @@ export function createAvatar(classId, ctx) {
 
     // ---- cast: big readable poses, by what the class holds
     if (castK > 0.001) {
-      const wind = sstep(0, 0.28, cp), thrust = sstep(0.26, 0.46, cp), rel = sstep(0.72, 1, cp);
+      // The spell left the moment it was cast: the body is on its strike at once (the arm only passes
+      // through the drawn-back pose on its way there), holds it, and takes its time coming back.
+      // (It used to draw back for a seventh of a second first - a wind-up for a spell already in the air.)
+      const wind = sstep(0, 0.07, cp), thrust = sstep(0.03, 0.2, cp), rel = sstep(0.55, 1, cp);
       const a = Math.min(1, wind * 0.55 + thrust * 0.45) * (1 - rel * 0.85);
       // (a spell thrown from the free hand: the focus arm only braces)
       const w = castK * (castRight ? 1 : 0.3);
@@ -737,7 +740,7 @@ export function createAvatar(classId, ctx) {
       let lungeK = 1;
       if (castStyle === 'raise') {
         // an invocation: both arms rise wide overhead and are held there, chest open, head back
-        const r = sstep(0, 0.22, cp) * (1 - sstep(0.82, 1, cp)) * castK, q = wob(t * 22, 4) * 0.02 * r;
+        const r = sstep(0, 0.12, cp) * (1 - sstep(0.82, 1, cp)) * castK, q = wob(t * 22, 4) * 0.02 * r;
         armR.jS.mix(-2.45 + q, 0.1, -0.5, r); armR.jE.mix(-0.35, 0, 0, r);
         focusDir.lerp(tmp.set(0.12, 1, -0.05), r); focusUp.lerp(tmp.set(0, 0, 1), r);
         if (!lhold || lhold === 'cradle') { armL.jS.mix(-2.4 - q, -0.1, 0.55, r); armL.jE.mix(-0.4, 0, 0, r); armL.jW.mix(-0.3, 0, 1.4, r); }
@@ -747,7 +750,7 @@ export function createAvatar(classId, ctx) {
         lungeK = 1 - r;
       } else if (castStyle === 'slam') {
         // hauled high overhead, then driven into the ground: the whole body follows it down
-        const hi = sstep(0, 0.24, cp) * (1 - sstep(0.3, 0.42, cp)), lo = sstep(0.3, 0.44, cp) * (1 - sstep(0.78, 1, cp)), wk = castK;
+        const hi = sstep(0, 0.06, cp) * (1 - sstep(0.06, 0.18, cp)), lo = sstep(0.05, 0.2, cp) * (1 - sstep(0.72, 1, cp)), wk = castK; // (overhead only in passing: it is already coming down)
         armR.jS.mix(-2.6, 0.05, -0.3, hi * wk); armR.jE.mix(-0.7, 0, 0, hi * wk);
         armR.jS.mix(-0.75, 0.1, -0.1, lo * wk); armR.jE.mix(-0.5, 0, 0, lo * wk);
         focusDir.lerp(tmp.set(0.05, 1, -0.25), hi * wk); focusDir.lerp(tmp.set(0, -0.05, 1), lo * wk * 0.9);
@@ -829,7 +832,9 @@ export function createAvatar(classId, ctx) {
     const kk = 1 - Math.exp(-dt * 13);
     // (legs on the move are held closer to their solved targets: an eased foot is a sliding foot)
     const kLeg = 1 - Math.exp(-dt * (13 + 60 * k));
-    for (let i = 0; i < allJoints.length; i++) allJoints[i].step(i >= 5 && i < 11 ? kLeg : kk, dt);
+    // (and a cast's arms and back are driven to their strike, not eased toward it)
+    const kCast = 1 - Math.exp(-dt * (13 + 24 * castK));
+    for (let i = 0; i < allJoints.length; i++) allJoints[i].step(i >= 5 && i < 11 ? kLeg : i >= 11 || i === 1 || i === 2 ? kCast : kk, dt);
     // ---- the hat's point: sprung against the head's own turning (its joints' angular speed), the body's
     // starts, stops and stride, and a blow; it leans back on a run
     if (hatTip) {
@@ -843,7 +848,7 @@ export function createAvatar(classId, ctx) {
     // ---- fingers: the grip tightens through a cast; a free hand claws on the wind-up and flings open on
     // the release, hangs half closed on the run, spreads in the air and on the ground it is propped on
     {
-      const casting = castK > 0.5, wind = casting && cp < 0.3, out = casting && cp >= 0.3 && cp < 0.8;
+      const casting = castK > 0.3, wind = casting && cp < 0.05, out = casting && cp >= 0.05 && cp < 0.7;
       const lifeK = (1 - deadK) * (1 - k * 0.5), tremble = downK * 0.7 + (castStyle === 'channel' ? castK * 0.5 : 0);
       const freeR = rg.kind !== 'pole' && rg.kind !== 'fist';
       fingR.update(dt, t, { pose: freeR ? (wind ? POSES.fist : out ? POSES.spread : null) : null, squeeze: Math.min(1, castK + dashK + hurtK), life: lifeK, tremble });

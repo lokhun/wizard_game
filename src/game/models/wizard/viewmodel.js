@@ -74,22 +74,87 @@ function applyHold(pivot, hold) {
   pivot.position.set(...hold.pos);
 }
 
-// cast styles: keyframes of [px,py,pz, rx,ry,rz] offsets (x>0 = outward),
-// plus finger pose keys for free hands.
+// ---------------------------------------------------------------------------
+// Casts. Keys are [px,py,pz, rx,ry,rz] offsets from rest (x > 0 outward, -z away from the eye, rx < 0
+// tips the focus forward), passed through on a spline (sampleKeys).
+//
+// A spell is cast the instant its key is pressed: by the time the hands can move, it has left. The old
+// styles wound up first and struck a tenth of a second later - a wind-up for something already gone, so
+// every cast read as late. These open ON the strike: the hand is driven to it in a few hundredths of a
+// second by a stiff spring (attack), carries through, and only then does what a wind-up cannot do after
+// the fact - it recoils past rest and settles, on a spring gone slack (the follow-through is where the
+// time, and the look of weight, is spent). Each style is written for both hands: `main` for the hand that
+// casts, `off` for the other, which is never a bystander - it braces, counters or joins - each with its
+// own finger track (free hands; a hand on a pole squeezes instead).
+// ---------------------------------------------------------------------------
+const Z6 = [0, 0, 0, 0, 0, 0];
 const STYLES = {
-  flick: { keys: [[0, [0, 0, 0, 0, 0, 0]], [0.05, [0.005, 0.012, 0.03, 0.45, 0, -0.05]], [0.11, [-0.02, 0.02, -0.08, -0.55, 0.05, 0.12]], [0.18, [-0.01, 0.01, -0.04, -0.25, 0, 0.06]], [0.32, [0, 0, 0, 0, 0, 0]]], fingers: [[0, 'claw'], [0.05, 'fist'], [0.1, 'spread'], [0.3, null]] },
-  thrust: { keys: [[0, [0, 0, 0, 0, 0, 0]], [0.05, [0.01, -0.01, 0.04, 0.2, 0, 0]], [0.13, [-0.06, 0.05, -0.19, -0.35, 0.05, 0.14]], [0.2, [-0.05, 0.045, -0.17, -0.3, 0.05, 0.12]], [0.42, [0, 0, 0, 0, 0, 0]]], fingers: [[0, 'claw'], [0.05, 'claw'], [0.12, 'spread'], [0.4, null]] },
-  slam: { keys: [[0, [0, 0, 0, 0, 0, 0]], [0.15, [0.01, 0.13, 0.03, 0.65, 0, -0.05]], [0.23, [-0.02, -0.07, -0.1, -0.8, 0, 0.12]], [0.3, [-0.015, -0.055, -0.08, -0.65, 0, 0.1]], [0.48, [0, 0, 0, 0, 0, 0]]], fingers: [[0, 'claw'], [0.15, 'fist'], [0.23, 'spread'], [0.45, null]] },
-  raise: { keys: [[0, [0, 0, 0, 0, 0, 0]], [0.3, [-0.04, 0.13, -0.08, 0.12, 0, 0.1]], [1.1, [-0.04, 0.145, -0.09, 0.16, 0, 0.1]], [1.5, [0, 0, 0, 0, 0, 0]]], fingers: [[0, 'open'], [0.3, 'spread'], [1.2, 'spread'], [1.5, null]] },
-  channel: { keys: [[0, [0, 0, 0, 0, 0, 0]], [0.15, [0.02, 0.05, -0.12, -0.1, 0.0, -0.06]]], hold: true, fingers: [[0, 'spread'], [0.2, 'spread']] },
-  // forehand: cocked high and outward, cut down across the view; the follow-through
-  // stays on screen so the blade is always readable
-  swing: { keys: [[0, [0, 0, 0, 0, 0, 0]], [0.05, [0.045, 0.1, 0.035, 0.42, -0.22, -0.48]], [0.1, [-0.07, 0.03, -0.12, -0.15, 0.12, 0.35]], [0.16, [-0.17, -0.03, -0.1, -0.28, 0.28, 0.85]], [0.26, [-0.16, -0.04, -0.08, -0.26, 0.26, 0.8]], [0.5, [0, 0, 0, 0, 0, 0]]], fingers: [[0, 'claw'], [0.05, 'fist'], [0.14, 'spread'], [0.4, null]] },
-  // backhand, for a quick follow-up: from low across the body, rising back out
-  swing2: { keys: [[0, [0, 0, 0, 0, 0, 0]], [0.05, [-0.12, -0.02, -0.02, -0.25, 0.22, 0.75]], [0.1, [-0.04, 0.03, -0.13, 0.05, 0.0, 0.1]], [0.16, [0.05, 0.08, -0.08, 0.35, -0.22, -0.5]], [0.26, [0.045, 0.075, -0.06, 0.32, -0.2, -0.46]], [0.5, [0, 0, 0, 0, 0, 0]]], fingers: [[0, 'claw'], [0.05, 'fist'], [0.14, 'spread'], [0.4, null]] },
-  throw: { keys: [[0, [0, 0, 0, 0, 0, 0]], [0.07, [0.02, 0.05, 0.07, 0.4, 0, -0.1]], [0.16, [-0.13, 0.06, -0.23, -0.45, 0, 0.2]], [0.22, [-0.11, 0.05, -0.2, -0.35, 0, 0.15]], [0.42, [0, 0, 0, 0, 0, 0]]], fingers: [[0, 'open'], [0.06, 'fist'], [0.15, 'spread'], [0.4, null]] },
-  snap: { keys: [[0, [0, 0, 0, 0, 0, 0]], [0.08, [-0.03, 0.07, -0.05, -0.1, 0, 0.3]], [0.12, [-0.035, 0.065, -0.07, -0.25, 0, 0.32]], [0.36, [0, 0, 0, 0, 0, 0]]], fingers: [[0, 'open'], [0.06, 'snapPre'], [0.1, 'snapPost'], [0.3, null]] },
+  // a quick shot from the wrist
+  flick: {
+    attack: 2600,
+    main: [[0, Z6], [0.04, [-0.018, 0.016, -0.075, -0.5, 0.04, 0.11]], [0.09, [-0.024, 0.022, -0.09, -0.42, 0.05, 0.13]], [0.17, [-0.006, 0.012, -0.02, 0.1, 0.01, 0.03]], [0.26, [0.006, -0.004, 0.016, 0.2, 0, -0.03]], [0.36, [0.002, 0, 0.004, 0.05, 0, -0.01]], [0.46, Z6]],
+    off: [[0, Z6], [0.06, [0.008, -0.008, 0.014, 0.07, -0.03, -0.09]], [0.16, [0.012, -0.012, 0.02, 0.1, -0.04, -0.12]], [0.34, Z6]],
+    fingers: [[0, 'spread'], [0.12, 'open'], [0.22, 'claw'], [0.34, null]], offFingers: [[0, 'open'], [0.16, null]],
+  },
+  // driven out along the aim from the shoulder; the other hand is pulled back against it, closed
+  thrust: {
+    attack: 2300,
+    main: [[0, Z6], [0.05, [-0.05, 0.04, -0.2, -0.42, 0.05, 0.14]], [0.1, [-0.062, 0.05, -0.215, -0.36, 0.05, 0.15]], [0.2, [-0.02, 0.02, -0.05, 0.02, 0.02, 0.05]], [0.3, [0.012, -0.012, 0.035, 0.16, 0, -0.03]], [0.42, [0.003, -0.003, 0.008, 0.04, 0, 0]], [0.55, Z6]],
+    off: [[0, Z6], [0.06, [0.02, -0.02, 0.04, 0.16, -0.06, -0.2]], [0.14, [0.028, -0.026, 0.05, 0.2, -0.07, -0.24]], [0.3, [0.006, -0.004, 0.01, 0.03, -0.01, -0.04]], [0.5, Z6]],
+    fingers: [[0, 'spread'], [0.16, 'open'], [0.3, 'claw'], [0.42, null]], offFingers: [[0, 'fist'], [0.22, null]],
+  },
+  // brought down: both hands go with it, it lands, and they come up off the blow
+  slam: {
+    attack: 2500,
+    main: [[0, Z6], [0.05, [-0.012, -0.05, -0.085, -0.7, 0, 0.1]], [0.11, [-0.02, -0.075, -0.105, -0.86, 0, 0.13]], [0.2, [-0.016, -0.06, -0.085, -0.7, 0, 0.1]], [0.34, [0.006, 0.03, 0.0, 0.16, 0, -0.03]], [0.46, [0.002, 0.008, 0, 0.04, 0, 0]], [0.58, Z6]],
+    off: [[0, Z6], [0.06, [0.0, -0.045, -0.05, -0.4, 0, 0.1]], [0.13, [0, -0.06, -0.06, -0.5, 0, 0.12]], [0.3, [0, 0.012, 0, 0.06, 0, 0]], [0.5, Z6]],
+    fingers: [[0, 'spread'], [0.2, 'claw'], [0.42, null]], offFingers: [[0, 'spread'], [0.24, null]],
+  },
+  // an invocation: up, held (and still rising a little, as a held thing does), let down
+  raise: {
+    attack: 520,
+    main: [[0, Z6], [0.14, [-0.035, 0.12, -0.07, 0.1, 0, 0.1]], [0.3, [-0.042, 0.15, -0.09, 0.17, 0, 0.1]], [0.8, [-0.04, 0.142, -0.086, 0.15, 0, 0.1]], [1.15, [-0.04, 0.15, -0.09, 0.17, 0, 0.1]], [1.35, [-0.01, 0.03, -0.02, 0.0, 0, 0.03]], [1.5, Z6]],
+    off: [[0, Z6], [0.2, [-0.012, 0.05, -0.025, 0.07, 0, 0.05]], [0.4, [-0.016, 0.066, -0.035, 0.1, 0, 0.06]], [1.15, [-0.015, 0.064, -0.034, 0.1, 0, 0.06]], [1.5, Z6]],
+    fingers: [[0, 'spread'], [1.25, null]], offFingers: [[0, 'spread'], [1.2, null]],
+  },
+  // held on the aim; the other hand comes up to steady it
+  channel: {
+    attack: 700, hold: true,
+    main: [[0, Z6], [0.1, [0.02, 0.05, -0.12, -0.1, 0.0, -0.06]]],
+    off: [[0, Z6], [0.16, [0.004, 0.02, -0.05, -0.12, 0, -0.05]]],
+    fingers: [[0, 'spread']], offFingers: [[0, 'claw']],
+  },
+  // forehand: straight into the cut across the view, held through, and round again by way of the shoulder
+  swing: {
+    attack: 3000,
+    main: [[0, Z6], [0.035, [-0.05, 0.03, -0.1, -0.12, 0.1, 0.3]], [0.09, [-0.16, -0.03, -0.11, -0.28, 0.28, 0.85]], [0.17, [-0.168, -0.04, -0.085, -0.27, 0.27, 0.82]], [0.3, [-0.04, 0.05, -0.01, 0.2, -0.05, 0.1]], [0.4, [0.03, 0.06, 0.02, 0.26, -0.14, -0.28]], [0.52, [0.006, 0.012, 0.004, 0.05, -0.03, -0.06]], [0.6, Z6]],
+    off: [[0, Z6], [0.06, [0.03, -0.02, 0.04, 0.1, -0.1, -0.3]], [0.16, [0.035, -0.025, 0.05, 0.12, -0.12, -0.34]], [0.36, Z6]],
+    fingers: [[0, 'fist'], [0.4, null]], offFingers: [[0, 'spread'], [0.2, null]],
+  },
+  // backhand, for the follow-up: from across the body, rising back out
+  swing2: {
+    attack: 3000,
+    main: [[0, Z6], [0.04, [-0.09, -0.02, -0.08, -0.2, 0.18, 0.6]], [0.1, [0.03, 0.06, -0.1, 0.3, -0.18, -0.4]], [0.18, [0.05, 0.08, -0.07, 0.34, -0.22, -0.5]], [0.32, [0.01, 0.02, -0.01, 0.08, -0.04, -0.1]], [0.46, Z6]],
+    off: [[0, Z6], [0.06, [-0.02, 0.02, 0.03, 0.08, 0.08, 0.2]], [0.16, [-0.024, 0.024, 0.035, 0.1, 0.1, 0.24]], [0.36, Z6]],
+    fingers: [[0, 'fist'], [0.4, null]], offFingers: [[0, 'spread'], [0.2, null]],
+  },
+  // flung from the free hand: out at once, open, the arm following it down
+  throw: {
+    attack: 2500,
+    main: [[0, Z6], [0.045, [-0.09, 0.05, -0.19, -0.4, 0, 0.18]], [0.1, [-0.125, 0.055, -0.225, -0.45, 0, 0.2]], [0.2, [-0.06, 0.01, -0.1, -0.3, 0, 0.1]], [0.32, [0.01, -0.012, 0.02, 0.1, 0, -0.03]], [0.46, Z6]],
+    off: [[0, Z6], [0.07, [0.012, -0.015, 0.03, 0.12, -0.03, -0.1]], [0.18, [0.014, -0.018, 0.034, 0.14, -0.03, -0.12]], [0.4, Z6]],
+    fingers: [[0, 'spread'], [0.2, 'open'], [0.36, null]], offFingers: [[0, 'open'], [0.2, null]],
+  },
+  // a snap of the fingers, the hand popping up with it
+  snap: {
+    attack: 2200,
+    main: [[0, Z6], [0.03, [-0.03, 0.065, -0.06, -0.2, 0, 0.3]], [0.09, [-0.036, 0.072, -0.07, -0.26, 0, 0.33]], [0.2, [-0.02, 0.04, -0.03, -0.06, 0, 0.16]], [0.36, Z6]],
+    off: [[0, Z6], [0.08, [0.006, -0.006, 0.01, 0.05, 0, -0.06]], [0.3, Z6]],
+    fingers: [[0, 'snapPre'], [0.025, 'snapPost'], [0.17, 'open'], [0.3, null]], offFingers: [[0, null]],
+  },
 };
+// how long after its key the spring that drives a cast stays stiff, and what it slackens to (and how loose)
+const ATTACK_T = 0.1, RECOVER_K = 360, RECOVER_ZETA = 0.34;
 const ZERO6 = [0, 0, 0, 0, 0, 0];
 
 // idle fidgets: small, slow moves played after standing still a while, so the
@@ -133,14 +198,8 @@ const ACTS = {
     fingers: [[0, 'open'], [0.25, 'spread']] },
 };
 const FIDGET_ORDER = ['palm', 'weigh', 'stretch', 'twirl', 'drum', 'regrip', 'shake', 'inspect', 'palm', 'regrip'];
-// While one hand casts the other is not a bystander: it draws back and down against the throw and its
-// wrist rolls open, then comes back. Scaled by how hard the style kicks. Same key format.
-const COUNTER = [[0, ZERO6], [0.07, [0.012, -0.012, 0.022, 0.1, -0.04, -0.13]], [0.17, [0.02, -0.02, 0.035, 0.16, -0.06, -0.2]], [0.3, [0.008, -0.006, 0.012, 0.05, -0.02, -0.06]], [0.5, ZERO6]];
-// (an invocation takes both arms: a hand left out of it rises too, a little)
-const COUNTER_RAISE = [[0, ZERO6], [0.3, [-0.015, 0.06, -0.03, 0.08, 0, 0.06]], [1.1, [-0.015, 0.065, -0.035, 0.1, 0, 0.06]], [1.5, ZERO6]];
 // how hard each style's release jolts the view rig (velocity into the sway spring)
 const KICK = { flick: 0.45, thrust: 0.85, slam: 1.25, raise: 0.35, channel: 0.25, swing: 0.55, swing2: 0.55, throw: 0.75, snap: 0.4 };
-const STIFF = { swing: 2400, swing2: 2400, flick: 1500, thrust: 1100, slam: 1300, throw: 1300, snap: 1200 };
 
 // The keys are passed through, not stopped at: a cubic through each pair of keys with the slope its
 // neighbours give it (Catmull-Rom, for uneven key times), so a wind-up flows into the strike and the
@@ -454,7 +513,15 @@ export function createViewModel(classId, ctx) {
   const fingL = new FingerRig(handL, restPoseL, { grip: lg.kind === 'pole', seed: 7 });
   // the wrists: the hand trails the forearm that moves it and whips through when it stops (pitch, yaw, roll)
   const sWristR = new Spring(3, 520, 0.4), sWristL = new Spring(3, 520, 0.4);
-  const sElbowR = new Spring(3, 150, 0.5), sElbowL = new Spring(3, 150, 0.5);
+  const sElbowR = new Spring(3, 210, 0.55), sElbowL = new Spring(3, 210, 0.55);
+  // the arms' fixed points (see the sleeve pass): each shoulder a forearm's direction up and behind its elbow
+  const ARM_UPPER = 0.34;
+  for (const b of [sleeveRBase, sleeveLBase]) {
+    b.fore = b.elbow.distanceTo(b.wrist);
+    b.pole = V(0.06, 0.2, 0.27).normalize();
+    b.shoulder = b.elbow.clone().addScaledVector(b.pole, ARM_UPPER);
+    b.pole.multiplyScalar(-1); // (from the shoulder toward the resting elbow: the side the arm bends to)
+  }
   const WR = THREE.MathUtils.clamp;
   const _hq = new THREE.Quaternion(), _ha = V();
   const tmp6 = [0, 0, 0, 0, 0, 0];
@@ -603,10 +670,11 @@ export function createViewModel(classId, ctx) {
     const applyRig = (sp, castStyle, isRight, otherStyle) => {
       const tg = sp.target;
       for (let i = 0; i < 6; i++) tg[i] = 0;
-      if (otherStyle && !castStyle && otherStyle !== 'channel') {
-        const raise = otherStyle === 'raise', kk = raise ? 1 : Math.min(1.3, (KICK[otherStyle] ?? 0.5) * 1.5);
-        sampleKeys(raise ? COUNTER_RAISE : COUNTER, castT, tmp6);
-        for (let i = 0; i < 6; i++) tg[i] += tmp6[i] * kk * castVar.amp;
+      if (otherStyle && !castStyle) {
+        // the other hand's part in the cast
+        const O = STYLES[otherStyle], last = O.off[O.off.length - 1][0];
+        sampleKeys(O.off, O.hold ? Math.min(castT, last) : castT, tmp6);
+        for (let i = 0; i < 6; i++) tg[i] += tmp6[i] * castVar.amp;
       }
       const fid = isRight ? fidR : fidL;
       if (fid && !castStyle) {
@@ -624,9 +692,11 @@ export function createViewModel(classId, ctx) {
       if (castStyle) {
         const S = STYLES[castStyle];
         let tt = castT;
-        if (S.hold) tt = Math.min(castT, S.keys[S.keys.length - 1][0]);
-        sampleKeys(S.keys, tt, tmp6);
-        const env = S.hold ? 1 : Math.sin(Math.PI * THREE.MathUtils.clamp(tt / S.keys[S.keys.length - 1][0], 0, 1));
+        const end = S.main[S.main.length - 1][0];
+        if (S.hold) tt = Math.min(castT, end);
+        sampleKeys(S.main, tt, tmp6);
+        // (the small differences between one cast and the next are at their fullest on the strike)
+        const env = S.hold ? 1 : Math.min(1, tt / 0.04) * (1 - THREE.MathUtils.smoothstep(tt, 0.12, end));
         for (let i = 0; i < 6; i++) tg[i] += tmp6[i] * castVar.amp;
         if (castStyle === 'flick' || castStyle === 'thrust') { tg[0] += castSide * 0.022 * env; tg[4] += castSide * 0.1 * env; tg[5] -= castSide * 0.12 * env; }
         tg[1] += castVar.py * env; tg[4] += castVar.ry * env; tg[5] += castVar.rz * env;
@@ -657,8 +727,15 @@ export function createViewModel(classId, ctx) {
       // walking, the hands pump in counter-time like arms do (eased off while a spell is cast)
       const pump = bobAmp * (castStyle ? 0.3 : 1) * (isRight ? 1 : -1);
       tg[1] += Math.sin(bobPhase) * 0.0055 * pump; tg[2] += Math.cos(bobPhase) * 0.009 * pump; tg[3] += Math.sin(bobPhase) * 0.03 * pump;
-      sp.k = castStyle ? (STIFF[castStyle] ?? 700) : equipK > 0 ? 220 : A ? 420 : fid ? 160 : 700;
-      sp.c = 2 * 0.42 * Math.sqrt(sp.k);
+      // The spring: stiff for the strike, then let go slack and a little loose for the recovery, so the
+      // hand overshoots rest and settles on its own (the other hand's part is driven a touch softer).
+      const cs = castStyle ?? otherStyle, S2 = cs ? STYLES[cs] : null;
+      let zeta = 0.42;
+      if (S2 && !S2.hold) {
+        const u = THREE.MathUtils.smoothstep(castT, ATTACK_T, ATTACK_T + 0.14), a = S2.attack * (castStyle ? 1 : 0.6);
+        sp.k = a + (RECOVER_K - a) * u; zeta = 0.42 + (RECOVER_ZETA - 0.42) * u;
+      } else sp.k = S2 ? S2.attack : equipK > 0 ? 220 : A ? 420 : fid ? 160 : 700;
+      sp.c = 2 * zeta * Math.sqrt(sp.k);
       sp.step(dt);
     };
     applyRig(sR, castR, true, castL);
@@ -677,7 +754,22 @@ export function createViewModel(classId, ctx) {
     for (const [sl, base, anim, sp, se] of [[sleeveR, sleeveRBase, animR, sR, sElbowR], [sleeveL, sleeveLBase, animL, sL, sElbowL]]) {
       anim.updateMatrix();
       tmpV.copy(base.wrist).applyMatrix4(anim.matrix);
-      se.target[0] = (tmpV.x - base.wrist.x) * 0.38; se.target[1] = (tmpV.y - base.wrist.y) * 0.3 - bobAmp * 0.006; se.target[2] = (tmpV.z - base.wrist.z) * 0.22;
+      // where the elbow is: solved, from a shoulder that does not move (off screen, up and behind the
+      // elbow) and the wrist wherever the cast has put it - upper arm and forearm of fixed length, bent in
+      // the plane the arm rests in. Reach out and the forearm levels and follows; draw back and the elbow
+      // goes out and down, as an arm's does. (It used to trail the hand by a fixed share.)
+      {
+        const S = base.shoulder, Lu = ARM_UPPER, Lf = base.fore;
+        let nx = tmpV.x - S.x, ny = tmpV.y - S.y, nz = tmpV.z - S.z;
+        const dl = Math.hypot(nx, ny, nz) || 1e-6, d = WR(dl, Math.abs(Lu - Lf) + 0.01, Lu + Lf - 0.004);
+        nx /= dl; ny /= dl; nz /= dl;
+        const a = (Lu * Lu - Lf * Lf + d * d) / (2 * d), h = Math.sqrt(Math.max(0, Lu * Lu - a * a));
+        const P = base.pole, pd = P.x * nx + P.y * ny + P.z * nz;
+        let px = P.x - nx * pd, py = P.y - ny * pd, pz = P.z - nz * pd;
+        const pl = Math.hypot(px, py, pz);
+        if (pl < 1e-4) { px = 0; py = -1; pz = 0; } else { px /= pl; py /= pl; pz /= pl; }
+        se.target[0] = S.x + nx * a + px * h - base.elbow.x; se.target[1] = S.y + ny * a + py * h - base.elbow.y - bobAmp * 0.006; se.target[2] = S.z + nz * a + pz * h - base.elbow.z;
+      }
       se.step(dt);
       tmpV2.copy(base.elbow); tmpV2.x += se.x[0]; tmpV2.y += se.x[1]; tmpV2.z += se.x[2];
       tmpV2.sub(tmpV).normalize();
@@ -715,19 +807,17 @@ export function createViewModel(classId, ctx) {
     {
       // right: usually wrapped round the focus - it squeezes as a spell is charged and let go
       const free = gripR.kind !== 'pole' && gripR.kind !== 'fist';
-      const name = free && castR ? sampleFingers(STYLES[castR].fingers, castT) : null;
+      const name = !free ? null : castR ? sampleFingers(STYLES[castR].fingers, castT) : castL ? sampleFingers(STYLES[castL].offFingers, castT) : null;
       if (castNew && castR) fingR.kick(free ? 6 : 3);
       fingR.update(dt, t, { pose: name ? POSES[name] : null, squeeze: Math.min(1, chargeK * 0.9 + (castR ? 0.8 : 0) + dashK * 0.6), life: idleLife, accel: free ? fingerAcc(handR, accR, false) : 0, tremble: chargeK * 0.6 + downedK * 0.5 + lowK * 0.4 });
     }
     if (leftFree) {
-      let name = castL ? sampleFingers(STYLES[castL].fingers, castT) : fidL ? sampleFingers(fidL.fingers, fidgetT) : null;
+      let name = castL ? sampleFingers(STYLES[castL].fingers, castT) : castR ? sampleFingers(STYLES[castR].offFingers, castT) : fidL ? sampleFingers(fidL.fingers, fidgetT) : null;
       if (!name && A && A.hand !== 'right') name = sampleFingers(A.fingers, act.t);
       if (!name && downedK > 0.5) name = 'relaxed';
       if (!name && chargeK > 0.3) name = 'claw';
       // running, the free hand half closes; in the air it opens for balance
       if (!name && !grounded) name = 'spread';
-      // (thrown wide for a beat as the other hand lets a spell go)
-      if (!name && castR && castT > 0.04 && castT < 0.2) name = castR === 'raise' ? 'spread' : 'open';
       if (castNew && castL) fingL.kick(6);
       else if (castNew) fingL.kick(1.5); // (the off hand feels the other's cast)
       fingL.update(dt, t, { pose: name ? POSES[name] : null, rate: castL ? 1.15 : fidL ? 0.45 : 0.8, squeeze: !name ? bobAmp * 0.5 + dashK * 0.8 : 0, life: idleLife, accel: fingerAcc(handL, accL, true), tremble: chargeK * 0.5 + downedK * 0.6 + lowK * 0.45 + (A?.hold ? 0.3 : 0) });
@@ -777,7 +867,7 @@ export function createViewModel(classId, ctx) {
     // world matrices were refreshed after posing (accelerations above), so
     // circles sit exactly on the tip
     if (trail) {
-      const cutting = (castR === 'swing' || castR === 'swing2' || (castR === 'thrust' && F.hold === 'dagger')) && castT > 0.03 && castT < 0.2;
+      const cutting = (castR === 'swing' || castR === 'swing2' || (castR === 'thrust' && F.hold === 'dagger')) && castT < 0.17; // (the cut is under way from the first frame)
       if (cutting || trail.mesh.visible) {
         muzzle.getWorldPosition(_tb); root.worldToLocal(_tb);
         handR.palmCenter.getWorldPosition(_ta); root.worldToLocal(_ta);
