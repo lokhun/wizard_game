@@ -119,6 +119,19 @@ Object.assign(FIDGETS, {
   // brought up and in, its head turned to the eye and looked over
   inspect: { hand: 'right', keys: [[0, ZERO6], [0.6, [-0.05, 0.03, 0.05, 0.3, 0.15, 0.22]], [1.3, [-0.055, 0.035, 0.055, 0.34, -0.3, 0.26]], [2.0, [-0.05, 0.03, 0.05, 0.3, 0.25, 0.2]], [2.7, ZERO6]] },
 });
+// Things the hands do that are not spells (s.act = { kind, t }, from the game). Same key format; `hold`
+// keeps the last key while the act lasts (a revive is held).
+const ACTS = {
+  // an item used: the free hand brings it up and in, tips it, and lets it go
+  item: { hand: 'left', keys: [[0, ZERO6], [0.16, [-0.06, 0.1, 0.07, 0.35, 0.25, 0.7]], [0.34, [-0.085, 0.15, 0.11, 0.8, 0.3, 1.05]], [0.5, [-0.08, 0.14, 0.1, 0.95, 0.3, 1.0]], [0.66, [-0.04, 0.06, 0.02, 0.2, 0.1, 0.4]], [0.9, ZERO6]],
+    fingers: [[0, 'fist'], [0.5, 'claw'], [0.62, 'spread'], [0.8, null]] },
+  // something reached for and taken: out, down on it, closed, back
+  interact: { hand: 'left', keys: [[0, ZERO6], [0.13, [-0.04, 0.05, -0.17, -0.2, 0.1, 0.45]], [0.26, [-0.045, 0.02, -0.22, -0.5, 0.1, 0.55]], [0.4, [-0.03, 0.03, -0.1, -0.2, 0.05, 0.3]], [0.62, ZERO6]],
+    fingers: [[0, 'spread'], [0.2, 'claw'], [0.3, 'fist'], [0.5, null]] },
+  // a fallen friend raised: both hands held out low over them, palms down, for as long as it takes
+  revive: { hand: 'both', hold: true, keys: [[0, ZERO6], [0.35, [-0.05, -0.03, -0.13, -0.55, 0.1, 0.25]]],
+    fingers: [[0, 'open'], [0.25, 'spread']] },
+};
 const FIDGET_ORDER = ['palm', 'weigh', 'stretch', 'twirl', 'drum', 'regrip', 'shake', 'inspect', 'palm', 'regrip'];
 // While one hand casts the other is not a bystander: it draws back and down against the throw and its
 // wrist rolls open, then comes back. Scaled by how hard the style kicks. Same key format.
@@ -432,6 +445,8 @@ export function createViewModel(classId, ctx) {
   let stillT = 0, fidget = null, fidgetT = 0, fidgetN = 0, nextFidget = 6;
   let power = 0;
   let downedK = 0, dashK = 0, chargeK = 0;
+  // weak (low health: 0..1), being brought up into view (1..0), and which way this cast is thrown (alternates)
+  let lowK = 0, equipK = 1, castSide = 1, actK = 0;
   let flare = 0;
   // the fingers (fingers.js): each on its own spring, with weight and idle life; a hand on a pole keeps its wrap
   const leftFree = lg.kind !== 'pole' && !F.left;
@@ -462,6 +477,10 @@ export function createViewModel(classId, ctx) {
     chargeK += (charge - chargeK) * (1 - Math.exp(-dt * 12));
     downedK += ((s.downed ? 1 : 0) - downedK) * (1 - Math.exp(-dt * 4));
     dashK += ((s.dash ? 1 : 0) - dashK) * (1 - Math.exp(-dt * 14));
+    lowK += (THREE.MathUtils.clamp(s.low ?? 0, 0, 1) - lowK) * (1 - Math.exp(-dt * 3));
+    equipK = Math.max(0, equipK - dt / 0.75);
+    const act = s.act && ACTS[s.act.kind] ? s.act : null, A = act ? ACTS[act.kind] : null;
+    actK += ((act ? 1 : 0) - actK) * (1 - Math.exp(-dt * 10));
 
     // --- walk bob (figure 8 with footstep dips) ---
     const grounded = s.grounded ?? true;
@@ -539,6 +558,9 @@ export function createViewModel(classId, ctx) {
         flare = 1;
         castVar.amp = 0.88 + Math.random() * 0.24; castVar.ry = (Math.random() - 0.5) * 0.14;
         castVar.rz = (Math.random() - 0.5) * 0.16; castVar.py = (Math.random() - 0.5) * 0.014;
+        // a quick cast thrown again and again is thrown a little across the body one time, a little
+        // outward the next: a held primary reads as a run of strokes, not one stroke on a loop
+        castSide = -castSide;
         // recoil through the whole view rig: the spell leaves, the hands jolt back and up
         const kick = KICK[style] ?? 0.5;
         sSway.v[3] += kick * (0.9 + Math.random() * 0.3); sSway.v[5] += kick * 0.22;
@@ -561,7 +583,7 @@ export function createViewModel(classId, ctx) {
     flare *= Math.exp(-dt * 6);
 
     // --- idle fidgets ---
-    const busy = cast || speed > 0.08 || chargeK > 0.05 || downedK > 0.05 || !grounded || dashK > 0.05 || Math.abs(lx) + Math.abs(ly) > 30;
+    const busy = cast || act || speed > 0.08 || chargeK > 0.05 || downedK > 0.05 || !grounded || dashK > 0.05 || Math.abs(lx) + Math.abs(ly) > 30;
     stillT = busy ? 0 : stillT + dt;
     if (fidget) {
       fidgetT += dt;
@@ -591,6 +613,14 @@ export function createViewModel(classId, ctx) {
         sampleKeys(fid.keys, fidgetT, tmp6);
         for (let i = 0; i < 6; i++) tg[i] += tmp6[i];
       }
+      if (A && !castStyle && (A.hand === 'both' || (A.hand === 'left') !== isRight)) {
+        const last = A.keys[A.keys.length - 1][0];
+        sampleKeys(A.keys, A.hold ? Math.min(act.t, last) : act.t, tmp6);
+        // (the focus hand only half joins a two-handed act: it has something to hold)
+        const w = A.hand === 'both' && isRight ? 0.6 : 1;
+        for (let i = 0; i < 6; i++) tg[i] += tmp6[i] * w;
+        if (A.hold) { tg[0] += wob(t * 17, isRight ? 31 : 32) * 0.003; tg[1] += wob(t * 21, isRight ? 33 : 34) * 0.003; tg[5] += wob(t * 13, isRight ? 35 : 36) * 0.03; }
+      }
       if (castStyle) {
         const S = STYLES[castStyle];
         let tt = castT;
@@ -598,9 +628,12 @@ export function createViewModel(classId, ctx) {
         sampleKeys(S.keys, tt, tmp6);
         const env = S.hold ? 1 : Math.sin(Math.PI * THREE.MathUtils.clamp(tt / S.keys[S.keys.length - 1][0], 0, 1));
         for (let i = 0; i < 6; i++) tg[i] += tmp6[i] * castVar.amp;
+        if (castStyle === 'flick' || castStyle === 'thrust') { tg[0] += castSide * 0.022 * env; tg[4] += castSide * 0.1 * env; tg[5] -= castSide * 0.12 * env; }
         tg[1] += castVar.py * env; tg[4] += castVar.ry * env; tg[5] += castVar.rz * env;
         if (castStyle === 'channel') {
           tg[0] += wob(t * 23, 1) * 0.004; tg[1] += wob(t * 29, 2) * 0.004; tg[3] += wob(t * 19, 3) * 0.025; tg[5] += wob(t * 17, 4) * 0.025;
+          // (the stream pushes back in pulses, and the hands ride it in a slow, wandering loop)
+          tg[2] += Math.pow(Math.max(0, Math.sin(t * 19)), 4) * 0.007; tg[0] += Math.sin(t * 1.3) * 0.007; tg[1] += Math.sin(t * 2.6) * 0.004; tg[4] += Math.sin(t * 1.3 + 0.6) * 0.03;
         }
       }
       // charge: pull in and tremble
@@ -611,12 +644,20 @@ export function createViewModel(classId, ctx) {
       // downed: drop low, tremble
       tg[1] -= downedK * 0.17; tg[2] += downedK * 0.04; tg[3] -= downedK * 0.4; tg[5] -= downedK * 0.2;
       tg[0] += downedK * wob(t * 37, isRight ? 9 : 10) * 0.004; tg[1] += downedK * wob(t * 41, isRight ? 11 : 12) * 0.004;
+      // weak: the hands hang lower and are not steady; and a pulse runs through them with the heart
+      if (lowK > 0.01) {
+        const beat = Math.pow(Math.max(0, Math.sin(t * 5.2)), 6);
+        tg[1] -= lowK * (0.022 + beat * 0.004); tg[3] -= lowK * 0.07; tg[5] += lowK * 0.05 * (isRight ? -1 : 1);
+        tg[0] += lowK * wob(t * 9, isRight ? 41 : 42) * 0.0025; tg[1] += lowK * wob(t * 11, isRight ? 43 : 44) * 0.0025;
+      }
+      // brought up into view (a floor begun, a wizard on their feet again): from low and tipped away
+      if (equipK > 0) { const e = equipK * equipK * (3 - 2 * equipK); tg[1] -= 0.34 * e; tg[2] += 0.08 * e; tg[3] -= 0.75 * e; tg[5] += 0.3 * e * (isRight ? 1 : -1); }
       // jump: hands float up while airborne
       if (!grounded) { tg[1] += 0.015; tg[3] += 0.06; }
       // walking, the hands pump in counter-time like arms do (eased off while a spell is cast)
       const pump = bobAmp * (castStyle ? 0.3 : 1) * (isRight ? 1 : -1);
       tg[1] += Math.sin(bobPhase) * 0.0055 * pump; tg[2] += Math.cos(bobPhase) * 0.009 * pump; tg[3] += Math.sin(bobPhase) * 0.03 * pump;
-      sp.k = castStyle ? (STIFF[castStyle] ?? 700) : fid ? 160 : 700;
+      sp.k = castStyle ? (STIFF[castStyle] ?? 700) : equipK > 0 ? 220 : A ? 420 : fid ? 160 : 700;
       sp.c = 2 * 0.42 * Math.sqrt(sp.k);
       sp.step(dt);
     };
@@ -676,10 +717,11 @@ export function createViewModel(classId, ctx) {
       const free = gripR.kind !== 'pole' && gripR.kind !== 'fist';
       const name = free && castR ? sampleFingers(STYLES[castR].fingers, castT) : null;
       if (castNew && castR) fingR.kick(free ? 6 : 3);
-      fingR.update(dt, t, { pose: name ? POSES[name] : null, squeeze: Math.min(1, chargeK * 0.9 + (castR ? 0.8 : 0) + dashK * 0.6), life: idleLife, accel: free ? fingerAcc(handR, accR, false) : 0, tremble: chargeK * 0.6 + downedK * 0.5 });
+      fingR.update(dt, t, { pose: name ? POSES[name] : null, squeeze: Math.min(1, chargeK * 0.9 + (castR ? 0.8 : 0) + dashK * 0.6), life: idleLife, accel: free ? fingerAcc(handR, accR, false) : 0, tremble: chargeK * 0.6 + downedK * 0.5 + lowK * 0.4 });
     }
     if (leftFree) {
       let name = castL ? sampleFingers(STYLES[castL].fingers, castT) : fidL ? sampleFingers(fidL.fingers, fidgetT) : null;
+      if (!name && A && A.hand !== 'right') name = sampleFingers(A.fingers, act.t);
       if (!name && downedK > 0.5) name = 'relaxed';
       if (!name && chargeK > 0.3) name = 'claw';
       // running, the free hand half closes; in the air it opens for balance
@@ -688,7 +730,7 @@ export function createViewModel(classId, ctx) {
       if (!name && castR && castT > 0.04 && castT < 0.2) name = castR === 'raise' ? 'spread' : 'open';
       if (castNew && castL) fingL.kick(6);
       else if (castNew) fingL.kick(1.5); // (the off hand feels the other's cast)
-      fingL.update(dt, t, { pose: name ? POSES[name] : null, rate: castL ? 1.15 : fidL ? 0.45 : 0.8, squeeze: !name ? bobAmp * 0.5 + dashK * 0.8 : 0, life: idleLife, accel: fingerAcc(handL, accL, true), tremble: chargeK * 0.5 + downedK * 0.6 });
+      fingL.update(dt, t, { pose: name ? POSES[name] : null, rate: castL ? 1.15 : fidL ? 0.45 : 0.8, squeeze: !name ? bobAmp * 0.5 + dashK * 0.8 : 0, life: idleLife, accel: fingerAcc(handL, accL, true), tremble: chargeK * 0.5 + downedK * 0.6 + lowK * 0.45 + (A?.hold ? 0.3 : 0) });
     } else {
       fingL.update(dt, t, { squeeze: Math.min(1, chargeK * 0.9 + (castL ? 0.8 : 0)), life: lg.kind === 'pole' ? idleLife : idleLife * 0.35, tremble: chargeK * 0.5 + downedK * 0.5 });
     }
@@ -769,6 +811,7 @@ export function createViewModel(classId, ctx) {
     power = 1; run(12, () => ({ grounded: false, hurt: 1 })); power = 0;
     run(12, () => ({ dash: true }));
     run(12, () => ({ downed: true }));
+    for (const kind of Object.keys(ACTS)) run(10, (k) => ({ act: { kind, t: k * 0.8 }, low: 1 }));
     run(30, () => ({}));
   });
   root.traverse((o) => { if (o.isMesh && o.material?.transparent && o.material.blending !== THREE.AdditiveBlending) exclude.add(o); });
@@ -778,6 +821,7 @@ export function createViewModel(classId, ctx) {
   bobPhase = bobAmp = 0; wasGrounded = true; lastCastT = -1; lastCastKey = ''; prevHurt = 0;
   stillT = 0; fidget = null; fidgetT = 0; fidgetN = 0; nextFidget = 6;
   power = downedK = dashK = chargeK = flare = 0; first = true;
+  lowK = actK = 0; equipK = 1; castSide = 1;
   pvr = pvf = pvy = accVR = accVF = 0;
   for (const it of sigils.items) it.m.visible = false;
   sigils.chargeK = 0; sigils.charge.visible = false;
@@ -790,6 +834,8 @@ export function createViewModel(classId, ctx) {
     root, muzzle, offhand, light,
     update(dt, s) { update(dt, s); baked.syncVisibility(); },
     setPower(k) { power = THREE.MathUtils.clamp(k ?? 0, 0, 1); },
+    // bring the hands up into view again (a new floor, back on your feet)
+    equip() { equipK = 1; },
     stats: { tris: baked.tris, bones: baked.bones, meshes: baked.meshes.length },
     dispose() {
       baked.dispose();

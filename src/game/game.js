@@ -506,7 +506,7 @@ export class Game {
     for (const f of this._warmHold ?? []) { try { f(); } catch { /* already gone */ } }
     this._warmHold = hold;
     this._prewarmPrograms = this.renderer.renderer.info.programs.length; // tests compare against this
-    if (token === this._warmToken) this.loadingFloor = false;
+    if (token === this._warmToken) { this.loadingFloor = false; this.viewmodel?.equip?.(); }
   }
 
   _tutorialTips() {
@@ -862,7 +862,12 @@ export class Game {
       vr: p.vel.x * cy - p.vel.z * sy, vf: -p.vel.x * sy - p.vel.z * cy, vy: p.vel.y,
       cast: ca ? { slot: ca.slot, hand: ca.hand, t: ca.t, style: p.channel ? 'channel' : ca.style } : null,
       charge: p.channel ? Math.min(1, p.channel.t / p.channel.max) : 0, dash: p.dashT > 0, hurt: p.hurtPulse, downed: p.downed,
+      // what the hands are doing that is not a spell (an item, something taken up, a friend raised), and how weak they are
+      act: this._handAct(dt), low: p.alive && !p.downed ? clamp((0.4 - p.hp / p.maxHp) / 0.3, 0, 1) : 0,
     });
+    // back on your feet: the hands come up into view again
+    if (this._vmDown && !p.downed && !p.dead) vm.equip?.();
+    this._vmDown = p.downed || p.dead;
     vm.setPower?.(p.ult >= 100 ? 1 : 0);
     // mirror the two strongest nearby world lights into the view scene so the
     // hands are lit by real torches and spells
@@ -885,6 +890,19 @@ export class Game {
       vl.intensity = src.intensity * 0.25 / (1 + d * 0.15);
     }
   }
+
+  // The hands' act this frame for the viewmodel (see ACTS there): a revive while it is held, else a
+  // one-shot started by handAct() and played out.
+  _handAct(dt) {
+    if ((this.reviveHold ?? 0) > 0) { this._actRev = (this._actRev ?? 0) + dt; return (this._actObj ??= { kind: 'revive', t: 0 }), (this._actObj.kind = 'revive'), (this._actObj.t = this._actRev), this._actObj; }
+    this._actRev = 0;
+    const a = this._act;
+    if (!a) return null;
+    a.t += dt;
+    if (a.t > 1) { this._act = null; return null; }
+    return a;
+  }
+  handAct(kind) { this._act = { kind, t: 0 }; }
 
   // anything wading through channel water trails rings and the odd splash
   wadeFx(e, speed, dt, r) {
@@ -1717,6 +1735,7 @@ export class Game {
     def.show(this, id === 'flask' ? at : { x: p.pos.x, y: p.pos.y, z: p.pos.z });
     this.net?.broadcastOrSend({ t: 'itemfx', i: id, ...(id === 'flask' ? at : { x: p.pos.x, y: p.pos.y, z: p.pos.z }) });
     this.vfx.addFovKick?.(2);
+    this.handAct('item');
     this.events.emit('itemUsed', id);
   }
   removeDrop(id) {
@@ -2205,7 +2224,7 @@ export class Game {
     if (p.downed) { this.ui?.prompt(this.isSolo ? null : `Bleeding out... ${Math.ceil(p.downT)}s`); return; }
     if (!best) { this.ui?.prompt(null); return; }
     this.ui?.prompt(`[${keyOf('interact')}] ${best.label}`);
-    if (input.was('interact')) this.interact(best);
+    if (input.was('interact')) { if (best) this.handAct('interact'); this.interact(best); }
   }
 
   interact(it) {

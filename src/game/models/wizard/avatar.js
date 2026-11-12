@@ -269,6 +269,24 @@ export function createAvatar(classId, ctx) {
   hat.group.name = 'hat';
   if (ctx.noHat) hat.group.clear(); // (the model viewer: a look at the head beneath)
   head.add(hat.group);
+  // A pointed hat's point is cloth: it gets a bone two fifths of the way up and its upper part is skinned
+  // to it, more toward the tip. The bone swings on a spring against the head's turns and the body's
+  // starts and stops (see the update), so the point nods, lags a turn and bobs on the run.
+  let hatTip = null, hatBaseY = null;
+  if (hat.cone && !ctx.noHat) {
+    hatTip = new THREE.Group(); hatTip.name = 'hatTip';
+    hatTip.position.set(0, hat.cone.H * 0.4, 0);
+    hat.cone.mesh.parent.add(hatTip);
+    const cm = hat.cone.mesh, H = hat.cone.H, wp = V();
+    cm.userData.reskin = {
+      bones: [hatTip],
+      fn: (v) => {
+        if (hatBaseY === null) { root.updateMatrixWorld(true); hatBaseY = cm.getWorldPosition(wp).y; }
+        const w = sstep(0.32, 0.95, (v.y - hatBaseY) / H) * 0.9;
+        return w < 0.001 ? [[cm, 1]] : [[cm, 1 - w], [hatTip, w]];
+      },
+    };
+  }
 
   // ---------------- costume ----------------
   const parts = [];
@@ -299,6 +317,8 @@ export function createAvatar(classId, ctx) {
   let castStyle = null, castLeft = false, castRight = true;
   // dying: time since the fall began (it is played, not eased: the knees go, the body tips and lands)
   let deadT = 0;
+  // the hat's point (two angles and their speeds), how winded the body is (0..1), and the turn it is making (signed)
+  let tipX = 0, tipZ = 0, tipVX = 0, tipVZ = 0, exert = 0, turnS = 0, gestKind = 0, breathPh = 0;
   // at rest: a glance (where the head is turned to, until when), a blink, and now and then a look at the free hand
   let glanceY = 0, glanceX = 0, glanceAt = 2, blinkAt = 1.5, blinkT = 1, gestT = -1, gestAt = 7;
   const gait = new Float32Array(6); // (each foot's place this frame: along its path, lift, heel-to-toe roll)
@@ -319,6 +339,7 @@ export function createAvatar(classId, ctx) {
   const FLASH = new THREE.Color(1, 0.95, 0.9);
   const hold = F.hold ?? 'staff';
   const lhold = F.leftHold ?? (F.float ? 'float' : null);
+  const freeArm = !lhold && leftFree; // (an arm with nothing to carry: it can gesture)
 
   // align the focus grip frame (pole +Y) to a direction in root space
   function aimFocus(arm, gripFrame, dirRoot, upHint) {
@@ -343,6 +364,7 @@ export function createAvatar(classId, ctx) {
   function resetState() {
     phase = 0; moveK = 0; lastT = 0; deadK = 0; downK = 0; castK = 0; idleT = 0; haveprev = false; turnK = 0; prevYaw = null;
     airK = airV = landK = dashK = hurtK = accX = accZ = plx = plz = 0; castStyle = null; castLeft = false; castRight = true;
+    tipX = tipZ = tipVX = tipVZ = exert = turnS = 0; gestKind = 0; breathPh = 0;
     deadT = 0; glanceY = glanceX = 0; glanceAt = 2; blinkAt = 1.5; blinkT = 1; gestT = -1; gestAt = 7;
     fingR.reset(); fingL.reset();
     for (const j of allJoints) { j.t.set(0, 0, 0); j.c.set(0, 0, 0); }
@@ -378,7 +400,7 @@ export function createAvatar(classId, ctx) {
     if (prevYaw !== null && dt > 1e-4) {
       const d = Math.atan2(Math.sin(yaw - prevYaw), Math.cos(yaw - prevYaw)), yr = d / dt;
       // (a snap of a whole radian is a respawn or a spawn facing, not a turn)
-      if (Math.abs(d) < 1) { turnK += (Math.min(1, Math.abs(yr) / 3) - turnK) * (1 - Math.exp(-dt * 8)); if (Math.abs(yr) > 0.3) turnDir = Math.sign(yr); }
+      if (Math.abs(d) < 1) { turnK += (Math.min(1, Math.abs(yr) / 3) - turnK) * (1 - Math.exp(-dt * 8)); if (Math.abs(yr) > 0.3) turnDir = Math.sign(yr); turnS += (THREE.MathUtils.clamp(yr / 3.5, -1, 1) - turnS) * (1 - Math.exp(-dt * 6)); }
     }
     prevYaw = yaw;
     wprev.copy(wpos); haveprev = true;
@@ -427,11 +449,15 @@ export function createAvatar(classId, ctx) {
     idleT += dt * still;
 
     // ---- idle: breathing, weight shift, looking around
-    const br = Math.sin(t * 1.55);
+    // Breath: slow and shallow at rest; after a run, a dash or a string of casts it comes fast and deep and
+    // lifts the shoulders, and takes some seconds to settle.
+    exert = THREE.MathUtils.clamp(exert + dt * ((moving ? 0.1 + 0.16 * sstep(3, 6.5, speed) : 0) + dashK * 0.6 + castK * 0.12 - (moving ? 0 : 0.11)), 0, 1);
+    breathPh += dt * (1.55 + 2.3 * exert);
+    const brK = 1 + 2.6 * exert, br = Math.sin(breathPh) * brK, brUp = Math.max(0, Math.sin(breathPh - 0.4)) * exert;
     const ws = Math.sin(idleT * 0.42 + 0.6) * 0.8 + Math.sin(idleT * 0.17) * 0.2; // >0: weight on the right leg
     const look = wob(t * 0.23, 2), look2 = wob(t * 0.17, 5);
     jHips.set(0, 0, -0.03 * ws * still);
-    jSpine.set(0.035 + br * 0.006, 0, 0.035 * ws * still);
+    jSpine.set(0.035 + br * 0.006 + 0.05 * exert * (1 - k), 0, 0.035 * ws * still);
     jChest.set(-0.015 - br * 0.018, 0, 0.012 * ws * still);
     // the head does not drift, it looks: every few seconds a glance somewhere, held, then somewhere else
     // (a quick turn, eyes first - the joints' own easing and follow-through make the move)
@@ -473,16 +499,33 @@ export function createAvatar(classId, ctx) {
     else if (lhold === 'cradle') { armL.jS.set(-0.2, 0.15, 0.2 + brA); armL.jE.set(-1.25, 0.6, 0); armL.jW.set(0.2, 0, 1.2); }
     else if (lhold === 'float') { armL.jS.set(-0.4, 0, 0.24); armL.jE.set(-0.95, 0, 0); armL.jW.set(0, 0, 1.2); }
 
-    // ---- at rest, now and then: the free hand comes up, is turned over and looked at, the fingers worked
+    // (hard breathing lifts the shoulders and the head rides it)
+    armL.jS.add(0, 0, 0.05 * brUp); armR.jS.add(0, 0, -0.05 * brUp); jNeck.add(-0.03 * brUp, 0, 0);
+    // ---- at rest, now and then, one of three small things: the free hand comes up, is turned over and
+    // looked at; the hat or hood is settled with it; the shoulders are rolled and the neck stretched
     if (gestT >= 0) {
       gestT += dt;
-      if (gestT > 2.6 || still < 0.9 || castK > 0.05 || hurtK > 0.05) { gestT = -1; gestAt = idleT + 9 + (Math.sin(idleT * 3.7) + 1) * 5; }
-      else {
+      const dur = gestKind === 2 ? 3.0 : 2.6;
+      if (gestT > dur || still < 0.9 || castK > 0.05 || hurtK > 0.05) { gestT = -1; gestKind++; gestAt = idleT + 8 + (Math.sin(idleT * 3.7) + 1) * 4.5; }
+      else if (gestKind % 3 === 0 && freeArm) {
         const g = sstep(0, 0.5, gestT) * (1 - sstep(2.0, 2.6, gestT)), turn = sstep(0.7, 1.2, gestT) * (1 - sstep(1.6, 2.0, gestT));
         armL.jS.mix(-0.75, 0.25, 0.2, g); armL.jE.mix(-1.75, 0.35, 0, g); armL.jW.mix(0.15, 0, 1.5 - 1.9 * turn, g);
         jNeck.mix(0.28, 0.22, 0, g); jHead.mix(0.3, 0.3, 0.06, g); jChest.add(0.04 * g, 0.08 * g, 0);
+      } else if (gestKind % 3 === 1 && freeArm) {
+        // hand to the brim: up, a small tug down and to one side, and away
+        const g = sstep(0, 0.55, gestT) * (1 - sstep(1.9, 2.6, gestT)), tug = sstep(0.8, 1.05, gestT) * (1 - sstep(1.25, 1.6, gestT));
+        armL.jS.mix(-2.0 + 0.12 * tug, 0.5, 0.55, g); armL.jE.mix(-2.05 + 0.2 * tug, 0.3, 0, g); armL.jW.mix(-0.4, 0, 0.6, g);
+        jNeck.add(0.1 * tug * g, 0, 0); jHead.add(0.12 * tug * g, -0.12 * g, 0.08 * tug * g);
+        tipVX += tug * g * dt * 9;
+      } else {
+        // the shoulders go up, back and down, one a little after the other; the head tips side to side
+        const g = sstep(0, 0.4, gestT) * (1 - sstep(2.4, 3.0, gestT)), a = gestT * 2.6;
+        armL.jS.add(0.12 * Math.sin(a) * g, 0, 0.14 * Math.max(0, Math.cos(a)) * g); armR.jS.add(0.1 * Math.sin(a - 0.6) * g, 0, -0.14 * Math.max(0, Math.cos(a - 0.6)) * g);
+        jChest.add(-0.07 * Math.sin(a) * g, 0, 0); jSpine.add(-0.04 * g, 0, 0);
+        jNeck.add(-0.1 * g, 0, 0.16 * Math.sin(a * 0.5) * g); jHead.add(-0.06 * g, 0, 0.2 * Math.sin(a * 0.5) * g);
       }
-    } else if (!lhold && leftFree && still > 0.97 && idleT > gestAt && castK < 0.01) gestT = 0;
+    } else if (s.gesture !== undefined && idleT > 1) { gestKind = s.gesture; gestT = 0; } // (asked for: the model viewer)
+    else if (still > 0.97 && idleT > gestAt && castK < 0.01) gestT = 0;
 
     // ---- walk / run: legs follow the movement direction, arms counter-swing
     if (k > 0.001) {
@@ -553,10 +596,24 @@ export function createAvatar(classId, ctx) {
       jChest.add(0, -swing * (0.05 + 0.04 * run) * k * dirZ, -list * 0.015 * k);
       jNeck.add(0, swing * 0.05 * run * k * dirZ, 0);
       // free arm swings opposite its leg; the staff arm swings a little
-      if (!lhold) armL.jS.add(swing * 0.5 * k * dirZ, 0, 0.04 * k), armL.jE.add(-0.25 * k - Math.max(0, -swing) * 0.35 * k, 0, 0);
-      else armL.jS.add(swing * 0.12 * k, 0, 0);
+      // (a loose chain: the forearm trails the upper arm and folds as the arm comes forward, the wrist
+      // trails the forearm; the shoulders ride up and down with the stride)
+      if (!lhold) {
+        armL.jS.add(swing * 0.5 * k * dirZ, 0, 0.04 * k - 0.03 * Math.abs(swing) * k);
+        armL.jE.add(-0.25 * k - Math.max(0, -Math.sin(phase - 0.55)) * 0.42 * k, 0, 0);
+        armL.jW.add(Math.sin(phase - 1.1) * 0.22 * k * dirZ, 0, 0);
+      } else armL.jS.add(swing * 0.12 * k, 0, 0);
       armR.jS.add(-swing * 0.16 * k * dirZ - 0.08 * k, 0, 0);
-      if (hold === 'staff') focusDir.lerp(tmp.set(0.05, 1, 0.35), k * 0.5);
+      if (hold === 'staff') {
+        // Walked with, as a staff is: swung forward and set down with the left foot, leaned on as the body
+        // passes it, picked up behind. On a run it is simply carried, slanted ahead.
+        const stp = Math.cos(TAU * c0) * (1 - run) * dirZ, up = Math.max(0, -Math.sin(TAU * c0)) * (1 - run);
+        focusDir.lerp(tmp.set(0.05, 1, 0.22 + 0.2 * run + 0.3 * stp), k * (0.55 + 0.25 * (1 - run)));
+        armR.jS.add(-0.2 * stp * k, 0, 0); armR.jE.add(-0.16 * up * k, 0, 0);
+      }
+      // into a turn: the head goes first, the body banks to the inside
+      jSpine.add(0, 0, -turnS * 0.09 * k); jChest.add(0, turnS * 0.06 * k, -turnS * 0.04 * k);
+      jNeck.add(0, turnS * 0.14 * k, 0); jHead.add(0, turnS * 0.16 * k, turnS * 0.05 * k);
     }
     // ---- turning on the spot: short side steps toward the turn, one foot then the other
     const tk = turnK * still;
@@ -714,7 +771,7 @@ export function createAvatar(classId, ctx) {
         jSpine.add(0, (0.55 * wind - 1.3 * thrust) * a * castK, 0);
       }
       // lunge onto the left foot
-      const lg = thrust * a * castK * lungeK * (1 - airK);
+      const lg = thrust * a * castK * lungeK * (1 - airK) * (1 - k); // (a lunge is for a caster standing: running, the feet keep their stride)
       legL.jT.add(-0.42 * lg, 0, 0); legL.jK.add(0.5 * lg, 0, 0); legL.jA.add(-0.08 * lg, 0, 0);
       legR.jT.add(0.28 * lg, 0, -0.04 * lg); legR.jK.add(0.22 * lg, 0, 0); legR.jA.add(0.2 * lg, 0, 0);
       hips.position.y -= 0.05 * lg;
@@ -773,6 +830,16 @@ export function createAvatar(classId, ctx) {
     // (legs on the move are held closer to their solved targets: an eased foot is a sliding foot)
     const kLeg = 1 - Math.exp(-dt * (13 + 60 * k));
     for (let i = 0; i < allJoints.length; i++) allJoints[i].step(i >= 5 && i < 11 ? kLeg : kk, dt);
+    // ---- the hat's point: sprung against the head's own turning (its joints' angular speed), the body's
+    // starts, stops and stride, and a blow; it leans back on a run
+    if (hatTip) {
+      const C = THREE.MathUtils.clamp, h = Math.min(dt, 1 / 30);
+      const ax = C(-(jHead.fw[0] + jNeck.fw[0]) * 0.06 + accZ * 0.012 + (k > 0.01 ? Math.cos(2 * phase) * 0.05 * k : 0) - k * 0.1 * Math.min(1, speed / 6) + hurtK * 0.3 - airV * airK * 0.25, -0.6, 0.6);
+      const az = C(-(jHead.fw[2] + jNeck.fw[2]) * 0.06 + (jHead.fw[1] + jNeck.fw[1]) * 0.03 - accX * 0.012 + turnS * 0.12 * k, -0.6, 0.6);
+      tipVX += (140 * (ax - tipX) - 9 * tipVX) * h; tipVZ += (140 * (az - tipZ) - 9 * tipVZ) * h;
+      tipX = C(tipX + tipVX * h, -0.7, 0.7); tipZ = C(tipZ + tipVZ * h, -0.7, 0.7);
+      setRotXYZ(hatTip, tipX, 0, tipZ);
+    }
     // ---- fingers: the grip tightens through a cast; a free hand claws on the wind-up and flings open on
     // the release, hangs half closed on the run, spreads in the air and on the ground it is propped on
     {

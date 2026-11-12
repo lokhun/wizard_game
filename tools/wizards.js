@@ -290,6 +290,8 @@ function stepView(dt) {
   vm.update(dt, {
     t: state.t, speed: state.speed, grounded: state.grounded, look: state.look, cast: state.cast,
     charge: state.charge, dash: state.dash, hurt: state.hurt, downed: state.downed,
+    // (act=item|interact|revive & at=<t>: the hands' other business, begun at that time; low=<0..1>: weak)
+    act: P.has('act') && state.t >= num('at', 1) ? { kind: P.get('act'), t: state.t - num('at', 1) } : null, low: num('low', 0),
   });
   state.look.x = 0; state.look.y = 0;
   state.hurt = Math.max(0, state.hurt - dt * 3);
@@ -303,7 +305,7 @@ function stepAvatars(dt) {
   for (const a of avatars) {
     // (style=raise|slam|throw|channel|swing2 & hand=left|both: a spell's own cast; air=1 / dashk=1: off the ground / dashing; hit=<t>: struck at that time)
     if (P.has('hit') && !a._hit && state.t >= num('hit', 0)) { a._hit = true; a.hit(1, 1); }
-    a.update(dt, { anim, t: state.t, speed: sp, pitch: state.pitch, castProgress: cp, strafe: state.strafe, castStyle: P.get('style') ?? undefined, castHand: P.get('hand') ?? undefined, air: P.has('air') ? num('air', 1) : undefined, dash: P.has('dashk') ? num('dashk', 1) : undefined });
+    a.update(dt, { anim, t: state.t, speed: sp, pitch: state.pitch, castProgress: cp, strafe: state.strafe, castStyle: P.get('style') ?? undefined, castHand: P.get('hand') ?? undefined, gesture: P.has('gest') && state.t >= num('gestAt', 2) && state.t < num('gestAt', 2) + 0.1 ? num('gest', 0) : undefined, air: P.has('air') ? num('air', 1) : undefined, dash: P.has('dashk') ? num('dashk', 1) : undefined });
   }
 }
 

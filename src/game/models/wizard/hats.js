@@ -129,11 +129,11 @@ function pointedHat(kit, mat, o) {
   for (let i = 0; i < cp.count; i++) { v.fromBufferAttribute(cp, i); bend(v); cp.setXYZ(i, v.x, v.y, v.z); }
   cone.computeVertexNormals();
   if (o.crumple) noisify(cone, o.crumple, 30, o.seed ?? 3, 2);
-  add(G, cone, mat);
+  const coneMesh = add(G, cone, mat);
   // band
   add(G, lathe([[rIn * 1.0, 0.002], [rIn * 0.99, 0.04], [rIn * 0.96, 0.042]], 24), o.bandMat ?? kit.leather(0x2a1a10));
   if (o.buckle) add(G, xf(new THREE.TorusGeometry(0.014, 0.003, 4, 4), { z: rIn + 0.002, y: 0.021, rz: Math.PI / 4 }), kit.gold());
-  return { G, bend, H };
+  return { G, bend, H, cone: coneMesh };
 }
 
 // opts.mantle = false: skip the shoulder mantle (avatars build their own
@@ -158,6 +158,7 @@ export function buildHat(classId, kit, meta, glows, opts = {}) {
       const hat = pointedHat(kit, kit.cloth(0x3a1810), { brim: 0.29, height: 0.42, bend: 0.2, droop: 0.07, ragged: true, crumple: 0.006, seed: 5, buckle: true });
       hat.G.position.set(0, 0.055, -0.005); hat.G.rotation.x = -0.12;
       G.add(hat.G);
+      res.cone = { mesh: hat.cone, H: hat.H }; // (the avatar gives the point a bone: it flops)
       // singed, ember-lit brim edge
       const em = glows.add(kit.glow(meta.color, 1.3), 1);
       const pts = [];
@@ -208,6 +209,7 @@ export function buildHat(classId, kit, meta, glows, opts = {}) {
       const hat = pointedHat(kit, kit.cloth(meta.robe), { brim: 0.2, height: 0.62, bend: 0.22, droop: 0.03, seed: 9, bandMat: kit.cloth(meta.trim), buckle: false, twist: 0.05 });
       hat.G.position.set(0, 0.05, -0.005); hat.G.rotation.x = -0.08;
       G.add(hat.G);
+      res.cone = { mesh: hat.cone, H: hat.H };
       const sm = glows.add(kit.glow(meta.color2, 2.4), 1);
       const stars = [];
       const rnd = mulberry(4);
